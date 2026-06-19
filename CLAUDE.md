@@ -7,7 +7,8 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 ## Canonical design docs (read on demand)
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
-- **Current position:** Stage 0 (project setup) → Stage 1 (data sources). Work in dependency order per the workplan.
+- `docs/research/` — **research outputs** per stage. `stage-1-data-sources.md` = the data-source landscape catalog (corpus/live split, authority tiers, license obligations, coverage gaps, conflation verdict).
+- **Current position:** Planning & discovery (pre-code). Stage 1 (data-source landscape) research **done** → review findings, then Stage 2 (schema). Work in dependency order per the workplan.
 
 ## Non-negotiable rules (must hold in all code)
 1. **Source-or-silence.** Every user-facing fact is backed by a live call with source + timestamp. Unverifiable → *flagged*, never fabricated.
