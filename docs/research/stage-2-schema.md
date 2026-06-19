@@ -197,4 +197,4 @@ Nothing time-varying is persisted as a node. The "freshness" disclosure (gauge i
 - Conflation match-score *thresholds* for our data (→ Stage 3, tuned empirically).
 
 ## 12. Next
-On sign-off of the 🅓 decisions, the concrete artifact is a **`graph/schema.cypher`** (constraints + indexes + a seeded example: one Area, one CanonicalTrail with OSM+USFS SourceRecords + SAME_AS, a few Segments/Junctions/a Trailhead) — small enough to be the thin-v0 graph (§6), real enough to write the first `scopedQuery` test against. That bridges Stage 2 → Stage 3.
+The concrete artifact now exists: **`graph/schema.cypher`** — constraints + indexes + a Source registry + a seeded example (Shenandoah NP → Old Rag Loop with OSM+NPS SourceRecords + `SAME_AS`, two Segments, a Junction, a Trailhead). It encodes the six recommended v0 defaults and is small enough to be the thin-v0 graph (§6), real enough to write the first `scopedQuery` test against. **Not yet run against a live Neo4j** (no DB in this planning environment) — first execution + the access-layer test is the opening step of Stage 3. Any of the §10 🅓 defaults can be revised before then.
