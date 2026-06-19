@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets — NEVER commit. Garmin login + API keys live in a
+# secrets store, not the repo (CLAUDE.md rule #10). Add real
+# values only to local, ignored files; commit *.example templates.
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+*.secret
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# ── Data: large corpus extracts, dumps, scratch ──────────────
+data/
+*.osm.pbf
+*.geojson.gz
+*.fit
+dumps/
+*.dump
+
+# ── Neo4j local dev ──────────────────────────────────────────
+neo4j/data/
+neo4j/logs/
+neo4j/import/
+neo4j/plugins/
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# ── Node / JS ────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ── OS / editor ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
