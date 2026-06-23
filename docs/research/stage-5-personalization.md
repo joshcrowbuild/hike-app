@@ -224,21 +224,24 @@ The risk: injecting the user's entire belief store into every prompt is expensiv
 At query time (post-Scout, pre-Curator), the access layer runs a targeted traversal:
 
 ```cypher
-// Fetch active beliefs for the viewer, decayed confidence above floor
-MATCH (p:Person {member_id: $viewer_id})-[:HAS_BELIEF]->(b:Belief)
+// Fetch active beliefs for the viewer — decay is computed in Python (not Cypher),
+// so we pull all non-expired beliefs and filter after decayed_confidence() is applied.
+MATCH (b:Belief)-[:ABOUT]->(p:Person {member_id: $viewer_id})
 WHERE b.owner_id = $viewer_id
-  AND (NOT b.decays OR
-       b.confidence * pow(0.5, duration.between(b.last_updated_at, datetime()).days
-                              / b.decay_half_life_days) > $confidence_floor)
-RETURN b ORDER BY b.last_updated_at DESC LIMIT 20
+RETURN b ORDER BY b.last_updated_at DESC LIMIT 50
+// Python then applies: decayed_confidence(b) > $confidence_floor → keep top 20
 ```
 
 ```cypher
 // Fetch relevant episodes: same trail OR same area as a candidate
 MATCH (p:Person {member_id: $viewer_id})-[:DID]->(e:Episode)-[:ON]->(ct:CanonicalTrail)
 WHERE ct.canonical_id IN $candidate_ids
-   OR ct.area_id IN $candidate_area_ids
-RETURN e ORDER BY e.date DESC LIMIT 10
+RETURN e, ct ORDER BY e.date DESC LIMIT 10
+UNION
+MATCH (p:Person {member_id: $viewer_id})-[:DID]->(e:Episode)-[:ON]->(ct:CanonicalTrail)
+      <-[:CONTAINS]-(a:Area)
+WHERE a.area_id IN $candidate_area_ids
+RETURN e, ct ORDER BY e.date DESC LIMIT 10
 ```
 
 The assembled context passed to the Curator contains:
@@ -256,7 +259,7 @@ What is **NOT injected:**
 
 ### Curator prompt injection
 
-The context block passed to the Curator's Opus-tier call:
+The context block passed to the Curator's judgment-tier call:
 
 ```
 [PERSONAL CONTEXT — private, not for disclosure]
