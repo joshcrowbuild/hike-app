@@ -8,7 +8,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
 - `docs/research/` — **research outputs** per stage. `stage-1-data-sources.md` = the data-source landscape catalog (corpus/live split, authority tiers, license obligations, coverage gaps, conflation verdict).
-- **Current position:** Planning & discovery (pre-code). Stage 1 (data-source landscape) research **done** → review findings, then Stage 2 (schema). Work in dependency order per the workplan.
+- **Current position:** **Phase-0 design complete** (Stages 1–4: sources → schema → corpus pipeline → engine+cost, all in `docs/research/` + `decision-log.md`) and **Stage 0 scaffold in place** (monorepo packages, provider seam, local Neo4j compose, CI — all stubs/contracts, no app logic). **Next:** build the Phase-0 vertical slice against the Shenandoah+GWJ pilot region + the Stage-4 cost-measurement spike. Work in dependency order per the workplan.
 
 ## Non-negotiable rules (must hold in all code)
 1. **Source-or-silence.** Every user-facing fact is backed by a live call with source + timestamp. Unverifiable → *flagged*, never fabricated.
@@ -29,14 +29,14 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - **MCP only for agent-facing live tools** (Coros official MCP, Garmin); **batch ingestion = ordinary scheduled jobs**, not MCP. Polling needs an always-on host (later); not a Phase-0 concern.
 - **Identity:** a household of individual members (each = own login + watch connections + private overlay + grants). Ruby = a dependent node, not an account. Auth boundary = the shared/private boundary; anonymous browsing of the world + live conditions is a real product.
 
-## Stack & conventions — SET IN STAGE 0 (placeholders)
-- Language / runtime: _Python (ingestion + orchestration); frontend TBD_
-- Orchestration: _code-orchestrated Scout/Verifier/Curator workflow (no agent framework)_
-- Model providers: **provider-agnostic, local-first** — thin seam (`extract`/`normalize`/`judge`), local/self-hosted (OpenAI-compatible: Ollama/vLLM/LM Studio) default, **Anthropic SDK (Claude) hot-swappable as the yardstick**; route by data sensitivity (local for the private overlay). Provider+model+tier in config.
-- Repo layout: _monorepo — ingestion / orchestration / graph+migrations / api / frontend / evals (confirm)_
-- Graph: Neo4j (local Community for dev)
-- MCP config: `.mcp.json` at repo root
-- Build / test / eval commands: _TBD_
+## Stack & conventions — SET IN STAGE 0
+- Language / runtime: Python 3.11+ (ingestion + orchestration); frontend TBD
+- Orchestration: code-orchestrated Scout/Verifier/Curator workflow (no agent framework)
+- Model providers: **provider-agnostic, local-first** — thin seam (`extract`/`normalize`/`judge`), local/self-hosted (OpenAI-compatible: Ollama/vLLM/LM Studio) default, **Anthropic SDK (Claude) hot-swappable as the yardstick**; route by data sensitivity (local for the private overlay). Provider+model+tier in config (`.env`).
+- Repo layout: monorepo — `ingestion/` · `orchestration/` (engine + `providers/` seam + `adapters/`) · `graph/` (schema + access wrapper) · `api/` · `frontend/` · `evals/` · `regions/`
+- Graph: Neo4j (local Community via `docker compose`)
+- MCP config: `.mcp.json` at repo root (empty; MCP deferred to interactive moments — Stage 4 §1)
+- Build / test / eval: `make check` (ruff + mypy + pytest) · `make db-up` / `make schema` · `make eval` (Stage 4+). `pip install -e ".[all]"`; see `Makefile` / README.
 - Frontend: web/PWA first (server-side watch pull means minimal loss vs. native); native iOS (SwiftUI) later
 
 ## Phasing (see workplan for detail)

@@ -1,0 +1,24 @@
+# Local dev only — Neo4j Community for the world/personal graph (Stage 2).
+# `make db-up` reads NEO4J_PASSWORD from your .env (git-ignored); compose refuses
+# to start without it (secrets never in the repo — CLAUDE.md rule #10).
+# Data/logs live under ./neo4j/ (git-ignored); ./graph is mounted read-only so
+# `make schema` can apply schema.cypher from inside the container.
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: adventure-neo4j
+    ports:
+      - "7474:7474"   # Browser
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in your .env}"
+      NEO4J_server_memory_heap_max__size: "1G"
+    volumes:
+      - ./neo4j/data:/data
+      - ./neo4j/logs:/logs
+      - ./graph:/graph:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
