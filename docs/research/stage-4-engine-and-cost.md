@@ -12,7 +12,7 @@
 
 The single most important Stage-4 decision. The engine is a **deterministic, code-controlled pipeline** (Scout → Verifier → Curator), **not** an open-ended agent that decides its own trajectory. Each stage is either plain code (graph query, threshold filter) or a *scoped* LLM call. This is the **design/runtime separation** the role cares about: the *shape* of the flow is authored and legible; only bounded judgment is delegated to the model.
 
-- **Substrate:** the **Claude API via the official Anthropic SDK** (Python — matching the ingestion toolchain from Stage 3). **No heavyweight agent framework** (LangGraph/CrewAI/etc.): the flow is a fixed DAG we own, so a framework adds indirection, hurts observability, and obscures the design/runtime boundary. We orchestrate the loop in our own code.
+- **Substrate:** a thin **provider-abstraction seam** in Python (matching the ingestion toolchain from Stage 3), behind which sit pluggable model adapters — **local/self-hosted by default** (via an OpenAI-compatible endpoint: Ollama / vLLM / LM Studio) with the **official Anthropic SDK as one hot-swappable adapter** for comparison (§2). **No heavyweight agent framework** (LangGraph/CrewAI/etc.): the flow is a fixed DAG we own, so a framework adds indirection, hurts observability, obscures the design/runtime boundary, **and would lock us to one provider's tool-runner.** We orchestrate the loop in our own code — which is exactly what makes a provider swap clean.
 - **Tool use** is used *narrowly* — the Verifier's live-data calls are modeled as tool functions (the SDK tool-runner drives the call→execute→feed-back loop), but the agent never roams: it's handed a fixed candidate and a fixed tool set.
 - **MCP is deferred to genuinely interactive moments** (Decision Log §8): a future "ask the planner" chat, and the agent-facing watch tools (Coros official MCP; Garmin). **The Phase-0 JIT Verifier uses direct HTTP adapters, not MCP** — MCP's value is mid-reasoning tool discovery for an interactive agent; a batch/JIT pipeline gets simpler, cheaper, more testable code from direct calls. Clean split preserved: *batch + JIT pipeline = direct calls; agent-reaching-for-a-tool = MCP.*
 
@@ -20,20 +20,29 @@ The single most important Stage-4 decision. The engine is a **deterministic, cod
 
 ---
 
-## 2. Model tiering (the dominant cost lever)
+## 2. Model providers & tiering (provider-agnostic, local-first)
 
-LLM tokens dominate cost (Decision Log §16). Tier by job — cheap model for mechanical work, strong model only for judgment:
+**The model is a swappable component, not the moat** (§2 of the Decision Log: the value is the verified-synthesis graph, not the LLM). Two orthogonal axes pass through one config-driven seam: **which provider** (local vs. cloud) and **which capability tier** (mechanical vs. judgment).
 
-| Stage / job | Tier | Why |
+**Tier by job** — cheap/small model for mechanical work, strong model only for judgment:
+
+| Stage / job | Tier | Local viability today |
 |---|---|---|
-| Scout query understanding (parse "near me this weekend, dog-friendly") | **Haiku-tier** (fast/cheap) | Light extraction; often skippable (structured UI inputs) |
-| Verifier condition normalization / hedged phrasing | **Haiku-tier** | Mechanical: turn a forecast + confidence into a sourced, hedged sentence |
-| Curator taste/novelty/party judgment | **Opus-tier** (strongest) | The actual recommendation judgment — worth the tokens |
-| Truthfulness LLM-judge (eval) | **Opus-tier** | Scoring correctness needs the strong model |
+| Scout query understanding (parse "near me this weekend, dog-friendly") | **mechanical** | ✅ strong locally; often skippable (structured UI inputs) |
+| Verifier condition normalization / hedged phrasing | **mechanical** | ✅ strong locally |
+| Curator taste/novelty/party judgment | **judgment** | 🔶 the gap, if any, shows here — measure it |
+| Truthfulness LLM-judge (eval) | **judgment** | 🔶 frontier helps; compare via the eval |
 
-Sonnet-tier is the middle option if Haiku underperforms on normalization or Opus is overkill for simple curation. **Exact model IDs live in config (`.env` / resolved via the Models API), not hardcoded** — so a tier can be swapped without code changes, and the cost spike can A/B tiers. Pricing as of June 2026 (per 1M tokens, input/output): Opus-tier ~$5/$25 · Sonnet-tier ~$3/$15 · Haiku-tier ~$1/$5.
+**Provider policy — default local, hot-swap cloud:**
+- **Default to a local/self-hosted model** (privacy-aligned with the local-first "crown jewels" stance, §14; no per-token cost). Keep a **cloud adapter (Claude) hot-swappable** as the quality/cost/latency **yardstick** — not as the default.
+- **Route by data sensitivity** (mirrors the auth boundary = shared/private boundary, §13): the **anonymous world + conditions** layer (no personal data in the prompt) may use a cloud model; anything touching the **private overlay** (beliefs, watch, party) routes to the **local** model so personal data never leaves the machine. A principled policy, not all-or-nothing.
+- **Provider + model + tier all live in config** (`.env` / a small provider registry), never hardcoded — so a swap is config-only and the eval (§7) can A/B providers on the *same* flow.
 
-**Thinking:** adaptive thinking on the Opus-tier Curator/judge (it's a judgment call); thinking off for Haiku-tier extraction.
+**The seam (keep it thin):** a small capability interface — roughly `extract()`, `normalize()`, `judge()` — with two adapters: an **OpenAI-compatible** adapter (local: Ollama/vLLM/LM Studio) and an **Anthropic SDK** adapter (Claude). Provider-specific optimizations live *behind* the seam as opt-in enhancements (Claude: prompt caching, adaptive thinking; local: quantization/context settings) — **not** flattened into a lowest-common-denominator interface. Because we own the tool loop (§1), neither adapter depends on a provider's tool-runner.
+
+**Reference pricing for the cloud yardstick** (per 1M tokens in/out, June 2026): Opus-tier ~$5/$25 · Sonnet-tier ~$3/$15 · Haiku-tier ~$1/$5. Local marginal token cost ≈ $0, traded for hardware + latency (a single consumer GPU or Apple Silicon runs quantized 7B–70B models; far lighter than the abandoned fine-tune branch, §1/§25).
+
+🅓 *Open: which local runtime (Ollama vs. vLLM vs. llama.cpp) and which candidate local models — decide against the hardware envelope + the eval, in the spike.*
 
 ---
 
@@ -110,22 +119,25 @@ A real eval rides with Phase 0 (the deep stochastic methodology is Stage 7). Sco
 
 ## 8. Cost model — estimate now, **measure in the spike**
 
-LLM tokens dominate; everything else (NWS/USGS/FIRMS/AirNow/RIDB free; Valhalla self-hosted; Neo4j local) is cheap. A **rough** per-session estimate (one feed render, K≈8 verified candidates), to be replaced by measurement:
+LLM tokens dominate **the cloud path**; everything else (NWS/USGS/FIRMS/AirNow/RIDB free; Valhalla self-hosted; Neo4j local) is cheap. Cost has **two different shapes** depending on provider, which is exactly why the spike measures both:
 
-| Stage | Calls | Rough cost |
-|---|---|---|
-| Scout | 0–1 Haiku-tier (often deterministic) | ~$0.00–0.01 |
-| Verifier | ~K Haiku-tier normalizations + free HTTP | ~$0.02–0.04 |
-| Curator | 1 Opus-tier judgment over K + context | ~$0.08–0.13 |
-| **Per session (uncached)** | | **~$0.10–0.18** |
+- **Local/self-hosted (the default):** marginal token cost ≈ $0; the real costs are **hardware** (a GPU / Apple Silicon) and **latency**. The budget question becomes "does it fit the machine and feel fast enough," not "$/session."
+- **Cloud (the yardstick):** a **rough** per-session estimate (one feed render, K≈8 candidates), to be replaced by measurement:
 
-**Cost levers (already architected):**
-1. **Shortlist cap K** — verify/curate top-K only (the biggest structural lever).
-2. **Prompt caching** — the stable system prompt + the candidate subgraph context cache at ~0.1× read cost; the Curator's repeated context is mostly cache-read after the first call, cutting its input cost sharply. (Keep volatile bits — live readings, timestamps — *after* the cache breakpoint.)
-3. **Model tiering** — Haiku-tier for the K mechanical calls; Opus-tier only for the single judgment.
+  | Stage | Calls | Rough cloud cost |
+  |---|---|---|
+  | Scout | 0–1 mechanical-tier (often deterministic) | ~$0.00–0.01 |
+  | Verifier | ~K mechanical-tier normalizations + free HTTP | ~$0.02–0.04 |
+  | Curator | 1 judgment-tier call over K + context | ~$0.08–0.13 |
+  | **Per session (uncached)** | | **~$0.10–0.18** |
+
+**Cost/perf levers (already architected):**
+1. **Shortlist cap K** — verify/curate top-K only (the biggest structural lever; helps local latency too).
+2. **Prompt caching (cloud)** — stable system prompt + candidate subgraph cache at ~0.1× read; keep volatile bits (live readings, timestamps) *after* the breakpoint. (Local KV-cache reuse is the analog.)
+3. **Provider + tier routing** (§2) — mechanical tiers local-cheap; reserve the cloud yardstick for the judgment call when comparing.
 4. **Condition caching / TTLs** (§4) — a re-open within the TTL re-verifies nothing.
 
-🅓 **The Stage-4 spike:** run the real flow against the real Shenandoah/GWJ corpus and **measure** tokens/cost per session across effort levels and tiers. This sets the actual budget and validates the levers — do not ship a budget off the estimate above.
+🅓 **The Stage-4 spike (now a provider bake-off):** run the real flow against the real Shenandoah/GWJ corpus and **measure, through the same truthfulness eval (§7), local vs. cloud on three axes — quality, cost, latency.** This turns "which provider" into an empirical call, not an ideological one, and sets the actual budget. Do not ship a budget (or a provider default) off the estimate above.
 
 ---
 

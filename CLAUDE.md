@@ -30,8 +30,9 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - **Identity:** a household of individual members (each = own login + watch connections + private overlay + grants). Ruby = a dependent node, not an account. Auth boundary = the shared/private boundary; anonymous browsing of the world + live conditions is a real product.
 
 ## Stack & conventions — SET IN STAGE 0 (placeholders)
-- Language / runtime: _TBD_
-- Orchestration framework: _TBD (Claude API + ?)_
+- Language / runtime: _Python (ingestion + orchestration); frontend TBD_
+- Orchestration: _code-orchestrated Scout/Verifier/Curator workflow (no agent framework)_
+- Model providers: **provider-agnostic, local-first** — thin seam (`extract`/`normalize`/`judge`), local/self-hosted (OpenAI-compatible: Ollama/vLLM/LM Studio) default, **Anthropic SDK (Claude) hot-swappable as the yardstick**; route by data sensitivity (local for the private overlay). Provider+model+tier in config.
 - Repo layout: _monorepo — ingestion / orchestration / graph+migrations / api / frontend / evals (confirm)_
 - Graph: Neo4j (local Community for dev)
 - MCP config: `.mcp.json` at repo root
