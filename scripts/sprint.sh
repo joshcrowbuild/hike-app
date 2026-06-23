@@ -36,11 +36,18 @@ d.close()
 done
 
 log "Applying schema..."
-NEO4J_PASSWORD="${NEO4J_PASSWORD}" docker compose exec -T \
+# Use -f /graph/schema.cypher (mounted read-only via docker-compose volumes:
+# ./graph:/graph:ro) and rely on NEO4J_PASSWORD env var for auth instead of
+# --password-stdin. The original --password-stdin < graph/schema.cypher was
+# broken: stdin redirection from the file means cypher-shell reads the first
+# line of schema.cypher as the password (wrong), failing authentication before
+# executing any Cypher. NEO4J_PASSWORD env var is the correct approach here.
+docker compose exec -T \
     -e NEO4J_PASSWORD \
+    -e NEO4J_USER \
     neo4j cypher-shell \
-    -u "${NEO4J_USER:-neo4j}" --password-stdin \
-    < graph/schema.cypher
+    -u "${NEO4J_USER:-neo4j}" \
+    -f /graph/schema.cypher
 
 # ── Phase 3: Ingestion ────────────────────────────────────────────────────────
 log "Running dry-run ingestion to validate fetch + conflation..."

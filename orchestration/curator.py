@@ -34,7 +34,11 @@ class GuardrailVerdict:
 def _alerts(fact: VerifiedFact) -> list[str]:
     value = fact.value
     if isinstance(value, dict):
-        return [a for a in value.get("active_alerts", []) if isinstance(a, str)]
+        # active_alerts is None when the NWS alerts sub-call fails (alerts endpoint
+        # failure while forecast succeeded). None means "unknown", not "empty list".
+        # We must not iterate over None — treat it the same as an absent key.
+        alerts = value.get("active_alerts") or []
+        return [a for a in alerts if isinstance(a, str)]
     return []
 
 
