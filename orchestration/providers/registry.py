@@ -47,9 +47,7 @@ def _build(provider_name: str, settings: Settings) -> ModelProvider:
     raise ValueError(f"unknown provider: {provider_name!r}")
 
 
-def resolve(
-    role: str, settings: Settings, *, touches_private_overlay: bool = False
-) -> Resolution:
+def resolve(role: str, settings: Settings, *, touches_private_overlay: bool = False) -> Resolution:
     if role not in ROLE_TIER:
         raise ValueError(f"unknown role: {role!r}")
     tier = settings.tiers[ROLE_TIER[role]]
