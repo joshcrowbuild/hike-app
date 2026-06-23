@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from orchestration.adapters.base import VerifiedFact
-from orchestration.engine import plan_from_origin
+from orchestration.curator import GuardrailVerdict
+from orchestration.engine import PlannedTrail, plan_from_origin, rank_plan
+from orchestration.providers.base import LLMResponse
+from orchestration.scout import Candidate
 
 
 class _FakeSession:
@@ -51,3 +54,24 @@ def test_plan_filters_guardrail_blocked_trails() -> None:
     )
     assert [p.candidate.canonical_id for p in planned] == ["safe"]  # flooded hard-filtered
     assert planned[0].facts["weather"].value["active_alerts"] == []
+    assert "weather" in planned[0].confidences  # confidence computed per surfaced fact
+
+
+class _FakeJudge:
+    name = "fake"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def complete(self, request: Any) -> LLMResponse:
+        return LLMResponse(text=self.text, model=request.model, provider=self.name)
+
+
+def _planned(cid: str, dist: float) -> PlannedTrail:
+    return PlannedTrail(Candidate(cid, cid.upper(), "th", dist), {}, {}, GuardrailVerdict(False))
+
+
+def test_rank_plan_reorders_by_taste() -> None:
+    plan = [_planned("a", 10.0), _planned("b", 20.0)]  # distance order: a, b
+    out = rank_plan(plan, _FakeJudge('["b","a"]'), "m")  # judge prefers b
+    assert [p.candidate.canonical_id for p in out] == ["b", "a"]

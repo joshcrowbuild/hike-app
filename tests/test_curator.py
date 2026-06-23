@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from orchestration.adapters.base import VerifiedFact
-from orchestration.curator import evaluate_guardrails
+from orchestration.curator import evaluate_guardrails, rank_ids
+from orchestration.providers.base import LLMResponse
 
 
 def _fact(value: Any) -> VerifiedFact:
@@ -43,3 +44,24 @@ def test_clean_conditions_pass() -> None:
     assert not v.blocked
     assert not v.blocks
     assert not v.warnings
+
+
+class _FakeJudge:
+    name = "fake"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def complete(self, request: Any) -> LLMResponse:
+        return LLMResponse(text=self.text, model=request.model, provider=self.name)
+
+
+def test_rank_ids_reorders_by_judge() -> None:
+    items = [("a", "A"), ("b", "B"), ("c", "C")]
+    assert rank_ids(items, _FakeJudge('["c","a","b"]'), "m") == ["c", "a", "b"]
+
+
+def test_rank_ids_appends_dropped_and_survives_garbage() -> None:
+    items = [("a", "A"), ("b", "B")]
+    assert rank_ids(items, _FakeJudge('["b"]'), "m") == ["b", "a"]  # dropped 'a' appended
+    assert rank_ids(items, _FakeJudge("not json"), "m") == ["a", "b"]  # fallback to input order

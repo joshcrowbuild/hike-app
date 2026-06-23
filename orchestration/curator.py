@@ -11,10 +11,12 @@ Thresholds are module constants so they're easy to tune against real conditions.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from orchestration.adapters.base import VerifiedFact
+from orchestration.providers.base import LLMRequest, ModelProvider
 
 # Active-alert events that hard-block (substring match, case-insensitive).
 BLOCKING_ALERT_KEYWORDS = ("flash flood", "red flag", "tornado", "extreme", "evacuation")
@@ -75,3 +77,56 @@ def evaluate_guardrails(facts: Mapping[str, VerifiedFact]) -> GuardrailVerdict:
             warnings.append(f"{count} active-fire detection(s) nearby (thermal anomalies)")
 
     return GuardrailVerdict(blocked=bool(blocks), blocks=tuple(blocks), warnings=tuple(warnings))
+
+
+# ── Taste ranking (judgment tier, via the provider seam) ────────────────────
+# The soft half of the Curator. Confidence is deliberately NOT an input here —
+# uncertainty must never penalize ranking (rule #2). Works on (id, name) pairs so
+# it doesn't import the engine (no cycle). Prompt is a thin v0; real tuning is the
+# Stage-4 build / bake-off.
+
+RANK_SYSTEM = (
+    "You are a calm hiking concierge. Given candidate trails, return ONLY a JSON "
+    "array of their canonical_id strings, ordered best-first for this hiker. "
+    "No prose, no markdown — just the JSON array."
+)
+
+
+def _parse_ids(text: str, known: list[str]) -> list[str]:
+    """Parse the judge's JSON ordering; keep known ids, append any it dropped,
+    fall back to input order on any malformed output (graceful degradation)."""
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return list(known)
+    if not isinstance(data, list):
+        return list(known)
+    ordered = [x for x in data if isinstance(x, str) and x in known]
+    seen = dict.fromkeys(ordered)  # de-dupe, preserve order
+    for cid in known:
+        seen.setdefault(cid, None)  # append ids the judge dropped
+    return list(seen)
+
+
+def rank_ids(
+    items: list[tuple[str, str]],
+    provider: ModelProvider,
+    model: str,
+    *,
+    profile: str | None = None,
+) -> list[str]:
+    """Ask the judgment-tier model to order candidate (canonical_id, name) pairs."""
+    if not items:
+        return []
+    known = [cid for cid, _ in items]
+    listing = "\n".join(f"- {cid}: {name}" for cid, name in items)
+    user = f"Candidates:\n{listing}"
+    if profile:
+        user += f"\n\nHiker preferences: {profile}"
+    request = LLMRequest(
+        system=RANK_SYSTEM,
+        messages=[{"role": "user", "content": user}],
+        model=model,
+        max_tokens=512,
+    )
+    return _parse_ids(provider.complete(request).text, known)
