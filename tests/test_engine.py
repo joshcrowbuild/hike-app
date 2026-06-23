@@ -11,7 +11,7 @@ from typing import Any
 
 from orchestration.adapters.base import VerifiedFact
 from orchestration.curator import GuardrailVerdict
-from orchestration.engine import PlannedTrail, plan_from_origin, rank_plan
+from orchestration.engine import PlannedTrail, Runtime, plan, plan_from_origin, rank_plan
 from orchestration.providers.base import LLMResponse
 from orchestration.scout import Candidate
 
@@ -75,3 +75,19 @@ def test_rank_plan_reorders_by_taste() -> None:
     plan = [_planned("a", 10.0), _planned("b", 20.0)]  # distance order: a, b
     out = rank_plan(plan, _FakeJudge('["b","a"]'), "m")  # judge prefers b
     assert [p.candidate.canonical_id for p in out] == ["b", "a"]
+
+
+def test_plan_builds_feed_with_cards() -> None:
+    rows = [_row("safe", 38.5, -78.4, 1609.344)]  # 1 mile out
+
+    def weather(lat: float, lon: float) -> VerifiedFact:
+        return _fact({"short_forecast": "Clear", "temperature": 60, "temperature_unit": "F"})
+
+    runtime = Runtime(session=_FakeSession(rows), probes={"weather": weather})  # type: ignore[arg-type]
+    feed = plan("trails near me", (38.5, -78.4), runtime, k=5)
+    assert feed.query == "trails near me"
+    assert len(feed.cards) == 1
+    card = feed.cards[0]
+    assert card.canonical_id == "safe"
+    assert card.distance_mi == 1.0
+    assert any(line.kind == "weather" for line in card.lines)

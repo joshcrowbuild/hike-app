@@ -2,14 +2,16 @@
 
 A fixed, authored DAG — not an autonomous agent (Stage 4 §1):
 
-    Scout    - scoped Cypher candidate generation (graph), capped to top-K.
-    Verifier - JIT live probes; source-or-silence in code; never persisted (#3).
-    Curator  - hard guardrail filter (here) + judgment-tier taste ranking (later).
+    parse_intent  - mechanical-tier free-text -> structured query.
+    Scout         - scoped Cypher candidate generation, capped to top-K.
+    Verifier      - JIT live probes; source-or-silence in code; never persisted (#3).
+    Curator       - hard guardrail filter + judgment-tier taste ranking.
+    present       - templated hedged, sourced feed lines.
 
-`plan_from_origin` composes Scout -> Verifier -> guardrail-filter and is testable
-with a fake session + fake probes. Two pieces are still TODO and need a live
-environment / the provider seam: the free-text `plan` entrypoint (intent -> origin)
-and the taste/novelty/party ranking — results are distance-ordered until then.
+`plan` composes the whole pipeline; every collaborator (graph session, probes, the
+mechanical + judge providers) is injected via `Runtime`, so the composition is
+testable with fakes. `build_runtime` wires the production collaborators from config
++ clients (needs a live environment to actually run).
 """
 
 from __future__ import annotations
@@ -17,14 +19,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from graph.client import ScopedSession
+from graph.client import GraphClient, ScopedSession
 from orchestration.adapters.base import VerifiedFact
-from orchestration.confidence import Confidence, for_fact
+from orchestration.confidence import Confidence, compute, for_fact
 from orchestration.config import Settings
 from orchestration.curator import GuardrailVerdict, evaluate_guardrails, rank_ids
+from orchestration.intent import Intent, parse_intent
+from orchestration.present import FeedLine, summarize_fact
 from orchestration.providers.base import ModelProvider
+from orchestration.providers.registry import resolve
 from orchestration.scout import Candidate, scout
-from orchestration.verifier import Probe, verify
+from orchestration.verifier import Probe, build_probes, verify
+
+DEFAULT_RADIUS_M = 40_000.0
+_M_PER_MILE = 1609.344
 
 
 @dataclass(frozen=True)
@@ -33,6 +41,29 @@ class PlannedTrail:
     facts: dict[str, VerifiedFact]
     confidences: dict[str, Confidence]
     verdict: GuardrailVerdict
+
+
+@dataclass(frozen=True)
+class FeedCard:
+    canonical_id: str
+    name: str
+    distance_mi: float | None
+    lines: list[FeedLine]
+    warnings: tuple[str, ...]
+
+
+@dataclass
+class Runtime:
+    session: ScopedSession
+    probes: dict[str, Probe]
+    mechanical: tuple[ModelProvider, str] | None = None  # intent parse
+    judge: tuple[ModelProvider, str] | None = None  # taste ranking
+
+
+@dataclass(frozen=True)
+class Feed:
+    query: str
+    cards: list[FeedCard]
 
 
 def _latlon(point: Any) -> tuple[float, float] | None:
@@ -55,12 +86,13 @@ def plan_from_origin(
     session: ScopedSession,
     probes: dict[str, Probe],
     *,
+    radius_m: float = DEFAULT_RADIUS_M,
     k: int = 10,
 ) -> list[PlannedTrail]:
     """Scout near (lat, lon), verify each candidate's conditions, drop any that
-    trip a hard guardrail. Distance-ordered (taste ranking is added later)."""
+    trip a hard guardrail. Distance-ordered (taste ranking applied separately)."""
     planned: list[PlannedTrail] = []
-    for candidate in scout(lat, lon, session, k=k):
+    for candidate in scout(lat, lon, session, radius_m=radius_m, k=k):
         clat, clon = _latlon(candidate.point) or (lat, lon)
         facts = verify(clat, clon, probes)
         verdict = evaluate_guardrails(facts)
@@ -86,7 +118,42 @@ def rank_plan(
     return [by_id[cid] for cid in order if cid in by_id]
 
 
-def plan(query: str, viewer_id: str, settings: Settings) -> object:
-    """Free-text entrypoint: parse intent -> origin, then plan_from_origin, then
-    apply taste ranking. Needs the provider seam + a live environment — Stage 4."""
-    raise NotImplementedError("engine.plan (free-text + taste ranking) is implemented in Stage 4")
+def feed_card(planned: PlannedTrail) -> FeedCard:
+    lines = [
+        summarize_fact(kind, fact, planned.confidences.get(kind) or compute())
+        for kind, fact in planned.facts.items()
+    ]
+    dist = planned.candidate.distance_m
+    return FeedCard(
+        canonical_id=planned.candidate.canonical_id,
+        name=planned.candidate.name,
+        distance_mi=round(dist / _M_PER_MILE, 1) if dist else None,
+        lines=lines,
+        warnings=planned.verdict.warnings,
+    )
+
+
+def plan(query: str, origin: tuple[float, float], runtime: Runtime, *, k: int = 10) -> Feed:
+    """Full pipeline: parse intent -> scout+verify+guardrail-filter -> taste-rank ->
+    templated feed cards. Collaborators come from `runtime` (build via build_runtime)."""
+    intent = parse_intent(query, *runtime.mechanical) if runtime.mechanical else Intent()
+    radius = float(intent.radius_m) if intent.radius_m else DEFAULT_RADIUS_M
+    planned = plan_from_origin(
+        origin[0], origin[1], runtime.session, runtime.probes, radius_m=radius, k=k
+    )
+    if runtime.judge:
+        planned = rank_plan(planned, runtime.judge[0], runtime.judge[1], profile=intent.profile)
+    return Feed(query=query, cards=[feed_card(p) for p in planned])
+
+
+def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str) -> Runtime:
+    """Production wiring: resolve providers per tier, scope the session to the
+    viewer, build probes from config. Needs a live environment to actually run."""
+    mechanical = resolve("extract", settings)
+    judge = resolve("curate", settings)
+    return Runtime(
+        session=graph_client.scoped_session(viewer_id),
+        probes=build_probes(settings),
+        mechanical=(mechanical.provider, mechanical.model),
+        judge=(judge.provider, judge.model),
+    )
