@@ -20,7 +20,12 @@ from ingestion.conflate.match import Feature
 
 log = logging.getLogger(__name__)
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Primary + fallback mirrors tried in order; first 200 wins.
+_OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+]
 
 # OSM highway values that represent walkable trails (not roads or cycle lanes).
 _TRAIL_HIGHWAYS = "path|footway|track|bridleway|steps"
@@ -41,11 +46,20 @@ def fetch(
         "out geom;"
     )
     c = client or httpx.Client(timeout=timeout)
-    try:
-        r = c.post(OVERPASS_URL, data={"data": query})
-        r.raise_for_status()
-    except Exception as exc:
-        log.warning("OSM fetch failed: %s", exc)
+    last_exc: Exception | None = None
+    r = None
+    for mirror in _OVERPASS_MIRRORS:
+        try:
+            r = c.post(mirror, data={"data": query})
+            if r.status_code == 200:
+                break
+            log.debug("OSM mirror %s returned %d, trying next", mirror, r.status_code)
+        except Exception as exc:
+            log.debug("OSM mirror %s failed: %s", mirror, exc)
+            last_exc = exc
+    if r is None or r.status_code != 200:
+        status = f"HTTP {r.status_code}" if r is not None else str(last_exc)
+        log.warning("OSM fetch failed on all mirrors: %s", status)
         return []
 
     features: list[Feature] = []

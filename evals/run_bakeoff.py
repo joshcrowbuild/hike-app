@@ -47,8 +47,8 @@ def _make_scenario(settings: Settings, gc: GraphClient, config: BakeoffConfig) -
     """Build a Scenario that runs the full pipeline for a bakeoff config."""
 
     def run() -> list[PlannedTrail]:
-        mechanical_provider = AnthropicProvider()
-        judge_provider = AnthropicProvider()
+        mechanical_provider = AnthropicProvider(settings.anthropic_api_key)
+        judge_provider = AnthropicProvider(settings.anthropic_api_key)
 
         session = gc.scoped_session(_PILOT_VIEWER)
         probes = {}  # no live probes in eval (deterministic; add when you want live test)

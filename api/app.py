@@ -62,7 +62,7 @@ def _card_response(card: FeedCard) -> FeedCardResponse:
             FeedLineResponse(
                 text=line.text,
                 source=line.source,
-                confidence_level=line.confidence_level,
+                confidence_level=line.presentation,
             )
             for line in card.lines
         ],

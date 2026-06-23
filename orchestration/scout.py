@@ -10,11 +10,14 @@ inputs skip it.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from graph import queries
 from graph.client import ScopedSession
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,8 +54,12 @@ def scout(
     k: int = 10,
 ) -> list[Candidate]:
     """Return up to `k` nearest candidate trails within `radius_m` of the origin,
-    one entry per trail (the nearest trailhead wins)."""
+    one entry per trail (the nearest trailhead wins). Falls back to a direct
+    CanonicalTrail.point query when no Trailhead nodes are present (e.g. fresh ingest)."""
     rows = session.run(queries.candidate_trails_near(lat, lon, radius_m, k))
+    if not rows:
+        log.debug("No Trailhead nodes found; falling back to direct CanonicalTrail search")
+        rows = session.run(queries.candidate_trails_near_direct(lat, lon, radius_m, k))
 
     seen: set[str] = set()
     out: list[Candidate] = []

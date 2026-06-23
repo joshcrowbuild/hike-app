@@ -27,7 +27,6 @@ from ingestion.conflate.match import Feature, Match, Thresholds, match
 from ingestion.fetch import nps as nps_fetch
 from ingestion.fetch import osm as osm_fetch
 from ingestion.fetch import usfs as usfs_fetch
-from ingestion.hygiene import hygiene_flags
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -205,13 +204,12 @@ def run_pipeline(
                 matched_osm_ids.add(m.a.ref or m.a.name)
                 counts["loaded"] += 1
 
-            # Load unmatched OSM features
+            # Load unmatched OSM features (skip only truly incomplete: no name AND no ref)
             for feat in osm_features:
                 key = feat.ref or feat.name
                 if key in matched_osm_ids:
                     continue
-                flags = hygiene_flags(feat.name, None, None)
-                if flags:
+                if not feat.name:  # geometry-only, can't conflate or display
                     counts["skipped_hygiene"] += 1
                     continue
                 canonical_id = _build_canonical_id("osm", feat.ref, feat.name)

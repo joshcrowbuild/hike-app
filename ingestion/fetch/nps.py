@@ -18,13 +18,14 @@ from ingestion.conflate.match import Feature
 
 log = logging.getLogger(__name__)
 
-# Public NPS trails ArcGIS FeatureServer (confirmed reachable; see api-verification doc).
+# Official NPS Public Trails FeatureServer (mapservices.nps.gov — confirmed 2026-06-23).
+# Layer 0 = Trails (polyline). Field names verified from live response.
 NPS_URL = (
-    "https://services1.arcgis.com/fBc8EJBxQRMcHlei/ArcGIS/rest/services"
-    "/NPS_Trails_Public/FeatureServer/0/query"
+    "https://mapservices.nps.gov/arcgis/rest/services"
+    "/NationalDatasets/NPS_Public_Trails/FeatureServer/0/query"
 )
-# Field names from the NPS layer (TRLNAME is the canonical field; TRLALTNAME is alt).
-_NAME_FIELDS = ("TRLNAME", "TRAIL_NAME", "NAME")
+# Confirmed field names: TRLNAME (primary), MAPLABEL (alt), UNITNAME (park name).
+_NAME_FIELDS = ("TRLNAME", "MAPLABEL", "TRAIL_NAME", "NAME")
 _PAGE_SIZE = 1000
 
 

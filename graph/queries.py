@@ -45,6 +45,32 @@ def candidate_trails_near(
     return cypher, params
 
 
+def candidate_trails_near_direct(
+    lat: float, lon: float, radius_m: float, k: int = 10
+) -> tuple[str, dict[str, Any]]:
+    """Fallback Scout query when no Trailhead nodes exist: search CanonicalTrail.point
+    directly. Uses the canonical_trail_point POINT index (added in schema v0.1.1)."""
+    cypher = (
+        "MATCH (t:CanonicalTrail)\n"
+        "WHERE t.point IS NOT NULL\n"
+        "  AND point.distance(t.point, point($origin)) <= $radius_m\n"
+        "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
+        "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
+        "       t.is_loop AS is_loop, t.length_mi AS length_mi,\n"
+        "       t.canonical_id AS trailhead_id,\n"
+        "       point.distance(t.point, point($origin)) AS distance_m,\n"
+        "       a.area_id AS area_id\n"
+        "ORDER BY distance_m ASC\n"
+        "LIMIT $k"
+    )
+    params: dict[str, Any] = {
+        "origin": {"latitude": lat, "longitude": lon},
+        "radius_m": radius_m,
+        "k": k,
+    }
+    return cypher, params
+
+
 def episodes_on_trail(canonical_id: str) -> tuple[str, dict[str, Any]]:
     """Personal-overlay read (reserved for Stage 5) — demonstrates the seam: any
     query touching owned :Episode nodes is owner-scoped."""

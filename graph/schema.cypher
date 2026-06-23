@@ -40,6 +40,8 @@ CREATE CONSTRAINT household_id     IF NOT EXISTS FOR (hh:Household)     REQUIRE 
 CREATE POINT INDEX trailhead_point IF NOT EXISTS FOR (h:Trailhead) ON (h.point);
 CREATE POINT INDEX junction_point  IF NOT EXISTS FOR (j:Junction)  ON (j.point);
 CREATE POINT INDEX area_point      IF NOT EXISTS FOR (a:Area)      ON (a.point);
+// Spatial lookup on trail centroids (fallback when no Trailhead nodes exist)
+CREATE POINT INDEX canonical_trail_point IF NOT EXISTS FOR (t:CanonicalTrail) ON (t.point);
 // Name lookups
 CREATE TEXT INDEX trail_name       IF NOT EXISTS FOR (t:CanonicalTrail) ON (t.name);
 CREATE TEXT INDEX area_name        IF NOT EXISTS FOR (a:Area)           ON (a.name);
