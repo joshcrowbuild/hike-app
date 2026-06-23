@@ -93,7 +93,16 @@ def plan_from_origin(
     trip a hard guardrail. Distance-ordered (taste ranking applied separately)."""
     planned: list[PlannedTrail] = []
     for candidate in scout(lat, lon, session, radius_m=radius_m, k=k):
-        clat, clon = _latlon(candidate.point) or (lat, lon)
+        point = _latlon(candidate.point)
+        if point is None:
+            clat, clon = lat, lon
+            import logging as _log
+
+            _log.getLogger(__name__).debug(
+                "candidate %s has no point; probing at query origin", candidate.canonical_id
+            )
+        else:
+            clat, clon = point
         facts = verify(clat, clon, probes)
         verdict = evaluate_guardrails(facts)
         if verdict.blocked:

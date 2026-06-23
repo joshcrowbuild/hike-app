@@ -22,7 +22,8 @@ if _env_path.exists():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip())
+            # Strip surrounding quotes that editors/shells sometimes add
+            v = v.strip().strip('"').strip("'")
 
 RESET = "\033[0m"
 GREEN = "\033[32m"

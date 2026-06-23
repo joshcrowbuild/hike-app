@@ -20,14 +20,14 @@ class AnthropicProvider(ModelProvider):
     name = "anthropic"
 
     def __init__(self, api_key: str | None, *, client: Any = None) -> None:
-        self.api_key = api_key
+        self._api_key = api_key  # underscore: keep out of debug repr / exception dumps
         self._client = client
 
     def _ensure_client(self) -> Any:
         if self._client is None:
             import anthropic  # lazy: only needed for real calls
 
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            self._client = anthropic.Anthropic(api_key=self._api_key)
         return self._client
 
     def complete(self, request: LLMRequest) -> LLMResponse:

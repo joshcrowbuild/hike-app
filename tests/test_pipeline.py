@@ -146,8 +146,11 @@ def _seg(name: str, lon_start: float) -> Feature:
 
 
 def test_consolidate_merges_same_name_segments():
-    segs = [_seg("Old Rag Loop", -78.28), _seg("Old Rag Loop", -78.27),
-            _seg("Old Rag Loop", -78.26)]
+    segs = [
+        _seg("Old Rag Loop", -78.28),
+        _seg("Old Rag Loop", -78.27),
+        _seg("Old Rag Loop", -78.26),
+    ]
     result = consolidate_osm_segments(segs)
     assert len(result) == 1
     assert result[0].name == "Old Rag Loop"

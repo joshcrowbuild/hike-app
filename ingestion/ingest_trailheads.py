@@ -101,8 +101,9 @@ def ingest_trailheads(
     if dry_run:
         log.info("DRY-RUN — would load %d trailheads", len(trailheads))
         for th in trailheads[:5]:
-            log.info("  %s (%s) lat=%.4f lon=%.4f",
-                     th.name or "(unnamed)", th.osm_id, th.lat, th.lon)
+            log.info(
+                "  %s (%s) lat=%.4f lon=%.4f", th.name or "(unnamed)", th.osm_id, th.lat, th.lon
+            )
         return counts
 
     try:
@@ -164,7 +165,9 @@ def main() -> None:
     parser.add_argument("--region", default="shenandoah-gwj")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
-        "--radius-m", type=float, default=_ACCESSES_RADIUS_M,
+        "--radius-m",
+        type=float,
+        default=_ACCESSES_RADIUS_M,
         help=f"Max distance to link trailhead→trail (default {_ACCESSES_RADIUS_M}m)",
     )
     args = parser.parse_args()

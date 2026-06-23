@@ -60,6 +60,9 @@ def resolve(role: str, settings: Settings, *, touches_private_overlay: bool = Fa
                 "local_model nor model is configured — set ADVENTURE_LOCAL_MODEL_* in .env"
             )
         return Resolution(_build("local", settings), "local", model, True)
+    if touches_private_overlay:
+        # Already local — forced_local=True so callers know privacy routing applied.
+        return Resolution(_build(tier.provider, settings), tier.provider, tier.model, True)
     if not tier.model:
         raise ValueError(
             f"No model configured for role {role!r} (tier {ROLE_TIER[role]!r}) — "

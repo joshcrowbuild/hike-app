@@ -133,9 +133,31 @@ def load_source_record(
     if length_mi is not None:
         params["length_mi"] = length_mi
         set_clauses.append("r.length_mi = $length_mi")
+    # Cypher reserved words that are also valid Python identifiers would produce
+    # invalid property access (r.return, r.where, etc.). Block the most dangerous.
+    _CYPHER_RESERVED = frozenset(
+        {
+            "return",
+            "where",
+            "match",
+            "create",
+            "merge",
+            "delete",
+            "set",
+            "with",
+            "order",
+            "limit",
+            "skip",
+            "call",
+            "yield",
+            "union",
+        }
+    )
     for k, v in (extra or {}).items():
         if not k.isidentifier():
-            raise ValueError(f"extras key {k!r} is not a valid Cypher property name")
+            raise ValueError(f"extras key {k!r} is not a valid property name")
+        if k.lower() in _CYPHER_RESERVED:
+            raise ValueError(f"extras key {k!r} is a Cypher reserved word")
         params[f"ex_{k}"] = v
         set_clauses.append(f"r.{k} = $ex_{k}")
     runner(

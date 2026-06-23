@@ -66,12 +66,25 @@ def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     if ref:
         clean_ref = ref.replace("/", "_").replace(" ", "-").lower()
         return f"ct:{source.lower()}:{clean_ref}"
-    slug = name.lower().replace(" ", "-").replace("/", "-")[:40]
+    slug = name.lower().replace(" ", "-").replace("/", "-")
+    if len(slug) > 40:
+        # Hash suffix prevents collision when two names share a long common prefix.
+        import hashlib
+
+        suffix = hashlib.sha1(slug.encode()).hexdigest()[:6]
+        slug = f"{slug[:33]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
 
 def _sr_uid(source: str, ref: str | None, name: str) -> str:
-    key = ref or name.replace(" ", "_")[:30].lower()
+    if ref:
+        return f"{source}:{ref}"
+    key = name.replace(" ", "_").lower()
+    if len(key) > 30:
+        import hashlib
+
+        suffix = hashlib.sha1(key.encode()).hexdigest()[:6]
+        key = f"{key[:23]}_{suffix}"
     return f"{source}:{key}"
 
 
@@ -92,10 +105,15 @@ def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
     later if cross-park false-merges become a problem.
     """
     by_norm: dict[str, list[Feature]] = defaultdict(list)
+    dropped = 0
     for feat in features:
         key = normalize_name(feat.name)
         if key:
             by_norm[key].append(feat)
+        else:
+            dropped += 1  # name was suffix-only (e.g. "Trail") — no useful key
+    if dropped:
+        log.warning("consolidate_osm_segments: dropped %d suffix-only named features", dropped)
 
     consolidated: list[Feature] = []
     for _, group in by_norm.items():
