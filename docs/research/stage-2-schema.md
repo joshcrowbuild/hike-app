@@ -46,7 +46,7 @@ The central modeling question: **what *is* a "destination" vs. a trail vs. a seg
 
 🅓 **Open: loops & multi-trail routes.** A "hike" is often a *composed loop* across several CanonicalTrails. Option A: CanonicalTrail = the composed named loop (matches how people talk: "Old Rag Loop"). Option B: add a `:Route` node above CanonicalTrail for user/agency-defined itineraries. **Recommend A for v0** (named loops are how trails are signed and searched), add `:Route` only when personalization/party planning needs custom itineraries (Stage 5+).
 
-**Geometry storage.** Per-`:Segment`: a Neo4j `Point[]`-style line is awkward; store the canonical geometry as **WKT/GeoJSON on the Segment** plus a representative `Point` (centroid) and `bbox` for spatial indexing. Trailheads/junctions get a Neo4j spatial `Point` (lat/lon) for "near my origin" queries. Heavy geometry ops (conflation, isochrone intersect) happen in **PostGIS during ingestion**, not in Cypher — Neo4j stores the *result* + a representative point. 🅓 *(confirm Neo4j-point vs. PostGIS-as-geometry-engine split — recommend PostGIS for geometry, Neo4j for the graph + a spatial point index.)*
+**Geometry storage (Decision 2 — resolved).** Geometry **compute** (conflation buffers, Hausdorff/Fréchet, DEM sampling) happens at **ingest time in Python** (Shapely/GeoPandas/GDAL — what OSM Merge itself uses). Neo4j stores the **graph + a representative `Point`** per Segment/Junction/Trailhead (for spatial "near my origin" via a point index) **+ the canonical line as a `geom_wkt`/GeoJSON property** on the Segment (for rendering). **No standing PostGIS in v0** — stand it up only if a query genuinely needs server-side spatial that ingest-precompute or Valhalla can't cover. This keeps the stack to one database (Neo4j) for the thin v0.
 
 ---
 
@@ -179,14 +179,18 @@ Nothing time-varying is persisted as a node. The "freshness" disclosure (gauge i
 
 ---
 
-## 10. Open design decisions (Josh's call) 🅓
+## 10. Design decisions — RESOLVED ✅ *(June 19, 2026)*
 
-1. **Composed loops:** CanonicalTrail-as-named-loop now, add `:Route` later? *(recommend yes)*
-2. **Geometry engine split:** PostGIS owns geometry/conflation, Neo4j stores results + spatial point index? *(recommend yes)*
-3. **Attribute provenance:** facts-on-SourceRecord + computed best-view (3a) vs. reified `:Assertion` nodes (3b)? *(recommend 3a for v0)*
-4. **Confidence:** pure computed-on-read vs. short-TTL cached score? *(recommend computed; cache only if measured slow)*
-5. **Ownership:** `owner_id` property vs. `:OWNS` edge? *(recommend property for v0)*
-6. **Commons store:** same Neo4j DB (severed link) vs. separate store? *(recommend same DB for v0)*
+| # | Decision | Resolution |
+|---|---|---|
+| 1 | Composed loops | ✅ **CanonicalTrail = named loop** now; add `:Route` only when custom itineraries are needed (Stage 5+). |
+| 2 | Geometry | ✅ **Ingest-time Python geometry (Shapely/GDAL); WKT + representative Point in Neo4j.** No standing PostGIS in v0. |
+| 3 | Attribute provenance | ✅ **3a — facts on `:SourceRecord` + computed best-view.** Promote individual high-conflict attrs (allowed-use/dog/closures) to richer modeling later only if the UI demands it. |
+| 4 | Confidence | ✅ **Computed on read** from stored inputs; no cache until reads are measured slow. |
+| 5 | Ownership | ✅ **`owner_id` property** on personal-overlay nodes; revisit `:OWNS` edge if multi-owner appears. |
+| 6 | Commons store | ✅ **Same Neo4j DB**, severed person→observation link; revisit a separate store for the stranger case (§11). |
+
+*Net effect: a single-database (Neo4j) thin v0; geometry handled in the ingestion pipeline, not a second spatial store.*
 
 ---
 

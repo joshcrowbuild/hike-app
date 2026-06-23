@@ -2,9 +2,10 @@
 // Adventure Planner — graph/schema.cypher
 // Stage 2 thin-v0 graph: constraints, indexes, and a seeded example.
 //
-// Implements docs/research/stage-2-schema.md with the recommended v0 defaults:
+// Implements docs/research/stage-2-schema.md with the resolved v0 decisions:
 //   1. CanonicalTrail = named loop (no :Route yet)
-//   2. PostGIS owns geometry/conflation; Neo4j stores results + a point index
+//   2. Geometry computed at ingest (Python/Shapely/GDAL); Neo4j stores the
+//      graph + a representative Point + the line as geom_wkt. No PostGIS in v0.
 //   3. Attribute provenance via facts-on-:SourceRecord + computed best-view
 //   4. Confidence computed on read (only inputs stored here)
 //   5. Ownership via owner_id property (personal overlay; not seeded here)
@@ -68,8 +69,9 @@ MERGE (ntd:Source {name: "USGS_NTD"})
 // ── 4. Seeded example — Old Rag Loop, Shenandoah NP ──────────────────────
 // A realistic minimal slice: one Area, one CanonicalTrail with OSM + NPS
 // SourceRecords joined by SAME_AS, two Segments, a Junction, and a Trailhead.
-// Geometry is represented by a centroid Point + a geom_ref pointer into
-// PostGIS (the real line lives there, per default #2). Values illustrative.
+// Geometry: a representative Point for spatial lookup + the line as geom_wkt
+// on the Segment (computed at ingest; default #2). WKT here is truncated/
+// illustrative — real lines carry full vertex lists. Values illustrative.
 
 MERGE (shen:Area {area_id: "nps:shen"})
   SET shen.name = "Shenandoah National Park",
@@ -96,12 +98,13 @@ MERGE (shen)-[:CONTAINS]->(oldrag);
 // Provenance: source records + SAME_AS (the entity-resolution hub, §3)
 MERGE (sr_osm:SourceRecord {sr_uid: "OSM:relation/123456"})
   SET sr_osm.source = "OSM", sr_osm.source_id = "relation/123456",
-      sr_osm.raw_name = "Old Rag Mountain", sr_osm.geom_ref = "postgis:osm_rel_123456",
+      sr_osm.raw_name = "Old Rag Mountain",
+      sr_osm.raw_geom_wkt = "LINESTRING(-78.2861 38.5707, ...)",   // truncated; full line set at ingest
       sr_osm.fetched_at = datetime(), sr_osm.ingest_version = "2026-06";
 MERGE (sr_nps:SourceRecord {sr_uid: "NPS:OBJECTID=4021"})
   SET sr_nps.source = "NPS", sr_nps.source_id = "OBJECTID=4021",
       sr_nps.raw_name = "Old Rag", sr_nps.trl_use = "hiker/pedestrian",
-      sr_nps.geom_ref = "postgis:nps_4021",
+      sr_nps.raw_geom_wkt = "LINESTRING(-78.2861 38.5707, ...)",   // truncated
       sr_nps.fetched_at = datetime(), sr_nps.ingest_version = "2026-06";
 
 MERGE (oldrag)<-[so:SAME_AS {source: "OSM"}]-(sr_osm)
@@ -115,11 +118,11 @@ MERGE (oldrag)<-[sn:SAME_AS {source: "NPS"}]-(sr_nps)
 
 // Segments (conflation unit) + a Junction + the Trailhead
 MERGE (seg1:Segment {segment_id: "seg:old-rag-ridge"})
-  SET seg1.geom_ref = "postgis:seg_old_rag_ridge", seg1.length_mi = 2.9,
+  SET seg1.geom_wkt = "LINESTRING(-78.2898 38.5546, ...)", seg1.length_mi = 2.9,
       seg1.source_seg_ids = ["OSM:way/111","NPS:OBJECTID=4021a"],
       seg1.point = point({latitude: 38.5546, longitude: -78.2898});
 MERGE (seg2:Segment {segment_id: "seg:saddle-fire-road"})
-  SET seg2.geom_ref = "postgis:seg_saddle_fire_road", seg2.length_mi = 6.2,
+  SET seg2.geom_wkt = "LINESTRING(-78.2820 38.5490, ...)", seg2.length_mi = 6.2,
       seg2.source_seg_ids = ["OSM:way/112"],
       seg2.point = point({latitude: 38.5490, longitude: -78.2820});
 MERGE (oldrag)-[:HAS_SEGMENT]->(seg1);
