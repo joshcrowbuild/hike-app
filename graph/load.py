@@ -134,6 +134,8 @@ def load_source_record(
         params["length_mi"] = length_mi
         set_clauses.append("r.length_mi = $length_mi")
     for k, v in (extra or {}).items():
+        if not k.isidentifier():
+            raise ValueError(f"extras key {k!r} is not a valid Cypher property name")
         params[f"ex_{k}"] = v
         set_clauses.append(f"r.{k} = $ex_{k}")
     runner(

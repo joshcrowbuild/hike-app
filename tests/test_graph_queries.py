@@ -9,10 +9,10 @@ def test_candidate_query_shape() -> None:
     cypher, params = queries.candidate_trails_near(38.5, -78.4, 40_000, 5)
     assert "ACCESSES" in cypher
     assert "point.distance" in cypher
-    assert "LIMIT $k" in cypher
+    assert "LIMIT $prefetch" in cypher
     assert params["origin"] == {"latitude": 38.5, "longitude": -78.4}
     assert params["radius_m"] == 40_000
-    assert params["k"] == 5
+    assert params["prefetch"] == 25  # k*5
 
 
 def test_personal_query_is_owner_scoped() -> None:

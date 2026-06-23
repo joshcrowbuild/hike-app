@@ -160,7 +160,9 @@ def run_pipeline(
     try:
         with gc._ensure_driver().session() as session:
             runner = make_runner(session)
-            iv = region["region_id"] + "-" + region.get("props", {}).get("ingest_version", "")
+            version_suffix = region.get("props", {}).get("ingest_version", "")
+            rid = region["region_id"]
+            iv = f"{rid}-{version_suffix}" if version_suffix else rid
 
             # Load auto-accept pairs
             matched_osm_ids: set[str] = set()

@@ -53,7 +53,7 @@ def check_env(
         else:
             warn(f"{key} not set (optional) — {description}")
             return True  # optional missing is not a failure
-    ok(f"{key} = {val[:4]}{'*' * max(0, len(val) - 4)}")
+    ok(f"{key} = {'*' * min(len(val), 8)}  (set, {len(val)} chars)")
     return True
 
 

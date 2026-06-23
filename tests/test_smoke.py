@@ -30,7 +30,14 @@ def test_registry_routes_roles_to_tiers() -> None:
     from orchestration.config import Settings
     from orchestration.providers.registry import resolve
 
-    s = Settings.from_env({})
+    s = Settings.from_env(
+        {
+            "ADVENTURE_PROVIDER_MECHANICAL": "local",
+            "ADVENTURE_MODEL_MECHANICAL": "llama3",
+            "ADVENTURE_PROVIDER_JUDGMENT": "local",
+            "ADVENTURE_MODEL_JUDGMENT": "llama3",
+        }
+    )
     assert resolve("normalize", s).provider_name == "local"  # mechanical tier
     assert resolve("curate", s).provider_name == "local"  # judgment tier, local-first
 

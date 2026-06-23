@@ -8,8 +8,8 @@ services:
     image: neo4j:5-community
     container_name: adventure-neo4j
     ports:
-      - "7474:7474"   # Browser
-      - "7687:7687"   # Bolt
+      - "127.0.0.1:7474:7474"   # Browser — localhost only
+      - "127.0.0.1:7687:7687"   # Bolt — localhost only
     environment:
       NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in your .env}"
       NEO4J_server_memory_heap_max__size: "1G"

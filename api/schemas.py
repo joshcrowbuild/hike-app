@@ -18,7 +18,7 @@ class PlanRequest(BaseModel):
 class FeedLineResponse(BaseModel):
     text: str
     source: str
-    confidence_level: str  # "high" | "medium" | "low"
+    confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
 
 
 class FeedCardResponse(BaseModel):

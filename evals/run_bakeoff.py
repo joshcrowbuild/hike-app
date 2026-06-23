@@ -24,6 +24,7 @@ from orchestration.providers.anthropic_claude import AnthropicProvider
 _PILOT_LAT = 38.5707
 _PILOT_LON = -78.2861
 _PILOT_VIEWER = "eval-runner"
+_PILOT_QUERY = "something with good views and manageable elevation gain"
 
 
 @dataclass(frozen=True)
@@ -47,27 +48,27 @@ def _make_scenario(settings: Settings, gc: GraphClient, config: BakeoffConfig) -
     """Build a Scenario that runs the full pipeline for a bakeoff config."""
 
     def run() -> list[PlannedTrail]:
+        from orchestration.engine import Runtime, plan
+        from orchestration.verifier import build_probes
+
         mechanical_provider = AnthropicProvider(settings.anthropic_api_key)
         judge_provider = AnthropicProvider(settings.anthropic_api_key)
 
         session = gc.scoped_session(_PILOT_VIEWER)
-        probes = {}  # no live probes in eval (deterministic; add when you want live test)
-
-        # Inject probe-free runtime for deterministic eval
-        from orchestration.engine import Runtime
+        # Use live probes so source-or-silence has real facts to check.
+        # This exercises the mechanical tier (intent parse) + judge (taste rank).
+        live_probes = build_probes(settings)
 
         runtime = Runtime(
             session=session,
-            probes=probes,
+            probes=live_probes,
             mechanical=(mechanical_provider, config.mechanical_model),
             judge=(judge_provider, config.judge_model),
         )
-        from orchestration.engine import rank_plan
-
-        planned = plan_from_origin(_PILOT_LAT, _PILOT_LON, session, probes)
-        if runtime.judge:
-            planned = rank_plan(planned, runtime.judge[0], runtime.judge[1])
-        return planned
+        # plan() exercises intent parse (mechanical) + rank (judge); return the
+        # pre-card planned list so the eval harness can check source-or-silence on facts.
+        plan(_PILOT_QUERY, (_PILOT_LAT, _PILOT_LON), runtime, k=5)
+        return plan_from_origin(_PILOT_LAT, _PILOT_LON, session, live_probes, k=5)
 
     return Scenario(name=config.name, run=run)
 

@@ -127,7 +127,7 @@ def feed_card(planned: PlannedTrail) -> FeedCard:
     return FeedCard(
         canonical_id=planned.candidate.canonical_id,
         name=planned.candidate.name,
-        distance_mi=round(dist / _M_PER_MILE, 1) if dist else None,
+        distance_mi=round(dist / _M_PER_MILE, 1) if dist is not None else None,
         lines=lines,
         warnings=planned.verdict.warnings,
     )

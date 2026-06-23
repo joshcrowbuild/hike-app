@@ -44,10 +44,18 @@ def fetch(
     p = periods[0]
 
     alerts_doc = _http.get_json(c, ALERTS_URL, params={"point": f"{lat},{lon}"})
-    features = alerts_doc.get("features", []) if isinstance(alerts_doc, dict) else []
-    alerts = [
-        f["properties"]["event"] for f in features if isinstance(f, dict) and f.get("properties")
-    ]
+    # source-or-silence on the alerts sub-call: None means the call failed, so we
+    # cannot report "no alerts" — omit the key rather than fabricate an empty list.
+    if alerts_doc is None:
+        active_alerts = None  # unknown — alerts endpoint failed
+    else:
+        features = alerts_doc.get("features", []) if isinstance(alerts_doc, dict) else []
+        active_alerts = [
+            f["properties"]["event"]
+            for f in features
+            if isinstance(f, dict) and f.get("properties")
+            if f["properties"].get("event")
+        ]
 
     return VerifiedFact(
         value={
@@ -55,7 +63,7 @@ def fetch(
             "short_forecast": p.get("shortForecast"),
             "temperature": p.get("temperature"),
             "temperature_unit": p.get("temperatureUnit"),
-            "active_alerts": [a for a in alerts if a],
+            "active_alerts": active_alerts,
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),

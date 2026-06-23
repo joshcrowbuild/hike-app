@@ -53,5 +53,16 @@ def resolve(role: str, settings: Settings, *, touches_private_overlay: bool = Fa
     tier = settings.tiers[ROLE_TIER[role]]
     if touches_private_overlay and tier.provider != "local":
         # Sensitivity routing: keep private-overlay reasoning on-device.
-        return Resolution(_build("local", settings), "local", tier.local_model, True)
+        model = tier.local_model or tier.model  # fall back to cloud model id if local unset
+        if not model:
+            raise ValueError(
+                f"Sensitivity routing forced local for role {role!r} but neither "
+                "local_model nor model is configured — set ADVENTURE_LOCAL_MODEL_* in .env"
+            )
+        return Resolution(_build("local", settings), "local", model, True)
+    if not tier.model:
+        raise ValueError(
+            f"No model configured for role {role!r} (tier {ROLE_TIER[role]!r}) — "
+            "set ADVENTURE_MODEL_* in .env"
+        )
     return Resolution(_build(tier.provider, settings), tier.provider, tier.model, False)

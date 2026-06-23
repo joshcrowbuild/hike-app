@@ -36,8 +36,10 @@ d.close()
 done
 
 log "Applying schema..."
-docker compose exec -T neo4j cypher-shell \
-    -u "${NEO4J_USER:-neo4j}" -p "${NEO4J_PASSWORD}" \
+NEO4J_PASSWORD="${NEO4J_PASSWORD}" docker compose exec -T \
+    -e NEO4J_PASSWORD \
+    neo4j cypher-shell \
+    -u "${NEO4J_USER:-neo4j}" --password-stdin \
     < graph/schema.cypher
 
 # ── Phase 3: Ingestion ────────────────────────────────────────────────────────

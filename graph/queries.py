@@ -24,6 +24,8 @@ def candidate_trails_near(
     """Scout candidate generation: trails reachable from trailheads within
     `radius_m` of the origin, nearest first. World nodes only -> inherently public.
     Uses the `trailhead_point` POINT index."""
+    # LIMIT is applied after Python dedup in scout.py, so we fetch k*5 to ensure
+    # enough unique trails survive deduplication (multiple trailheads per trail).
     cypher = (
         "MATCH (h:Trailhead)\n"
         "WHERE point.distance(h.point, point($origin)) <= $radius_m\n"
@@ -35,12 +37,12 @@ def candidate_trails_near(
         "       point.distance(h.point, point($origin)) AS distance_m,\n"
         "       a.area_id AS area_id\n"
         "ORDER BY distance_m ASC\n"
-        "LIMIT $k"
+        "LIMIT $prefetch"
     )
     params: dict[str, Any] = {
         "origin": {"latitude": lat, "longitude": lon},
         "radius_m": radius_m,
-        "k": k,
+        "prefetch": k * 5,  # over-fetch so dedup in scout.py can yield k unique trails
     }
     return cypher, params
 
@@ -57,16 +59,16 @@ def candidate_trails_near_direct(
         "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
         "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
         "       t.is_loop AS is_loop, t.length_mi AS length_mi,\n"
-        "       t.canonical_id AS trailhead_id,\n"
+        "       null AS trailhead_id,\n"
         "       point.distance(t.point, point($origin)) AS distance_m,\n"
         "       a.area_id AS area_id\n"
         "ORDER BY distance_m ASC\n"
-        "LIMIT $k"
+        "LIMIT $prefetch"
     )
     params: dict[str, Any] = {
         "origin": {"latitude": lat, "longitude": lon},
         "radius_m": radius_m,
-        "k": k,
+        "prefetch": k * 5,
     }
     return cypher, params
 

@@ -62,7 +62,7 @@ def _card_response(card: FeedCard) -> FeedCardResponse:
             FeedLineResponse(
                 text=line.text,
                 source=line.source,
-                confidence_level=line.presentation,
+                confidence_level=line.presentation,  # "stated" | "hedged" | "flagged"
             )
             for line in card.lines
         ],
@@ -100,8 +100,10 @@ def plan(request: PlanRequest) -> FeedResponse:
 
         feed = engine_plan(request.query, (request.lat, request.lon), runtime, k=request.k)
         return _feed_response(feed)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal error") from exc
 
 
 @app.exception_handler(Exception)

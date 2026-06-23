@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from shapely.geometry.base import BaseGeometry
 from thefuzz import fuzz
 
-DEG_TO_M = 111_000.0  # rough metres-per-degree at mid-latitudes (spike-grade)
+_LAT_DEG_TO_M = 111_000.0  # metres per degree of latitude (constant)
+_LON_DEG_TO_M = 85_000.0  # metres per degree of longitude at ~38°N (111_000 * cos(38°))
 _SUFFIXES = re.compile(r"\b(trail|tr|trl|path|road|rd|fr|fs|loop|spur|route)\b")
 _NONWORD = re.compile(r"[^a-z0-9]+")
 
@@ -69,7 +70,11 @@ def geometry_agreement(
     ba, bb = a.buffer(buffer_deg), b.buffer(buffer_deg)
     denom = min(ba.area, bb.area)
     overlap = (ba.intersection(bb).area / denom) if denom else 0.0
-    return Agreement(overlap=overlap, hausdorff_m=a.hausdorff_distance(b) * DEG_TO_M)
+    # hausdorff_distance returns degrees; scale to metres using an aspect-correct
+    # approximation (lon degrees are ~30% shorter than lat degrees at 38°N).
+    # Average the two scale factors as a simple isotropic correction.
+    deg_to_m = (_LAT_DEG_TO_M + _LON_DEG_TO_M) / 2  # ~98 000 m/deg
+    return Agreement(overlap=overlap, hausdorff_m=a.hausdorff_distance(b) * deg_to_m)
 
 
 def classify(name_score: int, agreement: Agreement, thresholds: Thresholds = _DEFAULT) -> str:
