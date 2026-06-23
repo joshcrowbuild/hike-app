@@ -57,11 +57,13 @@ schema:
 
 ingest:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
-	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj}
+	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} && \
+	python -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj}
 
 ingest-dry:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
-	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run
+	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run && \
+	python -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run
 
 api-dev:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
