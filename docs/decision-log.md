@@ -266,3 +266,19 @@ Eventual **Phase 0 thin vertical slice**: ingest one East-Coast region (proposed
 - **Memory eval:** 🔶 A thin memory-on vs. memory-off harness runs alongside the Stage-4 truthfulness eval; the deep stochastic methodology is Stage 7.
 - **`:Route` node (custom itineraries):** ✅ Deferred — Stage 5 uses `:CanonicalTrail` as the episode target; `:Route` added only when party planning needs custom itineraries (consistent with Stage 2 §2).
 - **◆ Phase-1 personalization design complete** — belief store, promotion, decay, context assembly, watch discipline, and privacy tiers fully specified; next is build (watch integration = Stage 6) + the memory eval.
+
+## 31. Stage 6 — Watch Integration decisions ✅ *(June 23, 2026 — design: `docs/research/stage-6-watch-integration.md`)*
+- **FIT parser:** ✅ `fitdecode` as primary (compressed-timestamp support, active maintenance); `fitparse` as fallback on parse failure.
+- **Garmin access:** 🔶 `python-garminconnect` (SSO session auth, unofficial); re-auth on expiry; adapter interface keeps it swappable for a future official path. Monitor for Garmin auth breakage.
+- **Coros access:** ✅ Official MCP server (`@coros/mcp-server`) for interactive agent queries; direct HTTP to `open.coros.com` for batch ingestion. Coros MCP in `.mcp.json`; Garmin is not.
+- **Ingestion trigger:** ✅ Scheduled Python job (`scripts/watch_sync.py`), cron every 6 hours. Not MCP. Idempotent; safe to run more frequently. Always-on poller deferred to Stage 8 / always-on infra decision.
+- **Deduplication:** ✅ `Episode.watch_activity_id` keyed as `"garmin:{id}"` or `"coros:{id}"`; MERGE is the idempotent write gate.
+- **pace_on_grade:** ✅ Naismith approximation `(distance_m + ascent_m × 10) / 1000` km; no LLM call. EWMA α=0.3 (per S5-6 — tune in spike).
+- **Activity→trail matching:** 🔶 Shapely GPS buffer-intersect (100m buffer, ≥0.7 overlap) primary; `rapidfuzz` title-name match (≥80) fallback; `trail_id=null` on no match. Thresholds need empirical tuning on first real data.
+- **Party detection:** ✅ Manual toggle on outcome card ("Was Ruby with you?"); no automated proximity detection in Phase 1. Ruby is a dependent, not an account.
+- **Belief update trigger:** ✅ `asyncio.Queue` drained by worker coroutine; never blocks ingest path; queue rebuilt from unprocessed Episodes on restart.
+- **heat_response:** 🔶 NWS archived temp at episode date + avg_hr from FIT session; 2 heat-hit episodes before belief promotion; degrades gracefully if NWS unavailable for that date.
+- **Sensitivity routing:** ✅ All LLM calls in ingest path route to local provider via `provider_registry.route(sensitivity="private")`; enforced at job entrypoint; cloud models never see raw FIT/HR/GPS data.
+- **Commons fork:** ✅ `CommonsObservation` written in same transaction as Episode; person link severed at write; 250m endpoint trim; raw pace substituted with 4-band capability label before commons write.
+- **MCP write discipline:** ✅ MCP tools (Coros) never write Episode nodes — they are read-only in interactive context; all Episode writes are owned by the scheduled batch job.
+- **◆ Phase-1 design (Stages 5–6) complete** — personalization schema + watch ingestion pipeline fully specified. Next: build the Phase-0 vertical slice (Shenandoah+GWJ) + Stage-4 cost spike; then Stage-6 build.
