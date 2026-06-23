@@ -20,10 +20,13 @@ import argparse
 import json
 import logging
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from ingestion.conflate.match import Feature, Match, Thresholds, match
+from shapely.ops import unary_union
+
+from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
 from ingestion.fetch import nps as nps_fetch
 from ingestion.fetch import osm as osm_fetch
 from ingestion.fetch import usfs as usfs_fetch
@@ -72,6 +75,42 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
     return f"{source}:{key}"
 
 
+# ── OSM consolidation ─────────────────────────────────────────────────────────
+
+
+def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
+    """Merge OSM way segments that share a normalized name into one Feature.
+
+    OSM encodes a continuous trail as many disconnected `way` elements. Running
+    conflation against individual 200m segments produces artificially low geometry
+    overlap against full-length NPS/USFS records (score=100, overlap=0.02). Merging
+    first gives the matcher the full trail geometry and turns most of those "review"
+    cases into auto-accepts.
+
+    Groups solely by normalized name within the fetched bbox — geographic separation
+    (two parks with "Ridge Trail") is acceptable at pilot scale; add spatial clustering
+    later if cross-park false-merges become a problem.
+    """
+    by_norm: dict[str, list[Feature]] = defaultdict(list)
+    for feat in features:
+        key = normalize_name(feat.name)
+        if key:
+            by_norm[key].append(feat)
+
+    consolidated: list[Feature] = []
+    for _, group in by_norm.items():
+        if len(group) == 1:
+            consolidated.append(group[0])
+            continue
+        # Prefer the longest raw name as the display name; merge all geometries.
+        name = max(group, key=lambda f: len(f.name)).name
+        combined = unary_union([f.geom for f in group])
+        # ref=None: consolidated features span multiple OSM way IDs
+        consolidated.append(Feature(name=name, geom=combined, source="OSM", ref=None))
+
+    return consolidated
+
+
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
 
@@ -87,6 +126,7 @@ def run_pipeline(
     active_sources = set(sources or ["osm", "nps", "usfs"])
     counts: dict[str, int] = {
         "osm": 0,
+        "osm_consolidated": 0,
         "nps": 0,
         "usfs": 0,
         "auto_accept": 0,
@@ -102,9 +142,12 @@ def run_pipeline(
 
     if "osm" in active_sources:
         log.info("Fetching OSM trails …")
-        osm_features = osm_fetch.fetch(bbox)
-        counts["osm"] = len(osm_features)
-        log.info("  OSM: %d features", counts["osm"])
+        raw_osm = osm_fetch.fetch(bbox)
+        counts["osm"] = len(raw_osm)
+        log.info("  OSM: %d raw segments", counts["osm"])
+        osm_features = consolidate_osm_segments(raw_osm)
+        counts["osm_consolidated"] = len(osm_features)
+        log.info("  OSM: %d after name consolidation", counts["osm_consolidated"])
 
     if "nps" in active_sources:
         log.info("Fetching NPS trails …")
