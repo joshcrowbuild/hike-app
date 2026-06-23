@@ -1,14 +1,14 @@
 """USGS Water adapter — nearest streamflow monitoring location near a point.
 
-Uses the NEW OGC API (api.waterdata.usgs.gov/ogcapi), not the legacy waterservices
-endpoint (Stage 1 §27). Discloses that the nearest gauge may be miles away. TTL
-~15 min. Source-or-silence: failure -> None.
+Uses the OGC API (api.waterdata.usgs.gov/ogcapi) for site discovery and the
+legacy waterservices endpoint for the latest discharge reading. The legacy
+endpoint is authoritative until the OGC API's time-series collections stabilise
+(target: Q1 2027 per Stage 1 §27). Discloses that the nearest gauge may be
+miles away. TTL ~15 min. Source-or-silence: failure -> None.
 
-LIVE-VERIFY: the exact OGC collection name, query params, and the latest-value
-shape must be confirmed against the live API — outbound access to USGS is blocked
-in the build sandbox, so the URL/params below are documented best-effort and only
-the *parsing* (nearest-feature selection) is exercised by the tests. Confirm
-before relying on it; fetching the latest discharge value needs a second OGC call.
+Field names confirmed against live API 2026-06-23:
+  monitoring_location_name, monitoring_location_number (from monitoring-locations collection)
+  Discharge: waterservices.usgs.gov/nwis/iv/ parameterCd=00060 (cubic feet/second)
 """
 
 from __future__ import annotations
@@ -21,8 +21,31 @@ import httpx
 from . import _http
 from .base import VerifiedFact
 
-SOURCE = "USGS Water Data (OGC API)"
+SOURCE = "USGS Water Data (OGC API + WaterServices)"
 ITEMS_URL = "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items"
+DISCHARGE_URL = "https://waterservices.usgs.gov/nwis/iv/"
+
+
+def _latest_discharge_cfs(site_id: str, client: httpx.Client) -> float | None:
+    """Fetch latest instantaneous discharge reading (cfs) via legacy WaterServices."""
+    doc = _http.get_json(
+        client,
+        DISCHARGE_URL,
+        params={"format": "json", "sites": site_id, "parameterCd": "00060", "siteStatus": "active"},
+    )
+    if not isinstance(doc, dict):
+        return None
+    try:
+        ts = doc["value"]["timeSeries"]
+        if not ts:
+            return None
+        values = ts[0]["values"][0]["value"]
+        if not values:
+            return None
+        raw = values[-1]["value"]
+        return float(raw)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
 
 
 def fetch(
@@ -47,11 +70,15 @@ def fetch(
     nearest = min(features, key=planar_dist)
     props = nearest.get("properties", {}) if isinstance(nearest, dict) else {}
 
+    site_name = props.get("monitoring_location_name")
+    site_id = props.get("monitoring_location_number")
+    discharge = _latest_discharge_cfs(site_id, c) if site_id else None
+
     return VerifiedFact(
         value={
-            "monitoring_location": props.get("monitoring_location_name") or props.get("name"),
-            "site_id": props.get("monitoring_location_number") or props.get("id"),
-            "latest_discharge_cfs": None,  # second OGC call — LIVE-VERIFY
+            "monitoring_location": site_name,
+            "site_id": site_id,
+            "latest_discharge_cfs": discharge,
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
