@@ -1,0 +1,77 @@
+"""Curator — the deterministic guardrail half (Stage 4 §6).
+
+Constraints are hard filters, not soft scores: a guardrail block removes a trail
+from the feed regardless of how good it otherwise is. This is distinct from
+confidence, which never penalizes ranking (rule #2) — guardrails are about safety
+and legality, not uncertainty. The taste / novelty / party ranking (the
+judgment-tier LLM half) is separate and lands later.
+
+Thresholds are module constants so they're easy to tune against real conditions.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from orchestration.adapters.base import VerifiedFact
+
+# Active-alert events that hard-block (substring match, case-insensitive).
+BLOCKING_ALERT_KEYWORDS = ("flash flood", "red flag", "tornado", "extreme", "evacuation")
+AQI_BLOCK = 201  # "Very Unhealthy" and above
+AQI_WARN = 101  # "Unhealthy for Sensitive Groups" and above
+
+
+@dataclass(frozen=True)
+class GuardrailVerdict:
+    blocked: bool
+    blocks: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+def _alerts(fact: VerifiedFact) -> list[str]:
+    value = fact.value
+    if isinstance(value, dict):
+        return [a for a in value.get("active_alerts", []) if isinstance(a, str)]
+    return []
+
+
+def _aqi(fact: VerifiedFact) -> int | None:
+    value = fact.value
+    aqi = value.get("aqi") if isinstance(value, dict) else None
+    return aqi if isinstance(aqi, int) else None
+
+
+def _hotspots(fact: VerifiedFact) -> int:
+    value = fact.value
+    count = value.get("hotspot_count") if isinstance(value, dict) else None
+    return count if isinstance(count, int) else 0
+
+
+def evaluate_guardrails(facts: Mapping[str, VerifiedFact]) -> GuardrailVerdict:
+    blocks: list[str] = []
+    warnings: list[str] = []
+
+    weather = facts.get("weather")
+    if weather is not None:
+        for event in _alerts(weather):
+            if any(kw in event.lower() for kw in BLOCKING_ALERT_KEYWORDS):
+                blocks.append(f"weather alert: {event}")
+            else:
+                warnings.append(f"weather alert: {event}")
+
+    air = facts.get("air")
+    if air is not None:
+        aqi = _aqi(air)
+        if aqi is not None and aqi >= AQI_BLOCK:
+            blocks.append(f"air quality hazardous (AQI {aqi})")
+        elif aqi is not None and aqi >= AQI_WARN:
+            warnings.append(f"air quality elevated (AQI {aqi})")
+
+    fire = facts.get("fire")
+    if fire is not None:
+        count = _hotspots(fire)
+        if count:
+            warnings.append(f"{count} active-fire detection(s) nearby (thermal anomalies)")
+
+    return GuardrailVerdict(blocked=bool(blocks), blocks=tuple(blocks), warnings=tuple(warnings))
