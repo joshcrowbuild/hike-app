@@ -24,7 +24,14 @@ live = ["httpx>=0.27"]
 # OpenAI-compatible endpoints (Ollama/vLLM/LM Studio); `anthropic` is the cloud
 # yardstick. Both lazy-imported by their adapters.
 providers = ["anthropic", "openai"]
-dev = ["ruff>=0.6", "mypy>=1.11", "pytest>=8.0", "httpx>=0.27"]  # httpx: adapter tests
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pytest>=8.0",
+  "httpx>=0.27",      # adapter tests
+  "shapely>=2.0",     # conflation-matcher + hygiene tests
+  "thefuzz>=0.22",    # conflation-matcher tests
+]
 all = ["adventure-planner[ingestion,graph,live,providers,dev]"]
 
 # Top-level packages mirror the documented monorepo layout (Stage 0 / workplan:

@@ -37,5 +37,6 @@ edit them for your pilot area. Be polite to Overpass (low query volume).
 - **Misses** — trails present in one source but not the other (coverage gaps).
 
 Findings get written back into `docs/decision-log.md` §3 (conflation) and the
-Stage-3 doc. This is exploratory code — the reusable matching logic graduates into
-`ingestion/conflate/` when Stage 3 is built.
+Stage-3 doc. The matching algorithm itself lives in (and is unit-tested in)
+`ingestion/conflate/match.py` — this script is just the network harness that feeds
+it real data, so a run exercises the exact code Stage 3 will use.
