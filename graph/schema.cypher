@@ -154,4 +154,175 @@ MERGE (th)-[:LOCATED_IN]->(shen);
 // No raw Cypher touching owned nodes may bypass this wrapper. A property-based
 // test fuzzes $viewer_id/$granted_ids to assert no ungranted node ever returns.
 
-RETURN "schema v0.1.0 applied + Old Rag seed loaded" AS status;
+// ── 6. Stage 5 constraints — personal-overlay node types ─────────────────
+// Every owned Stage-5 node carries owner_id; access is enforced by the
+// scopedQuery(viewer) wrapper (Rule #4). Uniqueness enforced here so no
+// duplicate node can be created on idempotent re-runs.
+// Community Edition safe: single-property uniqueness constraints only.
+CREATE CONSTRAINT episode_id      IF NOT EXISTS FOR (e:Episode)         REQUIRE e.episode_id   IS UNIQUE;
+CREATE CONSTRAINT outcome_id      IF NOT EXISTS FOR (o:Outcome)         REQUIRE o.outcome_id   IS UNIQUE;
+CREATE CONSTRAINT belief_id       IF NOT EXISTS FOR (b:Belief)          REQUIRE b.belief_id    IS UNIQUE;
+CREATE CONSTRAINT phys_profile_id IF NOT EXISTS FOR (pp:PhysicalProfile) REQUIRE pp.profile_id IS UNIQUE;
+// pp_profile_id name avoids clash with phys_profile_id above
+CREATE CONSTRAINT pp_profile_id   IF NOT EXISTS FOR (pa:PartyProfile)   REQUIRE pa.profile_id  IS UNIQUE;
+// Dependent: household sub-node (Ruby the dog, etc.). Not an account; no login.
+CREATE CONSTRAINT dependent_id    IF NOT EXISTS FOR (d:Dependent)       REQUIRE d.dependent_id IS UNIQUE;
+
+// ── 7. Stage 5 indexes ───────────────────────────────────────────────────
+// all-my-episodes: primary access pattern for Episode
+CREATE INDEX episode_owner         IF NOT EXISTS FOR (e:Episode)          ON (e.owner_id);
+// belief retrieval by owner+subject (composite range; CE 5.x supports this)
+CREATE INDEX belief_owner_subject  IF NOT EXISTS FOR (b:Belief)           ON (b.owner_id, b.subject_id);
+// belief-type lookups (fetch all pace_on_grade beliefs for a person, etc.)
+CREATE INDEX belief_key            IF NOT EXISTS FOR (b:Belief)           ON (b.key);
+// all-my-profiles query for capability summary
+CREATE INDEX phys_profile_owner    IF NOT EXISTS FOR (pp:PhysicalProfile) ON (pp.owner_id);
+
+// ── 8. Stage 5 seeded example — Josh + Ruby on Old Rag ───────────────────
+// Illustrative graph shape only. Values are marked; nothing here is real
+// watch or biometric data. MERGE throughout — idempotent, safe to re-run.
+//
+// Key edges demonstrated:
+//   (:Person)-[:DID]->(:Episode)-[:ON]->(:CanonicalTrail)
+//   (:Episode)-[:WITH]->(:Dependent)
+//   (:Episode)-[:HAS_OUTCOME]->(:Outcome)
+//   (:Belief)-[:DERIVED_FROM]->(:Episode)        // Rule #7 provenance
+//   (:Belief)-[:ABOUT]->(:Person)
+//   (:Person)-[:HAS_PROFILE]->(:PhysicalProfile)
+//   (:Person)-[:HAS_PARTY_PROFILE]->(:PartyProfile)
+//
+// Access invariant (Rule #4): every owned node below carries owner_id.
+// No read of these nodes may bypass scopedQuery(viewer).
+
+// Household + Person + Dependent
+MERGE (hh:Household {household_id: "hh:crow"})
+  SET hh.name = "Crow household";
+
+MERGE (josh:Person {member_id: "mem:josh"})
+  SET josh.display_name = "Josh",
+      josh.household_id = "hh:crow";
+
+MERGE (ruby:Dependent {dependent_id: "dep:ruby"})
+  SET ruby.display_name = "Ruby",
+      ruby.kind         = "dog",
+      ruby.household_id = "hh:crow";
+
+MATCH (p:Person {member_id: "mem:josh"})
+MATCH (h:Household {household_id: "hh:crow"})
+MERGE (p)-[:MEMBER_OF]->(h);
+
+MATCH (p:Person {member_id: "mem:josh"})
+MATCH (d:Dependent {dependent_id: "dep:ruby"})
+MERGE (p)-[:HAS_DEPENDENT]->(d);
+
+// Episode: Josh + Ruby on Old Rag Loop, 2025-09-14 (all values illustrative)
+MERGE (ep:Episode {episode_id: "ep:old-rag-2025-09"})
+  ON CREATE SET
+    ep.owner_id          = "mem:josh",
+    ep.trail_id          = "ct:old-rag-loop",
+    ep.date              = date("2025-09-14"),
+    ep.source            = "watch_fit",
+    ep.duration_min      = 285,
+    ep.moving_min        = 245,
+    ep.distance_m        = 14650,
+    ep.ascent_m          = 735,
+    ep.descent_m         = 735,
+    ep.pace_on_grade     = 15.8,
+    ep.party_members     = ["mem:josh", "dep:ruby"],
+    ep.watch_activity_id = "garmin:act:ILLUSTRATIVE-001",
+    ep.fit_parsed        = true,
+    ep.created_at        = datetime("2025-09-14T18:30:00"),
+    ep.updated_at        = datetime("2025-09-14T18:30:00");
+
+MATCH (p:Person {member_id: "mem:josh"})
+MATCH (e:Episode {episode_id: "ep:old-rag-2025-09"})
+MERGE (p)-[:DID]->(e);
+
+MATCH (e:Episode {episode_id: "ep:old-rag-2025-09"})
+MATCH (ct:CanonicalTrail {canonical_id: "ct:old-rag-loop"})
+MERGE (e)-[:ON]->(ct);
+
+MATCH (e:Episode {episode_id: "ep:old-rag-2025-09"})
+MATCH (d:Dependent {dependent_id: "dep:ruby"})
+MERGE (e)-[:WITH]->(d);
+
+// Outcome: post-hike reflect-back card
+MERGE (oc:Outcome {outcome_id: "oc:old-rag-2025-09"})
+  ON CREATE SET
+    oc.owner_id       = "mem:josh",
+    oc.episode_id     = "ep:old-rag-2025-09",
+    oc.overall        = 3,
+    oc.delta_question = "What was the best part?",
+    oc.delta_answer   = "Summit scramble",
+    oc.surfaces_at    = datetime("2025-09-15T08:00:00"),
+    oc.completed_at   = datetime("2025-09-15T08:03:00"),
+    oc.skipped        = false;
+
+MATCH (e:Episode {episode_id: "ep:old-rag-2025-09"})
+MATCH (o:Outcome {outcome_id: "oc:old-rag-2025-09"})
+MERGE (e)-[:HAS_OUTCOME]->(o);
+
+// Capability belief derived from this episode.
+// axis:"capability" — source is watch/FIT data (Rule #7; capability != preference).
+// type:"inferred" — never posed as "stated" until user confirms.
+// confidence 0.35 — provisional: N=1, below the N=3 promotion threshold (§2).
+MERGE (bl:Belief {belief_id: "bl:josh-pace-moderate-001"})
+  ON CREATE SET
+    bl.owner_id             = "mem:josh",
+    bl.subject_id           = "mem:josh",
+    bl.subject_type         = "person",
+    bl.axis                 = "capability",
+    bl.type                 = "inferred",
+    bl.key                  = "pace_on_grade_moderate",
+    bl.value                = "15.8",
+    bl.confidence           = 0.35,
+    bl.corroboration_n      = 1,
+    bl.source_episode_ids   = ["ep:old-rag-2025-09"],
+    bl.created_at           = datetime("2025-09-14T18:30:00"),
+    bl.last_updated_at      = datetime("2025-09-14T18:30:00"),
+    bl.decays               = true,
+    bl.decay_half_life_days = 180,
+    bl.confirmed_by_user    = false;
+
+MATCH (bl:Belief {belief_id: "bl:josh-pace-moderate-001"})
+MATCH (e:Episode {episode_id: "ep:old-rag-2025-09"})
+MERGE (bl)-[:DERIVED_FROM]->(e);
+
+MATCH (bl:Belief {belief_id: "bl:josh-pace-moderate-001"})
+MATCH (p:Person {member_id: "mem:josh"})
+MERGE (bl)-[:ABOUT]->(p);
+
+// PhysicalProfile: capability summary, one node per Person, updated as beliefs accrue
+MERGE (phys:PhysicalProfile {profile_id: "phys:josh"})
+  ON CREATE SET
+    phys.owner_id        = "mem:josh",
+    phys.pace_on_grade   = 15.8,
+    phys.pace_confidence = 0.35,
+    phys.max_distance_m  = 14650,
+    phys.max_ascent_m    = 735,
+    phys.heat_response   = "normal",
+    phys.typical_season  = ["09"],
+    phys.episode_count   = 1,
+    phys.last_episode_at = date("2025-09-14"),
+    phys.updated_at      = datetime("2025-09-14T18:30:00");
+
+MATCH (p:Person {member_id: "mem:josh"})
+MATCH (phys:PhysicalProfile {profile_id: "phys:josh"})
+MERGE (p)-[:HAS_PROFILE]->(phys);
+
+// PartyProfile: observed pace and composition when this party hikes together
+MERGE (ppr:PartyProfile {profile_id: "party:josh+ruby"})
+  ON CREATE SET
+    ppr.owner_id       = "mem:josh",
+    ppr.party_key      = "josh+ruby",
+    ppr.episode_count  = 1,
+    ppr.typical_pace_m = 15.8,
+    ppr.ruby_keep_rate = 1.0,
+    ppr.created_at     = datetime("2025-09-14T18:30:00"),
+    ppr.updated_at     = datetime("2025-09-14T18:30:00");
+
+MATCH (p:Person {member_id: "mem:josh"})
+MATCH (ppr:PartyProfile {profile_id: "party:josh+ruby"})
+MERGE (p)-[:HAS_PARTY_PROFILE]->(ppr);
+
+RETURN "schema v0.2.0 applied + Old Rag seed + Stage-5 personal overlay loaded" AS status;
