@@ -34,6 +34,8 @@ CREATE CONSTRAINT source_id        IF NOT EXISTS FOR (src:Source)       REQUIRE 
 // Personal overlay (reserved; enforced now so the boundary is right early — T2)
 CREATE CONSTRAINT person_id        IF NOT EXISTS FOR (p:Person)         REQUIRE p.member_id      IS UNIQUE;
 CREATE CONSTRAINT household_id     IF NOT EXISTS FOR (hh:Household)     REQUIRE hh.household_id  IS UNIQUE;
+// Epic 002: Outcome uniqueness — one Outcome per (episode_id, owner_id)
+CREATE CONSTRAINT outcome_id       IF NOT EXISTS FOR (o:Outcome)        REQUIRE o.outcome_id     IS UNIQUE;
 
 // ── 2. Indexes ───────────────────────────────────────────────────────────
 // Spatial "near my origin" lookups (Decision Log §5: origin as runtime param)
