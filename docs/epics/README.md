@@ -7,7 +7,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [001](epic-001-belief-update-pipeline.md) | Belief update pipeline (EWMA pace, maxima, N=3 promotion) | DONE ✅ | 1 | Stage 5 schema |
 | [002](epic-002-outcome-card-endpoint.md) | Outcome card endpoint (POST /episode/{id}/outcome) | IN_PROGRESS | 1 | Epic 001 |
 | [003](epic-003-context-assembly.md) | Context assembly in engine.plan() | IN_PROGRESS | 1 | Epic 001 |
-| [004](epic-004-garmin-connect-poller.md) | Garmin Connect activity poller (watch_sync.py) | BACKLOG | 1 | Epic 001 |
+| [004](epic-004-device-integration-seam.md) | Device-integration seam (Garmin + Coros, pluggable) | DONE ✅ | 1 | Epic 001 |
 | [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time pre-Scout filter | BACKLOG | 1 | — |
 | 006 | Novelty filter in Curator | BACKLOG | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |

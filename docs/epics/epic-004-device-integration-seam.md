@@ -1,6 +1,6 @@
 # Epic 004 — Device-Integration Seam (Garmin + Coros, pluggable)
 
-**Status:** DEFINED
+**Status:** DONE ✅
 **Phase:** 1 (Personal Intelligence)
 **Spec refs:** `docs/research/device-integration-seam.md` · Stage 6 §1–2 · Stage 4 §2 (seam pattern) · decision-log §29
 
@@ -85,8 +85,20 @@ The system syncs hiking activities from **any configured smart-device vendor** (
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test (mocked clients — no live device calls)
-- [ ] `make check` green (ruff + mypy + pytest)
-- [ ] Targeted review agent run; CRITICALs fixed (focus: rule #6 isolation, rule #10 secrets, sensitivity routing, idempotency, no vendor-awareness leaking downstream)
-- [ ] `epics/README.md` index row 004 updated to the seam scope; redundant `epic-004-garmin-connect-poller.md` removed if present
-- [ ] Committed and pushed
+- [x] All ACs covered by at least one passing test (mocked clients — no live device calls) — 74 watch tests
+- [x] `make check` green (ruff + mypy + pytest) — 221 tests, mypy clean (54 files)
+- [x] Adversarial review run (8-dimension workflow, each finding verified vs. code); CRITICAL + MODERATE fixed
+- [x] `epics/README.md` index row 004 updated to the seam scope; redundant `epic-004-garmin-connect-poller.md` never existed (stale row only)
+- [x] Committed and pushed
+
+### Adversarial review outcome (8 dimensions, 28 raw → 16 confirmed)
+Fixed before commit:
+- **CRITICAL** GarminAdapter ignored `since` → re-fetched/re-MERGEd 20 activities every run. Now client-side window-bounds by `start_time`.
+- **MODERATE** No per-activity isolation in the poller → a poison FIT aborted the rest of the batch and (for `since`-honoring vendors) advanced the watermark past never-ingested activities (silent data loss). Now each activity is isolated (skip + log + continue).
+- **MODERATE** Watermark was an ISO string but Coros called `since.timestamp()` → guaranteed crash every cycle. `most_recent_episode_time` now coerces ISO→datetime.
+- **MODERATE** `Episode.created_at` was rewritten on every MERGE (corrupting the `max(created_at)` watermark). Fixed to `ON CREATE SET` (pre-existing Epic 001 bug; separate commit).
+- **MODERATE** No structural namespacing guarantee → colon-less id could cross-vendor-collide. `ActivityRef.__post_init__` now rejects non-namespaced ids.
+- **LOW** `Settings` auto-repr exposed every secret → secret fields marked `repr=False`.
+- Plus 6 test-coverage gaps (hiking-sport assertion, missing-secret path, AC-4.3 idempotency, has_activity_title, readiness positive path, datetime-`since`).
+
+Deferred with rationale: a real-`.fit`-fixture end-to-end integration test (needs a committed binary; wiring is proven via fakes + the temp-file bridge test); a watch-scoped provider factory for sensitivity routing (Epic 007 scope — the entrypoint guard holds today).
