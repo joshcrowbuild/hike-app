@@ -13,6 +13,8 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
 | [009](epic-009-eval-harness-expansion.md) | Stage-7 eval-harness expansion (fixtures, golden trips, judge, N-run regression, security/privacy) | DEFINED | 1→2 | Stage 7 methodology |
+| [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation` in the episode txn) — remediates gap-audit C1 | DEFINED | 1 | Epic 001 |
+| [011](epic-011-scoped-write-seam.md) | Scoped-write seam (extend the access choke point to owned-node writes) — remediates gap-audit C2 | DEFINED | 1 | Epic 001 |
 
 ---
 
