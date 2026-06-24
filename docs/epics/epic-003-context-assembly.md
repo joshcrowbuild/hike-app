@@ -1,6 +1,6 @@
 # Epic 003 — Context Assembly in engine.plan()
 
-**Status:** DEFINED  
+**Status:** IN_PROGRESS  
 **Phase:** 1 (Personal Intelligence)  
 **Spec refs:** Stage 5 §4 (retrieval / context assembly) · decision-log §30
 

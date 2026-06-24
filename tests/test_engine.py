@@ -21,6 +21,11 @@ class _FakeSession:
         self.rows = rows
 
     def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        cypher, _ = query
+        # Context assembly queries (Belief, PhysicalProfile, Episode) return []
+        # so they don't leak trail rows into the personal-context path.
+        if any(k in cypher for k in ("Belief", "PhysicalProfile", "Episode")):
+            return []
         return self.rows
 
 
