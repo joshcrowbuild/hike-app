@@ -165,6 +165,7 @@ def create_episode(
         (
             """
         MERGE (e:Episode {episode_id: $eid})
+        ON CREATE SET e.created_at = $now
         SET e.owner_id            = $owner,
             e.watch_activity_id   = $wid,
             e.source              = 'fit_file',
@@ -176,7 +177,6 @@ def create_episode(
             e.avg_heart_rate      = $hr,
             e.pace_on_grade       = $pace,
             e.fit_parsed          = true,
-            e.created_at          = $now,
             e.updated_at          = $now
         """,
             {
