@@ -43,6 +43,23 @@ class GraphStats(BaseModel):
     schema_version: str | None
 
 
+class OutcomeBody(BaseModel):
+    overall: int | None = Field(
+        default=None,
+        description="1 (😞) | 2 (😐) | 3 (🙂); null when skipped",
+    )
+    delta_question: str | None = None
+    delta_answer: str | None = Field(default=None, description="User's free-text reflect-back")
+    skipped: bool = False
+
+
+class OutcomeResponse(BaseModel):
+    outcome_id: str
+    episode_id: str
+    skipped: bool
+    overall: int | None
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str

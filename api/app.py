@@ -11,7 +11,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.schemas import (
@@ -20,6 +20,8 @@ from api.schemas import (
     FeedResponse,
     GraphStats,
     HealthResponse,
+    OutcomeBody,
+    OutcomeResponse,
     PlanRequest,
 )
 from graph.client import GraphClient
@@ -134,6 +136,64 @@ def plan(request: PlanRequest) -> FeedResponse:
         return _feed_response(feed)
     except HTTPException:
         raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal error") from exc
+
+
+def _drain_queue_bg(queue, graph_client) -> None:
+    """Drain the belief update queue after the HTTP response is sent.
+
+    Called via FastAPI BackgroundTasks so the caller receives their response
+    immediately; belief updates happen asynchronously (AC-4.3 / S6 §4.1 queue
+    discipline: never block the request path).
+    """
+    from graph.load import make_runner
+
+    with graph_client._ensure_driver().session() as session:
+        queue.drain(make_runner(session))
+
+
+@app.post("/episode/{episode_id}/outcome", response_model=OutcomeResponse)
+def record_outcome(
+    episode_id: str,
+    body: OutcomeBody,
+    background_tasks: BackgroundTasks,
+    viewer_id: str = "anonymous",  # Phase 1: query param; Stage 8 replaces with auth header
+) -> OutcomeResponse:
+    """Record a post-hike outcome (rating + optional reflection).
+
+    Idempotent: re-posting updates the existing Outcome, does not create a second.
+    Returns 404 if the episode does not belong to the viewer (Rule #4).
+    """
+    if _graph_client is None or _settings is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    try:
+        from orchestration.belief_update import BeliefUpdateQueue
+        from orchestration.outcome import OutcomeRequest, write_outcome
+
+        req = OutcomeRequest(
+            overall=body.overall,
+            delta_question=body.delta_question,
+            delta_answer=body.delta_answer,
+            skipped=body.skipped,
+        )
+        belief_queue = BeliefUpdateQueue()
+        scoped = _graph_client.scoped_session(viewer_id)
+        result = write_outcome(episode_id, viewer_id, req, scoped.run, belief_queue=belief_queue)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Episode not found")
+        # AC-4.3: drain AFTER response is sent, not before (BackgroundTasks)
+        background_tasks.add_task(_drain_queue_bg, belief_queue, _graph_client)
+        return OutcomeResponse(
+            outcome_id=result.outcome_id,
+            episode_id=result.episode_id,
+            skipped=result.skipped,
+            overall=result.overall,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal error") from exc
 

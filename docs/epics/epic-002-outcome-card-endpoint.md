@@ -1,6 +1,6 @@
 # Epic 002 — Outcome Card Endpoint
 
-**Status:** DEFINED  
+**Status:** IN_PROGRESS  
 **Phase:** 1 (Personal Intelligence)  
 **Spec refs:** Stage 5 §1 (Outcome node) · decision-log §10 (sync UX) · decision-log §30
 
