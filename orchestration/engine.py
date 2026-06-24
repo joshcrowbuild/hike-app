@@ -142,16 +142,46 @@ def feed_card(planned: PlannedTrail) -> FeedCard:
     )
 
 
-def plan(query: str, origin: tuple[float, float], runtime: Runtime, *, k: int = 10) -> Feed:
-    """Full pipeline: parse intent -> scout+verify+guardrail-filter -> taste-rank ->
-    templated feed cards. Collaborators come from `runtime` (build via build_runtime)."""
+def plan(
+    query: str,
+    origin: tuple[float, float],
+    runtime: Runtime,
+    *,
+    k: int = 10,
+    viewer_id: str = "anonymous",
+) -> Feed:
+    """Full pipeline: parse intent -> scout+verify+guardrail-filter -> context assembly
+    -> taste-rank -> templated feed cards.
+
+    viewer_id is used for personal context assembly (AC-5.3: assembled AFTER guardrail
+    filtering, BEFORE taste ranking; AC-5.4: assembled once, passed to one rank_ids call).
+    """
+    from orchestration.context_assembly import (
+        assemble_context,
+        fetch_beliefs,
+        fetch_profile,
+        fetch_relevant_episodes,
+    )
+
     intent = parse_intent(query, *runtime.mechanical) if runtime.mechanical else Intent()
     radius = float(intent.radius_m) if intent.radius_m else DEFAULT_RADIUS_M
     planned = plan_from_origin(
         origin[0], origin[1], runtime.session, runtime.probes, radius_m=radius, k=k
     )
+
+    # AC-5.3: context assembled AFTER guardrail filtering (planned is already filtered)
+    # AC-5.4: assembled once, passed to single rank_ids call
+    candidate_ids = [p.candidate.canonical_id for p in planned]
+    beliefs = fetch_beliefs(viewer_id, runtime.session.run)
+    profile = fetch_profile(viewer_id, runtime.session.run)
+    episodes = fetch_relevant_episodes(viewer_id, candidate_ids, runtime.session.run)
+    personal_context = assemble_context(beliefs, profile, episodes)
+
+    # Merge intent profile with personal context (intent.profile wins if both set)
+    combined_profile = intent.profile or (personal_context or None)
+
     if runtime.judge:
-        planned = rank_plan(planned, runtime.judge[0], runtime.judge[1], profile=intent.profile)
+        planned = rank_plan(planned, runtime.judge[0], runtime.judge[1], profile=combined_profile)
     return Feed(query=query, cards=[feed_card(p) for p in planned])
 
 

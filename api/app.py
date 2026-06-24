@@ -132,7 +132,13 @@ def plan(request: PlanRequest) -> FeedResponse:
         runtime = build_runtime(_settings, _graph_client, request.viewer_id)
         from orchestration.engine import plan as engine_plan
 
-        feed = engine_plan(request.query, (request.lat, request.lon), runtime, k=request.k)
+        feed = engine_plan(
+            request.query,
+            (request.lat, request.lon),
+            runtime,
+            k=request.k,
+            viewer_id=request.viewer_id,  # AC-5: forward viewer for context assembly
+        )
         return _feed_response(feed)
     except HTTPException:
         raise

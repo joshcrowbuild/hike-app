@@ -67,7 +67,7 @@ def _make_scenario(settings: Settings, gc: GraphClient, config: BakeoffConfig) -
         )
         # plan() exercises intent parse (mechanical) + rank (judge); return the
         # pre-card planned list so the eval harness can check source-or-silence on facts.
-        plan(_PILOT_QUERY, (_PILOT_LAT, _PILOT_LON), runtime, k=5)
+        plan(_PILOT_QUERY, (_PILOT_LAT, _PILOT_LON), runtime, k=5, viewer_id=_PILOT_VIEWER)
         return plan_from_origin(_PILOT_LAT, _PILOT_LON, session, live_probes, k=5)
 
     return Scenario(name=config.name, run=run)
