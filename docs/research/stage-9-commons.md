@@ -10,7 +10,7 @@
 
 > **Legend:** ✅ decided · 🔶 recommended, confirm in build · ❓ open.
 
-> ⚠️ **Correction (gap-audit C1, 2026-06-24):** this doc was drafted assuming the T3 forked write is already accreting. It is **not** — `create_episode()` does not yet write `:CommonsObservation` (decision-log §32's ✅ is wrong memory, demoted to 🔶 in `decision-log-additions-proposed.md §40`). Read every "✅ accreting since Phase 0" below as **🔶 designed, not yet built — Commons Fork epic pending**. The design here is correct; the write half must actually ship (inside `create_episode()`'s transaction) before any of it accretes, and the structural privacy test (§2) must land with it. The earlier a builder reads this, the more it matters: nothing is accreting yet.
+> ⚠️ **Correction (gap-audit C1, 2026-06-24):** this doc was drafted assuming the T3 forked write is already accreting. It is **not** — `create_episode()` does not yet write `:CommonsObservation` (the committed decision-log's commons-fork ✅s at **§30:265 / §31:282** and `stage-6` **S6-10:373** are wrong memory, demoted to 🔶 in `decision-log-additions-proposed.md §40`). Read every "✅ accreting since Phase 0" below as **🔶 designed, not yet built — Epic 010 (`epic-010-commons-fork-write.md`) pending**. The design here is correct; the write half must actually ship (inside `create_episode()`'s transaction) before any of it accretes, and the structural privacy test (§2) must land with it. The earlier a builder reads this, the more it matters: nothing is accreting yet.
 
 ---
 

@@ -4,6 +4,8 @@
 
 > Method note: every finding below was spot-checked against the actual tree. Claims that didn't survive that check are listed under **Dropped** at the end. The device-seam WIN is the calibration bar — a single-vendor/single-path implementation standing in for a config-driven contract, or a "build-now" thread that fell behind the code with nothing watching it.
 
+> ⚠️ **Citation correction (2026-06-24):** several finding bodies below cite committed-`decision-log.md` line numbers under the label **"§32"** (e.g. "§32 lines 265/282", "§32:237", "§32:265"). That label is a conflation: the **committed `docs/decision-log.md` ends at §31**, so read each by the section governing the line — **237 → §28** (Stage 2 schema), **265 → §30** (Stage 5), **282 → §31** (Stage 6). "§32" exists only in `decision-log-additions-proposed.md`, where it is the **Stage-3 ingestion** section and carries **no** commons claim. The line numbers and the substance of each finding are correct; only the "§32" *section label* is wrong. The actionable corrections (`decision-log-additions-proposed §40`, `epic-010-commons-fork-write.md` S1) cite the right locations.
+
 ---
 
 ## Executive summary — what else did we forget
