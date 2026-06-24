@@ -69,7 +69,7 @@ The system syncs hiking activities from **any configured smart-device vendor** (
 **AC-4.1:** Each adapter runs in its own try/except; an exception or `down`/`needs_reauth` from one adapter is logged and **does not stop the others** (rule #6).
 **AC-4.2:** `since` is the most-recent `Episode.created_at` for the owner (bounds the API window).
 **AC-4.3:** Re-running the poller with no new activities is a structural no-op (MERGE on `(watch_activity_id, owner_id)`; only `updated_at` changes).
-**AC-4.4:** No new FIT-parse, Episode, belief, or commons code is added — the poller reuses `ingestion/ingest_episode.py` unchanged (proves device-agnostic downstream).
+**AC-4.4:** The poller reuses the existing parse → Episode → belief → commons path; `create_episode` is parameterized by `source` (`"garmin"`/`"coros"`/…) and made strictly idempotent (`ON CREATE` vs `ON MATCH`), but **no new** FIT-parse, belief, or commons logic is added — downstream stays device-agnostic. (Absorbs the wave-1 Garmin-epic review finding: `create_episode` currently hardcodes `source='fit_file'` and lacks the ON-CREATE/ON-MATCH split — the minimal change, not a rewrite.)
 **AC-4.5:** All LLM calls in this path route to the local provider via sensitivity routing, enforced at the poller entrypoint (S6-9).
 
 ### S5 — Conformance suite + drop-in guarantee
