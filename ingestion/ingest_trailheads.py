@@ -35,7 +35,11 @@ def _load_region_bbox(region_id: str) -> tuple[float, float, float, float]:
         log.error("Region file not found: %s", path)
         sys.exit(1)
     props = json.loads(path.read_text()).get("properties", {})
-    west, south, east, north = props["bbox"]
+    bbox = props.get("bbox")
+    if not bbox or len(bbox) != 4:
+        log.error("Region %s missing valid bbox [west,south,east,north]", region_id)
+        sys.exit(1)
+    west, south, east, north = bbox
     return (south, west, north, east)
 
 

@@ -26,6 +26,9 @@ ITEMS_URL = "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-loc
 DISCHARGE_URL = "https://waterservices.usgs.gov/nwis/iv/"
 
 
+_USGS_NO_DATA = frozenset({"-999999", "-999999.0", "Ice", "Bkw", "Ssn", "Rat", "Eqp"})
+
+
 def _latest_discharge_cfs(site_id: str, client: httpx.Client) -> float | None:
     """Fetch latest instantaneous discharge reading (cfs) via legacy WaterServices."""
     doc = _http.get_json(
@@ -42,8 +45,11 @@ def _latest_discharge_cfs(site_id: str, client: httpx.Client) -> float | None:
         values = ts[0]["values"][0]["value"]
         if not values:
             return None
-        raw = values[-1]["value"]
-        return float(raw)
+        raw = str(values[-1]["value"]).strip()
+        if raw in _USGS_NO_DATA:
+            return None  # USGS sentinel / qualifier — not a real reading
+        val = float(raw)
+        return val if val >= 0 else None  # negative values are also sentinels
     except (KeyError, IndexError, TypeError, ValueError):
         return None
 

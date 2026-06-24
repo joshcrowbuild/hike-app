@@ -32,9 +32,13 @@ class Candidate:
     point: Any = None
 
 
-def _row_to_candidate(row: dict[str, Any]) -> Candidate:
+def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
+    canonical_id = row.get("canonical_id")
+    if not canonical_id:
+        log.warning("Scout row missing canonical_id — skipping: %r", dict(row))
+        return None
     return Candidate(
-        canonical_id=row["canonical_id"],
+        canonical_id=canonical_id,
         name=row.get("name") or "",
         trailhead_id=row.get("trailhead_id") or "",
         distance_m=float(row.get("distance_m") or 0.0),
@@ -63,7 +67,8 @@ def scout(
 
     seen: set[str] = set()
     out: list[Candidate] = []
-    for candidate in sorted((_row_to_candidate(r) for r in rows), key=lambda c: c.distance_m):
+    candidates = [c for r in rows if (c := _row_to_candidate(r)) is not None]
+    for candidate in sorted(candidates, key=lambda c: c.distance_m):
         if candidate.canonical_id in seen:
             continue
         seen.add(candidate.canonical_id)

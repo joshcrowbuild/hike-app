@@ -35,8 +35,17 @@ class FeedResponse(BaseModel):
     card_count: int
 
 
+class GraphStats(BaseModel):
+    canonical_trails: int
+    source_records: int
+    trailheads: int
+    same_as_edges: int
+    schema_version: str | None
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
     region: str
     probes_available: list[str]
+    graph: GraphStats | None = None  # None if Neo4j unreachable

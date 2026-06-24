@@ -18,6 +18,7 @@ from api.schemas import (
     FeedCardResponse,
     FeedLineResponse,
     FeedResponse,
+    GraphStats,
     HealthResponse,
     PlanRequest,
 )
@@ -78,6 +79,36 @@ def _feed_response(feed: Feed) -> FeedResponse:
     )
 
 
+def _graph_stats() -> GraphStats | None:
+    if _graph_client is None or _settings is None:
+        return None
+    try:
+        session = _graph_client.scoped_session("health-check")
+        rows = session.run(
+            (
+                "MATCH (m:Meta {id: 'schema'}) "
+                "RETURN m.schema_version AS sv, "
+                "       size([(t:CanonicalTrail) | t]) AS trails, "
+                "       size([(r:SourceRecord) | r]) AS srs, "
+                "       size([(h:Trailhead) | h]) AS ths, "
+                "       size([()-[:SAME_AS]->() | 1]) AS edges",
+                {},
+            )
+        )
+        if not rows:
+            return None
+        r = rows[0]
+        return GraphStats(
+            canonical_trails=int(r.get("trails") or 0),
+            source_records=int(r.get("srs") or 0),
+            trailheads=int(r.get("ths") or 0),
+            same_as_edges=int(r.get("edges") or 0),
+            schema_version=r.get("sv"),
+        )
+    except Exception:
+        return None
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     if _settings is None:
@@ -87,6 +118,7 @@ def health() -> HealthResponse:
         version=_VERSION,
         region=_settings.region,
         probes_available=_probe_keys,
+        graph=_graph_stats(),
     )
 
 

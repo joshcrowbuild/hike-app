@@ -28,9 +28,18 @@ class Intent:
     profile: str | None = None
 
 
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 2 and lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
+    return text.strip()
+
+
 def _parse(text: str) -> Intent:
     try:
-        data = json.loads(text)
+        data = json.loads(_strip_fences(text))
     except (ValueError, TypeError):
         return Intent()
     if not isinstance(data, dict):
@@ -46,6 +55,8 @@ def _parse(text: str) -> Intent:
 
 
 def parse_intent(query: str, provider: ModelProvider, model: str) -> Intent:
+    if not query or not query.strip():
+        return Intent()  # empty query → default intent; don't waste an LLM call
     request = LLMRequest(
         system=PARSE_SYSTEM,
         messages=[{"role": "user", "content": query}],

@@ -45,7 +45,10 @@ def _alerts(fact: VerifiedFact) -> list[str]:
 def _aqi(fact: VerifiedFact) -> int | None:
     value = fact.value
     aqi = value.get("aqi") if isinstance(value, dict) else None
-    return aqi if isinstance(aqi, int) else None
+    # AirNow sometimes returns AQI as float; int() is safe and preferred for comparison.
+    if isinstance(aqi, (int, float)) and not isinstance(aqi, bool):
+        return int(aqi)
+    return None
 
 
 def _hotspots(fact: VerifiedFact) -> int:
@@ -96,11 +99,21 @@ RANK_SYSTEM = (
 )
 
 
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences that models sometimes add despite instructions."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 2 and lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
+    return text.strip()
+
+
 def _parse_ids(text: str, known: list[str]) -> list[str]:
     """Parse the judge's JSON ordering; keep known ids, append any it dropped,
     fall back to input order on any malformed output (graceful degradation)."""
     try:
-        data = json.loads(text)
+        data = json.loads(_strip_fences(text))
     except (ValueError, TypeError):
         return list(known)
     if not isinstance(data, list):
