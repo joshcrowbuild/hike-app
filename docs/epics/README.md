@@ -9,9 +9,10 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [003](epic-003-context-assembly.md) | Context assembly in engine.plan() | DEFINED | 1 | Epic 001 |
 | [004](epic-004-garmin-connect-poller.md) | Garmin Connect activity poller (watch_sync.py) | BACKLOG | 1 | Epic 001 |
 | [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time pre-Scout filter | BACKLOG | 1 | — |
-| 006 | Novelty filter in Curator | BACKLOG | 1 | Epic 003 |
+| [006](epic-006-novelty-filter.md) | Novelty filter in Curator | DEFINED | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
+| [009](epic-009-eval-harness-expansion.md) | Stage-7 eval-harness expansion (fixtures, golden trips, judge, N-run regression, security/privacy) | DEFINED | 1→2 | Stage 7 methodology |
 
 ---
 
