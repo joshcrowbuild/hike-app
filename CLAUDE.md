@@ -7,8 +7,11 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 ## Canonical design docs (read on demand)
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
-- `docs/research/` — **research outputs** per stage. `stage-1-data-sources.md` = the data-source landscape catalog (corpus/live split, authority tiers, license obligations, coverage gaps, conflation verdict).
-- **Current position:** **Phase-0 design complete** (Stages 1–4) + **Phase-1 design complete** (Stages 5–6: belief store, episode→semantic promotion, decay, context assembly, watch-data discipline, privacy tiers — `docs/research/stage-5-personalization.md` §30; FIT ingestion pipeline, Garmin/Coros access, Episode MERGE, belief update queue, MCP config — `docs/research/stage-6-watch-integration.md` §31). Stage 0 scaffold in place (monorepo packages, provider seam, local Neo4j compose, CI — stubs/contracts, no app logic). **Next:** build the Phase-0 vertical slice against the Shenandoah+GWJ pilot region + the Stage-4 cost spike; then Stage-6 build to complete Phase 1. Work in dependency order per the workplan.
+- `docs/process/plan-analysis.md` — **readiness audit**: what's well-defined vs. underdefined, build order.
+- `docs/process/development-process.md` — **how we work**: epics → stories → ACs → tests → code → targeted review.
+- `docs/epics/` — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
+- `docs/research/` — **research outputs** per stage.
+- **Current position:** Phase-0 complete + Phase-1 design complete + **Phase-1 build started** (Stages 5–6). Built: ingestion pipeline (OSM/NPS/USFS), engine (Scout→Verifier→Curator), live adapters, Neo4j schema v0.2.0 with personal overlay, FIT Episode CLI, **belief update pipeline (Epic 001 DONE)**. **Next in build order:** Epic 002 (Outcome card endpoint) → Epic 003 (context assembly in engine) → Garmin Connect poller → Valhalla drive time. Work dependency order per `docs/process/plan-analysis.md`.
 
 ## Non-negotiable rules (must hold in all code)
 1. **Source-or-silence.** Every user-facing fact is backed by a live call with source + timestamp. Unverifiable → *flagged*, never fabricated.

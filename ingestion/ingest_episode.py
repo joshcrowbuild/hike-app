@@ -146,12 +146,19 @@ def match_trail(summary: FITSummary, session) -> str | None:
     return row["canonical_id"]
 
 
-def create_episode(summary: FITSummary, canonical_id: str | None, owner_id: str, session) -> str:
+def create_episode(
+    summary: FITSummary,
+    canonical_id: str | None,
+    owner_id: str,
+    session,
+    *,
+    belief_queue=None,  # BeliefUpdateQueue | None — enqueues update after write
+) -> str:
     """MERGE an Episode node. Returns episode_id."""
     from datetime import datetime, timezone
 
     episode_id = f"ep:{owner_id}:{summary.watch_activity_id}"
-    pace = compute_pace_on_grade(summary)
+    _pace = compute_pace_on_grade(summary)  # compute once; reused for Episode + UpdateTask
     now = datetime.now(timezone.utc).isoformat()
 
     session.run(
@@ -186,7 +193,7 @@ def create_episode(summary: FITSummary, canonical_id: str | None, owner_id: str,
                 if summary.total_time_s
                 else None,
                 "hr": summary.avg_heart_rate,
-                "pace": pace,
+                "pace": _pace,
                 "now": now,
             },
         )
@@ -214,6 +221,20 @@ def create_episode(summary: FITSummary, canonical_id: str | None, owner_id: str,
             MERGE (e)-[:ON]->(t)
             """,
                 {"eid": episode_id, "cid": canonical_id},
+            )
+        )
+
+    # Enqueue belief update (S1: AC-1.1, AC-1.2, AC-1.3)
+    if belief_queue is not None:
+        from orchestration.belief_update import UpdateTask
+
+        belief_queue.enqueue(
+            UpdateTask(
+                episode_id=episode_id,
+                owner_id=owner_id,
+                distance_m=summary.total_distance_m,
+                ascent_m=summary.total_ascent_m,
+                pace_on_grade=_pace,  # reuse already-computed value, avoid drift
             )
         )
 
@@ -245,10 +266,18 @@ def ingest_episode(fit_path: Path, owner_id: str, *, dry_run: bool = False) -> d
     gc = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
 
     try:
-        with gc._ensure_driver().session():
+        from graph.load import make_runner
+        from orchestration.belief_update import BeliefUpdateQueue
+
+        belief_queue = BeliefUpdateQueue()
+        with gc._ensure_driver().session() as neo_session:
             scoped = gc.scoped_session(owner_id)
             trail_id = match_trail(summary, scoped)
-            episode_id = create_episode(summary, trail_id, owner_id, scoped)
+            episode_id = create_episode(
+                summary, trail_id, owner_id, scoped, belief_queue=belief_queue
+            )
+            # Drain the belief queue synchronously (Phase 1; async in Phase 2)
+            belief_queue.drain(make_runner(neo_session))
             log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
             return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
     finally:
