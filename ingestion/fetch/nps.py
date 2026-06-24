@@ -50,7 +50,7 @@ def fetch(
     offset = 0
 
     while True:
-        params = {
+        params: dict[str, str | int] = {
             "where": "1=1",
             "geometry": f"{west},{south},{east},{north}",
             "geometryType": "esriGeometryEnvelope",

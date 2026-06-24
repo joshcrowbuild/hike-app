@@ -126,7 +126,8 @@ def fetch_relevant_episodes(
     cutoff = date.today() - timedelta(days=_EIGHTEEN_MONTHS_DAYS)
     rows = runner(
         (
-            "MATCH (p:Person {member_id: $viewer_id})-[:DID]->(e:Episode)-[:ON]->(t:CanonicalTrail) "
+            "MATCH (p:Person {member_id: $viewer_id})-[:DID]->(e:Episode)"
+            "-[:ON]->(t:CanonicalTrail) "
             "WHERE e.owner_id = $viewer_id "
             "  AND t.canonical_id IN $candidate_ids "
             "  AND e.date >= $cutoff "
