@@ -22,15 +22,21 @@ When ranking candidate trails for a logged-in viewer, the Curator gently discoun
 - **`heat_response` / readiness / any watch-derived lever** (Epic 007).
 - **Empirical tuning of λ, half-life, repeat penalty** — spec defaults ship here; the Stage-7 eval closes them (N-2, N-5 are 🔶).
 
+> **⚠ Precondition (auth — architecture-gap-audit §C3):** `PlanRequest.viewer_id` is a client-supplied request field with **zero authentication today** (defaults to `"anonymous"`; `api/app.py` passes it through verbatim). S2's owner-scoping and AC-2.5's cross-user isolation (Rule #4) are only as strong as the trust in `viewer_id` — which is currently *unestablished*. This epic does **not** claim auth exists; it lists it as an explicit precondition. AC-2.5's guarantee holds only once viewer identity is authenticated (a forged `viewer_id` would still scope to the named owner's overlay). **Flag, do not assume.** The auth-seam decision is upstream (gap-audit §C3 action), not this epic's to build.
+
 > **Legend:** ✅ decided · 🔶 recommended, confirm · ❓ open. Stories tagged 🔶 carry a default that ships now and is confirmed/tuned later; their ACs test the *mechanism*, not the tuned constant.
 
 > **Index bookkeeping (do this when this definition lands):** `README.md` line 12 currently lists Epic 006 as `BACKLOG`. Per the index's own "Adding a new epic" rule, moving `BACKLOG → DEFINED` requires flipping that row **now** — not only `→ DONE` at the end. Also update the `Depends on` cell to include the `been_on`-writer epic once resolved per the gap above (currently "Epic 003").
 
 ---
 
-## Access-pattern note (read before S2 / S7) — `scopedQuery` is illustrative, not a callable
+## Access-pattern note (read before S2 / S7) — `scopedQuery` is a design-name, not a callable
 
-The spec (§2.2) and the decision-log (§28 §5 comment) write `scopedQuery(viewer).run(...)` as the access seam. **There is no such wrapper in the codebase** — `grep` finds `scopedQuery` only in `schema.cypher` §5 and `schema_stage5.md` as an *illustrative comment*, whose sanctioned shape is literally a hand-written `WHERE e.owner_id = $viewer_id`. Both shipped sibling epics honor Rule #4 exactly this way: Epic 003 (AC-1.3, AC-2.1, AC-3.4) and Epic 001 (review fix: "DERIVED_FROM MATCH added `owner_id` constraint") **hand-write the `owner_id` filter**. This epic therefore mirrors the established pattern — **the novelty query carries an explicit `WHERE b.owner_id = $viewer_id`** — rather than asserting a non-existent wrapper or an inverted "no literal `owner_id`" invariant. Building the `scopedQuery` wrapper (and migrating Epic 003's queries onto it) is a real, decided seam (§28) but a cross-cutting refactor that does **not** belong silently inside the novelty epic; if undertaken, it is its own story.
+The spec (§2.2, line 47) and schema.cypher's §5 comment (line 145) write `scopedQuery(viewer).run(...)` as the access seam; decision-log §28 (line 240) names the wrapper in prose ("a single `scopedQuery(viewer)` wrapper as the only path to owned data") and §29 (line 250) repeats it ("Scout = scoped Cypher via `scopedQuery(viewer)`"). **There is no such wrapper in any `.py` module** — `scopedQuery` appears *only* as an **illustrative design-name in docs** (`schema.cypher` §5, `schema_stage5.md`, and decision-log §28/§29); `grep scopedQuery **/*.py` returns **zero** matches. The sanctioned shape in shipped code is literally a hand-written `WHERE b.owner_id = $viewer_id` clause (architecture-gap-audit §C2): the `ScopedSession` read path plus inline owner-scoping clauses, **not** a callable `scopedQuery` symbol.
+
+**C2 scope — reads only.** Per the gap audit (§C2), `ScopedSession` / `owner_scope` and decision-log §240's "only path to owned data" cover the **read** path; owned-node *writes* (`belief_update.py`, `ingest_episode.py`) use a raw unscoped runner with a hand-typed `owner_id`. The novelty fetch (S2) is a **read**, so its hand-written `WHERE b.owner_id = $viewer_id` is the sanctioned shape for exactly this access — no reader should infer from it that writes are scoped (they are not).
+
+Both shipped sibling epics honor Rule #4 the same way: Epic 003 (AC-1.3, AC-2.1, AC-3.4) and Epic 001 (review fix: "DERIVED_FROM MATCH added `owner_id` constraint") **hand-write the `owner_id` filter**. This epic mirrors that established pattern — **the novelty query carries an explicit `WHERE b.owner_id = $viewer_id`** — rather than asserting a non-existent wrapper or an inverted "no literal `owner_id`" invariant. Building the `scopedQuery` wrapper (and migrating Epic 003's queries onto it, plus extending it to cover the write path per §C2) is a real, decided seam (§28) but a cross-cutting refactor that does **not** belong silently inside the novelty epic; if undertaken, it is its own story.
 
 ---
 
@@ -61,7 +67,7 @@ The spec (§2.2) and the decision-log (§28 §5 comment) write `scopedQuery(view
 **AC-2.2:** The `MATCH` is restricted to `ct.canonical_id IN $candidate_ids` — never corpus-wide (decision-log §29).
 **AC-2.3:** A candidate with no `been_on` row yields `novelty = 1.0` and raises no error — absence of memory is the high-novelty case, never a failure (Rule #1: no-memory = novel, not fabricated).
 **AC-2.4:** The query keys recency off `last_visit_date`, never `last_updated_at` or `created_at` (N-6 / §6.2 — a re-hike bumps `last_updated_at` and the year-month `value` in place, so keying off it would conflate "visited" with "belief edited").
-**AC-2.5:** A second viewer's `been_on` beliefs are never returned for the first viewer (Rule #4 cross-user isolation — same property-test posture as the access-layer invariant; mirrors Epic 003 AC-6.3).
+**AC-2.5:** A second viewer's `been_on` beliefs are never returned for the first viewer (Rule #4 cross-user isolation — same property-test posture as the access-layer invariant; mirrors Epic 003 AC-6.3). *(Precondition: this isolation holds against a **trusted** `viewer_id`; per gap-audit §C3 `viewer_id` is unauthenticated today, so the test proves the query scopes correctly — not that the caller is who they claim. Auth is upstream.)*
 **AC-2.6:** Episode count / number of candidates does not change the number of Cypher round-trips: novelty is fetched in one shortlist-bounded pass, not once per candidate (consistent with Epic 003 AC-5.4).
 
 ### S3 — Deterministic `novelty_score()` (Rule #2 by construction)

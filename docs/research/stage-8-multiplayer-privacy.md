@@ -63,7 +63,7 @@ These are not Stage-8 *design* questions — they are unbuilt foundations the gr
 
 🅓 *2e-alt: if a future query needs to read `:Dependent` nodes directly (not via traversal), add `owner_id` to `:Dependent` (a flagged schema change). For v0, traversal-scoping is sufficient and avoids the change; the fuzz test guards it.*
 
-**The dependent's data path (capability≠preference, watch-free first):** Ruby has capability beliefs (range, heat tolerance, terrain) inferred from the episodes she was **`WITH`** on — party presence recorded by the **manual outcome-card toggle** ("Was Ruby with you?", Decision Log §278 / Stage 6), which writes the `(:Episode)-[:WITH]->(:Dependent)` edge. There is **no automated proximity detection** in Phase 1. She has **no watch, no readiness, no preferences** (a dog's "preference" is unknowable — source-or-silence). Her capability beliefs are grantable exactly like a member's capability tier, because they're the same `:Belief {axis:"capability", subject_type:"dependent"}` shape.
+**The dependent's data path (capability≠preference, watch-free first):** Ruby has capability beliefs (range, heat tolerance, terrain) inferred from the episodes she was **`WITH`** on — party presence recorded by the **manual outcome-card toggle** ("Was Ruby with you?", Decision Log §31 — Party detection / Stage 6), which writes the `(:Episode)-[:WITH]->(:Dependent)` edge. There is **no automated proximity detection** in Phase 1. She has **no watch, no readiness, no preferences** (a dog's "preference" is unknowable — source-or-silence). Her capability beliefs are grantable exactly like a member's capability tier, because they're the same `:Belief {axis:"capability", subject_type:"dependent"}` shape.
 
 ---
 
@@ -281,14 +281,14 @@ The three merges map onto the three engine stages (Stage 4) — **each merge hap
 
 ### 6.1 Constraint merge — most-restrictive wins (Curator hard-filter / guardrail)
 
-**Where:** the Curator's hard-constraint filter (Stage 4 §4: "hard constraint filters (guardrails)"), now fed the *union* of all participants' constraints.
+**Where:** the Curator's hard-constraint filter (Stage 4 §6: "hard filters (deterministic guardrails)"), now fed the *union* of all participants' constraints.
 
 **Rule:** the party's constraint set = the **intersection of what's acceptable to all** = the **union of all hard constraints**. A constraint is a *floor*; combining floors takes the max.
 - Ruby is along → off-leash-required trails are out **for the whole party** (her constraint binds everyone; mirrors the existing guardrail "off-leash-required when Ruby's along," Decision Log §4).
 - Carter's "no exposed scrambles" (a stated `constraint` belief) removes Old Rag for the party even if Josh loves it.
 - Max-difficulty / max-distance constraints take the **minimum** of the maxes (the tightest ceiling); min-anything takes the maximum of the mins.
 
-**Why most-restrictive, no negotiation:** a constraint violation is a *bug*, not a soft loss (§9: "constraint = Curator filter, violation = bug"). You never trade away someone's hard limit for someone else's preference. Deterministic — **no LLM call** (set algebra over typed constraints). Source-or-silence still applies: a constraint binds only if it's a *known* (granted, above-floor) constraint; the party UX **discloses** "planning without Carter's constraints — request access" rather than silently assuming none.
+**Why most-restrictive, no negotiation:** a constraint violation is a *bug*, not a soft loss (§9: "constraints = Verifier filters, violation = bug"; the *hard-constraint filter itself* lives in the Curator per Stage 4 §6 — §9 names the principle, Stage 4 §6 names the placement). You never trade away someone's hard limit for someone else's preference. Deterministic — **no LLM call** (set algebra over typed constraints). Source-or-silence still applies: a constraint binds only if it's a *known* (granted, above-floor) constraint; the party UX **discloses** "planning without Carter's constraints — request access" rather than silently assuming none.
 
 ### 6.2 Readiness gate — the less-recovered member (Curator, readiness filter)
 
@@ -306,7 +306,7 @@ The three merges map onto the three engine stages (Stage 4) — **each merge hap
 
 ### 6.3 Taste merge — minimize the bigger disappointment (Curator, ranking)
 
-**Where:** the Curator's taste-ranking LLM call (Stage 4 §4: "Opus-tier taste ranking"), now scoring against a *merged* taste objective. This is the one merge that is genuinely *judgment* (a soft loss, §9), so it's the one place an LLM-tier call earns its keep — the other two are deterministic.
+**Where:** the Curator's taste-ranking LLM call (Stage 4 §6: "Opus-tier ranking"), now scoring against a *merged* taste objective. This is the one merge that is genuinely *judgment* (a soft loss, §9), so it's the one place an LLM-tier call earns its keep — the other two are deterministic.
 
 **The objective (§11 "minimize the bigger disappointment"):** **not** "maximize average satisfaction" (one person's strong love drags the party onto a trail another mildly hates) and **not** "maximize the minimum at all costs" (pure maximin is paralyzingly bland). The rule is a **regret-minimizing** blend:
 
@@ -333,7 +333,7 @@ The three merges map onto the three engine stages (Stage 4) — **each merge hap
 | Readiness | readiness filter (Epic-007) | deterministic (min) | gate on the less-recovered; degrade-and-disclose | unsafe over-reach (recoverable member overextended) |
 | Taste | Curator rank (LLM) | judgment | minimize the bigger disappointment | **soft loss** (a member quietly disappointed) |
 
-This mirrors the engine's existing hard/soft split (Decision Log §9: constraints = filters / taste = ranking) — **the party algorithm reuses the single-person engine's stages, fed merged inputs.** No new engine; multiplayer is the same Scout→Verifier→Curator pipeline run over a *composed* party object (the "party as a reusable editable object," §4 Console). The composition is the only new code — and it must be fed by the **grantee-projection** reads (§5.3), so no participant's substrate enters even mid-merge.
+This mirrors the engine's existing hard/soft split (Decision Log §9: "constraints = Verifier filters / taste = Curator ranking"; the Curator runs the *hard-constraint filter* per Stage 4 §6) — **the party algorithm reuses the single-person engine's stages, fed merged inputs.** No new engine; multiplayer is the same Scout→Verifier→Curator pipeline run over a *composed* party object (the "party as a reusable editable object," §4 Console). The composition is the only new code — and it must be fed by the **grantee-projection** reads (§5.3), so no participant's substrate enters even mid-merge.
 
 ---
 
