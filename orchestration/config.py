@@ -40,6 +40,13 @@ class Settings:
     # Geographic scope (Stage 3: polygon-bounded region).
     region: str = field()
 
+    # Edge auth (Epic 014 S3). Until the Stage-8 auth/identity system exists, a
+    # non-anonymous viewer_id at the API edge must present this shared dev secret.
+    # Absent by default (repr=False) so the only out-of-the-box path is the open
+    # anonymous world; a misconfigured deploy fails closed, never silently trusting
+    # a client-supplied identity (Rule #5 / decision-log §13).
+    dev_viewer_secret: str | None = field(repr=False, default=None)
+
     # Live-data source credentials (Stage 1 catalog; most free/keyless).
     nws_user_agent: str | None = None
     airnow_api_key: str | None = field(repr=False, default=None)
@@ -78,6 +85,7 @@ class Settings:
             anthropic_api_key=e.get("ANTHROPIC_API_KEY") or None,
             tiers={"mechanical": tier("mechanical"), "judgment": tier("judgment")},
             region=e.get("ADVENTURE_REGION", "shenandoah-gwj"),
+            dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
             nws_user_agent=e.get("NWS_USER_AGENT") or None,
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,

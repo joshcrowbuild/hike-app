@@ -8,10 +8,11 @@ Run dev server: uvicorn api.app:app --reload --port 8000
 
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.schemas import (
@@ -54,6 +55,30 @@ app = FastAPI(
     description="Personal, agentic, self-verifying hiking/backpacking trip planner.",
     lifespan=lifespan,
 )
+
+
+def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:
+    """Edge auth guard (Epic 014 S3 / Rule #5): a viewer_id is honored only from an
+    authenticated caller. Until the Stage-8 auth system exists, the open anonymous
+    world is the only unauthenticated path; any other identity must present the
+    configured shared dev secret (X-Dev-Viewer-Secret).
+
+    Fails **closed**: if the dev secret is absent from config, every non-anonymous
+    request is rejected regardless of any header (a misconfigured deploy must not
+    silently accept a forged identity). Raises HTTP 403 on rejection.
+    """
+    if viewer_id == "anonymous":
+        return
+    configured = _settings.dev_viewer_secret if _settings else None
+    # Compare as bytes: secrets.compare_digest raises TypeError on non-ASCII str, so a
+    # non-ASCII header would otherwise 500 instead of a clean 403 (still fail-closed,
+    # but bytes keeps it a deliberate 403 and stays constant-time).
+    if (
+        not configured
+        or not dev_secret
+        or not secrets.compare_digest(dev_secret.encode("utf-8"), configured.encode("utf-8"))
+    ):
+        raise HTTPException(status_code=403, detail="viewer_id requires authentication")
 
 
 def _card_response(card: FeedCard) -> FeedCardResponse:
@@ -125,9 +150,13 @@ def health() -> HealthResponse:
 
 
 @app.post("/plan", response_model=FeedResponse)
-def plan(request: PlanRequest) -> FeedResponse:
+def plan(
+    request: PlanRequest,
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> FeedResponse:
     if _settings is None or _graph_client is None:
         raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(request.viewer_id, x_dev_viewer_secret)
     try:
         runtime = build_runtime(_settings, _graph_client, request.viewer_id)
         from orchestration.engine import plan as engine_plan
@@ -165,6 +194,7 @@ def record_outcome(
     body: OutcomeBody,
     background_tasks: BackgroundTasks,
     viewer_id: str = "anonymous",  # Phase 1: query param; Stage 8 replaces with auth header
+    x_dev_viewer_secret: str | None = Header(default=None),
 ) -> OutcomeResponse:
     """Record a post-hike outcome (rating + optional reflection).
 
@@ -173,6 +203,7 @@ def record_outcome(
     """
     if _graph_client is None or _settings is None:
         raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(viewer_id, x_dev_viewer_secret)
     try:
         from orchestration.belief_update import BeliefUpdateQueue
         from orchestration.outcome import OutcomeRequest, write_outcome
