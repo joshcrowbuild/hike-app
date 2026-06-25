@@ -14,6 +14,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
 | [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation`) | DONE ✅ | 1 | Epic 001 |
 | [011](epic-011-scoped-write-seam.md) | Scoped-write seam (`run_write` guard + owned-node builders) | DONE ✅ | 1 | Epic 001 |
+| [012](epic-012-corpus-source-seam.md) | CorpusSource seam (contract + registry; OSM-as-spine a declared role) | DONE ✅ | 1 | Stage 3 ingestion |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >

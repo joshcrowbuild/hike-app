@@ -27,7 +27,7 @@ Prereqs: Python 3.11+, Docker (for Neo4j), and — for real runs — a local Ope
 ```sh
 cp .env.example .env          # fill in NEO4J_PASSWORD + any source keys
 make install-dev              # editable install + lint/type/test tooling
-make check                    # ruff + mypy + pytest (the CI triplet)
+make check                    # format + lint + mypy + pytest
 make db-up && make schema     # start local Neo4j and apply graph/schema.cypher
 ```
 
