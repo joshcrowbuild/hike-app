@@ -11,11 +11,23 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import httpx
 
 from . import _http
-from .base import VerifiedFact
+from .base import (
+    AdapterHealth,
+    ConditionKind,
+    LiveAdapter,
+    LiveCapabilities,
+    Point,
+    VerifiedFact,
+    health_from_status,
+)
+
+if TYPE_CHECKING:
+    from orchestration.config import Settings
 
 SOURCE = "NASA FIRMS"
 URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{key}/{dataset}/{bbox}/{days}"
@@ -46,3 +58,37 @@ def fetch(
         confidence_inputs={"authority": "tier1_gov", "freshness": "near_real_time"},
         disclosures=("A FIRMS hotspot is a thermal anomaly, not a confirmed fire.",),
     )
+
+
+class FirmsAdapter(LiveAdapter):
+    """Active-fire hotspots via NASA FIRMS (MAP_KEY required). US-only (capability-gated)."""
+
+    name = "firms"
+    kind = ConditionKind.fire
+    ttl_seconds = 600  # ~10 min (Stage 4 §4)
+
+    def __init__(self, map_key: str, *, client: httpx.Client | None = None) -> None:
+        self._map_key = map_key
+        self._client = client
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(
+            needs_point=True,
+            needs_site_id=False,
+            is_keyless=False,
+            supports_region=frozenset({"US"}),
+        )
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        return fetch(point.lat, point.lon, self._map_key, client=self._client)
+
+    def health(self) -> AdapterHealth:
+        client = self._client or _http.build_client()
+        url = URL.format(
+            key=self._map_key, dataset="VIIRS_SNPP_NRT", bbox="-78.9,38.0,-77.9,39.0", days=1
+        )
+        return health_from_status(_http.probe_status(client, url))
+
+    @classmethod
+    def from_config(cls, settings: Settings) -> LiveAdapter | None:
+        return cls(settings.firms_map_key) if settings.firms_map_key else None

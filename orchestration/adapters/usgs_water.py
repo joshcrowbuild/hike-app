@@ -14,12 +14,23 @@ Field names confirmed against live API 2026-06-23:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from . import _http
-from .base import VerifiedFact
+from .base import (
+    AdapterHealth,
+    ConditionKind,
+    LiveAdapter,
+    LiveCapabilities,
+    Point,
+    VerifiedFact,
+    health_from_status,
+)
+
+if TYPE_CHECKING:
+    from orchestration.config import Settings
 
 SOURCE = "USGS Water Data (OGC API + WaterServices)"
 ITEMS_URL = "https://api.waterdata.usgs.gov/ogcapi/v0/collections/monitoring-locations/items"
@@ -91,3 +102,36 @@ def fetch(
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
         disclosures=("Nearest gauge may be miles from the trail; treat as indicative.",),
     )
+
+
+class UsgsWaterAdapter(LiveAdapter):
+    """Streamflow at the nearest gauge via USGS Water Data (keyless)."""
+
+    name = "usgs_water"
+    kind = ConditionKind.water
+    ttl_seconds = 900  # ~15 min (Stage 4 §4)
+
+    def __init__(self, *, client: httpx.Client | None = None) -> None:
+        self._client = client
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(
+            needs_point=True,
+            needs_site_id=False,
+            is_keyless=True,
+            supports_region=frozenset({"US"}),
+        )
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        return fetch(point.lat, point.lon, client=self._client)
+
+    def health(self) -> AdapterHealth:
+        client = self._client or _http.build_client(headers={"Accept": "application/json"})
+        status = _http.probe_status(
+            client, ITEMS_URL, params={"bbox": "-78.6,38.3,-78.2,38.7", "limit": 1, "f": "json"}
+        )
+        return health_from_status(status)
+
+    @classmethod
+    def from_config(cls, settings: Settings) -> LiveAdapter | None:
+        return cls()  # keyless — always available

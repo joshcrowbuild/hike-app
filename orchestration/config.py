@@ -53,6 +53,20 @@ class Settings:
     firms_map_key: str | None = field(repr=False, default=None)
     ridb_api_key: str | None = field(repr=False, default=None)
 
+    # LiveAdapter seam (Epic 013). Comma-separated adapter names from
+    # ADVENTURE_LIVE_ADAPTERS; position sets primary vs. fallback within a kind.
+    # Empty = no live probes (the engine still runs — source-or-silence). live_region
+    # is the country/coverage code adapters are gated on (distinct from `region`, the
+    # geographic ingest scope); defaults to the pilot's US.
+    live_adapters: tuple[str, ...] = ()
+    live_region: str = "US"
+
+    # Valhalla drive-time (Epic 013 S5 / Epic 005). Origin-relative, never persisted
+    # (Rule #3). Absent base URL = no drive-time line, no pruning (parity with the
+    # missing-key probe pattern). drive_speed_kmh sizes the radius→time-budget default.
+    valhalla_base_url: str | None = None
+    drive_speed_kmh: float = 60.0
+
     # Device-integration seam (Epic 004). Comma-separated vendor names from
     # ADVENTURE_WATCH_ADAPTERS; empty = no devices, pipeline still runs (rule #6).
     # Per-vendor secrets are read here but never defaulted to a real value (#10).
@@ -77,6 +91,9 @@ class Settings:
         watch_raw = e.get("ADVENTURE_WATCH_ADAPTERS", "")
         watch_adapters = tuple(s.strip() for s in watch_raw.split(",") if s.strip())
 
+        live_raw = e.get("ADVENTURE_LIVE_ADAPTERS", "")
+        live_adapters = tuple(s.strip() for s in live_raw.split(",") if s.strip())
+
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),
             neo4j_user=e.get("NEO4J_USER", "neo4j"),
@@ -90,6 +107,10 @@ class Settings:
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,
             ridb_api_key=e.get("RIDB_API_KEY") or None,
+            live_adapters=live_adapters,
+            live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
+            valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,
+            drive_speed_kmh=float(e.get("DRIVE_SPEED_KMH", "60.0")),
             watch_adapters=watch_adapters,
             garmin_email=e.get("GARMIN_EMAIL") or None,
             garmin_password=e.get("GARMIN_PASSWORD") or None,

@@ -21,10 +21,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from orchestration.config import Settings
+
+LatLon = tuple[float, float]
 
 
 @dataclass(frozen=True)
@@ -141,3 +143,21 @@ class LiveAdapter(ABC):
         key = absent probe, never a fabricated reading), the deliberate `| None`
         self-drop asymmetry with the corpus seam (SS-10)."""
         raise NotImplementedError
+
+
+@runtime_checkable
+class DriveTimeComputer(Protocol):
+    """The origin-relative batch interface a `drive_time` adapter exposes beyond the
+    per-point `probe()` contract. The Scout pre-filter consumes this through the
+    registry (never a direct valhalla import — Epic 005 AC-5.2), so an OSRM/GraphHopper
+    swap is one adapter file. Batch by design: K candidates cost one matrix call."""
+
+    def matrix(self, origin: LatLon, targets: list[LatLon]) -> list[VerifiedFact | None]:
+        """One source × K targets → one fact (or None) per target, aligned by index."""
+        ...
+
+    def isochrone(self, origin: LatLon, time_budget_s: float) -> list[LatLon] | None:
+        """The polygon (lat, lon) reachable within the time budget, or None on failure."""
+        ...
+
+    def health(self) -> AdapterHealth: ...
