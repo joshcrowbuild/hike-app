@@ -55,11 +55,11 @@ def test_s2_ac2_create_episode_writes_pass_the_guard() -> None:
     eid = create_episode(_summary(), "ct:old-rag-loop", "mem:josh", session)
 
     assert eid == "ep:mem:josh:garmin:act-1"  # viewer-namespaced id
-    # Episode upsert binds owner to the injected viewer, never a free $owner.
+    # Episode upsert pins owner in the MERGE key (foreign id can't re-own a node).
     ep_writes = [(c, p) for c, p in calls if "MERGE (e:Episode" in c]
     assert len(ep_writes) == 1
     cypher, merged = ep_writes[0]
-    assert "e.owner_id          = $viewer_id" in cypher
+    assert "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})" in cypher
     assert merged["viewer_id"] == "mem:josh"
     assert "owner" not in merged  # no caller-supplied owner reaches the runner
     # both wires present

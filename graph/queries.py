@@ -134,10 +134,14 @@ def episodes_on_trail(canonical_id: str) -> tuple[str, dict[str, Any]]:
 
 
 def physical_profile_pace_read() -> tuple[str, dict[str, Any]]:
-    """The viewer's PhysicalProfile pace + episode count, for the EWMA update."""
+    """The viewer's PhysicalProfile pace + episode count, for the EWMA update.
+
+    Keyed strictly on `owner_id = $viewer_id` (not `owner_scope`): this read feeds
+    a self-update, so it must never read a *granted* member's profile — that would
+    let their pace contaminate the viewer's own EWMA (rule #5). `owner_scope` is
+    for genuine cross-owner reads only."""
     cypher = (
-        "MATCH (pp:PhysicalProfile)\n"
-        f"WHERE {owner_scope('pp')}\n"
+        "MATCH (pp:PhysicalProfile {owner_id: $viewer_id})\n"
         "RETURN pp.pace_on_grade AS pace, pp.episode_count AS count"
     )
     return cypher, {}
@@ -177,13 +181,14 @@ def upsert_episode(
     pace_on_grade: float | None,
     now: str,
 ) -> tuple[str, dict[str, Any]]:
-    """Upsert the viewer's Episode. `owner_id` is born `= $viewer_id` (create
-    binding) — the node is owner-scoped from the first write."""
+    """Upsert the viewer's Episode. `owner_id` is part of the MERGE key, so a
+    foreign `episode_id` can never MATCH (and re-own) another member's node — the
+    seam enforces ownership structurally, not by id-naming convention. With the
+    global `episode_id` uniqueness constraint, a cross-owner id fails closed."""
     cypher = (
-        "MERGE (e:Episode {episode_id: $eid})\n"
+        "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
         "ON CREATE SET e.created_at = $now\n"
-        "SET e.owner_id          = $viewer_id,\n"
-        "    e.watch_activity_id = $wid,\n"
+        "SET e.watch_activity_id = $wid,\n"
         "    e.source            = $source,\n"
         "    e.distance_m        = $distance,\n"
         "    e.ascent_m          = $ascent,\n"
@@ -271,11 +276,11 @@ def upsert_physical_profile_maxima(
 
 def upsert_pace_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]:
     """MERGE the viewer's `pace_on_grade_moderate` capability Belief. `owner_id`
-    and `subject_id` are born `= $viewer_id` (create binding)."""
+    is part of the MERGE key, so the ON MATCH value update can only ever touch the
+    viewer's own belief — a foreign `belief_id` can never MATCH (and clobber) it."""
     cypher = (
-        "MERGE (b:Belief {belief_id: $bid})\n"
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
         "ON CREATE SET\n"
-        "    b.owner_id             = $viewer_id,\n"
         "    b.subject_id           = $viewer_id,\n"
         "    b.subject_type         = 'person',\n"
         "    b.axis                 = 'capability',\n"

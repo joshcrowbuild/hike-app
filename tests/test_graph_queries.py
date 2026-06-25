@@ -171,38 +171,108 @@ def test_s3_ac4_no_builder_takes_a_free_owner_param() -> None:
             assert bound == "$viewer_id", f"owner_id bound to {bound}, not $viewer_id"
 
 
+def test_s3_ac2_owned_upserts_pin_owner_in_the_merge_key() -> None:
+    """Review hardening: the natural-key upserts (Episode/Belief, whose ids are
+    globally unique) pin owner_id IN the MERGE key, so a foreign id can never
+    MATCH and re-own/clobber another member's node — ownership is enforced by the
+    seam, not by the id-naming convention."""
+    ep_cypher, _ = queries.upsert_episode(
+        "ep:x:1",
+        watch_activity_id="garmin:1",
+        source="fit_file",
+        distance_m=1.0,
+        ascent_m=1.0,
+        descent_m=1.0,
+        moving_min=1.0,
+        duration_min=1.0,
+        avg_heart_rate=1,
+        pace_on_grade=1.0,
+        now="t",
+    )
+    assert "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})" in ep_cypher
+    bel_cypher, _ = queries.upsert_pace_belief("belief:x:pace_on_grade_moderate", "1.0")
+    assert "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})" in bel_cypher
+
+
+def test_s2_ac4_recount_preserves_promotion_case() -> None:
+    """AC-2.4: the owner-scoped recount keeps the confidence-promotion CASE
+    (n≥threshold → 0.7 else 0.3) bound to $threshold — the production write path
+    for confidence, which `pace_confidence()` no longer drives. Red-on-regression
+    if the CASE, the 0.7 branch, or the threshold binding is dropped."""
+    cypher, params = queries.recount_belief_corroboration("belief:x:pace_on_grade_moderate", 3)
+    assert "CASE WHEN n >= $threshold THEN 0.7 ELSE 0.3 END" in cypher
+    assert "b.corroboration_n = n" in cypher
+    assert params["threshold"] == 3
+
+
 # ── S4 — property/fuzz test over the write builders ──────────────────────────
 
 
+def _poisoned_cross_owner_write(owner_param_id: str) -> tuple[str, dict]:
+    """A builder that forgets the seam and binds owner_id to a free $owner — the
+    exact mistake the guard must reject. Used to prove the fuzz machinery is
+    adversarial, not tautological."""
+    return (
+        "MERGE (e:Episode {episode_id: $eid}) SET e.owner_id = $owner",
+        {"eid": f"ep:{owner_param_id}:x", "owner": owner_param_id},
+    )
+
+
 def test_s4_ac1_ac2_no_builder_writes_a_non_viewer_owner() -> None:
-    """AC-4.1/4.2: for randomized (viewer, owner, granted) triples — including
-    adversarial owner ∉ {viewer} ∪ granted — no executed statement writes a node
-    bound to an owner_id outside {$viewer_id} ∪ $granted_ids. Cross-owner write
-    is impossible by construction (owner_id is only ever bound to $viewer_id)."""
+    """AC-4.1/4.2: for randomized (viewer, owner, granted) triples — the
+    `owner`-namespace is deliberately driven OUTSIDE {viewer} ∪ granted — every
+    real builder still binds owner_id only to $viewer_id (the written owner is the
+    session viewer regardless of the id-namespace), AND a poisoned writer that
+    binds the adversarial $owner is rejected by run_write. Cross-owner write is
+    impossible, not merely unlikely."""
     rng = random.Random(20260624)
+    adversarial_seen = 0
     for _ in range(400):
         viewer = f"mem:v{rng.randint(0, 9999)}"
-        owner = f"mem:o{rng.randint(0, 9999)}"  # the id-namespace; may be != viewer
-        granted = [f"mem:g{rng.randint(0, 9999)}" for _ in range(rng.randint(0, 3))]
+        owner = f"mem:o{rng.randint(0, 9999)}"  # id-namespace, distinct space from viewer/granted
+        granted = [f"mem:g{rng.randint(0, 3)}" for _ in range(rng.randint(0, 3))]
         allowed = {viewer, *granted}
-        # adversarial bias: ensure the owner-namespace is frequently outside the set
-        if rng.random() < 0.5:
-            assert owner not in allowed or owner == viewer
+        assert owner not in allowed  # disjoint namespaces → owner is always adversarial
+        adversarial_seen += 1
 
         session, calls = _recording_session(viewer, granted)
-        for _label, query in _write_builder_outputs():
+        # real builders, with ids namespaced to the *adversarial* owner
+        eid = f"ep:{owner}:act"
+        bid = f"belief:{owner}:pace_on_grade_moderate"
+        for query in (
+            queries.upsert_episode(
+                eid,
+                watch_activity_id="garmin:act",
+                source="fit_file",
+                distance_m=1.0,
+                ascent_m=1.0,
+                descent_m=1.0,
+                moving_min=1.0,
+                duration_min=1.0,
+                avg_heart_rate=1,
+                pace_on_grade=1.0,
+                now="t",
+            ),
+            queries.wire_person_did_episode(eid),
+            queries.upsert_physical_profile_pace(1.0),
+            queries.upsert_pace_belief(bid, "1.0"),
+            queries.recount_belief_corroboration(bid, 3),
+        ):
             session.run_write(query)
 
         for cypher, merged in calls:
-            # the seam injected the viewer it was handed
-            assert merged["viewer_id"] == viewer
-            assert merged["granted_ids"] == granted
+            assert merged["viewer_id"] == viewer  # the seam injected the handed viewer
             assert "owner" not in merged  # no free owner param ever reaches the runner
-            # every owner_id the statement binds resolves to the viewer (∈ allowed)
+            # every owner_id the statement binds resolves to the viewer, never `owner`
             for bound in _OWNER_BIND_RE.findall(cypher):
                 assert bound == "$viewer_id"
-            # whatever owner the namespace named, the WRITTEN owner is the viewer
-            assert merged["viewer_id"] in allowed
+                assert owner not in cypher  # the adversarial owner is nowhere bound
+
+        # the guard rejects a writer that tries to bind the adversarial owner
+        with pytest.raises(UnscopedWriteError):
+            session.run_write(_poisoned_cross_owner_write(owner))
+
+    assert adversarial_seen == 400  # every iteration exercised an out-of-set owner
 
 
 def test_s4_ac3_malformed_builder_fails_closed() -> None:

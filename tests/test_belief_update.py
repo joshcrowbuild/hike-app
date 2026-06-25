@@ -15,6 +15,7 @@ from orchestration.belief_update import (
     UpdateTask,
     ewma_pace,
     pace_confidence,
+    process_episode,
     update_beliefs,
 )
 
@@ -282,3 +283,32 @@ def test_s2_ac1_ewma_with_real_numbers():
     # After 3 episodes at 14.0, should be significantly below 16.0
     assert pace < 15.5
     assert pace > 13.5
+
+
+def test_s2_ac1_process_episode_read_is_owner_scoped():
+    """AC-2.1: process_episode reads the Episode through ScopedSession.run (an
+    owner-scoped read), builds the task from the row, and routes writes to
+    run_write — the read lands on the read surface, not the write surface."""
+    session = _FakeSession(
+        {
+            "distance_m AS distance_m": [
+                {"distance_m": 12000.0, "ascent_m": 600.0, "pace_on_grade": 9.0}
+            ]
+        }
+    )
+    process_episode("ep:josh:7", "josh", session)
+    # the Episode field read went through run (reads), owner-scoped, never run_write
+    ep_reads = [c for c, _ in session.reads if "distance_m AS distance_m" in c]
+    assert len(ep_reads) == 1
+    assert "e.owner_id = $viewer_id" in ep_reads[0]  # owner_scope on the read
+    assert not any("distance_m AS distance_m" in c for c, _ in session.writes)  # read ≠ write path
+    # the task fields drove real writes (pace belief from pace_on_grade=9.0)
+    belief = [p for c, p in session.writes if "MERGE (b:Belief" in c]
+    assert belief and belief[0]["value"] == "9.0"
+
+
+def test_s2_process_episode_missing_episode_is_noop():
+    """process_episode logs and returns when the (owner-scoped) read finds nothing."""
+    session = _FakeSession()  # read returns []
+    process_episode("ep:josh:missing", "josh", session)
+    assert session.writes == []
