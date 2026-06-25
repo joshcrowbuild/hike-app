@@ -40,12 +40,32 @@ class Settings:
     # Geographic scope (Stage 3: polygon-bounded region).
     region: str = field()
 
+    # Edge auth (Epic 014 S3). Until the Stage-8 auth/identity system exists, a
+    # non-anonymous viewer_id at the API edge must present this shared dev secret.
+    # Absent by default (repr=False) so the only out-of-the-box path is the open
+    # anonymous world; a misconfigured deploy fails closed, never silently trusting
+    # a client-supplied identity (Rule #5 / decision-log §13).
+    dev_viewer_secret: str | None = field(repr=False, default=None)
+
     # Live-data source credentials (Stage 1 catalog; most free/keyless).
     nws_user_agent: str | None = None
     airnow_api_key: str | None = field(repr=False, default=None)
     firms_map_key: str | None = field(repr=False, default=None)
     ridb_api_key: str | None = field(repr=False, default=None)
 
+    # LiveAdapter seam (Epic 013). Comma-separated adapter names from
+    # ADVENTURE_LIVE_ADAPTERS; position sets primary vs. fallback within a kind.
+    # Empty = no live probes (the engine still runs — source-or-silence). live_region
+    # is the country/coverage code adapters are gated on (distinct from `region`, the
+    # geographic ingest scope); defaults to the pilot's US.
+    live_adapters: tuple[str, ...] = ()
+    live_region: str = "US"
+
+    # Valhalla drive-time (Epic 013 S5 / Epic 005). Origin-relative, never persisted
+    # (Rule #3). Absent base URL = no drive-time line, no pruning (parity with the
+    # missing-key probe pattern). drive_speed_kmh sizes the radius→time-budget default.
+    valhalla_base_url: str | None = None
+    drive_speed_kmh: float = 60.0
     # Commons fork (Epic 010). Secret salt for the one-way writer_hash (HMAC) that
     # makes a contributor's observations findable for revocation without a back-
     # edge to them (Stage 9 §2.3). Never in the repo (#10); absent → fork skipped.
@@ -84,6 +104,8 @@ class Settings:
         watch_raw = e.get("ADVENTURE_WATCH_ADAPTERS", "")
         watch_adapters = tuple(s.strip() for s in watch_raw.split(",") if s.strip())
 
+        live_raw = e.get("ADVENTURE_LIVE_ADAPTERS", "")
+        live_adapters = tuple(s.strip() for s in live_raw.split(",") if s.strip())
         # Default to the three Stage-3 sources when the env var is absent; reuse
         # the ADVENTURE_WATCH_ADAPTERS comma-split idiom (AC-2.4).
         corpus_raw = e.get("ADVENTURE_CORPUS_SOURCES", "osm,nps,usfs")
@@ -97,10 +119,15 @@ class Settings:
             anthropic_api_key=e.get("ANTHROPIC_API_KEY") or None,
             tiers={"mechanical": tier("mechanical"), "judgment": tier("judgment")},
             region=e.get("ADVENTURE_REGION", "shenandoah-gwj"),
+            dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
             nws_user_agent=e.get("NWS_USER_AGENT") or None,
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,
             ridb_api_key=e.get("RIDB_API_KEY") or None,
+            live_adapters=live_adapters,
+            live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
+            valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,
+            drive_speed_kmh=float(e.get("DRIVE_SPEED_KMH", "60.0")),
             commons_writer_salt=e.get("ADVENTURE_COMMONS_WRITER_SALT") or None,
             watch_adapters=watch_adapters,
             garmin_email=e.get("GARMIN_EMAIL") or None,

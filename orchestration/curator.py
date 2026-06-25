@@ -15,7 +15,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from orchestration.adapters.base import VerifiedFact
+from orchestration.adapters.base import ConditionKind, VerifiedFact
 from orchestration.providers.base import LLMRequest, ModelProvider
 
 # Active-alert events that hard-block (substring match, case-insensitive).
@@ -57,11 +57,11 @@ def _hotspots(fact: VerifiedFact) -> int:
     return count if isinstance(count, int) else 0
 
 
-def evaluate_guardrails(facts: Mapping[str, VerifiedFact]) -> GuardrailVerdict:
+def evaluate_guardrails(facts: Mapping[ConditionKind, VerifiedFact]) -> GuardrailVerdict:
     blocks: list[str] = []
     warnings: list[str] = []
 
-    weather = facts.get("weather")
+    weather = facts.get(ConditionKind.weather)
     if weather is not None:
         for event in _alerts(weather):
             if any(kw in event.lower() for kw in BLOCKING_ALERT_KEYWORDS):
@@ -69,7 +69,7 @@ def evaluate_guardrails(facts: Mapping[str, VerifiedFact]) -> GuardrailVerdict:
             else:
                 warnings.append(f"weather alert: {event}")
 
-    air = facts.get("air")
+    air = facts.get(ConditionKind.air)
     if air is not None:
         aqi = _aqi(air)
         if aqi is not None and aqi >= AQI_BLOCK:
@@ -77,7 +77,7 @@ def evaluate_guardrails(facts: Mapping[str, VerifiedFact]) -> GuardrailVerdict:
         elif aqi is not None and aqi >= AQI_WARN:
             warnings.append(f"air quality elevated (AQI {aqi})")
 
-    fire = facts.get("fire")
+    fire = facts.get(ConditionKind.fire)
     if fire is not None:
         count = _hotspots(fire)
         if count:
@@ -131,12 +131,18 @@ def rank_ids(
     model: str,
     *,
     profile: str | None = None,
+    hints: dict[str, str] | None = None,
 ) -> list[str]:
-    """Ask the judgment-tier model to order candidate (canonical_id, name) pairs."""
+    """Ask the judgment-tier model to order candidate (canonical_id, name) pairs.
+    `hints` surfaces a per-candidate ordering input (e.g. drive minutes) into the
+    payload — an explicit, legible ranking term, never a confidence input (rule #2)."""
     if not items:
         return []
     known = [cid for cid, _ in items]
-    listing = "\n".join(f"- {cid}: {name}" for cid, name in items)
+    hints = hints or {}
+    listing = "\n".join(
+        f"- {cid}: {name}" + (f" ({hints[cid]})" if cid in hints else "") for cid, name in items
+    )
     user = f"Candidates:\n{listing}"
     if profile:
         user += f"\n\nHiker preferences: {profile}"

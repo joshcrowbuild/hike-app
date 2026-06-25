@@ -33,6 +33,7 @@ class FeedResponse(BaseModel):
     query: str
     cards: list[FeedCardResponse]
     card_count: int
+    notices: list[str] = []  # feed-level disclosures (e.g. drive times unavailable)
 
 
 class GraphStats(BaseModel):

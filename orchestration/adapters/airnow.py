@@ -8,11 +8,23 @@ silence: failure / empty -> None.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import httpx
 
 from . import _http
-from .base import VerifiedFact
+from .base import (
+    AdapterHealth,
+    ConditionKind,
+    LiveAdapter,
+    LiveCapabilities,
+    Point,
+    VerifiedFact,
+    health_from_status,
+)
+
+if TYPE_CHECKING:
+    from orchestration.config import Settings
 
 SOURCE = "EPA AirNow"
 URL = "https://www.airnowapi.org/aq/observation/latLong/current/"
@@ -59,3 +71,45 @@ def fetch(
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
         disclosures=("AirNow AQI is preliminary and subject to revision.",),
     )
+
+
+class AirNowAdapter(LiveAdapter):
+    """Air quality (AQI) via EPA AirNow (API key required)."""
+
+    name = "airnow"
+    kind = ConditionKind.air
+    ttl_seconds = 3600  # ~60 min (Stage 4 §4)
+
+    def __init__(self, api_key: str, *, client: httpx.Client | None = None) -> None:
+        self._api_key = api_key
+        self._client = client
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(
+            needs_point=True,
+            needs_site_id=False,
+            is_keyless=False,
+            supports_region=frozenset({"US"}),
+        )
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        return fetch(point.lat, point.lon, self._api_key, client=self._client)
+
+    def health(self) -> AdapterHealth:
+        client = self._client or _http.build_client()
+        status = _http.probe_status(
+            client,
+            URL,
+            params={
+                "format": "application/json",
+                "latitude": 38.5,
+                "longitude": -78.4,
+                "distance": 50,
+                "API_KEY": self._api_key,
+            },
+        )
+        return health_from_status(status)
+
+    @classmethod
+    def from_config(cls, settings: Settings) -> LiveAdapter | None:
+        return cls(settings.airnow_api_key) if settings.airnow_api_key else None

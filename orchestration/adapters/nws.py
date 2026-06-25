@@ -8,15 +8,28 @@ Verifier's hard-guardrail feed). TTL ~10 min. Source-or-silence: any failure -> 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import httpx
 
 from . import _http
-from .base import VerifiedFact
+from .base import (
+    AdapterHealth,
+    ConditionKind,
+    LiveAdapter,
+    LiveCapabilities,
+    Point,
+    VerifiedFact,
+    health_from_status,
+)
+
+if TYPE_CHECKING:
+    from orchestration.config import Settings
 
 SOURCE = "NWS api.weather.gov"
 POINTS_URL = "https://api.weather.gov/points/{lat},{lon}"
 ALERTS_URL = "https://api.weather.gov/alerts/active"
+ROOT_URL = "https://api.weather.gov/"
 
 
 def fetch(
@@ -69,3 +82,38 @@ def fetch(
         fetched_at=now or datetime.now(timezone.utc),
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
     )
+
+
+class NwsAdapter(LiveAdapter):
+    """Weather via api.weather.gov (keyless; requires a User-Agent contact string)."""
+
+    name = "nws"
+    kind = ConditionKind.weather
+    ttl_seconds = 600  # ~10 min (Stage 4 §4)
+
+    def __init__(self, user_agent: str, *, client: httpx.Client | None = None) -> None:
+        self._user_agent = user_agent
+        self._client = client
+
+    def _client_or_build(self) -> httpx.Client:
+        return self._client or _http.build_client(
+            headers={"User-Agent": self._user_agent, "Accept": "application/geo+json"}
+        )
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(
+            needs_point=True,
+            needs_site_id=False,
+            is_keyless=True,
+            supports_region=frozenset({"US"}),
+        )
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        return fetch(point.lat, point.lon, self._user_agent, client=self._client)
+
+    def health(self) -> AdapterHealth:
+        return health_from_status(_http.probe_status(self._client_or_build(), ROOT_URL))
+
+    @classmethod
+    def from_config(cls, settings: Settings) -> LiveAdapter | None:
+        return cls(settings.nws_user_agent) if settings.nws_user_agent else None
