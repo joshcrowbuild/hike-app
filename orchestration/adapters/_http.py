@@ -49,6 +49,19 @@ def get_text(client: httpx.Client, url: str, params: dict[str, Any] | None = Non
     return r.text
 
 
+def probe_status(
+    client: httpx.Client, url: str, params: dict[str, Any] | None = None
+) -> int | None:
+    """Return the HTTP status of a lightweight liveness GET, or None on a connection
+    error — fed to `health_from_status` so an adapter's `health()` never raises."""
+    try:
+        r = client.get(url, params=params)
+    except httpx.HTTPError as exc:
+        log.debug("health GET %s failed: %s", url, exc)
+        return None
+    return r.status_code
+
+
 def post_json(client: httpx.Client, url: str, json: dict[str, Any]) -> Any:
     try:
         r = client.post(url, json=json)
