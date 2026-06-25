@@ -46,6 +46,11 @@ class Settings:
     firms_map_key: str | None = field(repr=False, default=None)
     ridb_api_key: str | None = field(repr=False, default=None)
 
+    # Commons fork (Epic 010). Secret salt for the one-way writer_hash (HMAC) that
+    # makes a contributor's observations findable for revocation without a back-
+    # edge to them (Stage 9 §2.3). Never in the repo (#10); absent → fork skipped.
+    commons_writer_salt: str | None = field(repr=False, default=None)
+
     # Device-integration seam (Epic 004). Comma-separated vendor names from
     # ADVENTURE_WATCH_ADAPTERS; empty = no devices, pipeline still runs (rule #6).
     # Per-vendor secrets are read here but never defaulted to a real value (#10).
@@ -96,6 +101,7 @@ class Settings:
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,
             ridb_api_key=e.get("RIDB_API_KEY") or None,
+            commons_writer_salt=e.get("ADVENTURE_COMMONS_WRITER_SALT") or None,
             watch_adapters=watch_adapters,
             garmin_email=e.get("GARMIN_EMAIL") or None,
             garmin_password=e.get("GARMIN_PASSWORD") or None,
