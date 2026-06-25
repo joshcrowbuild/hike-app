@@ -114,6 +114,9 @@ def update_beliefs(task: UpdateTask, runner: Runner) -> None:
 
 def _update_pace(task: UpdateTask, runner: Runner) -> None:
     """EWMA update to PhysicalProfile.pace_on_grade + write capability Belief."""
+    pace = task.pace_on_grade
+    if pace is None:  # caller guards this, but stay self-safe (and narrow for mypy)
+        return
     rows = runner(
         (
             "MATCH (pp:PhysicalProfile {owner_id: $owner}) "
@@ -124,7 +127,7 @@ def _update_pace(task: UpdateTask, runner: Runner) -> None:
 
     if not rows:
         # No profile yet — create it with the first episode's pace.
-        new_pace = task.pace_on_grade
+        new_pace = pace
         runner(
             (
                 "MERGE (pp:PhysicalProfile {owner_id: $owner}) "
@@ -136,7 +139,7 @@ def _update_pace(task: UpdateTask, runner: Runner) -> None:
         )
     else:
         current_pace = rows[0].get("pace")
-        new_pace = ewma_pace(current_pace, task.pace_on_grade)
+        new_pace = ewma_pace(current_pace, pace)
         runner(
             (
                 "MATCH (pp:PhysicalProfile {owner_id: $owner}) "
