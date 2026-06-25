@@ -1,0 +1,28 @@
+{
+  "surface": {
+    "canvas": { "$value": "{color.neutral.50}", "$type": "color" },
+    "raised": { "$value": "{color.neutral.25}", "$type": "color" },
+    "press": { "$value": "{color.neutral.100}", "$type": "color" }
+  },
+  "text": {
+    "primary": { "$value": "{color.neutral.900}", "$type": "color" },
+    "secondary": { "$value": "{color.neutral.700}", "$type": "color" },
+    "muted": { "$value": "{color.neutral.500}", "$type": "color" }
+  },
+  "border": {
+    "hairline": { "$value": "{color.neutral.alpha.14}", "$type": "color" },
+    "faint": { "$value": "{color.neutral.alpha.08}", "$type": "color" }
+  },
+  "overlay": {
+    "scrim": { "$value": "{color.neutral.alpha.40}", "$type": "color" }
+  },
+  "signal": {
+    "caution": {
+      "fg": { "$value": "{color.terracotta.600}", "$type": "color" },
+      "bg": { "$value": "{color.terracotta.alpha.10}", "$type": "color" }
+    }
+  },
+  "focus": {
+    "ring": { "$value": "{color.neutral.900}", "$type": "color" }
+  }
+}

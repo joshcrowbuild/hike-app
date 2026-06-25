@@ -1,0 +1,57 @@
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+:root {
+  --color-neutral-25: #fbfaf7;
+  --color-neutral-50: #f4f3ef;
+  --color-neutral-100: #ecebe4;
+  --color-neutral-500: #6b7178;
+  --color-neutral-700: #3c424a;
+  --color-neutral-900: #16191d;
+  --color-neutral-alpha-14: rgba(22, 25, 29, 0.14);
+  --color-neutral-alpha-40: rgba(22, 25, 29, 0.4);
+  --color-neutral-alpha-08: rgba(22, 25, 29, 0.08);
+  --color-terracotta-600: #ad4f2a;
+  --color-terracotta-alpha-10: rgba(173, 79, 42, 0.1);
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --size-data-micro: 0.625rem;
+  --size-label: 0.6875rem;
+  --size-meta: 0.8125rem;
+  --size-body: 0.9375rem;
+  --size-emphasis: 1rem;
+  --size-place-lead: 1.1875rem;
+  --size-title: 1.5rem;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+  --stroke-hairline: 1px;
+  --stroke-line: 1.5px;
+  --stroke-path: 2px;
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --font-family-sans: system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --surface-canvas: var(--color-neutral-50);
+  --surface-raised: var(--color-neutral-25);
+  --surface-press: var(--color-neutral-100);
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-700);
+  --text-muted: var(--color-neutral-500);
+  --border-hairline: var(--color-neutral-alpha-14);
+  --border-faint: var(--color-neutral-alpha-08);
+  --overlay-scrim: var(--color-neutral-alpha-40);
+  --signal-caution-fg: var(--color-terracotta-600);
+  --signal-caution-bg: var(--color-terracotta-alpha-10);
+  --focus-ring: var(--color-neutral-900);
+}
