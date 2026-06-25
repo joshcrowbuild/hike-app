@@ -12,6 +12,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | 006 | Novelty filter in Curator | BACKLOG | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
+| [012](epic-012-corpus-source-seam.md) | CorpusSource seam (contract + registry; OSM-as-spine a declared role) | DONE ✅ | 1 | Stage 3 ingestion |
 
 ---
 
