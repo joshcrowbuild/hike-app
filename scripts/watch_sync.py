@@ -21,6 +21,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -214,7 +215,10 @@ def main() -> None:
             since=since,
             parse=_parse_fit_bytes,
             match=match_trail,
-            create=create_episode,
+            # Bind the commons writer-salt here (Epic 010) so watch-synced episodes
+            # accrete the de-identified fork too, without widening run_sync's
+            # signature or the injected-collaborator contract.
+            create=partial(create_episode, commons_salt=settings.commons_writer_salt),
             session=scoped,
             belief_queue=queue,
             # Drain through the per-owner scoped-write seam (Epic 011). The old
