@@ -21,6 +21,12 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from graph import queries
+
+if TYPE_CHECKING:
+    from graph.client import ScopedSession
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -150,79 +156,41 @@ def create_episode(
     summary: FITSummary,
     canonical_id: str | None,
     owner_id: str,
-    session,
+    session: ScopedSession,
     *,
     belief_queue=None,  # BeliefUpdateQueue | None — enqueues update after write
 ) -> str:
-    """MERGE an Episode node. Returns episode_id."""
+    """MERGE an Episode through the scoped-write seam (Epic 011). Returns episode_id.
+
+    Every owned write goes through `session.run_write` (which refuses an owned
+    write missing its owner-scope clause) and is authored in `graph.queries` —
+    no inline owned-node Cypher here. The session is scoped to `owner_id`, so
+    `$viewer_id` resolves to the owner the episode is created for.
+    """
     from datetime import datetime, timezone
 
     episode_id = f"ep:{owner_id}:{summary.watch_activity_id}"
     _pace = compute_pace_on_grade(summary)  # compute once; reused for Episode + UpdateTask
     now = datetime.now(timezone.utc).isoformat()
 
-    session.run(
-        (
-            """
-        MERGE (e:Episode {episode_id: $eid})
-        ON CREATE SET e.created_at = $now
-        SET e.owner_id            = $owner,
-            e.watch_activity_id   = $wid,
-            e.source              = 'fit_file',
-            e.distance_m          = $distance,
-            e.ascent_m            = $ascent,
-            e.descent_m           = $descent,
-            e.moving_min          = $moving_min,
-            e.duration_min        = $duration_min,
-            e.avg_heart_rate      = $hr,
-            e.pace_on_grade       = $pace,
-            e.fit_parsed          = true,
-            e.updated_at          = $now
-        """,
-            {
-                "eid": episode_id,
-                "owner": owner_id,
-                "wid": summary.watch_activity_id,
-                "distance": summary.total_distance_m,
-                "ascent": summary.total_ascent_m,
-                "descent": summary.total_descent_m,
-                "moving_min": round(summary.moving_time_s / 60, 1)
-                if summary.moving_time_s
-                else None,
-                "duration_min": round(summary.total_time_s / 60, 1)
-                if summary.total_time_s
-                else None,
-                "hr": summary.avg_heart_rate,
-                "pace": _pace,
-                "now": now,
-            },
+    session.run_write(
+        queries.upsert_episode(
+            episode_id,
+            watch_activity_id=summary.watch_activity_id,
+            source="fit_file",
+            distance_m=summary.total_distance_m,
+            ascent_m=summary.total_ascent_m,
+            descent_m=summary.total_descent_m,
+            moving_min=round(summary.moving_time_s / 60, 1) if summary.moving_time_s else None,
+            duration_min=round(summary.total_time_s / 60, 1) if summary.total_time_s else None,
+            avg_heart_rate=summary.avg_heart_rate,
+            pace_on_grade=_pace,
+            now=now,
         )
     )
-
-    # Wire Person→Episode
-    session.run(
-        (
-            """
-        MATCH (p:Person {member_id: $owner})
-        MATCH (e:Episode {episode_id: $eid})
-        MERGE (p)-[:DID]->(e)
-        """,
-            {"owner": owner_id, "eid": episode_id},
-        )
-    )
-
-    # Wire Episode→CanonicalTrail (if matched)
+    session.run_write(queries.wire_person_did_episode(episode_id))
     if canonical_id:
-        session.run(
-            (
-                """
-            MATCH (e:Episode {episode_id: $eid})
-            MATCH (t:CanonicalTrail {canonical_id: $cid})
-            MERGE (e)-[:ON]->(t)
-            """,
-                {"eid": episode_id, "cid": canonical_id},
-            )
-        )
+        session.run_write(queries.wire_episode_on_trail(episode_id, canonical_id))
 
     # Enqueue belief update (S1: AC-1.1, AC-1.2, AC-1.3)
     if belief_queue is not None:
@@ -266,20 +234,17 @@ def ingest_episode(fit_path: Path, owner_id: str, *, dry_run: bool = False) -> d
     gc = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
 
     try:
-        from graph.load import make_runner
         from orchestration.belief_update import BeliefUpdateQueue
 
         belief_queue = BeliefUpdateQueue()
-        with gc._ensure_driver().session() as neo_session:
-            scoped = gc.scoped_session(owner_id)
-            trail_id = match_trail(summary, scoped)
-            episode_id = create_episode(
-                summary, trail_id, owner_id, scoped, belief_queue=belief_queue
-            )
-            # Drain the belief queue synchronously (Phase 1; async in Phase 2)
-            belief_queue.drain(make_runner(neo_session))
-            log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
-            return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
+        scoped = gc.scoped_session(owner_id)
+        trail_id = match_trail(summary, scoped)
+        episode_id = create_episode(summary, trail_id, owner_id, scoped, belief_queue=belief_queue)
+        # Drain synchronously through the scoped-write seam (Epic 011), scoped per
+        # task owner (Phase 1; async in Phase 2). Replaces the bare make_runner drain.
+        belief_queue.drain(gc.scoped_session)
+        log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
+        return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
     finally:
         gc.close()
 

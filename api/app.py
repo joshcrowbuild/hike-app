@@ -151,12 +151,11 @@ def _drain_queue_bg(queue, graph_client) -> None:
 
     Called via FastAPI BackgroundTasks so the caller receives their response
     immediately; belief updates happen asynchronously (AC-4.3 / S6 §4.1 queue
-    discipline: never block the request path).
+    discipline: never block the request path). Drains through the scoped-write
+    seam (Epic 011): `scoped_session` is the per-owner factory each task's writes
+    are scoped through (rule #4).
     """
-    from graph.load import make_runner
-
-    with graph_client._ensure_driver().session() as session:
-        queue.drain(make_runner(session))
+    queue.drain(graph_client.scoped_session)
 
 
 @app.post("/episode/{episode_id}/outcome", response_model=OutcomeResponse)
