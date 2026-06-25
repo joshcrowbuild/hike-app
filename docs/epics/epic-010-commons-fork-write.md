@@ -1,6 +1,6 @@
 # Epic 010 — Commons Fork Write (de-identified `:CommonsObservation`)
 
-**Status:** DEFINED
+**Status:** DONE ✅ *(2026-06-24 — built on `claude/track-a-write-path`, on Epic 011's scoped-write builders)*
 **Phase:** 1 (Personal Intelligence) — a dependency of the episode pipeline, **not** Stage 9
 **Spec refs:** Stage 9 §2 (build source of truth) · Stage 9 §6 / S9-13 · Stage 6 §6.2 / S6-10 · Stage 5 §6 / S5-10 · gap-audit C1 · decision-log-additions-proposed §40 (C1) · Rule #8 · Rule #5 · Rule #3 · Rule #4 · Rule #10
 
@@ -137,16 +137,19 @@ Every ingested Episode silently accretes a **born-severed, de-identified `:Commo
 
 ## Definition of Done
 
-- [ ] **S1 done first:** committed `decision-log.md` §30:265 and §31:282 commons-fork bullets read 🔶 (not ✅); `stage-6-watch-integration.md` S6-10 reads 🔶; README Epic 010 row + T3 thread note added; stage-9 pointers name Epic 010 (AC-1.1–1.4); doc-lint regression guard targets the real false-✅ lines and is green (AC-1.5).
-- [ ] `:Episode` + `Person-[:DID]` + `Episode-[:ON]` + `:CommonsObservation` writes restructured into **one managed transaction** (replacing today's auto-commit calls); the `:CommonsObservation` is born-severed (no `:Person`/`:Episode`/`:Outcome` edge, no `owner_id`), `trail_id`/`segment_ids` as scalars (S2; AC-2.0–2.6), with the schema constraint added.
-- [ ] `parse_fit` retains the GPS polyline + `start_time`; endpoint-trim 250m + raw pace → 4-band half-open **S9-9** capability band + month/ascent/distance buckets, all computed contributor-side before the commons node, no raw date, no model call, full track never on the `:Episode` (S3; AC-3.0–3.7). `e.date` (rest of M1) explicitly deferred to a named dependency.
-- [ ] `writer_hash = HMAC(salt, member_id)`: one-way, salt never in the graph, property-not-edge (S4; AC-4.1–4.4).
-- [ ] The structural privacy suite (no-path-any-length · trim-fired · raw-absent) lands **with** the write and **fails against absent code** via the non-vacuity guard (S5; AC-5.1–5.5).
-- [ ] `commons_opt_in` flag on `:Person` (default OFF), write fires regardless, eligibility-on-opt-in noted as open pending T6 (S6; AC-6.1–6.3).
-- [ ] All ACs covered by ≥1 passing test (named `test_s{story}_{ac}_{desc}` per the dev-process doc); tests written before the code they cover.
-- [ ] `make check` green (ruff + mypy + pytest).
-- [ ] Targeted self-review agent run (narrow file list: `ingestion/ingest_episode.py`, `graph/schema.cypher`, the new commons-fork module + tests; rules to check: Rule #8 born-severed, Rule #5 raw-pace-never-crosses, Rule #3 no raw track on the graph, Rule #4/C2 no new owned-node-write bypass, Rule #10 salt hygiene); every CRITICAL fixed before commit.
-- [ ] Atomic commits (typical split: S1 doc demotion · schema constraint · `parse_fit` track+`start_time` capture · commons-fork module + de-id transforms · `create_episode()` transaction + fork wiring · privacy test suite · consent flag + epic doc update), each with a *why* body.
-- [ ] Committed and pushed; `docs/epics/README.md` Epic 010 row → `DONE ✅`; stage-9 §1 table row updated from "🔶 designed, NOT yet built" to "✅ write built (Epic 010); aggregation dormant (Stage 9)".
+- [x] **S1 done first:** committed `decision-log.md` §30:265 and §31:282 commons-fork bullets read 🔶 (not ✅); `stage-6-watch-integration.md` S6-10 reads 🔶; README Epic 010 row + T3 thread note added; stage-9 pointers name Epic 010 (AC-1.1–1.4); doc-lint regression guard targets the real false-✅ lines and is green (AC-1.5).
+- [x] `:Episode` + `Person-[:DID]` + `Episode-[:ON]` + `:CommonsObservation` writes restructured into **one managed transaction** (`ScopedSession.execute_write`, replacing the auto-commit calls); the `:CommonsObservation` is born-severed (no `:Person`/`:Episode`/`:Outcome` edge, no `owner_id`), `trail_id`/`segment_ids` as scalars (S2; AC-2.0–2.6), with the schema constraint added. *(Write is a retry-idempotent `MERGE` on a contributor-minted random `observation_id`, not a bare `CREATE` — still born-severed, but safe under managed-transaction auto-retry; per the review.)*
+- [x] `parse_fit` retains the GPS polyline + `start_time`; endpoint-trim 250m + raw pace → 4-band half-open **S9-9** capability band + month/ascent/distance buckets, all computed contributor-side before the commons node, no raw date, no model call, full track never on the `:Episode` (S3; AC-3.0–3.7). `e.date` (rest of M1) explicitly **deferred** to a named M1 dependency.
+- [x] `writer_hash = HMAC(salt, member_id)`: one-way, salt never in the graph, property-not-edge (S4; AC-4.1–4.4).
+- [x] The structural privacy suite (no-path-any-length · trim-fired · raw-absent) lands **with** the write and **fails against absent code** via the non-vacuity guard (S5; AC-5.1–5.5). *(DB-free structural proof — a `MERGE`d node with no relationship syntax, never re-referenced, can have no path; stronger than a live reachability query against a transient edge.)*
+- [x] `commons_opt_in` flag on `:Person` (default OFF), write fires regardless, eligibility-on-opt-in noted as open pending T6 (S6; AC-6.1–6.3).
+- [x] All ACs covered by ≥1 passing test (named `test_s{story}_{ac}_{desc}`); tests written with the code they cover.
+- [x] `make check` green (ruff format + ruff + mypy + pytest) — 279 tests.
+- [x] **Adversarial review run** (6 dimensions: Rule #8 severance · Rule #5 raw-leak · Rule #3 raw-track · atomicity · Rule #10 salt-hygiene · AC/non-vacuity → per-finding verification; 4 raw → 4 confirmed, **all MINOR, all fixed**: retry-idempotent commons MERGE; AC-3.7 no-provider guard; AC-2.1/2.6 observation_id+constraint guards; AC-6.1 default-OFF schema-lint). No CRITICAL/MODERATE.
+- [x] Atomic commits (S1 doc demotion · schema+config substrate · de-id module · execute_write+builder · `create_episode` transaction + privacy suite · review hardening · epic close), each with a *why* body.
+- [x] Committed and pushed; `docs/epics/README.md` Epic 010 row → `DONE ✅`; stage-9 §1 table row updated to "✅ write built (Epic 010); aggregation dormant (Stage 9)".
+
+> **Interpretation note (S6).** The task brief's "gate on `Person.commons_opt_in` (default False)" is built as the epic specifies: the flag is the **write-side substrate** (default OFF), and the de-identified write **fires regardless** of it — consent gates Stage-9 *exposure*, not the write (S6 / Stage 9 §8.2 / S9-17; the write is unlinkable, so pre-consent accretion is not a contribution of identifiable data, and the substrate must accrete from day one or it is un-backfillable). If a write-gated reading was intended instead, that is a one-line change (`if commons_salt and person_opted_in:`), but it contradicts the epic + Stage-9 decisions and would defeat the accretion thesis.
+> **Watch-path note.** Both ingestion paths fork: the CLI (`ingest_episode`) threads the salt from `Settings`; the watch poller (`scripts/watch_sync.py`) binds it via `functools.partial` (no `run_sync` signature change).
 
 **Scope reminder (carried, not solved here):** aggregation, k-anonymity, the `:CommonsStat` node, serving, k/trim/band tuning, revocation *execution*, consent *exposure-gating*, the `e.date` half of M1, and the snapshot-differencing / DP mitigations are **all out of this epic** (Stage 9 §1, §3, §7.5, §8, §9; gap-audit M1/M7). Epic 010 ships the unlinkable write and the proof — nothing reads it.

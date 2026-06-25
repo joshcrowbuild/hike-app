@@ -20,7 +20,7 @@ The commons is built in two halves, deliberately separated in time (Decision Log
 
 | Half | Where built | State today |
 |---|---|---|
-| **The write** (`:CommonsObservation` per episode, de-identified at write) | Stage 5 §6 / Stage 6 §6.2 (T3) | 🔶 **designed, NOT yet built — Epic 010** (`epic-010-commons-fork-write.md`; gap-audit C1) — must ship before anything accretes |
+| **The write** (`:CommonsObservation` per episode, de-identified at write) | Stage 5 §6 / Stage 6 §6.2 (T3) | ✅ **write built — Epic 010** (`epic-010-commons-fork-write.md`); accreting born-severed observations. Aggregation dormant (this doc). |
 | **The read** (aggregate `:CommonsStat` on shared nodes, k-gated, served into the feed) | **Stage 9 (this doc)** | dormant; designed here |
 
 **Why the split matters.** The write is cheap and must start early or the commons is never viable (T3's whole point). The read is where privacy risk concentrates — aggregation is the moment individual contributions could leak — so it is designed late, against real accreted volume, and gated. Stage 9 is overwhelmingly about the **read** half and the **proof** that the write half is actually unlinkable. **Why now:** the episode pipeline (Stage 6) is the only feeder, so the commons could not be designed before it existed.
