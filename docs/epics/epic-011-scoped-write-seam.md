@@ -1,6 +1,6 @@
 # Epic 011 — Scoped-Write Seam
 
-**Status:** DEFINED  
+**Status:** DONE ✅ *(2026-06-24 — built on `claude/track-a-write-path`)*  
 **Phase:** 1 (Personal Intelligence) — foundational, before Stage 8 multiplayer  
 **Spec refs:** gap-audit C2 · decision-log-additions-proposed §40 (C2) · decision-log §28 (access-control T2, line 240: `scopedQuery(viewer)` = the only path to owned data — `scopedQuery` is the design-name; the implemented seam is `ScopedSession.run`) · Rules #4, #5, #7
 
@@ -85,16 +85,16 @@ Every write that touches an **owned** node (Episode / Belief / PhysicalProfile /
 
 ## Definition of Done
 
-- [ ] All ACs covered by at least one passing test (named `test_s{story}_{ac}_{desc}` per process doc)
-- [ ] `make check` green (ruff + mypy + pytest)
-- [ ] `graph/client.py` docstring updated: ScopedSession is the choke point for **reads and writes** of owned nodes (it currently says "Every read…"); `ScopedSession` / `GraphClient.scoped_session` docstring states that `viewer_id` is **unauthenticated** today — `run_write` scopes to whatever viewer it is handed; a forged `viewer_id` is still a forged write (gap-audit C3, a separate spec decision)
-- [ ] `graph/load.py` docstring corrected: it currently claims "access control is for reads of owned nodes" — narrow that to **world/public** writes, which are correctly unowned
-- [ ] `graph/queries.py` module docstring updated: it is the single author of owned-node Cypher for read **and** write
-- [ ] `orchestration/belief_update.py` `Runner = Any` removed; the `# Rule #4: episode scoped to owner` inline comment replaced by the structural guard
-- [ ] Targeted self-review agent run (narrow file list: `graph/client.py`, `graph/queries.py`, `belief_update.py`, `ingest_episode.py`, `tests/test_graph_queries.py`; rules to check: #4 reads+writes, #5 private-by-default, #7 owner-scoped corroboration); CRITICALs fixed before commit
-- [ ] `docs/research/decision-log-additions-proposed.md` §40 (C2) flipped 🔶 → ✅ when these proposed corrections are merged into the committed log; cross-reference this epic
-- [ ] `docs/epics/README.md` row added (Epic 011, Phase 1, depends on Epic 001) — and a note that **011 should land before Epic 003 starts**: Epic 003 (currently DEFINED) plans inline `owner_id` Cypher in a new `context_assembly.py` (gap-audit M9 note, a third copy of the scope clause); the M9 redirect routes that through `graph.queries`, which only exists once 011 lands
-- [ ] Committed and pushed
+- [x] All ACs covered by at least one passing test (named `test_s{story}_{ac}_{desc}` per process doc) — `tests/test_graph_queries.py` (guard + builders + seeded property/fuzz), `tests/test_belief_update.py` (routing + M8 + `process_episode`), `tests/test_ingest_episode.py` (create_episode + end-to-end drain)
+- [x] `make check` green (ruff format + ruff + mypy + pytest) — 244 tests
+- [x] `graph/client.py` docstring updated: ScopedSession is the choke point for **reads and writes** of owned nodes; states `viewer_id` is **unauthenticated** today (gap-audit C3, a separate spec decision)
+- [x] `graph/load.py` docstring corrected: narrowed to **world/public** writes, which are correctly unowned
+- [x] `graph/queries.py` module docstring updated: it is the single author of owned-node Cypher for read **and** write
+- [x] `orchestration/belief_update.py` `Runner = Any` removed (→ `ScopedWriter` protocol); the `# Rule #4: episode scoped to owner` inline Cypher comment replaced by the structural guard + `owner_scope` builders
+- [x] **Adversarial review run** (6 dimensions: guard soundness · cross-owner writes · M8 · behaviour regression · seam integrity · AC/test completeness → per-finding verification; 15 raw → 6 confirmed). **All 6 fixed before close:** composite owner MERGE keys (ownership-theft path closed — the seam now enforces ownership structurally, not via the id convention); viewer-only self-EWMA read (rule #5); AC-2.4 promotion-CASE test; `process_episode` read test; genuinely-adversarial fuzz loop. No live CRITICAL (the headline finding was latent — unreachable under the current per-owner-session trust model, and strictly weaker than the deferred C3 auth gap).
+- [ ] ~~`docs/research/decision-log-additions-proposed.md` §40 (C2) flip~~ — **N/A on this track:** that proposed-corrections doc does not exist on `claude/track-a-write-path` (it lives on the parallel design branch). Recorded here so the cross-reference is honest rather than fabricated.
+- [x] `docs/epics/README.md` row added (Epic 011, Phase 1, depends on Epic 001) with the note that **011 lands before Epic 003's context_assembly** routes its owner-scoped Cypher through `graph.queries` (gap-audit M9 redirect)
+- [x] Committed and pushed
 
 **Notes for the implementer (carried from the gap-audit, so they aren't re-discovered):**
 - The guard is a **boundary** check (fail loudly), not a surface degrade — an unscoped owned write is a programming error, never a runtime "degrade and disclose."
