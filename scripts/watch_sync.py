@@ -21,6 +21,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -190,7 +191,6 @@ def main() -> None:
     args = parser.parse_args()
 
     from graph.client import GraphClient
-    from graph.load import make_runner
     from ingestion.ingest_episode import create_episode, match_trail
     from ingestion.watch.registry import enabled_adapters
     from orchestration.belief_update import BeliefUpdateQueue
@@ -206,21 +206,27 @@ def main() -> None:
 
     gc = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
     try:
-        with gc._ensure_driver().session() as neo_session:
-            scoped = gc.scoped_session(args.owner)
-            since = most_recent_episode_time(args.owner, scoped)
-            queue = BeliefUpdateQueue()
-            report = run_sync(
-                adapters,
-                args.owner,
-                since=since,
-                parse=_parse_fit_bytes,
-                match=match_trail,
-                create=create_episode,
-                session=scoped,
-                belief_queue=queue,
-                drain=lambda q: q.drain(make_runner(neo_session)),
-            )
+        scoped = gc.scoped_session(args.owner)
+        since = most_recent_episode_time(args.owner, scoped)
+        queue = BeliefUpdateQueue()
+        report = run_sync(
+            adapters,
+            args.owner,
+            since=since,
+            parse=_parse_fit_bytes,
+            match=match_trail,
+            # Bind the commons writer-salt here (Epic 010) so watch-synced episodes
+            # accrete the de-identified fork too, without widening run_sync's
+            # signature or the injected-collaborator contract.
+            create=partial(create_episode, commons_salt=settings.commons_writer_salt),
+            session=scoped,
+            belief_queue=queue,
+            # Drain through the per-owner scoped-write seam (Epic 011). The old
+            # make_runner(neo_session) drain passed a 2-arg runner the belief
+            # writers never matched (it silently failed) and is incompatible with
+            # the session-factory drain contract.
+            drain=lambda q: q.drain(gc.scoped_session),
+        )
     finally:
         gc.close()
 

@@ -19,8 +19,15 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from graph import queries
+
+if TYPE_CHECKING:
+    from graph.client import ScopedSession
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -30,7 +37,13 @@ _FIT_REQUIRED = "fitdecode"
 
 @dataclass
 class FITSummary:
-    """Extracted fields from a FIT session message."""
+    """Extracted fields from a FIT session message.
+
+    `gps_track` (the full polyline) and `start_time` are captured for the
+    commons de-id transform (Epic 010) — the full track is consumed in-transform
+    to produce the endpoint-trimmed commons twin and is NEVER written to the
+    :Episode (Rule #3 / §35: raw biometrics + full geometry stay off the graph).
+    """
 
     watch_activity_id: str  # derived from filename; real ID comes from Garmin Connect
     total_distance_m: float | None
@@ -44,6 +57,9 @@ class FITSummary:
     end_lat: float | None
     end_lon: float | None
     sport: str | None
+    # Commons-fork inputs (Epic 010); consumed in-transform, never on the Episode.
+    start_time: datetime | None = None
+    gps_track: list[tuple[float, float]] = field(default_factory=list)
 
 
 def parse_fit(path: Path) -> FITSummary:
@@ -89,6 +105,7 @@ def parse_fit(path: Path) -> FITSummary:
                 summary.total_time_s = _get("total_elapsed_time")
                 summary.avg_heart_rate = _get("avg_heart_rate")
                 summary.sport = _get("sport")
+                summary.start_time = _get("start_time")  # commons month bucket (Epic 010)
 
             elif frame.name == "record":
                 lat_raw = frame.get_value("position_lat", fallback=None)
@@ -102,6 +119,9 @@ def parse_fit(path: Path) -> FITSummary:
     if gps_points:
         summary.start_lat, summary.start_lon = gps_points[0]
         summary.end_lat, summary.end_lon = gps_points[-1]
+        # Full polyline retained ONLY for the commons de-id transform (Epic 010);
+        # it is endpoint-trimmed for the commons twin and never reaches the Episode.
+        summary.gps_track = gps_points
 
     return summary
 
@@ -150,79 +170,66 @@ def create_episode(
     summary: FITSummary,
     canonical_id: str | None,
     owner_id: str,
-    session,
+    session: ScopedSession,
     *,
     belief_queue=None,  # BeliefUpdateQueue | None — enqueues update after write
+    commons_salt: str | None = None,
 ) -> str:
-    """MERGE an Episode node. Returns episode_id."""
-    from datetime import datetime, timezone
+    """Write the Episode + wires + the de-identified commons twin in ONE managed
+    transaction (Epic 011 seam + Epic 010 fork). Returns episode_id.
 
+    All owned-node Cypher is authored in `graph.queries`; `session.execute_write`
+    guards each owned statement, injects `$viewer_id`, and commits the batch
+    atomically — so the Episode and its born-severed `:CommonsObservation` either
+    both persist or neither does (Stage 9 §2.1). The session is scoped to
+    `owner_id`, so `$viewer_id` resolves to the owner the episode is created for.
+    """
     episode_id = f"ep:{owner_id}:{summary.watch_activity_id}"
     _pace = compute_pace_on_grade(summary)  # compute once; reused for Episode + UpdateTask
     now = datetime.now(timezone.utc).isoformat()
 
-    session.run(
-        (
-            """
-        MERGE (e:Episode {episode_id: $eid})
-        ON CREATE SET e.created_at = $now
-        SET e.owner_id            = $owner,
-            e.watch_activity_id   = $wid,
-            e.source              = 'fit_file',
-            e.distance_m          = $distance,
-            e.ascent_m            = $ascent,
-            e.descent_m           = $descent,
-            e.moving_min          = $moving_min,
-            e.duration_min        = $duration_min,
-            e.avg_heart_rate      = $hr,
-            e.pace_on_grade       = $pace,
-            e.fit_parsed          = true,
-            e.updated_at          = $now
-        """,
-            {
-                "eid": episode_id,
-                "owner": owner_id,
-                "wid": summary.watch_activity_id,
-                "distance": summary.total_distance_m,
-                "ascent": summary.total_ascent_m,
-                "descent": summary.total_descent_m,
-                "moving_min": round(summary.moving_time_s / 60, 1)
-                if summary.moving_time_s
-                else None,
-                "duration_min": round(summary.total_time_s / 60, 1)
-                if summary.total_time_s
-                else None,
-                "hr": summary.avg_heart_rate,
-                "pace": _pace,
-                "now": now,
-            },
-        )
-    )
-
-    # Wire Person→Episode
-    session.run(
-        (
-            """
-        MATCH (p:Person {member_id: $owner})
-        MATCH (e:Episode {episode_id: $eid})
-        MERGE (p)-[:DID]->(e)
-        """,
-            {"owner": owner_id, "eid": episode_id},
-        )
-    )
-
-    # Wire Episode→CanonicalTrail (if matched)
+    writes: list[tuple[str, dict]] = [
+        queries.upsert_episode(
+            episode_id,
+            watch_activity_id=summary.watch_activity_id,
+            source="fit_file",
+            distance_m=summary.total_distance_m,
+            ascent_m=summary.total_ascent_m,
+            descent_m=summary.total_descent_m,
+            moving_min=round(summary.moving_time_s / 60, 1) if summary.moving_time_s else None,
+            duration_min=round(summary.total_time_s / 60, 1) if summary.total_time_s else None,
+            avg_heart_rate=summary.avg_heart_rate,
+            pace_on_grade=_pace,
+            now=now,
+        ),
+        queries.wire_person_did_episode(episode_id),
+    ]
     if canonical_id:
-        session.run(
-            (
-                """
-            MATCH (e:Episode {episode_id: $eid})
-            MATCH (t:CanonicalTrail {canonical_id: $cid})
-            MERGE (e)-[:ON]->(t)
-            """,
-                {"eid": episode_id, "cid": canonical_id},
-            )
+        writes.append(queries.wire_episode_on_trail(episode_id, canonical_id))
+
+    # Commons fork (Epic 010): a born-severed, de-identified :CommonsObservation,
+    # committed in the SAME transaction as the Episode (Stage 9 §2.1). It fires
+    # regardless of Person.commons_opt_in — the write is unlinkable, so accretion
+    # is not a contribution of identifiable data; consent gates Stage-9 *exposure*,
+    # not the write (§8.2 / S9-17). Skipped only when no writer salt is configured.
+    if commons_salt:
+        from ingestion.commons_fork import build_observation
+
+        obs = build_observation(
+            member_id=owner_id,
+            salt=commons_salt,
+            trail_id=canonical_id,  # FK-by-value scalar; null when unmatched (no edge)
+            pace_on_grade=_pace,
+            distance_m=summary.total_distance_m,
+            ascent_m=summary.total_ascent_m,
+            start_time=summary.start_time,
+            gps_track=summary.gps_track,  # full track consumed here; never on the Episode
         )
+        writes.append(queries.create_commons_observation(obs))
+    else:
+        log.warning("Commons fork skipped for %s: no writer salt configured", episode_id)
+
+    session.execute_write(writes)  # atomic — all commit or none (AC-2.0 / AC-2.5)
 
     # Enqueue belief update (S1: AC-1.1, AC-1.2, AC-1.3)
     if belief_queue is not None:
@@ -266,20 +273,24 @@ def ingest_episode(fit_path: Path, owner_id: str, *, dry_run: bool = False) -> d
     gc = GraphClient(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
 
     try:
-        from graph.load import make_runner
         from orchestration.belief_update import BeliefUpdateQueue
 
         belief_queue = BeliefUpdateQueue()
-        with gc._ensure_driver().session() as neo_session:
-            scoped = gc.scoped_session(owner_id)
-            trail_id = match_trail(summary, scoped)
-            episode_id = create_episode(
-                summary, trail_id, owner_id, scoped, belief_queue=belief_queue
-            )
-            # Drain the belief queue synchronously (Phase 1; async in Phase 2)
-            belief_queue.drain(make_runner(neo_session))
-            log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
-            return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
+        scoped = gc.scoped_session(owner_id)
+        trail_id = match_trail(summary, scoped)
+        episode_id = create_episode(
+            summary,
+            trail_id,
+            owner_id,
+            scoped,
+            belief_queue=belief_queue,
+            commons_salt=settings.commons_writer_salt,
+        )
+        # Drain synchronously through the scoped-write seam (Epic 011), scoped per
+        # task owner (Phase 1; async in Phase 2). Replaces the bare make_runner drain.
+        belief_queue.drain(gc.scoped_session)
+        log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
+        return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
     finally:
         gc.close()
 

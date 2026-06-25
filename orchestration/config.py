@@ -66,6 +66,10 @@ class Settings:
     # missing-key probe pattern). drive_speed_kmh sizes the radius→time-budget default.
     valhalla_base_url: str | None = None
     drive_speed_kmh: float = 60.0
+    # Commons fork (Epic 010). Secret salt for the one-way writer_hash (HMAC) that
+    # makes a contributor's observations findable for revocation without a back-
+    # edge to them (Stage 9 §2.3). Never in the repo (#10); absent → fork skipped.
+    commons_writer_salt: str | None = field(repr=False, default=None)
 
     # Device-integration seam (Epic 004). Comma-separated vendor names from
     # ADVENTURE_WATCH_ADAPTERS; empty = no devices, pipeline still runs (rule #6).
@@ -75,6 +79,15 @@ class Settings:
     garmin_password: str | None = field(repr=False, default=None)
     coros_client_id: str | None = None
     coros_client_secret: str | None = field(repr=False, default=None)
+
+    # CorpusSource seam (Epic 012). Comma-separated source names from
+    # ADVENTURE_CORPUS_SOURCES; defaults to the three Stage-3 sources so today's
+    # behavior is preserved when the env var is absent. The registry resolves each
+    # name to an adapter via its `from_config` (ingestion/sources/registry.py).
+    # `usfs_geojson_path` is the one source-specific path a corpus adapter reads
+    # from config (rule #10); None = the USFS transport's own default path.
+    corpus_sources: tuple[str, ...] = ("osm", "nps", "usfs")
+    usfs_geojson_path: str | None = None
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> "Settings":
@@ -93,6 +106,10 @@ class Settings:
 
         live_raw = e.get("ADVENTURE_LIVE_ADAPTERS", "")
         live_adapters = tuple(s.strip() for s in live_raw.split(",") if s.strip())
+        # Default to the three Stage-3 sources when the env var is absent; reuse
+        # the ADVENTURE_WATCH_ADAPTERS comma-split idiom (AC-2.4).
+        corpus_raw = e.get("ADVENTURE_CORPUS_SOURCES", "osm,nps,usfs")
+        corpus_sources = tuple(s.strip() for s in corpus_raw.split(",") if s.strip())
 
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),
@@ -111,9 +128,15 @@ class Settings:
             live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
             valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,
             drive_speed_kmh=float(e.get("DRIVE_SPEED_KMH", "60.0")),
+            commons_writer_salt=e.get("ADVENTURE_COMMONS_WRITER_SALT") or None,
             watch_adapters=watch_adapters,
             garmin_email=e.get("GARMIN_EMAIL") or None,
             garmin_password=e.get("GARMIN_PASSWORD") or None,
             coros_client_id=e.get("COROS_CLIENT_ID") or None,
             coros_client_secret=e.get("COROS_CLIENT_SECRET") or None,
+            corpus_sources=corpus_sources,
+            # Kept raw (no `or None`): an explicitly-blank value must reach
+            # UsfsSource.from_config so it can fail loud (AC-3.2); unset → None →
+            # the USFS transport's default path.
+            usfs_geojson_path=e.get("ADVENTURE_USFS_GEOJSON"),
         )
