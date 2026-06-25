@@ -8,10 +8,11 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [002](epic-002-outcome-card-endpoint.md) | Outcome card endpoint (POST /episode/{id}/outcome) | IN_PROGRESS | 1 | Epic 001 |
 | [003](epic-003-context-assembly.md) | Context assembly in engine.plan() | IN_PROGRESS | 1 | Epic 001 |
 | [004](epic-004-device-integration-seam.md) | Device-integration seam (Garmin + Coros, pluggable) | DONE ✅ | 1 | Epic 001 |
-| [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time pre-Scout filter | BACKLOG | 1 | — |
+| [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time integration (post-Scout prune + ranking input) | DONE ✅ | 0 | — (via Epic 013) |
 | 006 | Novelty filter in Curator | BACKLOG | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
+| [013](epic-013-live-adapter-seam.md) | LiveAdapter seam (kind-keyed registry, failover, Valhalla drive-time, TTL) | DONE ✅ | 1 | Epic 003 |
 | [014](epic-014-overlay-egress-and-viewer-auth.md) | Private-overlay egress + viewer-auth hardening (C3 + C4) | DONE ✅ | 1 | Epic 003 |
 
 ---
