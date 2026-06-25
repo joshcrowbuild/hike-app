@@ -83,7 +83,7 @@ def test_s5_ac4_privacy_suite_not_vacuous() -> None:
     drops to 0 and this goes RED — closing the C1 "vacuously pass against absent
     code" failure mode that the rest of the suite would otherwise hide."""
     batch = _commit_batch(_summary())
-    co_count = sum(1 for c, _ in batch if "CREATE (co:CommonsObservation" in c)
+    co_count = sum(1 for c, _ in batch if "MERGE (co:CommonsObservation" in c)
     assert co_count >= 1
 
 
@@ -188,6 +188,26 @@ def test_s2_ac5_post_fork_failure_rolls_back_all_four() -> None:
     assert not any("CommonsObservation" in c for c, _ in committed)
 
 
+def test_s3_ac7_write_path_invokes_no_provider() -> None:
+    """AC-3.7: the de-id/commons write path is pure arithmetic — no model/provider
+    call (Rule #5). Monkeypatch the provider registry to explode, then run the full
+    create_episode commons path; it must complete without resolving a provider, so a
+    future edit routing band/bucket derivation through an LLM goes red here."""
+    import orchestration.providers.registry as reg
+
+    original = reg.resolve
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("a provider was resolved on the commons write path")
+
+    reg.resolve = _boom  # type: ignore[assignment]
+    try:
+        batch = _commit_batch(_summary())  # runs build_observation + the fork write
+    finally:
+        reg.resolve = original  # type: ignore[assignment]
+    assert any("CommonsObservation" in c for c, _ in batch)  # the fork still fired
+
+
 def test_s2_ac0_success_commits_all_four_together() -> None:
     """AC-2.0 (success side): on a clean run all four writes land in the one
     committed batch — the atomic counterpart to the rollback test."""
@@ -205,4 +225,4 @@ def test_s2_ac0_success_commits_all_four_together() -> None:
     assert "MERGE (e:Episode" in kinds
     assert ":DID]->(e)" in kinds
     assert ":ON]->(t)" in kinds
-    assert "CREATE (co:CommonsObservation" in kinds
+    assert "MERGE (co:CommonsObservation" in kinds

@@ -190,6 +190,27 @@ def test_s2_build_observation_has_no_owner_id() -> None:
     assert obs["writer_hash"]  # but the revocation handle is still written
 
 
+def test_s2_observation_id_minted_fresh_and_random() -> None:
+    """The observation_id is a contributor-minted random handle (uuid4), distinct
+    per call, unrelated to owner/episode — the retry-idempotent MERGE key that
+    stays severed (a second hike never collapses onto the first)."""
+    kw = dict(
+        member_id="mem:josh",
+        salt=_SALT,
+        trail_id="ct:x",
+        pace_on_grade=14.0,
+        distance_m=9000.0,
+        ascent_m=300.0,
+        start_time=datetime(2026, 6, 1),
+        gps_track=_straight_track(),
+    )
+    o1 = cf.build_observation(**kw)
+    o2 = cf.build_observation(**kw)
+    assert o1["observation_id"] != o2["observation_id"]  # fresh per call
+    assert "mem:josh" not in o1["observation_id"]  # not derived from the member
+    assert len(o1["observation_id"]) >= 32
+
+
 def test_s4_ac2_salt_never_in_observation() -> None:
     """AC-4.2: the salt never appears on any observation property."""
     obs = cf.build_observation(

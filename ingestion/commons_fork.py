@@ -7,9 +7,13 @@ episode's raw, identifying signals to the bucketed/banded values a born-severed
 capability label, the raw date a month bucket, the raw totals coarse buckets, and
 the GPS track has its identifying endpoints trimmed.
 
-`build_observation` assembles the property dict for the `CREATE` (the Cypher is in
-`graph.queries.create_commons_observation`). `observation_id` (randomUUID) and
-`written_at` (datetime) are generated server-side in Cypher, not here.
+`build_observation` assembles the property dict for the write (the Cypher is in
+`graph.queries.create_commons_observation`). It mints a fresh **random**
+`observation_id` (uuid4 — unrelated to owner/episode, so the node stays severed)
+so the write can `MERGE` on it and be idempotent under a managed-transaction retry
+(the lost-commit-ack case re-runs the work function; a plain `CREATE` with a
+server-side `randomUUID()` would write a second observation for the same hike and
+double-count it into the k-anonymity corpus). `written_at` is server-side.
 
 Privacy invariants this module upholds (proven in tests/test_commons_fork.py +
 tests/test_commons_privacy.py): no raw quasi-identifier (pace/date/totals) ever
@@ -22,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import math
+import uuid
 from datetime import datetime
 from typing import Any, Sequence
 
@@ -152,6 +157,10 @@ def build_observation(
     never enter the observation (Stage 9 §4.1). Pure: no DB, no model call."""
     trimmed = endpoint_trim(gps_track)
     return {
+        # Fresh random handle (not derived from owner/episode → stays severed; not
+        # derived from de-id fields → never collapses two distinct same-bucket
+        # hikes). Generated once so a tx retry MERGEs to the same node.
+        "observation_id": str(uuid.uuid4()),
         "trail_id": trail_id,  # FK-by-value to the unowned world layer (no edge)
         "segment_ids": list(segment_ids or []),
         "capability_band": capability_band(pace_on_grade),

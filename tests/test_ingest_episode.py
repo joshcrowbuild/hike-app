@@ -84,7 +84,7 @@ def test_s2_ac0_four_writes_in_one_transaction() -> None:
     assert any("MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})" in c for c in cy)
     assert any(":DID]->(e)" in c for c in cy)
     assert any(":ON]->(t)" in c for c in cy)
-    assert any("CREATE (co:CommonsObservation" in c for c in cy)
+    assert any("MERGE (co:CommonsObservation" in c for c in cy)
 
 
 def test_s2_unmatched_trail_skips_on_wire_keeps_fork() -> None:
@@ -117,6 +117,19 @@ def test_s2_ac2_commons_observation_is_unowned_and_severed() -> None:
     assert "$viewer_id" not in co_cypher  # the injected viewer is never written onto it
     for edge in ("-[", "]->", "<-[", "]-(", ")-(", ")<-"):
         assert edge not in co_cypher  # zero relationships of any kind
+
+
+def test_s2_ac1_commons_observation_id_and_written_at() -> None:
+    """AC-2.1: the observation carries the observation_id (the AC-2.6 uniqueness
+    key) as a contributor-minted random param in the MERGE key, plus a server-side
+    written_at — a regression dropping either would null the constraint key but
+    still keep len(batch)==4, so assert both explicitly."""
+    session, batches = _tx_session()
+    create_episode(_summary(), "ct:x", "mem:josh", session, commons_salt=_SALT)
+    co_cypher, co_params = _stmt(batches[0], "CommonsObservation")
+    assert "MERGE (co:CommonsObservation {observation_id: $observation_id})" in co_cypher
+    assert "co.written_at" in co_cypher and "datetime()" in co_cypher  # server-side timestamp
+    assert isinstance(co_params["observation_id"], str) and len(co_params["observation_id"]) >= 32
 
 
 def test_s2_ac4_trail_id_is_scalar_equal_to_matched_canonical_id() -> None:

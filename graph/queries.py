@@ -344,26 +344,30 @@ def wire_belief_about_person(belief_id: str) -> tuple[str, dict[str, Any]]:
 
 
 def create_commons_observation(props: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Born-severed `:CommonsObservation` CREATE (Stage 9 §2.1): a new node with no
+    """Born-severed `:CommonsObservation` write (Stage 9 §2.1): a node with no
     inbound/outbound edge to any `:Person`/`:Episode`/`:Outcome` and **no
     owner_id**. It is unowned by construction, so it is *correctly* outside the
     owner-scope seam — `assert_scoped_write` does not fire on it (CommonsObservation
-    ∉ OWNED_LABELS). `observation_id`/`written_at` are generated server-side;
-    `props` are the de-identified values from `commons_fork.build_observation`
-    (band/buckets/trimmed track/writer_hash — never the raw pace/date/totals)."""
+    ∉ OWNED_LABELS).
+
+    `MERGE` (not `CREATE`) on the contributor-minted random `observation_id` makes
+    the write idempotent under a managed-transaction retry, without weakening
+    severance: the id is a fresh uuid4 (born severed, never reused across hikes),
+    so the MERGE always creates on the first run and dedups on a re-run. `props`
+    are the de-identified values from `commons_fork.build_observation` (band/
+    buckets/trimmed track/writer_hash — never the raw pace/date/totals)."""
     cypher = (
-        "CREATE (co:CommonsObservation {\n"
-        "    observation_id:  randomUUID(),\n"
-        "    trail_id:        $trail_id,\n"
-        "    segment_ids:     $segment_ids,\n"
-        "    capability_band: $capability_band,\n"
-        "    month:           $month,\n"
-        "    ascent_bucket:   $ascent_bucket,\n"
-        "    distance_bucket: $distance_bucket,\n"
-        "    trimmed_track:   $trimmed_track,\n"
-        "    writer_hash:     $writer_hash,\n"
-        "    ingest_version:  $ingest_version,\n"
-        "    written_at:      datetime()\n"
-        "})"
+        "MERGE (co:CommonsObservation {observation_id: $observation_id})\n"
+        "ON CREATE SET\n"
+        "    co.trail_id        = $trail_id,\n"
+        "    co.segment_ids     = $segment_ids,\n"
+        "    co.capability_band = $capability_band,\n"
+        "    co.month           = $month,\n"
+        "    co.ascent_bucket   = $ascent_bucket,\n"
+        "    co.distance_bucket = $distance_bucket,\n"
+        "    co.trimmed_track   = $trimmed_track,\n"
+        "    co.writer_hash     = $writer_hash,\n"
+        "    co.ingest_version  = $ingest_version,\n"
+        "    co.written_at      = datetime()"
     )
     return cypher, dict(props)

@@ -35,6 +35,15 @@ def test_s1_no_false_commons_checkmark_decision_log() -> None:
         assert "🔶" in ln, f"commons-fork bullet must carry 🔶: {ln!r}"
 
 
+def test_s6_ac1_commons_opt_in_default_off_in_schema() -> None:
+    """AC-6.1: :Person carries commons_opt_in seeded false (default-OFF substrate);
+    AC-2.6: the :CommonsObservation uniqueness constraint exists. Schema-lint so the
+    default-OFF flag + the constraint are guarded invariants, not untested seeds."""
+    schema = (_ROOT / "graph/schema.cypher").read_text(encoding="utf-8")
+    assert "commons_opt_in = false" in schema  # AC-6.1 default-OFF
+    assert "FOR (co:CommonsObservation) REQUIRE co.observation_id IS UNIQUE" in schema  # AC-2.6
+
+
 def test_s1_no_false_commons_checkmark_stage6() -> None:
     """AC-1.5: the S6-10 decision-table row in stage-6-watch-integration.md must
     read 🔶 'designed, not built — Epic 010 pending', not ✅."""
