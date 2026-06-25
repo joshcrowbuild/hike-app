@@ -1,10 +1,13 @@
 """Neo4j ingestion loader — idempotent MERGE upserts for world (public) nodes.
 
 All writes use MERGE so the pipeline is safe to re-run (monthly refresh pattern
-from Stage 3). These functions write public world data — no ScopedSession needed
-(access control is for reads of owned nodes per T2). The caller passes a
-`runner` callable `(cypher: str, params: dict) -> Any`; inject a real
-`neo4j.Session.run` for production or a list-appender for tests/dry-runs.
+from Stage 3). These functions write **world/public** nodes (Area / CanonicalTrail
+/ Trailhead / Segment / SourceRecord) — which are unowned, so they correctly need
+no ScopedSession scope clause. Owned-node writes (Episode / Belief / etc.) go
+through `ScopedSession.run_write` instead (rule #4 / thread T2, Epic 011); this
+loader is the world-layer path only. The caller passes a `runner` callable
+`(cypher: str, params: dict) -> Any`; inject a real `neo4j.Session.run` for
+production or a list-appender for tests/dry-runs.
 
 Ownership of world nodes: `owner_id` is intentionally absent. Personal overlay
 nodes (Episode, Belief, etc.) are a Phase-1 concern (Stage 5).

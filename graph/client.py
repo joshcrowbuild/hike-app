@@ -1,11 +1,20 @@
 """Neo4j access — permission-scoped from the first query (rule #4 / thread T2).
 
-Every read goes through a `ScopedSession`, which injects the viewer's identity
-(`$viewer_id` / `$granted_ids`) into every statement's params. Combined with the
-`graph.queries` builders — the only sanctioned place to write Cypher touching
-owned nodes — this is the single choke point that guarantees no query returns
-ungranted nodes. Phase 0 is single-user, but the seam exists now so it can't be
+Every read **and write** of an owned node goes through a `ScopedSession`, which
+injects the viewer's identity (`$viewer_id` / `$granted_ids`) into every
+statement's params. `run` is the read choke point; `run_write` is the write
+choke point (Epic 011) — it additionally *refuses* an owned-label write that
+carries no owner-scope clause, so no writer can create or overwrite another
+owner's node by forgetting the clause. Combined with the `graph.queries`
+builders — the only sanctioned place to author Cypher touching owned nodes —
+this is the single seam that guarantees no statement reads or writes ungranted
+nodes. Phase 0 is single-user, but the seam exists now so it can't be
 retrofitted later.
+
+`viewer_id` is **unauthenticated** today (gap-audit C3): `run_write` scopes to
+whatever viewer it is handed; a forged `viewer_id` is still a forged write. This
+epic hardens the query/data layer (a forgotten clause), not the auth boundary
+(a forged identity) — that is a separate spec decision.
 
 DB execution is injected (`runner`) so the param-scoping is testable without a
 live database; the default runner lazily builds the neo4j driver.
@@ -15,6 +24,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from typing import Any
+
+from graph.queries import assert_scoped_write
 
 Rows = list[dict[str, Any]]
 Runner = Callable[[str, dict[str, Any]], Rows]
@@ -30,6 +41,17 @@ class ScopedSession:
 
     def run(self, query: tuple[str, dict[str, Any]]) -> Rows:
         cypher, params = query
+        merged = {"viewer_id": self._viewer_id, "granted_ids": self._granted_ids, **params}
+        return self._runner(cypher, merged)
+
+    def run_write(self, query: tuple[str, dict[str, Any]]) -> Rows:
+        """Write choke point for owned nodes (rule #4, extended to writes). Refuses
+        an owned-label `MERGE`/`SET`/`CREATE` lacking an owner-scope clause —
+        raising `UnscopedWriteError` *before* the runner is ever called — then
+        merges `$viewer_id` / `$granted_ids` exactly as `run` does. World-only
+        writes pass through unguarded (they are correctly unowned)."""
+        cypher, params = query
+        assert_scoped_write(cypher)
         merged = {"viewer_id": self._viewer_id, "granted_ids": self._granted_ids, **params}
         return self._runner(cypher, merged)
 
