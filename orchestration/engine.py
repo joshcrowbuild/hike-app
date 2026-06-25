@@ -57,7 +57,12 @@ class Runtime:
     session: ScopedSession
     probes: dict[str, Probe]
     mechanical: tuple[ModelProvider, str] | None = None  # intent parse
-    judge: tuple[ModelProvider, str] | None = None  # taste ranking
+    judge: tuple[ModelProvider, str] | None = None  # taste ranking (anonymous / no-overlay path)
+    # The overlay-carrying taste-ranking judge — resolved local-forced so assembled
+    # personal-overlay context can never egress to a cloud provider (Rule #5; Epic 014).
+    # plan() selects this judge whenever overlay context is in play; the plain `judge`
+    # above is used only on the anonymous, no-overlay path (Rule #2 cloud yardstick).
+    personalized_judge: tuple[ModelProvider, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -180,19 +185,51 @@ def plan(
     # Merge intent profile with personal context (intent.profile wins if both set)
     combined_profile = intent.profile or (personal_context or None)
 
-    if runtime.judge:
-        planned = rank_plan(planned, runtime.judge[0], runtime.judge[1], profile=combined_profile)
+    # Overlay-carrying ranking MUST use the local-forced personalized judge so the
+    # assembled personal context never reaches a cloud provider (Rule #5; Epic 014 C4).
+    # The trigger is deliberately broadened beyond "overlay present" to "any
+    # authenticated (non-anonymous) viewer OR non-empty overlay": a logged-in session
+    # is private by default (Rule #5), so its ranking stays on-device even when context
+    # happens to be empty this run — defense-in-depth against an assembly path that
+    # silently empties personal_context for a viewer who does have overlay. This is
+    # strictly more conservative than AC-1.4's overlay-only trigger, never less safe.
+    # The plain cloud-allowed judge runs only the anonymous, no-overlay path, where
+    # combined_profile is at most user free-text (intent.profile), never overlay.
+    if viewer_id != "anonymous" or personal_context:
+        judge = runtime.personalized_judge
+    else:
+        judge = runtime.judge
+    if judge:
+        planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
     return Feed(query=query, cards=[feed_card(p) for p in planned])
 
 
 def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str) -> Runtime:
     """Production wiring: resolve providers per tier, scope the session to the
-    viewer, build probes from config. Needs a live environment to actually run."""
+    viewer, build probes from config. Needs a live environment to actually run.
+
+    Precondition (Epic 014 S3 / Rule #5): `viewer_id` is **already authenticated**
+    by the caller; this function does not verify identity. Authentication happens at
+    the edge (api layer); Stage 8's session/token system slots in there without
+    re-auditing the engine. A non-anonymous `viewer_id` reaching here is trusted.
+
+    The `personalized_judge` resolved here may receive assembled personal-overlay
+    context as `profile=` and is therefore privacy-routed (Epic 014 AC-2.4): it is
+    resolved with `touches_private_overlay=True`, forcing the local provider so the
+    overlay can never egress to a cloud provider regardless of config (Rule #5 / C4).
+    """
     mechanical = resolve("extract", settings)
+    # Two judgment-tier judges, same tier, split by privacy (Epic 014 C4):
+    #  - `judge`: per-config (cloud allowed) — used only on the anonymous/no-overlay path.
+    #  - `personalized`: resolved touches_private_overlay=True so it is forced on-device.
+    #    This is the judge that may receive assembled personal-overlay context as
+    #    `profile=`; routing it local is structural, not contingent on config (Rule #5).
     judge = resolve("curate", settings)
+    personalized = resolve("curate", settings, touches_private_overlay=True)
     return Runtime(
         session=graph_client.scoped_session(viewer_id),
         probes=build_probes(settings),
         mechanical=(mechanical.provider, mechanical.model),
         judge=(judge.provider, judge.model),
+        personalized_judge=(personalized.provider, personalized.model),
     )
