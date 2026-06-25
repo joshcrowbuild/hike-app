@@ -338,3 +338,32 @@ def wire_belief_about_person(belief_id: str) -> tuple[str, dict[str, Any]]:
         "MERGE (b)-[:ABOUT]->(p)"
     )
     return cypher, {"bid": belief_id}
+
+
+# ── Commons fork (Epic 010) — UNOWNED, born-severed by construction ───────────
+
+
+def create_commons_observation(props: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Born-severed `:CommonsObservation` CREATE (Stage 9 §2.1): a new node with no
+    inbound/outbound edge to any `:Person`/`:Episode`/`:Outcome` and **no
+    owner_id**. It is unowned by construction, so it is *correctly* outside the
+    owner-scope seam — `assert_scoped_write` does not fire on it (CommonsObservation
+    ∉ OWNED_LABELS). `observation_id`/`written_at` are generated server-side;
+    `props` are the de-identified values from `commons_fork.build_observation`
+    (band/buckets/trimmed track/writer_hash — never the raw pace/date/totals)."""
+    cypher = (
+        "CREATE (co:CommonsObservation {\n"
+        "    observation_id:  randomUUID(),\n"
+        "    trail_id:        $trail_id,\n"
+        "    segment_ids:     $segment_ids,\n"
+        "    capability_band: $capability_band,\n"
+        "    month:           $month,\n"
+        "    ascent_bucket:   $ascent_bucket,\n"
+        "    distance_bucket: $distance_bucket,\n"
+        "    trimmed_track:   $trimmed_track,\n"
+        "    writer_hash:     $writer_hash,\n"
+        "    ingest_version:  $ingest_version,\n"
+        "    written_at:      datetime()\n"
+        "})"
+    )
+    return cypher, dict(props)

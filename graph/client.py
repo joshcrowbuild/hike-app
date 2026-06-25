@@ -29,15 +29,24 @@ from graph.queries import assert_scoped_write
 
 Rows = list[dict[str, Any]]
 Runner = Callable[[str, dict[str, Any]], Rows]
+# Runs a list of already-scope-merged (cypher, params) in ONE managed transaction.
+TxRunner = Callable[[list[tuple[str, dict[str, Any]]]], None]
 
 
 class ScopedSession:
     """Runs `(cypher, params)` query specs with the viewer's scope merged in."""
 
-    def __init__(self, viewer_id: str, granted_ids: Sequence[str], runner: Runner) -> None:
+    def __init__(
+        self,
+        viewer_id: str,
+        granted_ids: Sequence[str],
+        runner: Runner,
+        tx_runner: TxRunner | None = None,
+    ) -> None:
         self._viewer_id = viewer_id
         self._granted_ids = list(granted_ids)
         self._runner = runner
+        self._tx_runner = tx_runner
 
     def run(self, query: tuple[str, dict[str, Any]]) -> Rows:
         cypher, params = query
@@ -54,6 +63,23 @@ class ScopedSession:
         assert_scoped_write(cypher)
         merged = {"viewer_id": self._viewer_id, "granted_ids": self._granted_ids, **params}
         return self._runner(cypher, merged)
+
+    def execute_write(self, queries: Sequence[tuple[str, dict[str, Any]]]) -> None:
+        """Run several writes in ONE managed transaction — all commit or none
+        (atomicity). Each owned-label statement is guarded by `assert_scoped_write`
+        and gets `$viewer_id`/`$granted_ids` merged, exactly as `run_write` does;
+        unowned writes (e.g. the severed `:CommonsObservation`) pass the guard
+        untouched. Used by the commons fork (Epic 010), where the Episode + wires
+        and the de-identified observation must commit together (Stage 9 §2.1)."""
+        if self._tx_runner is None:
+            raise RuntimeError("ScopedSession was built without a transaction runner")
+        merged: list[tuple[str, dict[str, Any]]] = []
+        for cypher, params in queries:
+            assert_scoped_write(cypher)
+            merged.append(
+                (cypher, {"viewer_id": self._viewer_id, "granted_ids": self._granted_ids, **params})
+            )
+        self._tx_runner(merged)
 
 
 class GraphClient:
@@ -79,7 +105,17 @@ class GraphClient:
             with driver.session() as session:
                 return [record.data() for record in session.run(cypher, **params)]
 
-        return ScopedSession(viewer_id, granted_ids, runner)
+        def tx_runner(merged_queries: list[tuple[str, dict[str, Any]]]) -> None:
+            driver = self._ensure_driver()
+            with driver.session() as session:
+
+                def work(tx: Any) -> None:
+                    for cypher, params in merged_queries:
+                        tx.run(cypher, **params)
+
+                session.execute_write(work)  # commits on success, rolls back on raise
+
+        return ScopedSession(viewer_id, granted_ids, runner, tx_runner)
 
     def close(self) -> None:
         if self._driver is not None:
