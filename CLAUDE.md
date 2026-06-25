@@ -4,6 +4,8 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 
 > Keep this file lean. The full design lives in the two docs below — read the relevant sections when working a stage. Push stage-specific detail into `.claude/rules/*.md` as code grows. **Delete anything stale — wrong memory is worse than none.**
 
+> Read `AGENTS.md` first for repo operating rules, merge-risk discipline, and Git/PR hygiene. Use this file for product invariants, architecture, and development process.
+
 ## Canonical design docs (read on demand)
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
@@ -39,7 +41,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - Repo layout: monorepo — `ingestion/` · `orchestration/` (engine + `providers/` seam + `adapters/`) · `graph/` (schema + access wrapper) · `api/` · `frontend/` · `evals/` · `regions/`
 - Graph: Neo4j (local Community via `docker compose`)
 - MCP config: `.mcp.json` at repo root (empty; MCP deferred to interactive moments — Stage 4 §1)
-- Build / test / eval: `make check` (ruff + mypy + pytest) · `make db-up` / `make schema` · `make eval` (Stage 4+). `pip install -e ".[all]"`; see `Makefile` / README.
+- Build / test / eval: `make check` (`ruff format --check` + ruff + mypy + pytest) · `make db-up` / `make schema` · `make eval` (Stage 4+). `pip install -e ".[all]"`; see `Makefile` / README.
 - Frontend: web/PWA first (server-side watch pull means minimal loss vs. native); native iOS (SwiftUI) later
 
 ## Phasing (see workplan for detail)
@@ -63,7 +65,7 @@ Phase 0 spine (Stages 1–4) → Phase 1 personal intelligence + watch (Stages 5
   ```
 - **Subject line rules:** imperative mood ("Add", "Fix", "Enforce" — not "Added", "Fixes"); ≤72 chars; no period at end.
 - **Never commit:** `.env`, `data/`, commented-out code, debug `print()`, unresolved merge markers, half-finished work that breaks tests.
-- **`make check` must pass** (ruff + mypy + pytest) before every commit, no exceptions.
+- **`make check` must pass** (`ruff format --check` + ruff + mypy + pytest) before every commit, no exceptions.
 
 ### Code standards
 - **No commented-out code.** If code is removed, remove it. History is in git.

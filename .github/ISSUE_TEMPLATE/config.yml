@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Development process
+    url: https://github.com/joshcrow/hike-app/blob/main/docs/process/development-process.md
+    about: Review the repo workflow before opening a broad or ambiguous request
+  - name: GitHub repo hygiene
+    url: https://github.com/joshcrow/hike-app/blob/main/docs/process/github-repo-hygiene.md
+    about: Review CI, PR, and manual protection expectations for this private repo
