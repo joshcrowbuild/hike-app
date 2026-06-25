@@ -8,13 +8,16 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [002](epic-002-outcome-card-endpoint.md) | Outcome card endpoint (POST /episode/{id}/outcome) | DEFINED | 1 | Epic 001 |
 | [003](epic-003-context-assembly.md) | Context assembly in engine.plan() | DEFINED | 1 | Epic 001 |
 | [004](epic-004-garmin-connect-poller.md) | Garmin Connect activity poller (watch_sync.py) | BACKLOG | 1 | Epic 001 |
-| [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time pre-Scout filter | BACKLOG | 1 | — |
+| [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time → **folded into Epic 013** (LiveAdapter seam) | SUPERSEDED | 1 | — |
 | [006](epic-006-novelty-filter.md) | Novelty filter in Curator | DEFINED | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
 | [009](epic-009-eval-harness-expansion.md) | Stage-7 eval-harness expansion (fixtures, golden trips, judge, N-run regression, security/privacy) | DEFINED | 1→2 | Stage 7 methodology |
 | [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation` in the episode txn) — remediates gap-audit C1 | DEFINED | 1 | Epic 001 |
 | [011](epic-011-scoped-write-seam.md) | Scoped-write seam (extend the access choke point to owned-node writes) — remediates gap-audit C2 | DEFINED | 1 | Epic 001 |
+| [012](epic-012-corpus-source-seam.md) | CorpusSource seam (ingestion source ABC + registry) — remediates gap-audit C5 | DEFINED | 1→2 | — |
+| [013](epic-013-live-adapter-seam.md) | LiveAdapter seam + Valhalla drive-time (absorbs Epic 005) — remediates gap-audit C6 | DEFINED | 1→2 | Epic 014 |
+| [014](epic-014-overlay-egress-and-viewer-auth.md) | Private-overlay egress + viewer-auth hardening — remediates gap-audit C3/C4 | DEFINED | 1 | Epic 003 |
 
 ---
 
