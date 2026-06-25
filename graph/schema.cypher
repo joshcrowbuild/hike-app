@@ -169,6 +169,10 @@ CREATE CONSTRAINT phys_profile_id IF NOT EXISTS FOR (pp:PhysicalProfile) REQUIRE
 CREATE CONSTRAINT pp_profile_id   IF NOT EXISTS FOR (pa:PartyProfile)   REQUIRE pa.profile_id  IS UNIQUE;
 // Dependent: household sub-node (Ruby the dog, etc.). Not an account; no login.
 CREATE CONSTRAINT dependent_id    IF NOT EXISTS FOR (d:Dependent)       REQUIRE d.dependent_id IS UNIQUE;
+// Commons (Epic 010): the reserved :CommonsObservation realized. Born severed —
+// no owner_id, no edge to any :Person/:Episode (de-identified at write, Stage 9
+// §2.1). Community-Edition-safe single-property uniqueness on the random UUID.
+CREATE CONSTRAINT commons_observation_id IF NOT EXISTS FOR (co:CommonsObservation) REQUIRE co.observation_id IS UNIQUE;
 
 // ── 7. Stage 5 indexes ───────────────────────────────────────────────────
 // all-my-episodes: primary access pattern for Episode
@@ -200,9 +204,14 @@ CREATE INDEX phys_profile_owner    IF NOT EXISTS FOR (pp:PhysicalProfile) ON (pp
 MERGE (hh:Household {household_id: "hh:crow"})
   SET hh.name = "Crow household";
 
+// commons_opt_in (Epic 010 S6): per-member commons-contribution consent, default
+// OFF. It gates *exposure* (Stage 9 aggregation), NOT the write — the severed,
+// de-identified observation accretes regardless (Stage 9 §8.2 / S9-17). A Person
+// with the property absent is treated as not-opted-in by any future reader.
 MERGE (josh:Person {member_id: "mem:josh"})
   SET josh.display_name = "Josh",
-      josh.household_id = "hh:crow";
+      josh.household_id = "hh:crow",
+      josh.commons_opt_in = false;
 
 MERGE (ruby:Dependent {dependent_id: "dep:ruby"})
   SET ruby.display_name = "Ruby",
