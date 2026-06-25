@@ -26,9 +26,9 @@ from api.schemas import (
     PlanRequest,
 )
 from graph.client import GraphClient
+from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
-from orchestration.verifier import build_probes
 
 _VERSION = "0.0.0"
 
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI) -> Any:
     global _settings, _graph_client, _probe_keys
     _settings = Settings.from_env()
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
-    _probe_keys = list(build_probes(_settings).keys())
+    _probe_keys = [k.value for k in registry.probes_for(_settings.live_region, _settings)]
     yield
     if _graph_client:
         _graph_client.close()
@@ -103,6 +103,7 @@ def _feed_response(feed: Feed) -> FeedResponse:
         query=feed.query,
         cards=[_card_response(c) for c in feed.cards],
         card_count=len(feed.cards),
+        notices=list(feed.notices),
     )
 
 

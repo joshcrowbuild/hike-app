@@ -52,6 +52,11 @@ def _body(kind: str, value: Any) -> str:
         return f"nearest gauge: {value.get('monitoring_location') or value.get('site_id')}"
     if kind == "permits":
         return f"{value.get('count', 0)} nearby facilities"
+    if kind == "drive_time":
+        secs = value.get("drive_seconds")
+        km = value.get("distance_km")
+        mins = f"~{secs / 60:.0f} min drive" if isinstance(secs, (int, float)) else "drive time"
+        return f"{mins} ({km:.0f} km)" if isinstance(km, (int, float)) else mins
     return str(value)
 
 

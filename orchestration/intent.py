@@ -15,7 +15,8 @@ from orchestration.providers.base import LLMRequest, ModelProvider
 
 PARSE_SYSTEM = (
     "Extract a hiking query into a JSON object with optional keys: "
-    '"radius_m" (int drive radius in metres), "filters" (object, e.g. '
+    '"radius_m" (int drive radius in metres), "time_budget_s" (int drive-time budget '
+    'in seconds, e.g. "within 45 minutes" -> 2700), "filters" (object, e.g. '
     '{"dog": true, "max_length_mi": 8, "difficulty": "easy"}), and "profile" '
     "(a short string of preferences for ranking). Return ONLY the JSON object."
 )
@@ -24,6 +25,7 @@ PARSE_SYSTEM = (
 @dataclass(frozen=True)
 class Intent:
     radius_m: int | None = None
+    time_budget_s: int | None = None
     filters: dict[str, object] = field(default_factory=dict)
     profile: str | None = None
 
@@ -45,10 +47,12 @@ def _parse(text: str) -> Intent:
     if not isinstance(data, dict):
         return Intent()
     radius = data.get("radius_m")
+    budget = data.get("time_budget_s")
     filters = data.get("filters")
     profile = data.get("profile")
     return Intent(
         radius_m=radius if isinstance(radius, int) and not isinstance(radius, bool) else None,
+        time_budget_s=budget if isinstance(budget, int) and not isinstance(budget, bool) else None,
         filters=filters if isinstance(filters, dict) else {},
         profile=profile if isinstance(profile, str) else None,
     )
