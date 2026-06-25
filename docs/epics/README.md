@@ -12,9 +12,12 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | 006 | Novelty filter in Curator | BACKLOG | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
 | 008 | API tests (FastAPI TestClient, /plan + /health) | BACKLOG | 0 | — |
+| [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation`) | IN_PROGRESS | 1 | Epic 001 |
 | [011](epic-011-scoped-write-seam.md) | Scoped-write seam (`run_write` guard + owned-node builders) | DONE ✅ | 1 | Epic 001 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
+>
+> **Thread T3 (commons fork):** now tracked by **Epic 010** (closes the gap-audit "no tracker for T3" process miss). The de-identified `:CommonsObservation` forked write — previously marked ✅ in the decision log but never built (gap-audit C1) — is the write half of the commons; the read half (aggregation, k-anonymity) stays dormant until Stage 9.
 
 ---
 
