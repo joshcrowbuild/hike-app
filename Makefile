@@ -1,15 +1,16 @@
 .PHONY: help install install-dev fmt lint typecheck test check \
-        db-up db-down schema ingest ingest-dry preflight api-dev eval
+        format-check db-up db-down schema ingest ingest-dry preflight api-dev eval
 
 help:
 	@echo "make targets:"
 	@echo "  install      editable install with all extras"
 	@echo "  install-dev  editable install with dev tooling only"
 	@echo "  fmt          auto-format (ruff format)"
+	@echo "  format-check verify formatting (ruff format --check)"
 	@echo "  lint         lint (ruff check)"
 	@echo "  typecheck    static types (mypy)"
 	@echo "  test         smoke/unit tests (pytest)"
-	@echo "  check        lint + typecheck + test"
+	@echo "  check        format-check + lint + typecheck + test"
 	@echo "  preflight    check environment before running the sprint"
 	@echo "  db-up        start local Neo4j (reads NEO4J_PASSWORD from .env)"
 	@echo "  db-down      stop local Neo4j"
@@ -28,6 +29,9 @@ install-dev:
 fmt:
 	ruff format .
 
+format-check:
+	ruff format --check .
+
 lint:
 	ruff check .
 
@@ -37,7 +41,7 @@ typecheck:
 test:
 	pytest -q
 
-check: lint typecheck test
+check: format-check lint typecheck test
 
 preflight:
 	python scripts/preflight.py
