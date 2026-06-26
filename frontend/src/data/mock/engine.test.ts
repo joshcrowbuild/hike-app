@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TuningState } from '../../types'
-import { rubyGate, runFeed, scoreTrail, trails, widenFrame } from './engine'
+import { widenFrame } from '../widen'
+import { rubyGate, runFeed, scoreTrail, trails } from './engine'
 
 const base: TuningState = {
   origin: 'frontRoyal',

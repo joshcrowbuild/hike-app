@@ -316,21 +316,3 @@ export function runFeed(state: TuningState): FeedComputation {
 
   return { kept, partySetAside, readinessHidden: [] }
 }
-
-/**
- * The single obvious relaxation for an over-tuned frame (R9): "show moderate
- * too", "drop the shade/views/quiet lean", etc. One tap to a viable set, never
- * a trip back through the sheets. Returns null when the frame is already broad.
- */
-export function widenFrame(state: TuningState): { next: TuningState; label: string } | null {
-  if (state.today !== 'standard') {
-    return { next: { ...state, today: 'standard' }, label: 'Drop the “today” lean' }
-  }
-  if (state.effort === 'easy') {
-    return { next: { ...state, effort: 'moderate' }, label: 'Show moderate too' }
-  }
-  if (state.effort === 'moderate') {
-    return { next: { ...state, effort: 'bigDay' }, label: 'Include a bigger day' }
-  }
-  return null
-}
