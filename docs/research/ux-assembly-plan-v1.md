@@ -238,6 +238,18 @@ No backend, Phase-2 scope. Tonight: a mock "viewer" (Josh) and the party facet (
 
 PRs land in order; each builds green (`tsc` + `vitest` + `vite build`), is independently reviewable, and is verified visually via Playwright screenshots. Depth scales to time; **PR-B and PR-C are the non-negotiable core** (they make the destination UX honest and feel-able); D/E/F are layered while quality holds.
 
+### 7.1 Shipped status (as built)
+
+| PR | Status | Notes |
+|---|---|---|
+| **PR-A** | ✅ shipped | This plan + the persona-review revision (§0). |
+| **PR-B** | ✅ shipped | Seam (VM/port/mock+http/hooks/router) + Home/Detail/Tuning on the VM + all async states + anonymous slice + Ruby set-aside + readiness fail-open. |
+| **PR-C** | ✅ shipped | `Confidence` + `Staleness` owned components (stories + tests), wired into cards/detail. (Storybook is the component gallery; the live app at `/`, `/?anon`, and `#/trail/:id` is the screen gallery — no separate gallery page needed here.) |
+| **PR-D** | ✅ shipped | Outcome card + pending nod on Home. Ships **without** the conditional delta question (R3 — the backend produces no real prediction). `/trips` list intentionally **not** built (R4 — the nod finds the user on Home; a thin Trips view is deferred). |
+| **Ultra-review** | ✅ shipped | 12 confirmed findings fixed (1 critical, 6 moderate, 5 minor). |
+| **PR-E (Memory)** | ⏸ deferred | The belief store is Stage-10, fully-mock, and the review flagged real dashboard-creep + "fabricated beliefs about a real person" risk. Deferred deliberately until the `GET /beliefs` surface (backend ask #4) exists, so it is built on real provenance rather than invented receipts. |
+| **PR-F (Readiness quiet-line)** | ⏸ deferred | Readiness already fails open and discloses honestly via the Today toggle; the proactive in-feed "recovery's lower — want easier options?" line waits on a real `GET /readiness` (backend ask #3) so it isn't a control that fakes a reading (Josh's "assistant theater" guard). |
+
 ---
 
 ## 8. Backend asks this plan surfaces (hand-off, not blockers tonight)
