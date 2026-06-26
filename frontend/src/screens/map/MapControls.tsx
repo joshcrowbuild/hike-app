@@ -51,7 +51,13 @@ export function MapControls({
         <ToggleButton className="map-chip" isSelected={fullscreen} onChange={onToggleFullscreen}>
           {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         </ToggleButton>
-        <a className="map-chip map-chip--link" href={directionsUrl} target="_blank" rel="noreferrer">
+        <a
+          className="map-chip map-chip--link"
+          href={directionsUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Driving directions to the trailhead (opens your maps app in a new tab)"
+        >
           Directions
         </a>
       </div>

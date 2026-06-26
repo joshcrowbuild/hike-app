@@ -4,7 +4,7 @@
  * drawn when WebGL/tiles are unavailable. No React, no map library — projection
  * math only, so it is unit-tested directly.
  */
-import { flattenGeometry } from '../../data/geo'
+import { clamp01, flattenGeometry } from '../../data/geo'
 import type { ElevationSample, GeoPosition, RouteGeometry } from '../../data/vm'
 
 export interface Box {
@@ -14,7 +14,6 @@ export interface Box {
   padY?: number
 }
 
-const clamp01 = (n: number): number => Math.max(0, Math.min(1, n))
 const round = (n: number): number => Math.round(n * 100) / 100
 
 export interface ProfileScale {

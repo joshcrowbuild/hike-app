@@ -5,9 +5,9 @@
  * fallback. It renders the honest states (S3), the persistent attribution (D7),
  * the controls (S6), and the elevation profile (S5b) around whichever map is up.
  */
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
-import { trailheadDirectionsUrl } from '../../data/geo'
+import { isDrawableRoute, trailheadDirectionsUrl } from '../../data/geo'
 import type { GeoPosition, TrailGeo } from '../../data/vm'
 import { ElevationProfile } from './ElevationProfile'
 import { layerByKey, OSM_ATTRIBUTION, type MapLayerKey } from './layers'
@@ -28,17 +28,26 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
   const [locating, setLocating] = useState(false)
   const [locateNote, setLocateNote] = useState<string | null>(null)
   const [tileError, setTileError] = useState(false)
+  const dialogRef = useRef<HTMLElement>(null)
+  const restoreFocusRef = useRef<HTMLElement | null>(null)
 
-  // Escape exits fullscreen (the back/close affordance), mirroring the sheet
-  // pattern — fullscreen is component state, not a route, so it never surprises
-  // browser Back (R12).
+  // Fullscreen is a modal overlay: Escape exits (the back/close affordance,
+  // mirroring the sheet pattern — it's component state, not a route, so it never
+  // surprises browser Back, R12); on enter we move focus into the overlay and on
+  // exit restore it, and the section is `role=dialog aria-modal` so assistive
+  // tech treats the page behind it as inert (WCAG 2.4.3 / 4.1.2).
   useEffect(() => {
     if (!fullscreen) return
+    restoreFocusRef.current = document.activeElement as HTMLElement | null
+    dialogRef.current?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setFullscreen(false)
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      restoreFocusRef.current?.focus?.()
+    }
   }, [fullscreen])
 
   const locate = () => {
@@ -62,14 +71,18 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
     )
   }
 
-  const unmapped = geo.geometry == null
+  const unmapped = !isDrawableRoute(geo.geometry)
   const approximate = geo.quality === 'approximate' && !unmapped
   const layerCredit = layerByKey(layer).attribution
 
   return (
     <section
+      ref={dialogRef}
       className={`detail-block terrain-block${fullscreen ? ' terrain-block--full' : ''}`}
       aria-label="Map and terrain"
+      role={fullscreen ? 'dialog' : undefined}
+      aria-modal={fullscreen || undefined}
+      tabIndex={fullscreen ? -1 : undefined}
     >
       <p className="kicker">Map &amp; terrain</p>
 
@@ -109,7 +122,9 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
         <div className="map-notes" role="status">
           {unmapped ? <p className="map-note">Route not mapped — trailhead only.</p> : null}
           {approximate ? <p className="map-note">Approximate route — low source agreement.</p> : null}
-          {tileError ? <p className="map-note">Map tiles didn’t load — showing the route over a neutral map.</p> : null}
+          {tileError ? (
+            <p className="map-note">Map imagery is having trouble — showing the route over a neutral map.</p>
+          ) : null}
           {!interactive && !unmapped && !tileError ? (
             <p className="map-note">Static map view — showing the route over a neutral map.</p>
           ) : null}

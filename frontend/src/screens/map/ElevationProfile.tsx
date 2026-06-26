@@ -29,7 +29,7 @@ export interface ElevationProfileProps {
 }
 
 export function ElevationProfile({ profile, cursorFraction, onScrub }: ElevationProfileProps) {
-  const svgRef = useRef<SVGSVGElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const labelId = useId()
   const scale = profileScale(profile.samples, BOX)
   const polyline = profilePolyline(profile.samples, BOX)
@@ -48,17 +48,17 @@ export function ElevationProfile({ profile, cursorFraction, onScrub }: Elevation
       : summary
 
   const scrubToClientX = (clientX: number) => {
-    const rect = svgRef.current?.getBoundingClientRect()
+    const rect = wrapRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return
     const x = ((clientX - rect.left) / rect.width) * BOX.width
     onScrub(xToFraction(x, BOX))
   }
 
-  const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId)
     scrubToClientX(event.clientX)
   }
-  const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) scrubToClientX(event.clientX)
   }
 
@@ -90,11 +90,12 @@ export function ElevationProfile({ profile, cursorFraction, onScrub }: Elevation
         </span>
       </figcaption>
 
-      <svg
-        ref={svgRef}
-        className="elev-chart"
-        viewBox={`0 0 ${BOX.width} ${BOX.height}`}
-        preserveAspectRatio="none"
+      {/* The slider semantics live on this host element, not the SVG (inline-SVG
+          ARIA widget roles are exposed unreliably by some AT); the SVG is purely
+          presentational, and the sr-only summary below is the text equivalent. */}
+      <div
+        ref={wrapRef}
+        className="elev-chart-wrap"
         role="slider"
         tabIndex={0}
         aria-labelledby={labelId}
@@ -106,16 +107,25 @@ export function ElevationProfile({ profile, cursorFraction, onScrub }: Elevation
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
       >
-        <line x1={0} y1={scale.bottom} x2={BOX.width} y2={scale.bottom} className="elev-base" />
-        <polygon points={area} className="elev-fill" />
-        <polyline points={polyline} className="elev-line" />
-        {cursorX != null ? (
-          <g className="elev-cursor">
-            <line x1={cursorX} y1={BOX.padY ?? 0} x2={cursorX} y2={scale.bottom} className="elev-cursor-line" />
-            {cursorElev != null ? <circle cx={cursorX} cy={scale.y(cursorElev)} r={4} className="elev-cursor-dot" /> : null}
-          </g>
-        ) : null}
-      </svg>
+        <svg
+          className="elev-chart"
+          viewBox={`0 0 ${BOX.width} ${BOX.height}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <line x1={0} y1={scale.bottom} x2={BOX.width} y2={scale.bottom} className="elev-base" />
+          <polygon points={area} className="elev-fill" />
+          <polyline points={polyline} className="elev-line" />
+          {cursorX != null ? (
+            <g className="elev-cursor">
+              <line x1={cursorX} y1={BOX.padY ?? 0} x2={cursorX} y2={scale.bottom} className="elev-cursor-line" />
+              {cursorElev != null ? (
+                <circle cx={cursorX} cy={scale.y(cursorElev)} r={4} className="elev-cursor-dot" />
+              ) : null}
+            </g>
+          ) : null}
+        </svg>
+      </div>
 
       <p className="elev-readout" aria-hidden="true">
         {cursorFraction != null && cursorElev != null ? (

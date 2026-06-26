@@ -31,18 +31,36 @@ function staticSpecifiers(code: string): string[] {
 function resolveLocal(spec: string, fromFile: string): string | null {
   if (!spec.startsWith('.')) return null
   const base = resolve(dirname(fromFile), spec)
-  const candidates = [base, `${base}.ts`, `${base}.tsx`, resolve(base, 'index.ts'), resolve(base, 'index.tsx')]
+  // Map an explicit ESM extension (`./x.js`) back to its TS source so such an
+  // import is still followed rather than silently dropped.
+  const swapped = base.replace(/\.(js|jsx|mjs|cjs)$/, '')
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.js`,
+    `${base}.jsx`,
+    `${base}.mjs`,
+    `${swapped}.ts`,
+    `${swapped}.tsx`,
+    resolve(base, 'index.ts'),
+    resolve(base, 'index.tsx'),
+  ]
   return candidates.find((c) => existsSync(c) && statSync(c).isFile()) ?? null
 }
 
 interface Graph {
   files: Set<string>
   bareImports: Set<string>
+  /** Relative specifiers that resolved to no file — a guard blind spot, so we
+   *  fail loud rather than silently skip them. */
+  unresolved: Set<string>
 }
 
 function staticGraph(entry: string): Graph {
   const files = new Set<string>()
   const bareImports = new Set<string>()
+  const unresolved = new Set<string>()
   const stack = [entry]
   while (stack.length > 0) {
     const file = stack.pop()!
@@ -52,12 +70,13 @@ function staticGraph(entry: string): Graph {
       if (spec.startsWith('.')) {
         const resolved = resolveLocal(spec, file)
         if (resolved) stack.push(resolved)
+        else unresolved.add(`${spec} (from ${basename(file)})`)
       } else {
         bareImports.add(spec)
       }
     }
   }
-  return { files, bareImports }
+  return { files, bareImports, unresolved }
 }
 
 const FEED_ENTRIES = ['screens/Home.tsx', 'screens/RecommendationCard.tsx', 'screens/cardParts.tsx'].map((f) =>
@@ -67,7 +86,9 @@ const FEED_ENTRIES = ['screens/Home.tsx', 'screens/RecommendationCard.tsx', 'scr
 describe('code split — the feed path is free of the map library (AC-2.1)', () => {
   for (const entry of FEED_ENTRIES) {
     it(`${basename(entry)} reaches no map-library import`, () => {
-      const { files, bareImports } = staticGraph(entry)
+      const { files, bareImports, unresolved } = staticGraph(entry)
+      // Fail loud: an unwalked relative import is a hole in the guard, not a pass.
+      expect([...unresolved], 'unresolved relative imports leave the guard blind').toEqual([])
       expect([...bareImports].filter((s) => MAP_LIB.test(s))).toEqual([])
       for (const file of files) {
         const hits = staticSpecifiers(readFileSync(file, 'utf8')).filter((s) => MAP_LIB.test(s))

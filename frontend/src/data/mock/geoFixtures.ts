@@ -11,7 +11,7 @@
  * deliberately exercise the honest states (S3): `dark-hollow` is `approximate`
  * (dashed), `hawksbill` has no mapped route and no profile.
  */
-import { routeLengthMeters, summarizeProfile } from '../geo'
+import { clamp01, routeLengthMeters, summarizeProfile } from '../geo'
 import type {
   ElevationProfile,
   ElevationSample,
@@ -147,7 +147,7 @@ function positiveDeltaSum(values: number[]): number {
 
 function sampleShape(values: number[], fraction: number): number {
   if (values.length <= 1) return values[0] ?? 0
-  const x = Math.max(0, Math.min(1, fraction)) * (values.length - 1)
+  const x = clamp01(fraction) * (values.length - 1)
   const i = Math.floor(x)
   if (i >= values.length - 1) return values[values.length - 1]
   return values[i] + (values[i + 1] - values[i]) * (x - i)

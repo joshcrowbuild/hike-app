@@ -415,7 +415,12 @@ button {
   background: var(--surface-canvas);
 }
 
-/* ---- static fallback (no WebGL / tiles unavailable) ---- */
+/* ---- static fallback (no WebGL / tiles unavailable) ----
+   The two raw hex values in this map block (#ece9e1 neutral cartographic
+   backdrop, #2b6cb0 GPS "you-are-here" blue) are domain colours OUTSIDE the
+   semantic UI palette: the backdrop must match the MapLibre style's `background`
+   paint in mapStyle.ts (which cannot read CSS vars), and the locate dot is the
+   conventional platform GPS hue. Intentionally not tokenized. */
 .map-static {
   width: 100%;
   height: 100%;
@@ -494,19 +499,24 @@ button {
   background: #2b6cb0;
 }
 
-/* ---- persistent attribution (non-dismissable, D7) ---- */
+/* ---- persistent attribution (non-dismissable, D7) ----
+   License compliance is a release gate, so the credit must stay legible over
+   EVERY basemap (incl. the busy/dark Imagery layer): a fully opaque chip in the
+   primary ink, not a translucent scrim that could drop below contrast. */
 .map-attribution {
   position: absolute;
   right: 0;
   bottom: 0;
   margin: 0;
   max-width: 100%;
-  padding: 0.2rem 0.4rem;
+  padding: 0.22rem 0.45rem;
   font-family: var(--font-family-mono);
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   line-height: 1.3;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-faint);
+  border-left: 1px solid var(--border-faint);
   border-top-left-radius: var(--radius-sm);
   pointer-events: none;
 }
@@ -605,19 +615,26 @@ button {
   color: var(--text-secondary);
 }
 
-.elev-chart {
-  width: 100%;
-  height: auto;
+/* The slider host wraps the SVG so the widget role sits on an HTML element. */
+.elev-chart-wrap {
   display: block;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm);
   background: var(--surface-canvas);
+  overflow: hidden;
   touch-action: none; /* the chart owns horizontal drag for scrub */
 }
 
-.elev-chart:focus-visible {
+.elev-chart-wrap:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.elev-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none; /* events belong to the slider host */
 }
 
 .elev-base {

@@ -7,6 +7,7 @@
  * off selects this; no screen changes.
  */
 import { buildQuery } from '../buildQuery'
+import { isDrawableRoute } from '../geo'
 import { originCoords } from '../origins'
 import type {
   ConfidenceLevel,
@@ -82,8 +83,11 @@ function mapFeed(res: FeedResponse): FeedVM {
 function mapGeo(c: FeedCardResponse): TrailGeo | undefined {
   if (!c.trailhead) return undefined
   const quality = isApproximate(c.geometry_confidence) ? 'approximate' : 'confident'
+  // Fail loudly at the boundary: a present-but-undrawable geometry (empty or
+  // single-point coordinates from a malformed payload) becomes the honest
+  // trailhead-only state, never an empty line that crashes the map math.
   return {
-    geometry: c.geometry ?? null,
+    geometry: isDrawableRoute(c.geometry ?? null) ? (c.geometry ?? null) : null,
     trailhead: { lat: c.trailhead.lat, lon: c.trailhead.lon },
     quality,
     summit: c.summit ? { lat: c.summit.lat, lon: c.summit.lon } : undefined,

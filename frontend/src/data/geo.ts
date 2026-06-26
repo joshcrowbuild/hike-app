@@ -14,6 +14,18 @@ const toRad = (deg: number): number => (deg * Math.PI) / 180
 export const metersToFeet = (m: number): number => m * 3.28084
 export const metersToMiles = (m: number): number => m / 1609.344
 
+/** Clamp to the unit interval — shared by every fraction-taking helper. */
+export const clamp01 = (n: number): number => Math.max(0, Math.min(1, n))
+
+/**
+ * Whether a geometry has enough vertices to draw a route (≥2 points). Guards the
+ * boundary so a malformed/empty `coordinates` array degrades to the honest
+ * trailhead-only state instead of reaching `pointAtFraction` and throwing.
+ */
+export function isDrawableRoute(geometry: RouteGeometry | null): geometry is RouteGeometry {
+  return geometry != null && flattenGeometry(geometry).length >= 2
+}
+
 /** Ordered `[lon, lat]` vertices of a route. A `MultiLineString`'s segments are
  *  concatenated in order (a small phantom gap between disjoint segments is
  *  acceptable for distance/marker math at trail scale). */
@@ -180,8 +192,6 @@ export function trailheadDirectionsUrl(trailhead: GeoPosition): string {
 }
 
 // ---- internals -----------------------------------------------------------
-
-const clamp01 = (n: number): number => Math.max(0, Math.min(1, n))
 
 function lerpPoint(a: [number, number], b: [number, number], t: number): [number, number] {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]

@@ -103,15 +103,21 @@ describe('TerrainMap — controls (S6)', () => {
     expect(link.getAttribute('href')).toContain(encodeURIComponent('38.5,-78.4'))
   })
 
-  it('toggles fullscreen and exits on Escape (AC-6.2)', async () => {
+  it('toggles fullscreen as a focus-contained dialog and exits on Escape (AC-6.2)', async () => {
     const user = userEvent.setup()
     const { container } = render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
     const block = container.querySelector('.terrain-block')!
     expect(block).not.toHaveClass('terrain-block--full')
+    expect(block).not.toHaveAttribute('role')
     await user.click(screen.getByRole('button', { name: /^fullscreen$/i }))
     expect(block).toHaveClass('terrain-block--full')
+    // Modal semantics so AT treats the page behind it as inert, and focus moves in.
+    expect(block).toHaveAttribute('role', 'dialog')
+    expect(block).toHaveAttribute('aria-modal', 'true')
+    expect(block).toHaveFocus()
     await user.keyboard('{Escape}')
     expect(block).not.toHaveClass('terrain-block--full')
+    expect(block).not.toHaveAttribute('aria-modal')
   })
 
   it('requests geolocation only on tap and discloses denial (AC-6.3)', async () => {
