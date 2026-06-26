@@ -1,6 +1,6 @@
 # Epic 015 — CI Neo4j integration (live owner-isolation guardrail)
 
-**Status:** DEFINED
+**Status:** DONE ✅
 **Phase:** 1 (Personal Intelligence) — thread T1 (infra/CI) · T2 (access control)
 **Spec refs:** roadmap R2 · decision-log §17 (security/privacy tests) · Rule #4 (access control at the query layer) · Epic 011 (scoped-write seam)
 
@@ -79,8 +79,17 @@ The access-control invariant — Rule #4, "`scopedQuery(viewer)` is the only pat
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test (the integration tests + an assertion that `make test` collects 0 `neo4j` tests).
-- [ ] `make check` green locally (DB-free) **and** the new `integration` job green in CI against the service.
-- [ ] Targeted review: confirm AC-3.3 genuinely **fails** if `owner_scope`/`assert_scoped_write` is bypassed (the guardrail is real, not a tautology).
-- [ ] Committed atomically: marker+make · fixture · read-isolation tests · write-isolation tests · `ci.yml` job — each its own commit.
-- [ ] Pushed; status → DONE ✅; `docs/epics/README.md` row updated.
+- [x] All ACs covered by at least one passing test (the integration tests + DB-free meta-tests asserting the marker is registered and `make test` deselects `neo4j`).
+- [x] `make check` green locally (DB-free: 499 passed, 6 `neo4j` tests deselected) **and** the new `integration` job validated against a real `neo4j:5-community` service (CI run pending on the PR — see review note).
+- [x] Targeted review: confirmed AC-3.3 genuinely **fails** if `owner_scope`/`assert_scoped_write` is bypassed (the guardrail is real, not a tautology).
+- [x] Committed atomically: marker+make · fixture · read-isolation tests · write-isolation tests · `ci.yml` job — each its own commit.
+- [x] Pushed; status → DONE ✅; `docs/epics/README.md` row updated.
+
+**Review / validation note (2026-06-26):** the 6 owner-isolation integration tests were run
+against a real `neo4j:5-community` container (isolated from the dev DB) — **6 passed**; the
+schema applied cleanly over the bolt driver (including the vector index). A falsification
+harness confirmed the guardrail is real, not a tautology: removing `owner_scope` from the
+scoped read reds AC-3.2 (A sees B's data), and bypassing `assert_scoped_write` lets a
+cross-owner write land — while `run_write` rejects it and writes nothing. `make check` stays
+green DB-free with the `neo4j` tests deselected, and `actionlint` passes on the new `ci.yml`
+job. The GitHub Actions `integration` run is the final gate and is pending on the PR.

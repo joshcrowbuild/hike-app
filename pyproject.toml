@@ -62,3 +62,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Registered markers (no PytestUnknownMarkWarning under -W error). `neo4j` gates the
+# owner-isolation integration tests (Epic 015): `make test` deselects them so the fast
+# legs stay DB-free; the CI `integration` job runs `pytest -m neo4j` against a live service.
+markers = [
+  "neo4j: integration test requiring a live Neo4j database (deselected by `make test`)",
+]

@@ -1,6 +1,6 @@
 # Epic 003 — Context Assembly in engine.plan()
 
-**Status:** IN_PROGRESS  
+**Status:** DONE ✅  
 **Phase:** 1 (Personal Intelligence)  
 **Spec refs:** Stage 5 §4 (retrieval / context assembly) · decision-log §30
 
@@ -104,12 +104,22 @@ Prior visits: {trail_name} visited {date}.
 
 ## Definition of Done
 
-- [ ] All ACs covered by at least one passing test
-- [ ] `make check` green
-- [ ] Targeted review: verify Rule #4 on all three fetch queries, no raw biometrics in context, anonymous path clean
-- [ ] End-to-end: `plan()` with a seeded Josh profile produces a context-enriched Curator call
-- [ ] Committed atomically: context fetcher separate from engine wiring separate from tests
-- [ ] Pushed + epic status updated to DONE ✅
+- [x] All ACs covered by at least one passing test
+- [x] `make check` green (510 passed, 8 neo4j-marked deselected)
+- [x] Targeted review: Rule #4 verified on all three fetch queries, no raw biometrics in context (AC-2.3), anonymous path clean
+- [x] End-to-end: `plan()` with a seeded viewer produces a context-enriched Curator call (`test_context_assembly_engine.py`); the 18-month retrieval is proven live against Neo4j (`test_context_assembly_neo4j.py`)
+- [x] Committed atomically: query builders · ingest wiring · retrieval-window tests · S5/S6 coverage tests — each its own commit
+- [x] Pushed + epic status updated to DONE ✅
+
+**Review note (2026-06-26):** the load-bearing gap (R6/M1) was AC-3.2 — `fetch_relevant_episodes`
+filtered `e.date` but `upsert_episode` never wrote it, so the 18-month window matched nothing.
+Fixed by threading `FITSummary.start_time` → `e.date` (and stamping `PhysicalProfile.last_episode_at`),
+proven end-to-end against a real `neo4j:5-community`. A targeted self-review (correctness + coverage
+lenses, adversarially verified) then found one MODERATE: AC-5.3, AC-5.4, AC-6.2 and the inferred half
+of AC-4.4 had no test (structurally upheld in `engine.py`, but uncovered). All four now have tests
+(`test_context_assembly_engine.py` + an inferred-label unit test). Timezone-of-`start_time` and the
+non-atomic `last_episode_at` write were considered and dropped as non-issues (coarse 18-month window;
+the stamp is a derived timestamp re-touched by the belief drain).
 
 ---
 
