@@ -1,5 +1,7 @@
 # Parallel Integration Runbook — gap-audit remediation tracks
 
+> **STATUS: CLOSED (2026-06-26) — historical brief.** The three remediation tracks (Epics 010–015) merged; gap-audit C1–C6 are closed. Kept for provenance. The `claude/vigilant-bohr-yzdcyh` trunk it targets is **retired** — the baseline is now `main`.
+
 *Created 2026-06-25. How to merge the three parallel remediation tracks back into the build branch safely. The risky part of this work is the integration, not the builds — this is the mechanical sequence so nothing composes wrong.*
 
 ## The tracks (all branched from `origin/claude/vigilant-bohr-yzdcyh`, post-Epic-004)

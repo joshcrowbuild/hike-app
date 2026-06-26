@@ -8,7 +8,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 AllTrails has no trail-data moat (the map is open data). The differentiation is **temporal + personal, not volumetric** — *live, verified synthesis at decision time* ("right now, for me and my party"), which a static app structurally can't be.
 
 ## Architecture in one breath
-Four layers — indexed **corpus** (slow, bulk-ingested: OSM/USGS/USFS/NPS) → background **ranking** → **JIT live verification** (NWS, USGS streamflow, FIRMS, AirNow, RIDB) → calm curated **feed**. Engine mirrors a multi-agent concierge: **Scout** (candidates) → **Verifier** (live calls, source-or-silence) → **Curator** (constraints + taste + novelty + party). Data model is a **Neo4j property graph**: world nodes shared, personal overlay private, commons derived-on-shared.
+Four layers — indexed **corpus** → background **ranking** → **JIT live verification** → calm curated **feed** — driven by a Scout → Verifier → Curator engine over a Neo4j property graph (world shared, personal overlay private, commons derived-on-shared). Full version + the non-negotiable rules: [`CLAUDE.md`](./CLAUDE.md).
 
 ## Docs
 - [`CLAUDE.md`](./CLAUDE.md) — lean working brief + the non-negotiable rules that must hold in all code.
