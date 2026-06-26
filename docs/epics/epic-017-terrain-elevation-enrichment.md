@@ -13,9 +13,13 @@ Every trail in the corpus carries a precomputed **elevation profile** — height
 
 ## Architectural context
 
+> **⚠️ Review corrections (2026-06-26) — two scope-changing facts:**
+> 1. **The enrichment seam already exists and is wired.** Epic 012 built `kind = enrichment` + `EnrichmentFact` (`ingestion/sources/base.py`), and `ingestion/pipeline.py` already runs the post-conflation join (`_run_enrichment`, called in both dry-run + live paths). **Do NOT rebuild the seam.** The genuinely missing piece is the **enrichment loader** — pipeline.py says verbatim *"No graph write yet — a real enrichment loader lands with the first enrichment source."* So `_run_enrichment` collects facts but nothing persists them. **S1 is rescoped to: build the enrichment loader (the deferred graph write) + the 3DEP source — using the existing seam.**
+> 2. **Geometry is per-Segment, not per-Trail.** Sample along **`Segment.geom_wkt`** assembled across `(:CanonicalTrail)-[:HAS_SEGMENT]->(:Segment)` (ordered via junctions) — there is no `CanonicalTrail.geom_wkt`. Ideally consume the *same assembled route* Epic 016 S1 precomputes, so geometry is assembled once.
+
 **Builds on:**
-- **The route geometry already in the graph** (`CanonicalTrail.geom_wkt`) — the line we sample along.
-- **The CorpusSource seam (Epic 012).** This epic adds the **enrichment** kind of source — the "second kind" that Stage 3 §7 called for but that was never built (spine + conflate exist; enrichment does not).
+- **The route geometry already in the graph** — as **`Segment.geom_wkt`** lines assembled per trail (see correction 2); ideally the same precomputed route as Epic 016 S1.
+- **The CorpusSource enrichment seam (Epic 012) — already built and wired** (see correction 1). This epic supplies the first enrichment **source** (3DEP) and the **loader** that persists its facts; it does not rebuild the seam.
 - **The batch-ingestion posture** (CLAUDE.md: "batch ingestion = scheduled jobs"; monthly refresh). Elevation is **precomputed at ingest**, not fetched per request — it is slow/structural data (Rule #3), so it lives in the graph, not in a JIT live call.
 
 **Enables:**
@@ -62,13 +66,13 @@ elevationProfile: {
 **AC-0.2:** The **mock** data source returns a realistic sample `elevationProfile`, so Epic 016's chart builds before any real data exists.
 **AC-0.3:** This shape is the **only** coupling between the two epics (no other shared types).
 
-**S1 — Enrichment-adapter seam**
-**Given** the corpus pipeline (Epic 012 spine/conflate) runs before load
-**When** enrichment is added
-**Then** an enrichment kind of source runs after conflation, generically.
-**AC-1.1:** An `EnrichmentSource` protocol (`enrich(...) -> properties`) + registry under `ingestion/sources/` (the Stage 3 §7 "second kind"), iterated after conflation, separate from spine/conflate.
-**AC-1.2:** Enrichment failure for one source degrades to "no enrichment" for that property (degrade-and-disclose), never aborts the run.
-**AC-1.3:** Covered by a test with a fake enrichment source (mirrors Epic 012's seam tests).
+**S1 — Enrichment loader (the deferred graph write) — using the existing seam**
+**Given** the seam + `_run_enrichment` join already exist (Epic 012) but collect `EnrichmentFact`s with **no graph write yet**
+**When** the first enrichment source is added
+**Then** its facts are persisted to the graph through a real loader.
+**AC-1.1:** An enrichment **loader** writes the `EnrichmentFact`s returned by `_run_enrichment` onto the target nodes (idempotent), closing the explicit "no graph write yet" gap in `ingestion/pipeline.py`. **The seam/protocol is NOT rebuilt — reuse `CorpusSource`/`EnrichmentFact`.**
+**AC-1.2:** A failing enrichment source degrades to "no fact" for that property (degrade-and-disclose), never aborts the run (the existing join already isolates this — assert it).
+**AC-1.3:** Covered by a test with a fake enrichment source whose facts round-trip to the graph and back.
 
 **S2 — USGS 3DEP elevation adapter**
 **Given** a region + trail geometries
@@ -82,7 +86,7 @@ elevationProfile: {
 **Given** sampled elevations
 **When** enrichment loads
 **Then** the trail carries the profile + derived metrics.
-**AC-3.1:** `elevationProfile` (samples + totalGain/Loss + maxGrade + source + resolution + version) is stored on `CanonicalTrail` as a property (no PostGIS — consistent with the schema note).
+**AC-3.1:** `elevationProfile` is stored on `CanonicalTrail` (the assembled-route owner). **Encoding note:** Neo4j has no list-of-maps property type, so persist the samples as **two parallel primitive arrays** (`profile_distances_m: [float]`, `profile_elevations_m: [float]`) plus scalars (`total_gain_m`, `total_loss_m`, `max_grade_pct`, `elev_source`, `elev_resolution_m`, `elev_version`) — *or* a single JSON-string property; pick one in S0 and keep it consistent with the API serializer. (No PostGIS — consistent with the schema note.)
 **AC-3.2:** Gain/loss use the documented smoothing (D2); a test asserts a known synthetic hill returns the expected gain within tolerance.
 **AC-3.3:** Re-running is idempotent (D4); the version property updates.
 
@@ -108,7 +112,9 @@ elevationProfile: {
 4. Does grade-aware ranking want this now, or just the chart? (Scopes whether per-segment grade is consumed beyond Epic 016.)
 
 ## Parallelization (with Epic 016)
-- **Lane A — this epic (backend/data):** S0 first, then S1 → S2 → S3 → S4.
-- **Lane B — Epic 016 (frontend + geometry API):** Epic 016 S1 (expose geometry) + S2–S4 (topo map, route, trailhead, card glyph) + S6 — all buildable against the mock (including S0's mock profile), with **no dependency on Lane A**.
-- **Join:** Epic 016 **S5b** (the chart consuming the *real* `elevationProfile`) needs both lanes complete. Everything up to the join runs concurrently.
-- **Only S0 (the contract) must land before the lanes split** — do it first, together. After that, two builders work without blocking each other.
+The split is by **area (backend vs frontend)**, not strictly by epic — note that **Epic 016 S1 (assemble + expose route geometry) is backend** and belongs with Lane A.
+- **Lane A — backend / data:** the contract first (017 S0 elevation shape **+** the geometry shape from 016 S1), then **016 S1** (assemble route from segments → expose) ‖ **017 S1→S4** (enrichment loader + 3DEP source + store + expose). All the real-data production.
+- **Lane B — frontend UI (Epic 016 S2–S4, S6):** the topo map, route, trailhead, card glyph, layers/fullscreen — built **entirely against the mock** (sample geometry *and* sample `elevationProfile`), with **no dependency on Lane A**.
+- **Join:** Epic 016 swaps mock→real geometry (S2) and renders the real elevation chart (**S5b**) once Lane A lands. Everything up to the join runs concurrently.
+- **Freeze first, together:** the **two contract shapes** — assembled `geometry` (016 S1) + `elevationProfile` (017 S0) — plus realistic mocks for both. After that, the two lanes never block each other.
+- **Note:** Lane B can render the *entire* maps-and-elevation experience on the mock **without Lane A** — so the feature is demoable on sample data early; Lane A is what makes it *true for real trails*.

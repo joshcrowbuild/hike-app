@@ -13,8 +13,10 @@ A user can see **where a recommended hike actually is and what the day's terrain
 
 ## Architectural context
 
+> **⚠️ Review correction (2026-06-26) — geometry is per-Segment, not per-Trail.** The route line lives on **`Segment.geom_wkt`**, not `CanonicalTrail.geom_wkt` (which does not exist). A trail's full route is **assembled from its segments** — `(:CanonicalTrail)-[:HAS_SEGMENT]->(:Segment)`, each `Segment` carrying a `geom_wkt` LineString + a `point` — ordered via the `Junction` nodes between them. `CanonicalTrail` itself has only a representative `point`. **Assembling the ordered full route is non-trivial; precompute it at ingest** (shapely is available — `ingestion` extra) into a ready-to-serve route geometry so the API is a simple read, not a runtime graph-walk. S1 below is updated accordingly.
+
 **Builds on:**
-- **The geometry already exists in the graph.** `CanonicalTrail.geom_wkt` holds the route line (computed at ingest via Shapely/GDAL), `Trailhead.point` + `CanonicalTrail.point` hold coordinates (POINT-indexed). The data to draw the route and locate the trailhead is present today — it is simply **not exposed through the API**.
+- **The geometry already exists in the graph** — as **`Segment.geom_wkt`** lines under each trail (see the correction above), plus `Trailhead.point` + `CanonicalTrail.point` for locating (POINT-indexed). The data to draw the route and trailhead is present today; it is simply **not assembled into a full route nor exposed through the API**.
 - **The typed data-source seam** in the frontend (Home/Detail render off a mock/HTTP seam). The map consumes the same trip contract, extended with geometry — no new data path, just new fields.
 - **Epic 013 (LiveAdapter seam, TTL).** Topo/imagery tiles are external sources; tile fetching belongs to the map library, but the attribution + degrade-and-disclose posture mirrors 013.
 
@@ -89,11 +91,11 @@ A chart beneath the map: x = distance, y = elevation; total gain/loss + max grad
 
 ### Phase A — core slice
 
-**S1 — API exposes route geometry + trailhead**
-**Given** the graph stores `geom_wkt` + `Trailhead.point` / `CanonicalTrail.point`
+**S1 — Assemble + expose route geometry + trailhead**
+**Given** geometry lives on `Segment.geom_wkt` under each trail (assembled via `HAS_SEGMENT` + junctions)
 **When** the app requests a trip's detail
-**Then** the contract returns the route as GeoJSON + the trailhead coordinate.
-**AC-1.1:** The trip/detail response includes `geometry` (GeoJSON `LineString`, WGS84) derived from `geom_wkt`, plus a `trailhead {lat, lon}` from the trailhead (or representative) point.
+**Then** the contract returns the **assembled** route as GeoJSON + the trailhead coordinate.
+**AC-1.1:** A trail's full route is assembled from its ordered `Segment.geom_wkt` lines (**precompute at ingest** preferred; runtime assembly acceptable as a fallback) and the trip/detail response returns it as `geometry` (GeoJSON `LineString` or `MultiLineString` if segments don't join cleanly, WGS84), plus `trailhead {lat, lon}` from `Trailhead.point` (or `CanonicalTrail.point`).
 **AC-1.2:** A trail with no `geom_wkt` returns `geometry: null` + the trailhead point (drives D5's "trailhead only" state) — never an empty or fabricated line.
 **AC-1.3:** WKT→GeoJSON conversion is unit-tested incl. a multi-segment line; coordinate order is `(lon, lat)` per the GeoJSON spec.
 **AC-1.4:** The frontend trip type + **both** data-source adapters (mock + HTTP) carry the new fields; the **mock fixture gains real sample coordinates** so the map renders before live-data wiring (closes the "mock has no coordinates" gap).
