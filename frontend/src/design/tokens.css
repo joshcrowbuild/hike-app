@@ -42,6 +42,7 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+  --elevation-overlay: 0 -2px 24px rgba(22, 25, 29, 0.16);
   --surface-canvas: var(--color-neutral-50);
   --surface-raised: var(--color-neutral-25);
   --surface-press: var(--color-neutral-100);

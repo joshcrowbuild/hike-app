@@ -37,6 +37,10 @@ export const vars = createGlobalThemeContract(
     overlay: {
       scrim: 'overlay-scrim',
     },
+    elevation: {
+      // The single permitted shadow; only overlays (sheets) may lift (§6.4).
+      overlay: 'elevation-overlay',
+    },
     signal: {
       caution: {
         fg: 'signal-caution-fg',
