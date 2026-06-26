@@ -14,9 +14,9 @@
       }
     },
     "terracotta": {
-      "600": { "$value": "#ad4f2a", "$type": "color" },
+      "600": { "$value": "#9a4424", "$type": "color" },
       "alpha": {
-        "10": { "$value": "rgba(173, 79, 42, 0.10)", "$type": "color" }
+        "10": { "$value": "rgba(154, 68, 36, 0.10)", "$type": "color" }
       }
     }
   },

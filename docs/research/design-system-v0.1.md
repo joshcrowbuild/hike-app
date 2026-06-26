@@ -84,10 +84,12 @@ Signal ramp (terracotta — the only hue):
 
 | Token | Value | Source |
 |---|---|---|
-| `color.terracotta.600` | `#ad4f2a` | `--signal` |
-| `color.terracotta.alpha.10` | `rgba(173,79,42,0.10)` | `--signal-soft` |
+| `color.terracotta.600` | `#9a4424` | `--signal` |
+| `color.terracotta.alpha.10` | `rgba(154,68,36,0.10)` | `--signal-soft` |
 
 > v0.1 is intentionally a near-monochrome + one signal hue. Adding a second accent requires a contract amendment, not a one-off.
+
+> **Amendment (2026-06, §10-governed):** the signal hue was darkened from the prototype's `#ad4f2a` to **`#9a4424`** (and the soft field to its coherent 10% wash) so the verify **Signal** text clears **WCAG AA 4.5:1** over both `surface.canvas` (5.08:1) and `surface.raised` (5.38:1). The original value failed AA (~4.2–4.5:1) and so violated §4.3/§14[d6] on the product's safety-relevant primitive. Same hue family, marginally deeper.
 
 ### 4.2 Semantic mapping
 
