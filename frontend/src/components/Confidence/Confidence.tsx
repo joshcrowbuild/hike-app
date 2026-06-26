@@ -31,10 +31,14 @@ export function Confidence({ level, provenance, children, className }: Confidenc
   // A flagged safety line keeps its accent even when sampled; everything else
   // non-live drops to the muted sample treatment.
   const tierKey = live ? level : level === 'flagged' ? 'flagged' : 'sample'
+  // The sr-only lead-in must follow PROVENANCE, not just the tier: announcing
+  // "Verified" over mock data would conceal the very thing the visual "sample"
+  // tag discloses (R1, §4.3 — colour/visual is never the only cue).
+  const announced = live ? leadIn[level] : level === 'flagged' ? leadIn.flagged : 'Sample, not verified'
   const cls = className ? `${styles.tier[tierKey]} ${className}` : styles.tier[tierKey]
   return (
     <span className={cls}>
-      <span className={srOnly}>{leadIn[level]}: </span>
+      <span className={srOnly}>{announced}: </span>
       {children}
       {!live ? (
         <span className={styles.sampleTag} aria-hidden="true">

@@ -38,7 +38,11 @@ export function Home({
     <div className="app-shell">
       <header className="topbar">
         <span className="wordmark">Curation</span>
-        {anonymous ? <span className="topbar-mode">Browsing</span> : null}
+        {anonymous ? (
+          <span className="topbar-mode" role="status" aria-label="Browsing anonymously — not signed in">
+            Browsing
+          </span>
+        ) : null}
       </header>
 
       {pending ? (

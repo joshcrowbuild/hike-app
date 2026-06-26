@@ -24,6 +24,18 @@ describe('Confidence', () => {
     expect(screen.getByText('sample')).toBeInTheDocument()
   })
 
+  it('never announces mock data as "Verified" to assistive tech (R1)', () => {
+    render(
+      <Confidence level="stated" provenance="mock">
+        54°F · breezy · clear
+      </Confidence>,
+    )
+    // The visual tag is aria-hidden, so the sr-only lead-in carries the
+    // disclosure: AT must hear "Sample", never "Verified".
+    expect(screen.queryByText(/Verified/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Sample, not verified/)).toBeInTheDocument()
+  })
+
   it('does not tag live data as sample', () => {
     render(
       <Confidence level="stated" provenance="live">

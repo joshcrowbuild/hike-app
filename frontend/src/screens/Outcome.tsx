@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Toggle } from '../components'
 import { useEpisode, usePlannerClient } from '../data/PlannerProvider'
@@ -28,16 +28,43 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
   const [overall, setOverall] = useState<1 | 2 | 3 | null>(null)
   const [rubyAlong, setRubyAlong] = useState<boolean | null>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  // Hard re-entrancy guard: a ref blocks a same-tick second tap synchronously,
+  // before the busy state can re-render (prevents a double write).
+  const inFlight = useRef(false)
+  const doneRef = useRef<HTMLButtonElement>(null)
 
   // Pre-fill the Ruby toggle from the planned party (R12): the common case is
   // zero extra taps; you only correct it on the exception.
   const rubyDefault = (episode?.companions ?? []).some((c) => c.name === 'Ruby')
   const ruby = rubyAlong ?? rubyDefault
 
-  const submit = async (rating: 1 | 2 | 3 | null, skipped: boolean) => {
+  // Move focus to the acknowledgment so it isn't dropped to <body> (WCAG 2.4.3);
+  // the ack region announces itself via role="status" (WCAG 4.1.3).
+  useEffect(() => {
+    if (submitted) doneRef.current?.focus()
+  }, [submitted])
+
+  const submit = async (rating: 1 | 2 | 3 | null, skipped: boolean): Promise<boolean> => {
+    if (inFlight.current || submitted) return false
+    inFlight.current = true
+    setBusy(true)
+    setFailed(false)
     const companions: EpisodeVM['companions'] = ruby ? [{ kind: 'dependent', name: 'Ruby' }] : []
-    await client.recordOutcome(episodeId, { overall: rating, skipped }, companions, scope)
-    setSubmitted(true)
+    try {
+      await client.recordOutcome(episodeId, { overall: rating, skipped }, companions, scope)
+      setSubmitted(true)
+      return true
+    } catch {
+      // Source-or-silence: never claim it saved if it didn't. Keep the form live.
+      setFailed(true)
+      setOverall(null)
+      return false
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
   }
 
   const onFace = (value: 1 | 2 | 3) => {
@@ -47,16 +74,19 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
 
   // Skip is first-class: it writes Outcome{skipped:true} (data, not a nag) then
   // leaves (outcome-card-ux §1.7).
-  const onSkip = async () => {
-    await submit(null, true)
-    onDone()
+  const onSkip = () => {
+    void submit(null, true).then((ok) => {
+      if (ok) onDone()
+    })
   }
+
+  const showForm = status === 'ready' && episode && !submitted
 
   return (
     <div className="app-shell">
       <header className="detail-top">
-        {status === 'ready' && !submitted ? (
-          <button className="back" type="button" onClick={onSkip}>
+        {showForm ? (
+          <button className="back" type="button" onClick={onSkip} disabled={busy}>
             Skip
           </button>
         ) : (
@@ -80,9 +110,9 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
 
       {status === 'ready' && episode ? (
         submitted ? (
-          <section className="outcome">
+          <section className="outcome" role="status">
             <p className="outcome-ack">Noted.</p>
-            <button className="text-action" type="button" onClick={onDone}>
+            <button ref={doneRef} className="text-action" type="button" onClick={onDone}>
               Done
             </button>
           </section>
@@ -106,27 +136,35 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
               {episode.paceNote ? <p className="measured-note">{episode.paceNote}</p> : null}
             </div>
 
-            <fieldset className="faces">
-              <legend className="faces-legend">How was it?</legend>
-              {FACES.map((face) => (
-                <button
-                  key={face.value}
-                  type="button"
-                  className={overall === face.value ? 'face face--on' : 'face'}
-                  aria-pressed={overall === face.value}
-                  aria-label={face.label}
-                  onClick={() => onFace(face.value)}
-                >
-                  <span aria-hidden="true">{face.glyph}</span>
-                </button>
-              ))}
-            </fieldset>
+            <div className="faces" role="radiogroup" aria-label="How was it?">
+              <p className="faces-legend" id="faces-legend">
+                How was it?
+              </p>
+              <div className="faces-row">
+                {FACES.map((face) => (
+                  <button
+                    key={face.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={overall === face.value}
+                    aria-label={face.label}
+                    disabled={busy}
+                    className={overall === face.value ? 'face face--on' : 'face'}
+                    onClick={() => onFace(face.value)}
+                  >
+                    <span aria-hidden="true">{face.glyph}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <Toggle
-              label="Was Ruby with you?"
-              isSelected={ruby}
-              onChange={(on) => setRubyAlong(on)}
-            />
+            {failed ? (
+              <p className="state-note" role="alert">
+                Couldn’t save that just now — tap a face to try again.
+              </p>
+            ) : null}
+
+            <Toggle label="Was Ruby with you?" isSelected={ruby} onChange={(on) => setRubyAlong(on)} />
           </section>
         )
       ) : null}

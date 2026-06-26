@@ -149,25 +149,27 @@ function ConditionLines({ card }: { card: CardVM }) {
 }
 
 /**
- * Source basis. Reuses the real per-line sources/confidence; only adds the
- * enrichment source list when present (and the sample strip already discloses
- * mock provenance — we never dress a fabricated source as inspected truth, R11).
+ * Source basis. We never dress a fabricated provenance list as inspected truth
+ * (R11): the enrichment `sources` list is shown ONLY when it is live. For the
+ * mock we fall through to the real per-line sources (the one real provenance the
+ * API gives) — and tonight those are mock too, so the honest "lands when wired"
+ * copy is what actually ships, never a confident fake source list.
  */
 function TrustCue({ card }: { card: CardVM }) {
   const e = card.enrichment
+  const liveSources = e?.provenance === 'live' && e.sources && e.sources.length > 0 ? e.sources : null
+  const realLineSources =
+    card.conditionLines.length > 0 && card.conditionLines.every((l) => l.provenance === 'live')
+      ? card.conditionLines.map((l) => l.source)
+      : null
+  const sources = liveSources ?? realLineSources
   return (
     <div className="trust-cue">
       {e?.freshness ? <Staleness>{e.freshness}</Staleness> : null}
-      {e?.sources && e.sources.length > 0 ? (
+      {sources ? (
         <ul className="source-list">
-          {e.sources.map((source) => (
-            <li key={source}>{source}</li>
-          ))}
-        </ul>
-      ) : card.conditionLines.length > 0 ? (
-        <ul className="source-list">
-          {card.conditionLines.map((line, i) => (
-            <li key={i}>{line.source}</li>
+          {sources.map((source, i) => (
+            <li key={`${source}-${i}`}>{source}</li>
           ))}
         </ul>
       ) : (

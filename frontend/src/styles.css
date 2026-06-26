@@ -514,7 +514,24 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.62rem;
-  color: var(--text-muted);
+  /* secondary (not muted) so the mode chip clears WCAG AA on the canvas. */
+  color: var(--text-secondary);
+}
+
+/* Every primary navigation button gets the same neutral keyboard-focus ring as
+   .text-action / .face / the RAC primitives (design-system §4.3). */
+.context:focus-visible,
+.pending-nod:focus-visible,
+.facet-row:focus-visible,
+.back:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The card tap target uses an inset ring so .card's overflow:hidden can't clip it. */
+.card-tap:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 /* The sample-data disclosure: calm, unmissable, never alarmist. It is how the
@@ -715,18 +732,21 @@ button {
 }
 
 .faces {
-  border: 0;
-  margin: 0;
-  padding: 0;
   display: grid;
   gap: 0.6rem;
 }
 
 .faces-legend {
-  padding: 0;
+  margin: 0;
   font-size: 1rem;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.faces-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
 }
 
 .face {
@@ -744,12 +764,12 @@ button {
     border-color 120ms var(--easing-standard);
 }
 
-.faces {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .face:active {
   background: var(--surface-press);
+}
+
+.face:disabled {
+  cursor: default;
 }
 
 .face--on {

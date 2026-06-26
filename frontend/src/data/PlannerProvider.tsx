@@ -48,6 +48,12 @@ function usePlanner(): PlannerContextValue {
   return ctx
 }
 
+/** A stable primitive key for the full scope (viewer + grants), so every hook
+ *  refetches when grants change — not just when the viewer does (R5). */
+function scopeKeyOf(scope: ScopeContext): string {
+  return `${scope.viewerId}|${scope.grantedIds.join(',')}`
+}
+
 /** The current viewer scope. `viewerId === 'anonymous'` is the n=0 world-browse. */
 export function useScope(): ScopeContext {
   return usePlanner().scope
@@ -67,6 +73,7 @@ export function useRecentEpisodes(): { episodes: EpisodeVM[]; loading: boolean; 
   const [episodes, setEpisodes] = useState<EpisodeVM[]>([])
   const [loading, setLoading] = useState(true)
   const [nonce, setNonce] = useState(0)
+  const scopeKey = scopeKeyOf(scope)
   useEffect(() => {
     let live = true
     setLoading(true)
@@ -78,7 +85,7 @@ export function useRecentEpisodes(): { episodes: EpisodeVM[]; loading: boolean; 
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope.viewerId, nonce])
+  }, [scopeKey, nonce])
   return { episodes, loading, reload: () => setNonce((n) => n + 1) }
 }
 
@@ -92,6 +99,7 @@ export function useEpisode(id: string | null): {
   const { client, scope } = usePlanner()
   const [state, setState] = useState<{ status: EpisodeStatus; episode?: EpisodeVM }>({ status: 'loading' })
   const [nonce, setNonce] = useState(0)
+  const scopeKey = scopeKeyOf(scope)
   useEffect(() => {
     if (!id) {
       setState({ status: 'notfound' })
@@ -107,7 +115,7 @@ export function useEpisode(id: string | null): {
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, scope.viewerId, nonce])
+  }, [id, scopeKey, nonce])
   return { ...state, reload: () => setNonce((n) => n + 1) }
 }
 
@@ -167,6 +175,7 @@ export function useCard(id: string | null, origin?: OriginKey): CardState {
   const { client, scope } = usePlanner()
   const [state, setState] = useState<{ status: CardStatus; card?: CardVM }>({ status: 'loading' })
   const [nonce, setNonce] = useState(0)
+  const scopeKey = scopeKeyOf(scope)
 
   useEffect(() => {
     if (!id) {
@@ -189,7 +198,7 @@ export function useCard(id: string | null, origin?: OriginKey): CardState {
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, origin, scope.viewerId, nonce])
+  }, [id, origin, scopeKey, nonce])
 
   return { ...state, reload: () => setNonce((n) => n + 1) }
 }

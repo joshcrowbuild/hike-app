@@ -17,9 +17,11 @@ const base = {
 
 export const fresh = style({ ...base, color: vars.text.muted })
 
+// Demotion is carried by italic, NOT opacity: compositing opacity over muted
+// text drops effective contrast below WCAG AA on small text (§4.3). Italic keeps
+// the demoted read while the colour stays at the validated muted tier.
 export const stale = style({
   ...base,
   color: vars.text.muted,
-  opacity: 0.7,
   fontStyle: 'italic',
 })
