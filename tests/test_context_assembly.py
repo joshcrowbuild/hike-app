@@ -180,6 +180,29 @@ def test_s3_ac5_no_episodes_returns_empty():
     assert result == []
 
 
+def test_s3_ac2_episode_query_has_18_month_date_window():
+    """AC-3.2: the episodes query filters to the last 18 months via `e.date >= $cutoff`,
+    with the cutoff ~548 days before today. This is the filter that returned nothing until
+    Episode.date was actually written (Epic 003 R6/M1)."""
+    runner = _runner_returning({})
+    fetch_relevant_episodes("josh", ["ct:trail-1"], runner)
+    cypher, params = runner.calls[0]
+    assert "e.date" in cypher and "$cutoff" in cypher
+    assert params["cutoff"] == date.today() - timedelta(days=548)
+
+
+def test_s2_ac3_profile_query_reads_no_raw_biometrics():
+    """AC-2.3: fetch_profile selects only the capability summary — never raw HR series,
+    VO2max, or sleep data."""
+    runner = _runner_returning({})
+    fetch_profile("josh", runner)
+    cypher, _ = runner.calls[0]
+    low = cypher.lower()
+    for forbidden in ("vo2", "heart_rate", "hr_time", "avg_hr", "sleep", "time_series"):
+        assert forbidden not in low
+    assert "pace_on_grade" in cypher and "max_distance_m" in cypher  # the capability fields
+
+
 def test_s3_ac3_capped_at_max_episodes():
     """AC-3.3: At most MAX_EPISODES episodes returned."""
     many_episodes = [{"trail_name": f"Trail {i}", "date": date.today()} for i in range(20)]
