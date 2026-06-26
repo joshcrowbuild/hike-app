@@ -28,6 +28,18 @@ jobs:
         run: ${{ steps.get_actionlint.outputs.executable }} -color
         shell: bash
 
+  docs-lint:
+    name: docs-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Fails on a stale epic index, known wrong-memory markers, or broken doc links.
+      - run: python scripts/doc_lint.py
+
   check:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest

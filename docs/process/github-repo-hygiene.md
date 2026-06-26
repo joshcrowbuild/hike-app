@@ -4,14 +4,9 @@ This repo enforces part of its workflow in version-controlled files and part of 
 
 ## Current decision
 
-GitHub-native branch protection and rulesets are **deferred for now**.
+GitHub-native branch protection is **active on `main`** (2026-06-26): pull requests only, all required CI checks must pass, no force-push or branch deletion (admin override retained). The repo lives in the `joshcrowbuild` Team org, which exposes rulesets.
 
-Reason:
-
-- the repo is staying private
-- the current GitHub plan does not expose branch protection/rulesets for this repository
-
-Until that changes, treat the protections below as the **target policy** and use the manual fallback in this document.
+The manual-fallback policy below is retained for any **shared integration branch** that is not itself protected, and as the procedure to re-apply if settings ever drift.
 
 ## Enforced in-repo
 
@@ -51,13 +46,15 @@ Apply these settings to `main` and to any shared integration branch that is acti
 
 ### Required status checks
 
-Require these checks:
+Require these checks (the six enforced today, plus the new doc-lint):
 
 - `workflow-lint`
 - `format-check`
 - `lint`
 - `typecheck`
 - `test`
+- `integration (neo4j)`
+- `docs-lint` — **NEEDS-PM: add this to branch protection.** New in the docs overhaul; it fails the build on a stale epic index, known wrong-memory markers, or broken internal doc links (`scripts/doc_lint.py`).
 
 If GitHub shows the matrix-expanded names instead of bare job names, select the exact names shown by the first successful CI run.
 
