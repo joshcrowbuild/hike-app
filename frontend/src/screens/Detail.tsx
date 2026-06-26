@@ -2,7 +2,8 @@ import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
 import type { OriginKey } from '../types'
-import { DecisionItem, TerrainPreview, formatDrive } from './cardParts'
+import { DecisionItem, formatDrive } from './cardParts'
+import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
   id: string
@@ -87,15 +88,7 @@ function DetailBody({ card }: { card: CardVM }) {
         {e?.practicalNote ? <p className="detail-practical">{e.practicalNote}</p> : null}
       </section>
 
-      {e?.terrainPath && e?.profilePath ? (
-        <section className="detail-block">
-          <p className="kicker">Terrain</p>
-          <div className="terrain-grid terrain-grid--detail">
-            <TerrainPreview values={e.terrainPath} label="Route / terrain" />
-            <TerrainPreview values={e.profilePath} label="Elevation profile" />
-          </div>
-        </section>
-      ) : null}
+      {card.geo ? <TerrainMap geo={card.geo} trailName={card.name} /> : null}
 
       {e?.character ? (
         <section className="detail-block">

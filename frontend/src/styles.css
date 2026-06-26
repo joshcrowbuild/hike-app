@@ -57,7 +57,6 @@ button {
 .decision-label,
 .condition-label,
 .kicker,
-.terrain-preview__label,
 .freshness,
 .open-detail,
 .back,
@@ -371,53 +370,315 @@ button {
   max-width: 52ch;
 }
 
-/* ---- terrain preview (detail) ---- */
-.terrain-grid {
+/* ---- map & terrain block (Epic 016) ---- */
+.terrain-block {
   display: grid;
   gap: 0.7rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.terrain-preview {
+/* Fullscreen is component state, not a route (R12): a fixed overlay that
+   Escape / the control closes; it never pushes browser history. */
+.terrain-block--full {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  margin: 0;
+  border-radius: 0;
+  overflow: auto;
+  padding: 1rem;
+  align-content: start;
+}
+
+.map-panel {
+  position: relative;
+  width: 100%;
+  height: clamp(15rem, 46vh, 24rem);
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border-hairline);
-  background-color: var(--surface-canvas);
+  background: var(--surface-canvas);
+  touch-action: pan-y; /* one-finger page scroll passes over; map needs intent (AC-2.3) */
+}
+
+.terrain-block--full .map-panel {
+  height: min(72vh, 40rem);
+}
+
+.map-panel :global(.maplibregl-map) {
+  width: 100%;
+  height: 100%;
+}
+
+.map-loading {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-canvas);
+}
+
+/* ---- static fallback (no WebGL / tiles unavailable) ---- */
+.map-static {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background-color: #ece9e1;
   background-image: repeating-linear-gradient(
       90deg,
       var(--border-faint),
       var(--border-faint) 1px,
       transparent 1px,
-      transparent 30px
+      transparent 34px
     ),
-    repeating-linear-gradient(0deg, var(--border-faint), var(--border-faint) 1px, transparent 1px, transparent 30px);
-  padding: 0.75rem;
+    repeating-linear-gradient(0deg, var(--border-faint), var(--border-faint) 1px, transparent 1px, transparent 34px);
 }
 
-.terrain-preview__label {
+.map-static-route {
+  fill: none;
+  stroke: var(--text-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-static-route--dashed {
+  stroke-dasharray: 5 4;
+}
+
+.map-static-trailhead {
+  fill: var(--text-primary);
+  stroke: var(--surface-raised);
+  stroke-width: 2;
+}
+
+.map-static-summit {
+  fill: var(--surface-raised);
+  stroke: var(--text-primary);
+  stroke-width: 2;
+}
+
+.map-static-cursor {
+  fill: var(--signal-caution-fg);
+  stroke: var(--surface-raised);
+  stroke-width: 2;
+}
+
+/* ---- map markers (GL) ---- */
+.map-marker {
+  display: block;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--surface-raised);
+}
+
+.map-marker--trailhead {
+  width: 14px;
+  height: 14px;
+  background: var(--text-primary);
+}
+
+.map-marker--summit {
+  width: 11px;
+  height: 11px;
+  background: var(--surface-raised);
+  border: 2px solid var(--text-primary);
+  box-shadow: none;
+}
+
+.map-marker--cursor {
+  width: 13px;
+  height: 13px;
+  background: var(--signal-caution-fg);
+}
+
+.map-marker--me {
+  width: 14px;
+  height: 14px;
+  background: #2b6cb0;
+}
+
+/* ---- persistent attribution (non-dismissable, D7) ---- */
+.map-attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  max-width: 100%;
+  padding: 0.2rem 0.4rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.58rem;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  border-top-left-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* ---- map controls (S6) ---- */
+.map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+
+.map-layers,
+.map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.map-chip {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 0.4rem 0.7rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms var(--easing-standard), border-color 120ms var(--easing-standard);
+}
+
+.map-chip[data-hovered],
+.map-chip:hover {
+  background: var(--surface-press);
+}
+
+.map-chip[data-selected] {
+  border-color: var(--text-primary);
+  background: var(--surface-press);
+}
+
+.map-chip[data-disabled] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.map-chip[data-focus-visible],
+.map-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- honest-state notes ---- */
+.map-notes {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.map-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* ---- elevation profile (S5b) ---- */
+.elev {
+  margin: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.elev-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.elev-summary-label {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   font-size: 0.62rem;
   color: var(--text-muted);
-  margin-bottom: 0.55rem;
 }
 
-.terrain-preview svg {
+.elev-stats {
+  display: flex;
+  gap: 0.7rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.elev-chart {
   width: 100%;
   height: auto;
   display: block;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-canvas);
+  touch-action: none; /* the chart owns horizontal drag for scrub */
 }
 
-.terrain-contour {
-  fill: none;
+.elev-chart:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.elev-base {
   stroke: var(--border-hairline);
   stroke-width: 1;
 }
 
-.terrain-path {
+.elev-fill {
+  fill: var(--surface-press);
+  stroke: none;
+}
+
+.elev-line {
   fill: none;
   stroke: var(--text-primary);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.elev-cursor-line {
+  stroke: var(--signal-caution-fg);
+  stroke-width: 1;
+}
+
+.elev-cursor-dot {
+  fill: var(--signal-caution-fg);
+  stroke: var(--surface-raised);
+  stroke-width: 1.5;
+}
+
+.elev-readout {
+  margin: 0;
+  min-height: 1.1rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.elev-source {
+  color: var(--text-muted);
+}
+
+.elev-soon {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---- trust cue (detail sources) ---- */
@@ -791,9 +1052,5 @@ button {
 @media (max-width: 560px) {
   .detail-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .terrain-grid {
-    grid-template-columns: 1fr;
   }
 }

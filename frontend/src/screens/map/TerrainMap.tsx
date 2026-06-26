@@ -1,0 +1,129 @@
+/**
+ * The Detail "map / terrain" block (Epic 016 §B) — the orchestrator that owns
+ * the shared cursor, the chosen layer, fullscreen, and locate-me, and chooses
+ * between the interactive GL map (lazy, WebGL-gated) and the static route
+ * fallback. It renders the honest states (S3), the persistent attribution (D7),
+ * the controls (S6), and the elevation profile (S5b) around whichever map is up.
+ */
+import { lazy, Suspense, useEffect, useState } from 'react'
+
+import { trailheadDirectionsUrl } from '../../data/geo'
+import type { GeoPosition, TrailGeo } from '../../data/vm'
+import { ElevationProfile } from './ElevationProfile'
+import { layerByKey, OSM_ATTRIBUTION, type MapLayerKey } from './layers'
+import { MapControls } from './MapControls'
+import { StaticRoute } from './StaticRoute'
+import { supportsWebGL } from './webgl'
+
+// Code-split (D6/AC-2.1): the only static import of the map library lives behind
+// this dynamic import, so it lands in its own chunk, off the feed path.
+const MapPanel = lazy(() => import('./MapPanel'))
+
+export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: string }) {
+  const [interactive] = useState(supportsWebGL)
+  const [layer, setLayer] = useState<MapLayerKey>('topo')
+  const [cursor, setCursor] = useState<number | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [userLocation, setUserLocation] = useState<GeoPosition | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [locateNote, setLocateNote] = useState<string | null>(null)
+  const [tileError, setTileError] = useState(false)
+
+  // Escape exits fullscreen (the back/close affordance), mirroring the sheet
+  // pattern — fullscreen is component state, not a route, so it never surprises
+  // browser Back (R12).
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
+  const locate = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocateNote('Location isn’t available on this device.')
+      return
+    }
+    setLocating(true)
+    setLocateNote(null)
+    // Permission is requested ONLY here, on tap, and lazily (AC-6.3).
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+        setLocating(false)
+      },
+      () => {
+        setLocating(false)
+        setLocateNote('Location off — the map still shows the route to the trailhead.')
+      },
+      { enableHighAccuracy: true, timeout: 10_000 },
+    )
+  }
+
+  const unmapped = geo.geometry == null
+  const approximate = geo.quality === 'approximate' && !unmapped
+  const layerCredit = layerByKey(layer).attribution
+
+  return (
+    <section
+      className={`detail-block terrain-block${fullscreen ? ' terrain-block--full' : ''}`}
+      aria-label="Map and terrain"
+    >
+      <p className="kicker">Map &amp; terrain</p>
+
+      <div className="map-panel">
+        {interactive && !unmapped ? (
+          <Suspense fallback={<div className="map-loading" aria-hidden="true" />}>
+            <MapPanel
+              geo={geo}
+              layer={layer}
+              cursorFraction={cursor}
+              onRouteClick={setCursor}
+              onTileError={() => setTileError(true)}
+              userLocation={userLocation}
+            />
+          </Suspense>
+        ) : (
+          <StaticRoute geo={geo} cursorFraction={cursor} />
+        )}
+
+        {/* Persistent, non-dismissable credit, in the map chrome (D7/AC-2.4). */}
+        <p className="map-attribution">
+          {layerCredit} · {OSM_ATTRIBUTION}
+        </p>
+      </div>
+
+      <MapControls
+        layer={layer}
+        onLayerChange={setLayer}
+        fullscreen={fullscreen}
+        onToggleFullscreen={() => setFullscreen((v) => !v)}
+        onLocate={locate}
+        locating={locating}
+        directionsUrl={trailheadDirectionsUrl(geo.trailhead)}
+      />
+
+      {(unmapped || approximate || tileError || (!interactive && !unmapped) || locateNote) && (
+        <div className="map-notes" role="status">
+          {unmapped ? <p className="map-note">Route not mapped — trailhead only.</p> : null}
+          {approximate ? <p className="map-note">Approximate route — low source agreement.</p> : null}
+          {tileError ? <p className="map-note">Map tiles didn’t load — showing the route over a neutral map.</p> : null}
+          {!interactive && !unmapped && !tileError ? (
+            <p className="map-note">Static map view — showing the route over a neutral map.</p>
+          ) : null}
+          {locateNote ? <p className="map-note">{locateNote}</p> : null}
+        </div>
+      )}
+
+      {geo.elevationProfile ? (
+        <ElevationProfile profile={geo.elevationProfile} cursorFraction={cursor} onScrub={setCursor} />
+      ) : (
+        <p className="elev-soon">
+          Detailed elevation profile coming soon for {trailName}. Total ascent is in the summary above.
+        </p>
+      )}
+    </section>
+  )
+}
