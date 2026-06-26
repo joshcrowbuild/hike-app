@@ -2,7 +2,7 @@
 
 *Workplan Stage 5. Draft v0.1 — June 23, 2026. Builds on Stages 2–4; independent of multiplayer (Stage 8).*
 
-> **Status: DESIGN.** Specifies the personal-overlay schema extensions, episode→semantic promotion logic, decay model, context-assembly at query time, watch-data integration discipline, and the privacy model for Stage-5 data. Decisions listed in §7. Honors rules #1, #2, #4, #5, #6, #7, #9, #10.
+> **STATUS: IMPLEMENTED** — shipped via Epics 001–005 (belief pipeline, outcome card, context assembly) + Epic 010 (commons fork). *(Design below kept as spec provenance.)* Specifies the personal-overlay schema extensions, episode→semantic promotion logic, decay model, context-assembly at query time, watch-data integration discipline, and the privacy model for Stage-5 data. Decisions listed in §7. Honors rules #1, #2, #4, #5, #6, #7, #9, #10.
 
 > **What this produces (per workplan):** belief-store schema (provenance + confidence + timestamp + type) · episode model · **episode→semantic promotion rules** (capability-vs-preference tagging) · decay model · memory retrieval / **context-assembly** (subgraph selection) · watch-data integration discipline · privacy model for Stage-5 data.
 

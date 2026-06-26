@@ -1,5 +1,7 @@
 # UI Brief v0.2
 
+> **STATUS: IMPLEMENTED (PR #22)** — the north-star posture here shipped in the personal-intelligence app UX (Home/Curation). Kept as the UX brief / visual-language reference. **Read when** designing app UX or visual language.
+
 ## 1. Product Definition
 
 - **What this is**

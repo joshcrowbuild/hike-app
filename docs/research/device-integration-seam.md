@@ -2,7 +2,7 @@
 
 *Refines Stage 6 (watch integration) into a formal, pluggable seam. Draft v0.1 — June 24, 2026. Supersedes the Garmin-only framing of Epic 004.*
 
-> **Status: DESIGN.** Specifies a config-driven **device-provider seam** so smart-device support (Garmin, Coros, and future manufacturers) is modular: a new manufacturer is one adapter with zero downstream change. Mirrors the model-provider seam (Stage 4 §2 / Decision Log §29). Honors rules #6, #7, #9, #10.
+> **STATUS: IMPLEMENTED by Epic 004** — the device-provider seam (Garmin + Coros adapters) shipped. *(Design below kept as spec provenance.)* Specifies a config-driven **device-provider seam** so smart-device support (Garmin, Coros, and future manufacturers) is modular: a new manufacturer is one adapter with zero downstream change. Mirrors the model-provider seam (Stage 4 §2 / Decision Log §29). Honors rules #6, #7, #9, #10.
 
 > **Why now (the gap):** Stage 6 §2.1 gestures at an adapter interface (`fetch_new_activities`) but never formalizes it, and `ingestion/ingest_episode.py` is a single FIT-file path. Garmin (fragile community SSO lib) and Coros (official OAuth2 / MCP) interface in completely different ways — exactly the case a seam exists for. We want to be able to add Suunto / Polar / Wahoo / Apple Health / Strava-as-aggregator later as a drop-in.
 
