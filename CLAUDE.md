@@ -7,12 +7,14 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 > Read `AGENTS.md` first for repo operating rules, merge-risk discipline, and Git/PR hygiene. Use this file for product invariants, architecture, and development process.
 
 ## Canonical design docs (read on demand)
+- **`docs/README.md`** — **the doc map**: read-this-for-that router + always-load/on-demand split + the SSOT table. **Start here.**
+- `docs/process/roadmap.md` — **live status** (the dashboard SSOT): current build state, next work, open risks. *(PM-owned — link to it, don't restate it.)*
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
 - `docs/process/plan-analysis.md` — **readiness audit**: what's well-defined vs. underdefined, build order.
 - `docs/process/development-process.md` — **how we work**: epics → stories → ACs → tests → code → targeted review.
-- `docs/epics/` — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
-- `docs/research/` — **research outputs** per stage.
+- `docs/epics/` (index: `docs/epics/README.md`) — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
+- `docs/research/` (index: `docs/research/README.md`) — **research/design outputs** per stage, indexed with status badges.
 - **Current position:** Phase-1 build complete — backend personalization (Epics 001–005, 010–015) plus the personal-intelligence app UX are shipped on `main`. **Live status, baseline & next work → `docs/process/roadmap.md`** (the status SSOT, so this line can't rot).
 
 ## Non-negotiable rules (must hold in all code)
