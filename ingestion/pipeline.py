@@ -129,8 +129,10 @@ def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
         # Prefer the longest raw name as the display name; merge all geometries.
         name = max(group, key=lambda f: len(f.name)).name
         combined = unary_union([f.geom for f in group])
-        # ref=None: consolidated features span multiple OSM way IDs
-        consolidated.append(Feature(name=name, geom=combined, source="OSM", ref=None))
+        # ref=None: a merge spans multiple source way IDs. `source` carries the group's
+        # real provenance (not a hardcoded "OSM") so a non-OSM spine keeps its authority
+        # tier and SourceRecord/SAME_AS provenance (C5 / AC-4.3).
+        consolidated.append(Feature(name=name, geom=combined, source=group[0].source, ref=None))
 
     return consolidated
 

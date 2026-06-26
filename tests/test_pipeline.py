@@ -428,3 +428,26 @@ def test_consolidate_single_segment_preserved():
     result = consolidate_osm_segments([seg])
     assert len(result) == 1
     assert result[0].ref == seg.ref  # ref kept when no merge happened
+
+
+def test_consolidate_merge_preserves_real_source():
+    """Finding #4: a multi-segment merge keeps the group's real `source` (not a
+    hardcoded "OSM"), so a non-OSM spine keeps its authority tier + provenance."""
+    segs = [
+        Feature(
+            name="Skyline Trail",
+            geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+            source="NPS",
+            ref="nps/1",
+        ),
+        Feature(
+            name="Skyline Trail",
+            geom=LineString([[-78.27, 38.56], [-78.26, 38.57]]),
+            source="NPS",
+            ref="nps/2",
+        ),
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].source == "NPS"  # real provenance preserved on merge
+    assert result[0].ref is None
