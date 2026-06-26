@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -67,3 +69,66 @@ class HealthResponse(BaseModel):
     region: str
     probes_available: list[str]
     graph: GraphStats | None = None  # None if Neo4j unreachable
+
+
+# ── Trip-detail contract — the frozen Lane A↔B coupling (Epic 016 S1 + Epic 017) ──
+#
+# This is the SINGLE integration shape the maps/elevation feature is built around:
+# Lane A (this backend) produces it for real trails; Lane B mirrors it as the
+# frontend trip type + mock, so both lanes build concurrently and meet here. The
+# two halves — assembled `geometry` (Epic 016 S1) and `elevationProfile` (Epic 017
+# S0) — are the only cross-lane types. Field names are the wire contract; keep them
+# verbatim. `null` everywhere means *not available*, never fabricated (Rule #1).
+
+
+class GeoJsonGeometry(BaseModel):
+    """The assembled route as a GeoJSON geometry (WGS84). Coordinate order is
+    `(lon, lat)` per the GeoJSON spec. `LineString` when the trail's segments join
+    into one continuous line; `MultiLineString` when they don't join cleanly —
+    each element a connected run (Epic 016 AC-1.1)."""
+
+    type: Literal["LineString", "MultiLineString"]
+    # LineString -> [[lon, lat], ...]; MultiLineString -> [[[lon, lat], ...], ...].
+    coordinates: list[Any]
+
+
+class TrailheadPoint(BaseModel):
+    """The start marker (Epic 016 S1): `Trailhead.point`, or the `CanonicalTrail`
+    representative point as a fallback. Drives the "trailhead only" state when a
+    route is unmapped (D5)."""
+
+    lat: float
+    lon: float
+
+
+class ElevationSample(BaseModel):
+    """One ordered point on the climb profile (Epic 017 S0). `distanceMeters` is the
+    cumulative along-route distance from the start; samples run start → end."""
+
+    distanceMeters: float
+    elevationMeters: float
+
+
+class ElevationProfile(BaseModel):
+    """The precomputed climb profile sampled along the route from USGS 3DEP (Epic
+    017). `null` (the whole field) when a trail has no DEM coverage or no geometry —
+    never an interpolated or faked curve (Rule #1 / D3)."""
+
+    samples: list[ElevationSample]  # ordered start → end
+    totalGainMeters: float
+    totalLossMeters: float
+    maxGradePercent: float
+    source: str  # provenance, e.g. "usgs-3dep"
+    resolutionMeters: float  # sampling spacing along the route
+
+
+class TripDetailResponse(BaseModel):
+    """The trip/detail response (`GET /trail/{canonical_id}`). Carries the spatial
+    truth a single recommendation needs — where it is, the shape of the day — with
+    every geometry/elevation field honestly `null` when absent (Rule #1)."""
+
+    canonical_id: str
+    name: str
+    geometry: GeoJsonGeometry | None = None  # null = route not mapped (trailhead only)
+    trailhead: TrailheadPoint | None = None
+    elevationProfile: ElevationProfile | None = None  # null = no coverage
