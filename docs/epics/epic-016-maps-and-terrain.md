@@ -4,7 +4,7 @@
 **Phase:** 1 (pulled forward — first dogfood finding; realizes the Stage-10 Detail spec)
 **Spec refs:** `home-curation-prototype-spec-v0.3` §C3 + Detail block `[2. map / terrain]` · `stage-1-data-sources` (OSM geometry spine, USGS 3DEP elevation) · CLAUDE.md Rule #1 (source-or-silence) · Rule #2 (confidence) · Rule #4/#5 (access-scoped personal data) · T6 / roadmap R1 (ODbL licensing)
 
-> ⭐ = a decision that needs PM/design ratification **before** build. This epic is DEFINED but carries three starred forks (D1, D2, D8) — ratify those first.
+> **Ratified 2026-06-26 (PM + Josh):** (1) **MapLibre GL JS** is the engine (D1). (2) **First ship includes the elevation profile** — *not* a topo-only Phase A; the route map and the elevation chart land together (changes the build sequence + DoD below). (3) **Offline (S7) is a fast-follow**, not in the first ship (D8). Topo source (D2) stands as proposed: **USGS National Map primary, OpenTopoMap fallback** (revisit if non-US coverage is needed). **Consequence:** the USGS-3DEP elevation enrichment (S5a) is now a **gating prerequisite** for the first ship — likely its own corpus/ingestion epic that this one depends on (see Open Question 4/5).
 
 ---
 
@@ -30,7 +30,7 @@ A user can see **where a recommended hike actually is and what the day's terrain
 
 ## Design decisions (proposed — ⭐ ratify before build)
 
-⭐ **D1 — Map library: MapLibre GL JS.** Open-source (BSD), zero per-tile vendor cost or lock-in (unlike Mapbox/Google), renders raster topo tiles **and** vector route overlays **and** optional hillshade/3D terrain — the ceiling for "interactable + topographic." React integration via `react-map-gl` (maplibre mode). *Fallback if integration proves heavy:* Leaflet + `react-leaflet` (raster-only, lighter) ships S1–S4 but caps the richer terrain stories. **Recommend MapLibre.**
+**D1 — Map library: MapLibre GL JS. ✅ RATIFIED.** Open-source (BSD), zero per-tile vendor cost or lock-in (unlike Mapbox/Google), renders raster topo tiles **and** vector route overlays **and** optional hillshade/3D terrain — the ceiling for "interactable + topographic." React integration via `react-map-gl` (maplibre mode). (Leaflet was the simpler fallback; not chosen.)
 
 ⭐ **D2 — Topographic basemap: USGS The National Map (USGS Topo) as primary.** Public-domain, authoritative USGS quad topography with **contour lines baked into the tiles** — so "see the terrain shape" needs *no new backend data*. Layers, all free + license-clean: **Topo** (default) · **Imagery** (USGS aerial) · **Hillshade**. *Global fallback outside US coverage:* OpenTopoMap (OSM + SRTM, ODbL/CC-BY-SA). Aligns with the project's existing USGS/3DEP/open-data posture.
 
@@ -44,7 +44,7 @@ A user can see **where a recommended hike actually is and what the day's terrain
 
 **D7 — Attribution (T6/R1): persistent, legible credit on every map** — USGS (basemap) + OpenStreetMap / ODbL (the route geometry is OSM-derived). Non-dismissable, in the map chrome. License compliance is a release gate, not a nicety.
 
-⭐ **D8 — Offline scope:** S7 ships an opt-in *"make available offline"* cache of an **opened** trail (its in-view tiles + the route + the profile) via the PWA service worker — enough that a trail you opened at home works at the trailhead with no signal. Full offline-region download is explicitly future. **Ratify whether S7 is in this epic or a fast-follow.**
+**D8 — Offline scope: ✅ RATIFIED as a fast-follow** (not in the first ship). S7 ships an opt-in *"make available offline"* cache of an **opened** trail (its in-view tiles + the route + the profile) via the PWA service worker — enough that a trail you opened at home works at the trailhead with no signal — but as the build immediately *after* the first map ships. Full offline-region download is explicitly future.
 
 ## UX deep-dive
 
@@ -85,7 +85,7 @@ A chart beneath the map: x = distance, y = elevation; total gain/loss + max grad
 
 ## Stories
 
-Grouped into **Phase A** (the shippable dogfood fix), **Phase B** (richness), **Phase C** (future, flagged not committed).
+**Build sequence (ratified):** the **first ship = S1–S6** (the topo map **and** the elevation profile together). Because S5 needs USGS-3DEP elevation, the gating first step is **S5a (the elevation enrichment)** — see the note under S5; it likely becomes its own corpus/ingestion epic that this one depends on. **S7 (offline) is the fast-follow; S8 is future.** (The earlier topo-only "Phase A first" split is retired by the ratified decision.)
 
 ### Phase A — core slice
 
@@ -150,21 +150,22 @@ Grouped into **Phase A** (the shippable dogfood fix), **Phase B** (richness), **
 **S8 — Personal-history overlay** *(future)*
 **AC-8.1:** Past episodes' tracks render as a "you've been here" overlay, **access-scoped to the viewer** (Rule #4/#5); novelty / `been_on` shading ties to Epic 006. Out of scope for the first build; captured so the map foundation anticipates it.
 
-## Definition of Done (Phase A = the shippable dogfood fix)
-- [ ] S1–S4 ACs covered by passing tests; `make check` green; frontend tests green.
-- [ ] Detail shows a USGS topo map with the real route + trailhead, fit to bounds, on a phone; the feed stays map-free and fast.
+## Definition of Done (first ship = S1–S6, route map **and** elevation)
+- [ ] S1–S6 ACs covered by passing tests; `make check` green; frontend tests green.
+- [ ] **S5a prerequisite met:** USGS-3DEP elevation is sampled along each trail's `geom_wkt`, stored, and exposed via the API (its own epic if scoped that way — Open Q 4/5).
+- [ ] Detail shows a USGS topo map with the real route + trailhead (fit to bounds) **and** the elevation profile that scrubs in sync with the map, on a phone; the feed stays map-free and fast.
 - [ ] Honest states (S3) verified incl. a no-geometry case and a tile-failure case.
 - [ ] Attribution (USGS + OSM/ODbL) present and non-dismissable.
-- [ ] Map library is code-split — feed bundle unaffected (measured).
-- [ ] ⭐ D1 / D2 / D8 ratified; deployed to the Vercel preview and scrolled on a real phone.
-- [ ] Phase B (S5–S6) + Phase C (S7–S8) tracked as follow-on stories; S5 gated on the 3DEP enrichment seam.
+- [ ] Map library (MapLibre) is code-split — feed bundle unaffected (measured).
+- [ ] Deployed to the Vercel preview and scrolled on a real phone.
+- [ ] **S7 (offline) is the fast-follow**; S8 (personal-history overlay) is future.
 
 ## Open questions / NEEDS-PM-DESIGN
-1. ⭐ **Map library** — MapLibre (recommended) vs Leaflet (simpler, caps the terrain richness).
-2. ⭐ **Topo source** — USGS National Map primary + OpenTopoMap fallback; confirm US-first coverage is acceptable for now.
-3. ⭐ **Offline (S7)** — in this epic, or a fast-follow?
-4. **3DEP enrichment (S5a)** — is the corpus enrichment seam (Stage 3 §7) ready, or does the elevation profile wait on it? Determines whether Phase B is near or far.
-5. **Ownership of the elevation precompute** — the *sample + store* likely belongs to a corpus/ingestion epic; the *chart* belongs here. Confirm the split so S5a has a home.
+1. ✅ **Map library** — MapLibre (ratified).
+2. ✅ **Topo source** — USGS National Map primary + OpenTopoMap fallback (stands; revisit for non-US coverage).
+3. ✅ **Offline (S7)** — fast-follow (ratified).
+4. **3DEP enrichment (S5a) — now on the critical path.** The first ship includes elevation, so the USGS-3DEP enrichment must land first. Is the corpus enrichment seam (Stage 3 §7) ready, or does it need building? This is the single biggest unknown on the timeline.
+5. **Ownership of the elevation precompute** — the *sample + store* (S5a) likely belongs to its **own corpus/ingestion epic** that Epic 016 depends on; the *chart + sync* (S5b) stays here. **Next PM step:** scope that elevation-enrichment epic so S5a has a home.
 
 ## Risks / notes
 - **Elevation dependency (S5a):** the 3DEP enrichment join is the known unbuilt seam (corpus-source enrichment gap). Phase A is designed to ship *without* it — contours come free from the topo tiles, so "see the terrain" does not wait on 3DEP.
