@@ -243,6 +243,17 @@ def test_s4_ac4_stated_beliefs_labeled_as_facts():
     assert "inferred" not in result.lower() or "stated" in result.lower() or result == ""
 
 
+def test_s4_ac4_inferred_beliefs_labeled_as_inferred():
+    """AC-4.4 (inferred half): inferred preference beliefs render under the qualified
+    'Inferred from past hikes:' label — never posed as stated facts (Rule #7)."""
+    inferred = _belief(
+        "prefers_ridge_trail", confidence=0.7, decays=False
+    )  # _belief → type inferred
+    result = assemble_context([inferred], None, [])
+    assert "Inferred from past hikes:" in result
+    assert "prefers ridge trail" in result  # key underscores rendered as spaces
+
+
 def test_s4_ac5_context_capped_at_max_chars():
     """AC-4.5: Context string length ≤ MAX_CONTEXT_CHARS."""
     many_beliefs = [_belief(f"pref_{i}", confidence=0.8, decays=False) for i in range(30)]
