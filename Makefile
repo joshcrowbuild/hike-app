@@ -9,7 +9,7 @@ help:
 	@echo "  format-check verify formatting (ruff format --check)"
 	@echo "  lint         lint (ruff check)"
 	@echo "  typecheck    static types (mypy)"
-	@echo "  test         smoke/unit tests (pytest)"
+	@echo "  test         DB-free unit tests (pytest -m \"not neo4j\")"
 	@echo "  check        format-check + lint + typecheck + test"
 	@echo "  preflight    check environment before running the sprint"
 	@echo "  db-up        start local Neo4j (reads NEO4J_PASSWORD from .env)"
@@ -39,7 +39,7 @@ typecheck:
 	mypy ingestion orchestration graph api evals
 
 test:
-	pytest -q
+	pytest -q -m "not neo4j"
 
 check: format-check lint typecheck test
 

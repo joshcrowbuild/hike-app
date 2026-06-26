@@ -61,6 +61,20 @@ def _norm(cypher: str) -> str:
 # ── S1 — Outcome node creation ────────────────────────────────────────────────
 
 
+def test_s1_ac1_outcome_merge_keyed_on_path_episode_id():
+    """AC-1.1: Outcome.episode_id matches the path parameter — the Outcome MERGE binds
+    $eid to the episode_id passed to write_outcome, so the node persisted is keyed to the
+    URL's {id}, never an attacker-chosen body value."""
+    req = OutcomeRequest(overall=2, skipped=False)
+    scoped = _FakeScoped("josh")
+    write_outcome("ep:josh:42", "josh", req, scoped)
+    outcome_merges = [(c, p) for c, p in scoped.writes if "MERGE (o:Outcome" in c]
+    assert len(outcome_merges) == 1
+    cypher, params = outcome_merges[0]
+    assert params.get("eid") == "ep:josh:42"  # bound to the path id
+    assert "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})" in _norm(cypher)
+
+
 def test_s1_ac2_owner_id_from_viewer_not_body():
     """AC-1.2: the written owner is the session viewer, injected by the seam — never
     a value carried in the request body. No free owner param reaches the write."""
@@ -137,6 +151,32 @@ def test_s2_ac1_has_outcome_edge_created():
     assert len(edge_calls) > 0
 
 
+def test_s2_ac2_has_outcome_edge_points_episode_to_outcome():
+    """AC-2.2: the edge is (e:Episode)-[:HAS_OUTCOME]->(o:Outcome), so the episode is
+    reachable from the outcome via (o)<-[:HAS_OUTCOME]-(e). Direction is load-bearing —
+    a reversed edge would break every traversal that walks Episode→Outcome."""
+    req = OutcomeRequest(overall=2, skipped=False)
+    scoped = _FakeScoped("josh")
+    write_outcome("ep:josh:1", "josh", req, scoped)
+    edge_writes = [c for c, _ in scoped.writes if "HAS_OUTCOME" in c]
+    assert len(edge_writes) == 1
+    assert "MERGE (e)-[:HAS_OUTCOME]->(o)" in _norm(edge_writes[0])
+    assert "(o)-[:HAS_OUTCOME]->(e)" not in _norm(edge_writes[0])  # never the reverse
+
+
+def test_s2_ac3_outcome_and_edge_commit_in_one_transaction():
+    """AC-2.3: the Outcome MERGE and its HAS_OUTCOME edge land in the SAME managed
+    transaction (one execute_write batch), so a failure rolls back both — no orphan
+    Outcome with no edge, no dangling edge. Atomicity is the seam's job, not the caller's."""
+    req = OutcomeRequest(overall=2, skipped=False)
+    scoped = _FakeScoped("josh")
+    write_outcome("ep:josh:1", "josh", req, scoped)
+    assert len(scoped.tx_batches) == 1  # exactly one atomic transaction
+    batch_cyphers = [c for c, _ in scoped.tx_batches[0]]
+    assert any("MERGE (o:Outcome" in c for c in batch_cyphers)
+    assert any("HAS_OUTCOME" in c for c in batch_cyphers)
+
+
 # ── S3 — Skipped outcome ─────────────────────────────────────────────────────
 
 
@@ -200,6 +240,22 @@ def test_s5_ac1_explicit_answer_writes_stated_belief():
     belief_merges = [c for c, _ in scoped.writes if "MERGE (b:Belief" in c]
     assert len(belief_merges) == 1
     assert "b.confidence = 1.0" in _norm(belief_merges[0])
+    assert "b.confirmed_by_user = true" in _norm(belief_merges[0])  # AC-5.1: user affirmed
+
+
+def test_s5_ac2_stated_belief_key_and_value():
+    """AC-5.2: the stated belief's key is 'stated_preference' and its value is the user's
+    delta_answer text — the raw statement is the only substrate Phase 1 stores (no LLM
+    classification). A clean answer (no surrounding whitespace) round-trips verbatim."""
+    answer = "Prefer exposed ridgelines with long views"
+    req = OutcomeRequest(overall=3, delta_answer=answer, skipped=False)
+    scoped = _FakeScoped("josh")
+    write_outcome("ep:josh:1", "josh", req, scoped)
+    belief_merges = [(c, p) for c, p in scoped.writes if "MERGE (b:Belief" in c]
+    assert len(belief_merges) == 1
+    cypher, params = belief_merges[0]
+    assert "b.key = 'stated_preference'" in _norm(cypher)
+    assert params.get("value") == answer  # raw delta_answer, verbatim
 
 
 def test_s5_ac3_stated_belief_does_not_decay():

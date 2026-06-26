@@ -1,6 +1,6 @@
 # Epic 002 — Outcome Card Endpoint
 
-**Status:** IN_PROGRESS  
+**Status:** DONE ✅  
 **Phase:** 1 (Personal Intelligence)  
 **Spec refs:** Stage 5 §1 (Outcome node) · decision-log §10 (sync UX) · decision-log §30
 
@@ -60,7 +60,7 @@ Epic 003 context assembly (outcome quality signals feed the Curator)
 **When** the episode is linked to a `CanonicalTrail` with known tags  
 **Then** the belief update queue is notified to check if any preference beliefs have reached N=3 corroborating positive outcomes
 
-**AC-4.1:** A preference belief check task is enqueued after each non-skipped outcome  
+**AC-4.1:** A preference belief check task is enqueued after each non-skipped outcome with `overall >= 2` (only positive outcomes corroborate a preference — see AC-4.4)  
 **AC-4.2:** A skipped outcome does NOT enqueue a preference belief check  
 **AC-4.3:** The preference check does NOT run synchronously in the HTTP request path (must be queued, same as capability beliefs)  
 **AC-4.4:** `overall=1` (negative outcome) does NOT count toward preference promotion (only overall >= 2 corroborates)
@@ -81,12 +81,20 @@ Epic 003 context assembly (outcome quality signals feed the Curator)
 
 ## Definition of Done
 
-- [ ] All ACs covered by at least one passing test
-- [ ] `make check` green
-- [ ] Targeted review agent run — check Rule #4 (owner scoping), belief mutation correctness, atomicity
-- [ ] `POST /episode/{id}/outcome` live on the API
-- [ ] Committed atomically: schema additions separate from API code separate from tests
-- [ ] Pushed + epic status updated to DONE ✅
+- [x] All ACs covered by at least one passing test
+- [x] `make check` green
+- [x] Targeted review agent run — check Rule #4 (owner scoping), belief mutation correctness, atomicity
+- [x] `POST /episode/{id}/outcome` live on the API
+- [x] Committed atomically: schema additions separate from API code separate from tests
+- [x] Pushed + epic status updated to DONE ✅
+
+**Review note (2026-06-26):** targeted self-review (test-faithfulness + invariant lenses,
+adversarially verified) found one MODERATE: the original AC-4.3 endpoint test asserted only
+write→drain *order*, which cannot distinguish a BackgroundTask-scheduled drain from a
+synchronous inline drain (an inline drain also runs after the write). Fixed by spying on the
+`BackgroundTasks.add_task` scheduling boundary so the test genuinely fails under an inline-drain
+regression (proven with a two-variant falsification harness). No production code changed — the
+feature shipped on trunk via PR #9; this epic adds the missing AC coverage + AC-4.1 wording fix.
 
 ---
 

@@ -85,6 +85,7 @@ def _write_builder_outputs() -> list[tuple[str, tuple[str, dict]]]:
         ("Episode", queries.wire_episode_on_trail(eid, "ct:old-rag-loop")),
         ("PhysicalProfile", queries.upsert_physical_profile_pace(14.5)),
         ("PhysicalProfile", queries.upsert_physical_profile_maxima(15000.0, 800.0)),
+        ("PhysicalProfile", queries.upsert_physical_profile_last_episode("2026-06-24")),
         ("Belief", queries.upsert_pace_belief(bid, "14.5")),
         ("Belief", queries.wire_belief_derived_from_episode(bid, eid)),
         ("Belief", queries.recount_belief_corroboration(bid, 3)),
@@ -207,6 +208,54 @@ def test_s3_ac2_owned_upserts_pin_owner_in_the_merge_key() -> None:
     assert "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})" in ep_cypher
     bel_cypher, _ = queries.upsert_pace_belief("belief:x:pace_on_grade_moderate", "1.0")
     assert "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})" in bel_cypher
+
+
+def test_upsert_episode_persists_date_from_start_date() -> None:
+    """Epic 003 AC-3.2 prerequisite: upsert_episode writes e.date = date($start_date) — the
+    field the 18-month retrieval window filters on — and defaults start_date to None
+    (null-safe) when omitted, so existing callers are unaffected."""
+    cypher, params = queries.upsert_episode(
+        "ep:josh:1",
+        watch_activity_id="g:1",
+        source="fit_file",
+        distance_m=1.0,
+        ascent_m=1.0,
+        descent_m=1.0,
+        moving_min=1.0,
+        duration_min=1.0,
+        avg_heart_rate=1,
+        pace_on_grade=1.0,
+        now="2026-06-24T00:00:00+00:00",
+        start_date="2026-06-24",
+    )
+    assert "e.date              = date($start_date)" in cypher
+    assert params["start_date"] == "2026-06-24"
+
+    _, params_default = queries.upsert_episode(
+        "ep:josh:2",
+        watch_activity_id="g:2",
+        source="fit_file",
+        distance_m=1.0,
+        ascent_m=1.0,
+        descent_m=1.0,
+        moving_min=1.0,
+        duration_min=1.0,
+        avg_heart_rate=1,
+        pace_on_grade=1.0,
+        now="t",
+    )
+    assert params_default["start_date"] is None  # null-safe default for existing callers
+
+
+def test_last_episode_builder_is_owner_scoped_running_max() -> None:
+    """The PhysicalProfile.last_episode_at builder is owner-scoped (passes the guard) and
+    advances as a running maximum so an out-of-order backfill never regresses it."""
+    cypher, params = queries.upsert_physical_profile_last_episode("2026-06-24")
+    queries.assert_scoped_write(cypher)  # owned-write guard: must not raise
+    norm = " ".join(cypher.split())
+    assert "MERGE (pp:PhysicalProfile {owner_id: $viewer_id})" in norm
+    assert "date($episode_date) > pp.last_episode_at" in norm  # running max, never regresses
+    assert params["episode_date"] == "2026-06-24"
 
 
 def test_s2_ac4_recount_preserves_promotion_case() -> None:
