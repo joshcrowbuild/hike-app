@@ -1,3 +1,5 @@
+import type { TrailGeo } from './data/vm'
+
 export type OriginKey = 'frontRoyal' | 'luray' | 'charlottesville'
 export type WhenKey = 'tomorrowMorning' | 'weekendMorning' | 'weekendAfternoon' | 'fullDay'
 export type EffortKey = 'easy' | 'moderate' | 'bigDay'
@@ -29,8 +31,8 @@ export type Trail = {
   whenFit: Record<WhenKey, number>
   effortFit: Record<EffortKey, number>
   promptTerms: string[]
-  terrainPath: number[]
-  profilePath: number[]
+  /** Route geometry + trailhead + elevation profile (Epic 016). */
+  geo: TrailGeo
 }
 
 export type TuningState = {

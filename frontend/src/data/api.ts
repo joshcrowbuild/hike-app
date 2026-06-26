@@ -47,6 +47,42 @@ export interface FeedCardResponse {
   distance_mi: number | null
   lines: FeedLineResponse[]
   warnings: string[]
+  /**
+   * Maps & terrain (Epic 016 S1). Optional: the current `/plan` omits them, so
+   * the adapter degrades; once the geometry/detail endpoint lands these arrive
+   * and the map renders with no client change (a snake_case mirror of the VM).
+   */
+  geometry?: WireGeometry | null
+  trailhead?: WirePoint | null
+  /** Geometry's confidence tier; non-`stated` draws the dashed "approximate" route (D5). */
+  geometry_confidence?: ConfidenceLevel
+  summit?: WirePoint | null
+  elevation_profile?: WireElevationProfile | null
+}
+
+/** WGS84 point, `{lat, lon}`. */
+export interface WirePoint {
+  lat: number
+  lon: number
+}
+
+/** GeoJSON route geometry (`[lon, lat]` coordinate order per the spec). */
+export type WireGeometry =
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'MultiLineString'; coordinates: [number, number][][] }
+
+export interface WireElevationSample {
+  distance_m: number
+  elevation_m: number
+}
+
+export interface WireElevationProfile {
+  samples: WireElevationSample[]
+  total_gain_m: number
+  total_loss_m: number
+  max_grade_pct: number
+  source: string
+  resolution_m: number
 }
 
 export interface FeedResponse {

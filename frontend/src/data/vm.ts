@@ -45,8 +45,6 @@ export interface CardEnrichment {
   freshness?: string
   /** A soft verify-before-you-go caution (distinct from the safety `warnings`). */
   caution?: string
-  profilePath?: number[]
-  terrainPath?: number[]
   /** Richer prose, used only on Detail. */
   character?: string
   practicalNote?: string
@@ -64,6 +62,74 @@ export interface CardVM {
   /** Safety guardrail strings from the engine (the API's `warnings`). */
   warnings: string[]
   enrichment?: CardEnrichment
+  /**
+   * Maps & terrain payload (Epic 016). Absent until the geometry/elevation
+   * contract is wired (the thin `/plan` adapter drops it); present on the mock
+   * and, later, the detail endpoint. The map and the elevation glyph read this.
+   */
+  geo?: TrailGeo
+}
+
+// ---- Maps & terrain (Epic 016 / 017) -------------------------------------
+
+/** A WGS84 point. Mirrors the contract's `trailhead {lat, lon}`. */
+export interface GeoPosition {
+  lat: number
+  lon: number
+}
+
+/**
+ * GeoJSON route geometry (WGS84, `[lon, lat]` order per the spec). A
+ * `MultiLineString` is used when a trail's segments don't join cleanly. A trail
+ * with no mapped route is `null` — never an empty or fabricated line (D5/AC-1.2).
+ */
+export type RouteGeometry =
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'MultiLineString'; coordinates: [number, number][][] }
+
+/**
+ * Confidence in the route's conflation, derived from the existing confidence
+ * tier on the backend (Rule #2). `approximate` draws a dashed line with a
+ * disclosed note (D5/S3 AC-3.2); `confident` draws a solid line.
+ */
+export type GeometryQuality = 'confident' | 'approximate'
+
+/** One sampled point along the route's elevation profile. */
+export interface ElevationSample {
+  /** Cumulative distance from the trailhead, in metres. */
+  distanceMeters: number
+  elevationMeters: number
+}
+
+/**
+ * Elevation profile precomputed from USGS 3DEP along the route (the Epic 017 S0
+ * contract the two lanes freeze on). `null` on a trail with no profile → the
+ * chart and glyph degrade honestly to the ascent figure, never a faked curve.
+ */
+export interface ElevationProfile {
+  samples: ElevationSample[]
+  totalGainMeters: number
+  totalLossMeters: number
+  maxGradePercent: number
+  /** Provenance string, e.g. "USGS 3DEP". Shown with the profile. */
+  source: string
+  resolutionMeters: number
+}
+
+/**
+ * The map/terrain payload for one trip — exactly the shapes Lane A's API
+ * returns, consumed identically whether mock or live. Bundling them keeps the
+ * map a single prop and the trailhead (needed even with `geometry: null`, for
+ * the trailhead-only state and the directions deep-link) always present.
+ */
+export interface TrailGeo {
+  geometry: RouteGeometry | null
+  trailhead: GeoPosition
+  /** Solid vs dashed route (honesty, D5). Defaults to confident when geometry exists. */
+  quality: GeometryQuality
+  /** Optional summit / high-point marker, where known. */
+  summit?: GeoPosition
+  elevationProfile: ElevationProfile | null
 }
 
 /**
