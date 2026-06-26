@@ -1,6 +1,6 @@
 # Adventure Planner — Design & Decision Log
 
-*Working title. Living document — last updated June 18, 2026.*
+*Working title. Living document — last updated June 26, 2026.*
 
 A personal, agentic, self-verifying trip planner for hiking/backpacking, built deliberately as a skills-building artifact for a Capital One generative-AI-platform design-lead role. Fun and useful in real life; architecturally a small mirror of the platform org's actual work. A calm, private **utility** — not social, not engagement-seeking.
 
@@ -220,8 +220,7 @@ Watch-sync fine details (mostly settled, §10) · schemas (belief entry; episode
 Fine-tuning open UI-gen models + verifiable design-system reward (frontier products own it; repair-loop dissolved the need to train; needs GPUs — *the verifier-with-two-halves idea survived and ported here*) · game domains (DM/RPG, whodunit, AI town) · work-adjacent concierges (loan/benefits/claims) · AllTrails-style social condition reports (→ passive anonymized commons) · pre-seeding with the 27-destination workbook (want real ingest) · parallel variants (garden, kitchen — parked spin-offs).
 
 ## 26. Proposed next step
-**Now in:** Stage 2 — the graph schema & provenance/confidence model (design against the real data shape from Stage 1; see `docs/research/stage-1-data-sources.md`). Then Stage 3 corpus pipeline, Stage 4 engine.
-Eventual **Phase 0 thin vertical slice**: ingest one East-Coast region (proposed pilot: Shenandoah NP + GW & Jefferson NF — a clean NPS+USFS conflation test); minimal Neo4j (canonical trails + provenance, stub profile/party); origin as a runtime parameter with device-location default; Verifier JIT overlay (weather + drive time + trail facts, source-stamped) on the shortlist; a basic feed; the truthfulness eval. **Remaining de-risking spike:** real LLM cost-per-session (needs a flow to measure → Stage 4). The conflation desk-research spike is **done** (§27); the hands-on conflation run folds into Stage 3.
+*Superseded — Phase-0 and Phase-1 builds are complete. The Phase-0 vertical slice shipped against the Shenandoah NP + GW & Jefferson NF pilot region (the source-stack resolutions it rested on are in §27). Live status, open risks (incl. the still-unmeasured Stage-4 cost spike, R5), and the next-work queue are tracked in **`docs/process/roadmap.md`** — the status SSOT.*
 
 ## 27. Stage 1 resolutions ✅ *(June 19, 2026 — full catalog: `docs/research/stage-1-data-sources.md`)*
 - **Source stack (Phase-0 pilot):** OSM = geometry **spine** (Geofabrik extract); USFS NFS Trails + NPS Public Trails = authoritative federal overlay; PAD-US 4.1 = land-manager/public-access base; USGS 3DEP = elevation/grade; RIDB = permit/campsite *requirements*; state/county open data (Fairfax) for local trails. Federal data covers federal land only → OSM carries the breadth.
@@ -252,7 +251,7 @@ Eventual **Phase 0 thin vertical slice**: ingest one East-Coast region (proposed
 - **Live adapters:** NWS, USGS Water OGC API, FIRMS, AirNow, RIDB, Valhalla — each `(loc)→verified fact|None`, mocked-response integration tests, degrade-and-disclose on outage/rate-limit.
 - **Truthfulness eval (T4):** Opus-tier LLM-judge that every surfaced fact has source+timestamp and matches captured adapter output, + deterministic guardrail checks; **N-runs-per-scenario pass rate** (stochastic); golden set bootstrapped from known Shenandoah/GWJ trips; runnable in CI.
 - **Cost:** two shapes by provider — **local** = ~$0 marginal tokens, traded for hardware + latency; **cloud (yardstick)** ≈ **$0.10–0.18/uncached session**. Levers = shortlist cap K · prompt caching (cloud) / KV reuse (local) · provider+tier routing · condition-TTL caching. ❓ **real budget + provider default pending the spike, now a bake-off** (run the real flow against the real corpus and measure local vs. cloud through the same eval on quality/cost/latency — do not ship off the estimate). *(the remaining §23 "spike": cost-per-session)*
-- **◆ Phase-0 design (Stages 1–4) complete** — the end-to-end verified-synthesis slice is fully specified; next is build + the cost spike, not more design.
+- **◆ Phase-0 (Stages 1–4) — DESIGNED ✅ and BUILT ✅.** The end-to-end verified-synthesis slice shipped; only the real cost-per-session spike (R5) remains open. Live status: `docs/process/roadmap.md`.
 
 ## 30. Stage 5 — Personalization decisions ✅ *(June 23, 2026 — design: `docs/research/stage-5-personalization.md`)*
 - **Belief store schema:** ✅ Five personal-overlay node types: `:Episode` (completed trip), `:Outcome` (post-hike reflect-back, separate node), `:Belief` (semantic belief with provenance), `:PhysicalProfile` (capability summary), `:PartyProfile` (party-specific inferences). All carry `owner_id`; all gated by `scopedQuery(viewer)`.
@@ -263,10 +262,10 @@ Eventual **Phase 0 thin vertical slice**: ingest one East-Coast region (proposed
 - **Context assembly:** ✅ At query time: top-20 active beliefs by recency (above decayed confidence floor) + relevant episodes (same trail or area as candidates, last 18 months, cap 10). Raw biometric data, full episode history, and provisional beliefs are never injected into the model context.
 - **Watch data integration:** ✅ Live readiness (Body Battery / HRV) enters the readiness filter only — never the belief store. Raw HR time series and biometric archive are NOT held in Neo4j. Belief store holds only capability signals extracted at ingest. Every watch-enriched ranking carries a disclosure tag (Rule #6).
 - **Privacy tiers for Stage-5 data:** ✅ T1 = derived capability/preference beliefs (grantable to household members); T2 = episode history + outcomes (grantable explicitly, context-scoped to joint planning); T3 = raw biometrics (not stored in the graph, therefore not grantable). Grant enforcement deferred to Stage 8.
-- **Commons write for episodes:** 🔶 **Designed, not built — Epic 010 pending** *(was wrongly marked built; demoted per gap-audit C1, 2026-06-24 — wrong memory is worse than none).* Forked write on episode creation: person→observation link severed; GPS track endpoint-trimmed (250m strip, 🔶 threshold TBD); raw pace bucketed into 4 capability bands before commons write. Private episode retains full data. Post-aggregation deletion of individual contribution is not recoverable — disclosed in consent.
+- **Commons write for episodes:** ✅ **Built — Epic 010 (2026-06-24)** *(on Epic 011's scoped-write seam).* Forked write on episode creation: person→observation link severed; GPS track endpoint-trimmed (250m strip, 🔶 threshold still tunable); raw pace bucketed into 4 capability bands before commons write. Private episode retains full data. Post-aggregation deletion of individual contribution is not recoverable — disclosed in consent.
 - **Memory eval:** 🔶 A thin memory-on vs. memory-off harness runs alongside the Stage-4 truthfulness eval; the deep stochastic methodology is Stage 7.
 - **`:Route` node (custom itineraries):** ✅ Deferred — Stage 5 uses `:CanonicalTrail` as the episode target; `:Route` added only when party planning needs custom itineraries (consistent with Stage 2 §2).
-- **◆ Phase-1 personalization design complete** — belief store, promotion, decay, context assembly, watch discipline, and privacy tiers fully specified; next is build (watch integration = Stage 6) + the memory eval.
+- **◆ Phase-1 personalization — DESIGNED ✅ and BUILT ✅** (Epics 001–005, 010–015): belief store, promotion, decay, context assembly, watch discipline, and privacy tiers shipped. Live status: `docs/process/roadmap.md`.
 
 ## 31. Stage 6 — Watch Integration decisions ✅ *(June 23, 2026 — design: `docs/research/stage-6-watch-integration.md`)*
 - **FIT parser:** ✅ `fitdecode` as primary (compressed-timestamp support, active maintenance); `fitparse` as fallback on parse failure.
@@ -280,6 +279,6 @@ Eventual **Phase 0 thin vertical slice**: ingest one East-Coast region (proposed
 - **Belief update trigger:** ✅ `asyncio.Queue` drained by worker coroutine; never blocks ingest path; queue rebuilt from unprocessed Episodes on restart.
 - **heat_response:** 🔶 NWS archived temp at episode date + avg_hr from FIT session; 2 heat-hit episodes before belief promotion; degrades gracefully if NWS unavailable for that date.
 - **Sensitivity routing:** ✅ All LLM calls in ingest path route to local provider via `provider_registry.route(sensitivity="private")`; enforced at job entrypoint; cloud models never see raw FIT/HR/GPS data.
-- **Commons fork:** 🔶 **Designed, not built — Epic 010 pending** *(was wrongly marked built; demoted per gap-audit C1, 2026-06-24).* `CommonsObservation` written in same transaction as Episode; person link severed at write; 250m endpoint trim; raw pace substituted with 4-band capability label before commons write.
+- **Commons fork:** ✅ **Built — Epic 010 (2026-06-24).** `CommonsObservation` written in same transaction as Episode; person link severed at write; 250m endpoint trim; raw pace substituted with 4-band capability label before commons write.
 - **MCP write discipline:** ✅ MCP tools (Coros) never write Episode nodes — they are read-only in interactive context; all Episode writes are owned by the scheduled batch job.
-- **◆ Phase-1 design (Stages 5–6) complete** — personalization schema + watch ingestion pipeline fully specified. Next: build the Phase-0 vertical slice (Shenandoah+GWJ) + Stage-4 cost spike; then Stage-6 build.
+- **◆ Phase-1 (Stages 5–6) — DESIGNED ✅ and BUILT ✅.** Personalization schema + watch ingestion pipeline shipped (device seam = Epic 004, incl. the in-process Garmin poller). Remaining: always-on host (R7) + readiness filter (Epic 007). Live status: `docs/process/roadmap.md`.
