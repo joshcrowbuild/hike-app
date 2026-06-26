@@ -1,6 +1,7 @@
 import { Confidence, Signal, Staleness } from '../components'
 import type { CardVM } from '../data/vm'
-import { DecisionItem, TerrainGlyph, formatDrive, formatTrail } from './cardParts'
+import { DecisionItem, formatDrive, formatTrail } from './cardParts'
+import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
  * A peer recommendation card (v0.3 §3) — one tap opens Detail, no nested
@@ -24,7 +25,7 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
           ) : null}
         </div>
 
-        {e?.profilePath ? <TerrainGlyph profilePath={e.profilePath} /> : null}
+        {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
 
         <div className="decision">
           {e?.driveMinutes != null ? (
