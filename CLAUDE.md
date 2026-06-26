@@ -13,7 +13,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - `docs/process/development-process.md` — **how we work**: epics → stories → ACs → tests → code → targeted review.
 - `docs/epics/` — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
 - `docs/research/` — **research outputs** per stage.
-- **Current position:** Phase-0 complete + Phase-1 design complete + **Phase-1 build started** (Stages 5–6). Built: ingestion pipeline (OSM/NPS/USFS), engine (Scout→Verifier→Curator), live adapters, Neo4j schema v0.2.0 with personal overlay, FIT Episode CLI, **belief update pipeline (Epic 001 DONE)**. **Next in build order:** Epic 002 (Outcome card endpoint) → Epic 003 (context assembly in engine) → Garmin Connect poller → Valhalla drive time. Work dependency order per `docs/process/plan-analysis.md`.
+- **Current position:** Phase-1 build complete — backend personalization (Epics 001–005, 010–015) plus the personal-intelligence app UX are shipped on `main`. **Live status, baseline & next work → `docs/process/roadmap.md`** (the status SSOT, so this line can't rot).
 
 ## Non-negotiable rules (must hold in all code)
 1. **Source-or-silence.** Every user-facing fact is backed by a live call with source + timestamp. Unverifiable → *flagged*, never fabricated.
@@ -34,15 +34,15 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - **MCP only for agent-facing live tools** (Coros official MCP, Garmin); **batch ingestion = ordinary scheduled jobs**, not MCP. Polling needs an always-on host (later); not a Phase-0 concern.
 - **Identity:** a household of individual members (each = own login + watch connections + private overlay + grants). Ruby = a dependent node, not an account. Auth boundary = the shared/private boundary; anonymous browsing of the world + live conditions is a real product.
 
-## Stack & conventions — SET IN STAGE 0
-- Language / runtime: Python 3.11+ (ingestion + orchestration); frontend TBD
+## Stack & conventions *(settled in Stage 0; current)*
+- Language / runtime: Python 3.11+ (ingestion + orchestration); TypeScript + React (frontend)
 - Orchestration: code-orchestrated Scout/Verifier/Curator workflow (no agent framework)
 - Model providers: **provider-agnostic, local-first** — thin seam (`extract`/`normalize`/`judge`), local/self-hosted (OpenAI-compatible: Ollama/vLLM/LM Studio) default, **Anthropic SDK (Claude) hot-swappable as the yardstick**; route by data sensitivity (local for the private overlay). Provider+model+tier in config (`.env`).
 - Repo layout: monorepo — `ingestion/` · `orchestration/` (engine + `providers/` seam + `adapters/`) · `graph/` (schema + access wrapper) · `api/` · `frontend/` · `evals/` · `regions/`
 - Graph: Neo4j (local Community via `docker compose`)
 - MCP config: `.mcp.json` at repo root (empty; MCP deferred to interactive moments — Stage 4 §1)
 - Build / test / eval: `make check` (`ruff format --check` + ruff + mypy + pytest) · `make db-up` / `make schema` · `make eval` (Stage 4+). `pip install -e ".[all]"`; see `Makefile` / README.
-- Frontend: web/PWA first (server-side watch pull means minimal loss vs. native); native iOS (SwiftUI) later
+- Frontend: web/PWA **shipped** — React + React-Aria + vanilla-extract, token-first via Style Dictionary (W3C DTCG), built with Vite + Storybook; Home/Detail/Tuning/Outcome screens. Native iOS (SwiftUI) later. See `docs/research/design-system-v0.1.md`.
 
 ## Phasing (see workplan for detail)
 Phase 0 spine (Stages 1–4) → Phase 1 personal intelligence + watch (Stages 5–6) → deep eval (Stage 7) → Phase 2 multiplayer (Stage 8) → Phase 3 commons (Stage 9) → Phase 4 native + polish (Stages 10–11).
@@ -61,7 +61,7 @@ Phase 0 spine (Stages 1–4) → Phase 1 personal intelligence + watch (Stages 5
   <WHY this change exists — one or two sentences. What problem does it solve,
   what invariant does it uphold, what spec section does it implement.>
 
-  Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>
+  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
   ```
 - **Subject line rules:** imperative mood ("Add", "Fix", "Enforce" — not "Added", "Fixes"); ≤72 chars; no period at end.
 - **Never commit:** `.env`, `data/`, commented-out code, debug `print()`, unresolved merge markers, half-finished work that breaks tests.
