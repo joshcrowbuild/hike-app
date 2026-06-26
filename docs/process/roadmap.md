@@ -2,9 +2,9 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last updated:** 2026-06-26 · **Trunk:** `claude/vigilant-bohr-yzdcyh` @ `c7052c9` (PR #1 → `main`, open) · **Version:** v4
+**Last updated:** 2026-06-26 · **Trunk:** `claude/vigilant-bohr-yzdcyh` @ `42151cc` (PR #1 → `main`, open) · **Version:** v5
 
-> **Overnight batch LANDED & verified.** All four items merged (#18 close 002 · #19 Epic 015 CI-Neo4j · #20 close 003+Episode.date · #21 docs reconcile). An adversarial 6-reviewer pass (2026-06-26) confirmed the DoDs are **genuinely met, not status-flipped**: 516 tests pass / 8 neo4j-deselected, ruff+mypy clean, all 6 CI jobs green incl. the **live, required `integration (neo4j)` job** (8 tests vs a real DB on trunk). No merge-skew. **Open flag:** PR #22 (UI) targets `main` not trunk — build agent owns the retarget (R9).
+> **◆ BASELINE MOMENT — Phase-1 build complete; promoting trunk → `main`.** The personal-intelligence UX shipped (PR #22, `42151cc`: Home/Detail/Tuning/Outcome screens on a typed data-source seam + Confidence/Staleness honesty primitives, verified honest — Confidence never renders a number, mock disclosed as "Sample, not verified", deferred features absent-not-faked). With that, **Phase-1 build is effectively complete** (backend + design-system + app UX). `main` is 37 commits behind trunk → being promoted as the new baseline. **Go-forward model: collapse to `main` as the single integration line** (retire the `vigilant-bohr` session-trunk; short-lived feature branches off `main`; sweep the ~8 merged branches). Sequence: land roadmap v5 → promote trunk→`main` → tag (`v0.1-phase1`) → secret fast-follow (R10) → sweep. Build agent owns the git mechanics; PM owns this record.
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard.
 
@@ -12,7 +12,7 @@
 
 ## TL;DR — where we are
 
-**Phase 1 personal-intelligence is now substantially built.** The Phase-0 spine + all gap-audit/remediation CRITICALs were already in; the **overnight batch then closed the open Phase-1 work**: Epics **002 (outcome) and 003 (context assembly + the `Episode.date` fix) are DONE**, the access-control invariant is now **proven live in CI** (Epic 015 — required `integration (neo4j)` job), and the 13 design docs are reconciled onto trunk (R4). All verified genuinely-done by an adversarial review (falsification harnesses, full `make check` on the merged tree — no skew). So Phase-1 epics 001–005, 010–015 are DONE; only Epic 006 (novelty), 007 (readiness), 008 (API tests), 009 (eval) remain — **each needs a design/definition pass** (see "Next, and what each needs"). **Open flag:** PR #22 (UI) targets `main` not trunk (R9). Still unmeasured: the Stage-4 cost spike (R5).
+**Phase-1 build is effectively complete — this is a baseline moment.** Backend personalization (Epics 001–005, 010–015 DONE, verified), the design system, and now the **app UX (PR #22)** are all on trunk. The overnight batch closed the open Phase-1 work (002 outcome · 003 context-assembly + `Episode.date` · 015 the live-CI access-control guardrail · docs reconciled), all confirmed genuinely-done by adversarial review (falsification harnesses, full `make check`, no skew). PR #22 was retargeted to trunk and merged (R9 resolved) with a clean honesty verdict. **Now promoting trunk → `main` as the new baseline** and collapsing to a single integration line. **What remains in Phase 1 is design-gated** — Epic 008 (API tests, quickest), 006 (novelty — needs a `been_on` producer), 007 (readiness — biggest, safety-adjacent), 009 (eval). **Tracked fast-follow:** the HTTP-adapter dev-viewer-secret gap (R10 — inert today, must precede any live-data wiring). Still unmeasured: the Stage-4 cost spike (R5).
 
 ---
 
@@ -30,7 +30,7 @@
 | 7 Eval deep-dive | 1 | ✅ (design-branch) | ❌ | Methodology designed (not on trunk); Epic 009 defined; harness unbuilt |
 | 8 Multiplayer | 2 | ✅ (design-branch) | ❌ | Designed (not on trunk); gated by always-on infra + auth provider |
 | 9 Commons | 3 | ✅ (design-branch) | 🔶 | Write half accreting (010 on trunk); read/aggregation dormant; **gated by T6** |
-| 10 Experience/design-system | 4 | 🔶 in progress | 🔶 | design-system token spine + Home/Curation prototype v0.3 on design-branch; **Phase 2 starting** |
+| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped | design-system on trunk + **app UX shipped (PR #22)**: Home/Detail/Tuning/Outcome on a typed data-source seam; Confidence/Staleness honesty primitives (verified honest). Mock-first; live-data wiring pending R10 |
 | 11 Native shell | 4 | ❌ | ❌ | Not started |
 
 ---
@@ -55,18 +55,21 @@
 | 013 | LiveAdapter seam | **DONE ✅** | PR #7 (remediates C6; +TTL cache, drive-time) |
 | 014 | Overlay-egress + viewer-auth hardening (C3 + C4) | **DONE ✅** | PR #7 — C4 egress fix + **C3 interim edge auth** (`_authorize_viewer`: non-anonymous `viewer_id` needs `X-Dev-Viewer-Secret`, fails closed 403); full managed-auth deferred (R3) |
 
-**Merged-to-trunk PRs:** remediation/seam set #2/#5/#6/#7/#9/#10 · roadmap #8/#11/#16 · #12 workflow-lint · #3/#4 dependabot · UI #14/#17 · **overnight batch #18 (close 002) / #19 (Epic 015) / #20 (close 003) / #21 (docs reconcile)**.
+**Merged-to-trunk PRs:** remediation/seam set #2/#5/#6/#7/#9/#10 · roadmap #8/#11/#16/#23 · #12 workflow-lint · #3/#4 dependabot · UI #14/#17 · overnight batch #18/#19/#20/#21 · **#22 personal-intelligence UX**.
 
 ---
 
-## Live in-flight (not yet on trunk)
+## Live in-flight
 
-Backend + infra queue is **clear**; the overnight batch all merged. Open items are the UI lane's.
+Trunk in-flight queue is **clear** — everything merged. The only open work is the **baseline promotion** (below) + this roadmap v5 PR.
 
-| Lane | Branch / PR | Contents | State |
-|---|---|---|---|
-| UI | **PR #22** `claude/zen-bohr-b5uf3m` | personal-intelligence UX (plan + mock-first Confidence/Staleness screens; 39 files, frontend-only) | **open → `main` (wrong base, R9)**; build agent owns retarget to trunk + a `/plan`+`/outcome` contract check |
-| PM | `claude/roadmap` (this PR) | roadmap v4 | in review |
+### ◆ Baseline promotion (in progress — build agent owns git mechanics)
+1. **Land roadmap v5** into trunk (this PR) so the promoted baseline carries an accurate dashboard.
+2. **Promote trunk → `main`** (PR #1 vehicle; `main` 37 commits behind, content = clean subset of trunk → clean promote).
+3. **Tag `v0.1-phase1`** — name the baseline so it's a recoverable point.
+4. **Secret fast-follow (R10)** — the ~4-line dev-viewer-secret injection (inert today; before any live-data wiring).
+5. **Sweep merged branches** — `zen-bohr`, `web-design-parallel`, `ui-merge`, `epic-002/003/015`, `docs-reconcile`, `fix-actionlint` (and `roadmap` *after* v5 merges). Retire `vigilant-bohr` once `main == trunk`.
+6. **Go-forward:** feature branches off `main`; CI (incl. the neo4j gate) gates each; lanes become conventions, not long-lived branches. *(Decide separately: enforce the neo4j gate for real — needs branch protection / GitHub Pro — or keep it trust-based.)*
 
 ---
 
@@ -120,7 +123,8 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 | ~~**R6**~~ | ~~M1 `Episode.date` never written.~~ | **RESOLVED — Epic 003 (PR #20)** | `upsert_episode` SETs `e.date` from `start_time`; 18-month filter proven by a live-DB E2E. |
 | **R7** | **Always-on infra undecided.** The in-process Garmin poller is built (Epic 004); only the **always-on host** (same-day push) + Stage-8 multiplayer need it. | Deferred | Decide host (VPS/Pi/always-on Mac) at Phase-1→2 boundary. |
 | ~~**R8**~~ | ~~CI `workflow-lint` red trunk-wide.~~ | **RESOLVED — PR #12** | `actionlint` now runs via its official download script; `workflow-lint` green trunk-wide. |
-| **R9** | **PR #22 (UI) targets `main`, not trunk.** Bypasses the trunk integration/review gate; `main` is *behind* on the backend batch, so "main = integrated state" is false. Merging it as-is forks the integration line (UI-only on main, backend-only on trunk). Content blast radius is nil (frontend-only + one additive `.gitignore` line). | **OPEN** | **Build agent owns:** retarget to trunk; cross-check the "inert" HTTP adapter against trunk's real `/plan`+`/outcome` contracts before it lands. |
+| ~~**R9**~~ | ~~PR #22 (UI) targets `main`, not trunk.~~ | **RESOLVED** | Retargeted to trunk + merged (`42151cc`); honesty invariants verified correct. The contract-check surfaced R10. |
+| **R10** | **HTTP-adapter dev-viewer-secret gap.** `httpPlanner.ts` sends `viewer_id: josh` with **no** `X-Dev-Viewer-Secret` header → backend `_authorize_viewer` (Epic 014/R3) fails closed → guaranteed **403** on `/plan`+`/outcome` the instant `VITE_USE_MOCK=false`. **Inert today** (mock is the default live path). | **OPEN — fast-follow** | ~4-line fix: inject `import.meta.env.VITE_DEV_VIEWER_SECRET` when viewer ≠ anonymous (secret stays in `.env`, Rule #10). **Must land before any live-data wiring.** *(UI lane)* |
 
 ### Thread tracker (T1–T7 — mirrors workplan; the M9 fix)
 
@@ -128,7 +132,7 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 - **T2 · Access-control-at-query-layer.** ✅✅ reads + writes seamed (Epic 011); Outcome-endpoint bypass closed (#9); **the invariant is now proven end-to-end against a live Neo4j in CI on every PR (Epic 015)** — a forgotten owner clause reds the build. (Forged-identity auth is still R3.)
 - **T3 · Forked commons write.** ✅ built (Epic 010), accreting born-severed observations. Read/aggregation dormant to Stage 9.
 - **T4 · Evaluation.** 🔶 truthfulness harness exists; golden-trip set/cassettes unbuilt; Epic 009 (deep eval) + the stage-7 methodology now **on trunk** (R4 reconciled) — defined, unbuilt.
-- **T5 · UX.** 🔶 design-system v0.1 + UX specs now **on trunk**; UI lane building the personal-intelligence screens (PR #22). Stage-10 deep work continues.
+- **T5 · UX.** ✅ design-system v0.1 + the **personal-intelligence app UX shipped on trunk** (PR #22): Home/Detail/Tuning/Outcome + Confidence/Staleness honesty primitives, verified honest (no fabricated numbers; mock disclosed; deferred features absent-not-faked). Mock-first; live-data wiring pending R10.
 - **T6 · Legal/licensing/consent.** ⚠️ see R1 — gates Stage 9 public release; separability invariant unenforced.
 - **T7 · Naming/branding.** Working title "Adventure Planner"; anytime.
 
