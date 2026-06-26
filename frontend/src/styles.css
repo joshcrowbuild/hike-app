@@ -1,0 +1,519 @@
+/* Token primitives + semantics are generated into design/tokens.css from
+   tokens/*.json (DTCG -> Style Dictionary). This file consumes semantic
+   tokens only; it must not define raw color/size values. */
+:root {
+  color-scheme: light;
+  font-family: var(--font-family-sans);
+  line-height: 1.5;
+  font-weight: var(--font-weight-regular);
+  color: var(--text-primary);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  width: min(100%, 29rem);
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 1.1rem 1rem 3rem;
+}
+
+/* ---- shared cartographic primitives ---- */
+.label,
+.wordmark,
+.context-adjust,
+.frame-note,
+.stack-meta,
+.decision-label,
+.condition-label,
+.kicker,
+.terrain-preview__label,
+.freshness,
+.open-detail,
+.back,
+.facet-value,
+.refine-label {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ---- top bar ---- */
+.topbar,
+.detail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.wordmark {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.back {
+  font-size: 0.7rem;
+  color: var(--text-primary);
+  padding: 0.3rem 0;
+}
+
+/* ---- frame / context sentence ---- */
+.frame {
+  margin-bottom: 1.25rem;
+}
+
+.context {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 0.95rem 1rem;
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.context:active {
+  background: var(--surface-press);
+}
+
+.context-text {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.context-adjust {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  flex: none;
+}
+
+/* The tuned-state note is a quiet confirmation, not a caution: it stays in the
+   muted meta tier. The accent hue is reserved for the verify Signal only
+   (design-system-v0.1 §4.2, §11). */
+.frame-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* ---- stack ---- */
+.stack-meta {
+  margin: 0 0 0.7rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.card-stack {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sparse-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ---- recommendation card (single at-rest state) ---- */
+.card {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.card-tap {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.05rem;
+  transition: background 130ms ease;
+}
+
+.card-tap:active {
+  background: var(--surface-press);
+}
+
+.card-place {
+  margin: 0;
+  font-size: 1.16rem;
+  line-height: 1.28;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.card-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+}
+
+.card-name {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.card-area {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* ---- terrain glyph (at rest) ---- */
+.glyph {
+  width: 100%;
+  height: 44px;
+  display: block;
+}
+
+.glyph-base {
+  stroke: var(--border-hairline);
+  stroke-width: 1;
+}
+
+.glyph-line {
+  fill: none;
+  stroke: var(--text-primary);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---- decision row + condition value ---- */
+.decision {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  border-top: 1px solid var(--border-faint);
+  padding-top: 0.7rem;
+}
+
+.decision-item {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.decision-label,
+.condition-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.decision-value {
+  font-family: var(--font-family-mono);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.condition {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.condition-value {
+  font-family: var(--font-family-mono);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+/* ---- signal (promoted caution) ----
+   The visual treatment now lives in the owned <Signal> component
+   (src/components/Signal). Only its detail-surface placement margin remains
+   here (see .signal--detail below), consistent with the other *--detail
+   spacing utilities. */
+
+/* ---- fit line ---- */
+.fit {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  max-width: 40ch;
+}
+
+/* ---- card foot ---- */
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--border-faint);
+  padding-top: 0.7rem;
+}
+
+.freshness {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+}
+
+.open-detail {
+  font-size: 0.64rem;
+  color: var(--text-primary);
+}
+
+.open-detail::after {
+  content: " \2192";
+}
+
+/* ---- detail ---- */
+.detail {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.detail-head,
+.detail-block {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 1.1rem;
+}
+
+.kicker {
+  margin: 0 0 0.5rem;
+  font-size: 0.64rem;
+  color: var(--text-muted);
+}
+
+.detail-name {
+  margin: 0;
+  font-size: clamp(1.5rem, 6vw, 2rem);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.detail-area {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.condition--detail {
+  margin-top: 0.9rem;
+}
+
+.signal--detail {
+  margin-top: 0.9rem;
+}
+
+.detail-practical {
+  margin: 0.9rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.prose {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 52ch;
+}
+
+/* ---- terrain preview (detail) ---- */
+.terrain-grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.terrain-preview {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  background-color: var(--surface-canvas);
+  background-image: repeating-linear-gradient(
+      90deg,
+      var(--border-faint),
+      var(--border-faint) 1px,
+      transparent 1px,
+      transparent 30px
+    ),
+    repeating-linear-gradient(0deg, var(--border-faint), var(--border-faint) 1px, transparent 1px, transparent 30px);
+  padding: 0.75rem;
+}
+
+.terrain-preview__label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  margin-bottom: 0.55rem;
+}
+
+.terrain-preview svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.terrain-contour {
+  fill: none;
+  stroke: var(--border-hairline);
+  stroke-width: 1;
+}
+
+.terrain-path {
+  fill: none;
+  stroke: var(--text-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- trust cue (detail sources) ---- */
+.trust-cue {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.trust-cue p {
+  margin: 0;
+}
+
+.source-list {
+  margin: 0;
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 1rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* ---- tuning sheet content (the sheet chrome is owned by <Sheet>) ---- */
+.facet-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.facet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 0.9rem;
+  transition: background 130ms ease;
+}
+
+.facet-row:active {
+  background: var(--surface-press);
+}
+
+.facet-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.facet-value {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.refine {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.refine-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.refine-input {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.9rem;
+  color: var(--text-primary);
+}
+
+.refine-input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.today-sheet {
+  display: grid;
+  gap: 0.85rem;
+}
+
+@media (max-width: 560px) {
+  .detail-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .terrain-grid {
+    grid-template-columns: 1fr;
+  }
+}
