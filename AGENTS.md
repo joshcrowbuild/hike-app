@@ -2,6 +2,8 @@
 
 This file is the tool-agnostic operating contract for coding agents working in this repo.
 
+**Last verified:** 2026-06-26 · **Owner:** docs
+
 Read it together with `CLAUDE.md`:
 - `AGENTS.md` = session startup, merge-risk discipline, repo hygiene
 - `CLAUDE.md` = product invariants, architecture, development process

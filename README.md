@@ -2,6 +2,8 @@
 
 A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, private **utility** — not social, not engagement-seeking.
 
+**Last verified:** 2026-06-26 · **Owner:** project
+
 > **Status: Phase-1 build complete.** The engine (Scout→Verifier→Curator), the ingestion/corpus pipeline, backend personalization (Epics 001–005, 010–015), and the personal-intelligence **app UX** (Home/Detail/Tuning/Outcome) are all shipped on `main`. **Live status, open risks & next work live in [`docs/process/roadmap.md`](./docs/process/roadmap.md)** — the single source of truth for status.
 
 ## The one-line thesis

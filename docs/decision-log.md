@@ -2,6 +2,8 @@
 
 *Working title. Living document — last updated June 26, 2026.*
 
+**Last verified:** 2026-06-26 · **Owner:** project (decisions of record)
+
 A personal, agentic, self-verifying trip planner for hiking/backpacking, built deliberately as a skills-building artifact for a Capital One generative-AI-platform design-lead role. Fun and useful in real life; architecturally a small mirror of the platform org's actual work. A calm, private **utility** — not social, not engagement-seeking.
 
 > **Legend:** ✅ decided · 🔶 recommended, confirm · ❓ open question to resolve.
