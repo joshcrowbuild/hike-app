@@ -1,0 +1,453 @@
+"""Tests for ingestion.pipeline (network-free: sources injected via the registry).
+
+Covers the Epic 012 rewire: the C5-closure (no source literal in run_pipeline),
+spine-by-declaration generality (S4), the enrichment join point (S5), and the
+echo drop-in proof (S6). The consolidate_osm_segments tests are unchanged — that
+step is source-agnostic and stays in the pipeline (AC-3.4).
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import tempfile
+from pathlib import Path
+
+import httpx
+from shapely.geometry import LineString
+
+from ingestion import pipeline
+from ingestion.conflate.match import Feature
+from ingestion.pipeline import _load_matches, consolidate_osm_segments, load_region, run_pipeline
+from ingestion.sources.base import (
+    ConflationRole,
+    CorpusSource,
+    EnrichmentFact,
+    Region,
+    SourceKind,
+)
+from ingestion.sources.echo import EchoSource
+from ingestion.sources.nps import NpsSource
+from ingestion.sources.osm import OsmSource
+from ingestion.sources.usfs import UsfsSource
+from orchestration.config import Settings
+
+_REGION = Region(region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25))
+_SETTINGS = Settings.from_env({})
+
+
+# ── Test doubles (one place; injected by patching registry.enabled_sources) ───
+
+
+class _StubSource(CorpusSource):
+    kind = SourceKind.geometry
+    role = ConflationRole.conflate
+    authority_tier = 2
+
+    def __init__(self, name, *, role=None, tier=None, features=None):
+        self.name = name
+        if role is not None:
+            self.role = role
+        if tier is not None:
+            self.authority_tier = tier
+        self._features = list(features or [])
+        self.fetch_calls = 0
+        super().__init__()
+
+    def fetch(self, region):
+        self.fetch_calls += 1
+        return list(self._features)
+
+    @classmethod
+    def from_config(cls, settings):
+        return cls("stub")
+
+
+class _EnrichStub(CorpusSource):
+    name = "enrich_stub"
+    kind = SourceKind.enrichment
+    role = ConflationRole.enrich
+    authority_tier = 1
+
+    def __init__(self):
+        self.fetch_calls = 0
+        self.enrich_calls = 0
+        super().__init__()
+
+    def fetch(self, region):
+        self.fetch_calls += 1
+        raise NotImplementedError("enrichment sources do not fetch")
+
+    @classmethod
+    def from_config(cls, settings):
+        return cls()
+
+    def enrich(self, canonical):
+        self.enrich_calls += 1
+        return [EnrichmentFact(source=self.name, attribute="gain_ft", value=1.0)]
+
+
+def _feat(name: str, source: str, lon: float = -78.28) -> Feature:
+    return Feature(
+        name=name,
+        geom=LineString([[lon, 38.55], [lon + 0.01, 38.56]]),
+        source=source,
+        ref=f"{source.lower()}/{name}",
+    )
+
+
+def _inject(monkeypatch, sources):
+    monkeypatch.setattr(
+        pipeline.registry, "enabled_sources", lambda settings, names=None: list(sources)
+    )
+
+
+# ── load_region returns a Region object ───────────────────────────────────────
+
+
+def test_load_region_parses_bbox(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "regions").mkdir()
+    (tmp_path / "regions" / "my-region.geojson").write_text(
+        json.dumps(
+            {
+                "type": "Feature",
+                "properties": {"region_id": "my-region", "bbox": [-79.0, 38.0, -78.0, 39.0]},
+                "geometry": {"type": "Polygon", "coordinates": [[]]},
+            }
+        )
+    )
+    region = load_region("my-region")
+    assert isinstance(region, Region)
+    assert region.bbox == (38.0, -79.0, 39.0, -78.0)  # (south, west, north, east)
+    assert region.region_id == "my-region"
+
+
+# ── Pipeline counts: per-source keys derive from source.name (no literals) ────
+
+
+def test_pipeline_dry_run_returns_counts(monkeypatch):
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
+    agency = _StubSource("nps", features=[_feat("Old Rag", "NPS")])
+    _inject(monkeypatch, [spine, agency])
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+    assert counts["osm"] == 1
+    assert counts["osm_consolidated"] == 1
+    assert counts["nps"] == 1
+    assert "auto_accept" in counts and "loaded" in counts
+
+
+def test_pipeline_counts_all_sources(monkeypatch):
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("A", "OSM")])
+    nps = _StubSource("nps", features=[_feat("B", "NPS")])
+    usfs = _StubSource("usfs", features=[_feat("C", "USFS")])
+    _inject(monkeypatch, [spine, nps, usfs])
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    assert counts["osm"] == 1 and counts["nps"] == 1 and counts["usfs"] == 1
+
+
+# ── AC-2.5 — C5 closure: no source literal in run_pipeline / CLI choices ───────
+
+
+def test_ac2_5_no_source_string_literals_in_run_pipeline():
+    src = inspect.getsource(run_pipeline)
+    for lit in ("osm", "nps", "usfs"):
+        assert f'"{lit}"' not in src, f'run_pipeline names "{lit}" literally'
+        assert f"'{lit}'" not in src, f"run_pipeline names '{lit}' literally"
+    # nps/usfs do not even appear as bare tokens; osm only via the kept function
+    # name consolidate_osm_segments (an identifier, not a source literal).
+    assert "nps" not in src and "usfs" not in src
+
+
+def test_ac2_5_cli_choices_derive_from_registry():
+    src = inspect.getsource(pipeline.main)
+    assert "known_source_names()" in src
+    for lit in ("osm", "nps", "usfs"):
+        assert f'"{lit}"' not in src and f"'{lit}'" not in src
+
+
+# ── AC-3.5 — run_pipeline no longer imports ingestion.fetch.{osm,nps,usfs} ─────
+
+
+def test_ac3_5_pipeline_does_not_import_fetch_submodules():
+    src = inspect.getsource(pipeline)
+    for sub in ("ingestion.fetch.osm", "ingestion.fetch.nps", "ingestion.fetch.usfs"):
+        assert sub not in src, f"{sub} import still present in pipeline"
+    assert "from ingestion.fetch import" not in src
+    # It imports only the registry seam now.
+    assert "from ingestion.sources import registry" in src
+
+
+# ── AC-5.2 / DoD — default config end-to-end through the REAL adapters ─────────
+
+
+def _e2e_osm_client() -> httpx.Client:
+    def handler(_r: httpx.Request) -> httpx.Response:
+        body = json.dumps(
+            {
+                "elements": [
+                    {
+                        "type": "way",
+                        "id": 1,
+                        "tags": {"name": "Old Rag Loop", "highway": "path"},
+                        "geometry": [{"lon": -78.28, "lat": 38.55}, {"lon": -78.27, "lat": 38.56}],
+                    }
+                ]
+            }
+        ).encode()
+        return httpx.Response(200, content=body, headers={"content-type": "application/json"})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _e2e_nps_client() -> httpx.Client:
+    def handler(r: httpx.Request) -> httpx.Response:
+        offset = r.url.params.get("resultOffset", "0")
+        # Same geometry as OSM → strong overlap → the pair auto-accepts.
+        feats = (
+            [
+                {
+                    "type": "Feature",
+                    "properties": {"TRLNAME": "Old Rag"},
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[-78.28, 38.55], [-78.27, 38.56]],
+                    },
+                }
+            ]
+            if offset in ("0", 0)
+            else []
+        )
+        body = json.dumps({"type": "FeatureCollection", "features": feats}).encode()
+        return httpx.Response(200, content=body, headers={"content-type": "application/json"})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _e2e_usfs_file() -> Path:
+    # A far-away, differently-named trail → no conflation with the OSM spine.
+    f = tempfile.NamedTemporaryFile(suffix=".geojson", mode="w", delete=False)
+    json.dump(
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"TRAIL_NAME": "Jones Run Trail", "TRAIL_NO": "1"},
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[-78.40, 38.62], [-78.39, 38.63]],
+                    },
+                }
+            ],
+        },
+        f,
+    )
+    f.close()
+    return Path(f.name)
+
+
+def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
+    """End-to-end behavior-preservation golden: the real OsmSource/NpsSource/
+    UsfsSource (only their transports mocked) flow through the reworked
+    fetch→consolidate→conflate→count glue under the default config, producing the
+    counts the pre-epic pipeline produced for this fixture (one OSM×NPS
+    auto-accept; USFS present but unmatched)."""
+    usfs_path = _e2e_usfs_file()
+    try:
+        real_sources = [
+            OsmSource(client=_e2e_osm_client()),
+            NpsSource(client=_e2e_nps_client()),
+            UsfsSource(geojson_path=usfs_path),
+        ]
+        _inject(monkeypatch, real_sources)
+
+        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+        assert counts["osm"] == 1
+        assert counts["osm_consolidated"] == 1
+        assert counts["nps"] == 1
+        assert counts["usfs"] == 1
+        assert counts["auto_accept"] == 1  # OSM 'Old Rag Loop' × NPS 'Old Rag'
+        assert counts["review"] == 0
+        assert counts["skipped_hygiene"] == 0
+    finally:
+        usfs_path.unlink(missing_ok=True)
+
+
+# ── AC-4.1 — spine is a declaration: swapping role re-points conflation ────────
+
+
+def _spy_match(monkeypatch, captured):
+    real = pipeline.match
+
+    def spy(a, b, *, thresholds=None):
+        captured.append(a[0].source if a else None)
+        return real(a, b, thresholds=thresholds)
+
+    monkeypatch.setattr(pipeline, "match", spy)
+
+
+def test_ac4_1_spine_declaration_drives_conflation_a_side(monkeypatch):
+    a = _StubSource("a", role=ConflationRole.spine, tier=2, features=[_feat("Old Rag", "A")])
+    b = _StubSource("b", role=ConflationRole.conflate, tier=1, features=[_feat("Old Rag", "B")])
+
+    captured: list[str] = []
+    _spy_match(monkeypatch, captured)
+    _inject(monkeypatch, [a, b])
+    run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    assert captured == ["A"]  # spine A's features are the match() first arg
+
+    # Swap the spine declaration; NO run_pipeline edit — conflation re-points to B.
+    a.role = ConflationRole.conflate
+    b.role = ConflationRole.spine
+    captured.clear()
+    _inject(monkeypatch, [a, b])
+    run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    assert captured == ["B"]
+
+
+# ── AC-4.3 — load loop reads authority_tier from the source (no OSM literal) ───
+
+
+def test_ac4_3_load_records_authority_tier_from_source():
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = _feat("Old Rag", "NPS")  # non-OSM spine proves de-literaling
+    agency_feat = _feat("Old Rag", "USFS")
+    m = Match(spine_feat, agency_feat, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine_feat], tier_by_name={"nps": 1, "usfs": 1}, iv="t")
+
+    # Canonical id is built from the spine source generically, not a hardcoded "osm".
+    canonical_params = [p for c, p in calls if "CanonicalTrail" in c]
+    assert canonical_params and canonical_params[0]["cid"].startswith("ct:nps:")
+    # Each SourceRecord carries the per-source authority_tier floor (via extra).
+    sr_params = [p for c, p in calls if "MERGE (r:SourceRecord" in c]
+    assert sr_params and all("ex_authority_tier" in p for p in sr_params)
+
+
+# ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
+
+
+def test_ac5_2_default_no_enrichment_is_noop(monkeypatch):
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("X", "OSM")])
+    _inject(monkeypatch, [spine])
+    # No enrichment source enabled → run completes; counts unaffected by enrichment.
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    assert counts["osm"] == 1
+
+
+def test_ac5_3_enrichment_invoked_post_conflation_not_in_matcher(monkeypatch):
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("X", "OSM")])
+    enrich = _EnrichStub()
+    captured: list[str] = []
+    _spy_match(monkeypatch, captured)
+    _inject(monkeypatch, [spine, enrich])
+
+    run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+    assert enrich.enrich_calls > 0, "enrichment source's enrich was never called"
+    assert enrich.fetch_calls == 0, "enrichment source must never be fetched"
+    assert "enrich_stub" not in captured  # never a conflation argument
+
+
+# ── AC-6.3 — echo drop-in: zero source-naming code in run_pipeline ────────────
+
+
+def test_ac6_3_run_pipeline_has_no_echo_literal():
+    assert "echo" not in inspect.getsource(run_pipeline)
+    assert "echo" not in inspect.getsource(pipeline.main)
+
+
+def test_ac6_3_echo_flows_through_unchanged_pipeline(monkeypatch):
+    spine = _StubSource(
+        "osm", role=ConflationRole.spine, features=[_feat("Echo Ridge Trail", "OSM")]
+    )
+    _inject(monkeypatch, [spine, EchoSource()])  # echo appended, real adapter
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    # The same body that handles osm/nps/usfs fetched + conflated echo's features.
+    assert counts["echo"] == 2  # EchoSource returns two fixed features
+
+
+# ── consolidate_osm_segments (unchanged — AC-3.4) ─────────────────────────────
+
+
+def _seg(name: str, lon_start: float) -> Feature:
+    return Feature(
+        name=name,
+        geom=LineString([[lon_start, 38.55], [lon_start + 0.01, 38.56]]),
+        source="OSM",
+        ref=f"way/{int(lon_start * 1000)}",
+    )
+
+
+def test_consolidate_merges_same_name_segments():
+    segs = [
+        _seg("Old Rag Loop", -78.28),
+        _seg("Old Rag Loop", -78.27),
+        _seg("Old Rag Loop", -78.26),
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].name == "Old Rag Loop"
+    assert result[0].source == "OSM"
+    assert result[0].ref is None  # ref cleared when merging multiple ways
+
+
+def test_consolidate_keeps_distinct_names():
+    segs = [_seg("Old Rag Loop", -78.28), _seg("Stony Man Trail", -78.30)]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 2
+    assert {f.name for f in result} == {"Old Rag Loop", "Stony Man Trail"}
+
+
+def test_consolidate_normalizes_before_grouping():
+    segs = [_seg("Old Rag Trail", -78.28), _seg("Old Rag", -78.27)]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].name == "Old Rag Trail"  # longest raw name wins
+
+
+def test_consolidate_combined_geometry_contains_all_coords():
+    segs = [_seg("Ridge Trail", -78.28), _seg("Ridge Trail", -78.35)]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    bounds = result[0].geom.bounds
+    assert bounds[0] < -78.34 and bounds[2] >= -78.27
+
+
+def test_consolidate_single_segment_preserved():
+    seg = _seg("Lone Trail", -78.28)
+    result = consolidate_osm_segments([seg])
+    assert len(result) == 1
+    assert result[0].ref == seg.ref  # ref kept when no merge happened
+
+
+def test_consolidate_merge_preserves_real_source():
+    """Finding #4: a multi-segment merge keeps the group's real `source` (not a
+    hardcoded "OSM"), so a non-OSM spine keeps its authority tier + provenance."""
+    segs = [
+        Feature(
+            name="Skyline Trail",
+            geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+            source="NPS",
+            ref="nps/1",
+        ),
+        Feature(
+            name="Skyline Trail",
+            geom=LineString([[-78.27, 38.56], [-78.26, 38.57]]),
+            source="NPS",
+            ref="nps/2",
+        ),
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].source == "NPS"  # real provenance preserved on merge
+    assert result[0].ref is None

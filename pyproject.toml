@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adventure-planner"
+version = "0.0.0"
+description = "Adventure Planner — a verified-synthesis hiking/backpacking trip planner (working title)."
+requires-python = ">=3.11"
+readme = "README.md"
+# Base install stays empty so CI and the smoke tests never pull heavy geo/ML
+# wheels. Real dependencies live in the optional groups below; stub modules use
+# lazy imports so importing the packages costs nothing.
+dependencies = []
+
+[project.optional-dependencies]
+# Stage 3 corpus pipeline (geospatial stack).
+ingestion = ["shapely>=2.0", "geopandas>=1.0", "pyproj>=3.6", "rasterio>=1.3", "thefuzz>=0.22"]
+# Stage 2 graph access.
+graph = ["neo4j>=5.20"]
+# Stage 4 live-data adapters.
+live = ["httpx>=0.27"]
+# Stage 4 model providers (provider-agnostic seam). `openai` drives the local
+# OpenAI-compatible endpoints (Ollama/vLLM/LM Studio); `anthropic` is the cloud
+# yardstick. Both lazy-imported by their adapters.
+providers = ["anthropic", "openai"]
+# Stage 4 API layer.
+api = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.0"]
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pytest>=8.0",
+  "httpx>=0.27",      # adapter tests
+  "shapely>=2.0",     # conflation-matcher + hygiene tests
+  "thefuzz>=0.22",    # conflation-matcher tests
+  "fastapi>=0.111",   # API schema tests
+  "pydantic>=2.0",
+]
+all = ["adventure-planner[ingestion,graph,live,providers,api,dev]"]
+
+# Top-level packages mirror the documented monorepo layout (Stage 0 / workplan:
+# ingestion / orchestration / graph / api / frontend / evals). Generic names are
+# fine here because this repo is always installed editable (`pip install -e .`);
+# revisit only if it ever ships as a distributable wheel.
+[tool.setuptools.packages.find]
+include = ["ingestion*", "orchestration*", "graph*", "api*", "evals*"]
+exclude = ["tests*", "regions*", "frontend*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ingestion", "orchestration", "graph", "api", "evals"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

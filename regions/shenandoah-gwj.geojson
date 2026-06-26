@@ -1,0 +1,24 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "shenandoah-gwj",
+    "name": "Shenandoah + GWJ National Forest (Pilot Region)",
+    "description": "Pilot ingestion region: Shenandoah National Park + George Washington & Jefferson National Forest (Lee, Massanutten, Deerfield Ranger Districts). Covers the northern Appalachian spine from Waynesboro VA north to Front Royal VA.",
+    "bbox": [-79.4, 37.8, -78.0, 39.1],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": ["OSM", "USFS", "NPS"],
+    "area_ids": ["nps:shen", "usfs:gwj-lee", "usfs:gwj-massanutten"]
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-79.4, 37.8],
+        [-78.0, 37.8],
+        [-78.0, 39.1],
+        [-79.4, 39.1],
+        [-79.4, 37.8]
+      ]
+    ]
+  }
+}
