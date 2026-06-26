@@ -187,6 +187,9 @@ def create_episode(
     episode_id = f"ep:{owner_id}:{summary.watch_activity_id}"
     _pace = compute_pace_on_grade(summary)  # compute once; reused for Episode + UpdateTask
     now = datetime.now(timezone.utc).isoformat()
+    # The FIT activity's calendar date drives e.date — the field context assembly's
+    # 18-month retrieval window filters on (Epic 003 AC-3.2). Null-safe if unparsed.
+    start_date = summary.start_time.date().isoformat() if summary.start_time else None
 
     writes: list[tuple[str, dict]] = [
         queries.upsert_episode(
@@ -201,6 +204,7 @@ def create_episode(
             avg_heart_rate=summary.avg_heart_rate,
             pace_on_grade=_pace,
             now=now,
+            start_date=start_date,
         ),
         queries.wire_person_did_episode(episode_id),
     ]
@@ -230,6 +234,13 @@ def create_episode(
         log.warning("Commons fork skipped for %s: no writer salt configured", episode_id)
 
     session.execute_write(writes)  # atomic — all commit or none (AC-2.0 / AC-2.5)
+
+    # Stamp the profile's last-episode date (Epic 003). A separate owner-scoped write,
+    # not folded into the commons-fork transaction above, so the Epic-010 atomic batch
+    # stays exactly Episode + wires + the severed twin. Runs only with a parsed date;
+    # the running-maximum builder ignores an older backfill.
+    if start_date:
+        session.run_write(queries.upsert_physical_profile_last_episode(start_date))
 
     # Enqueue belief update (S1: AC-1.1, AC-1.2, AC-1.3)
     if belief_queue is not None:
