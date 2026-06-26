@@ -1,6 +1,6 @@
 # UX Assembly Plan v1 — screens, flows, and the build that makes them feel-able
 
-**Status:** DRAFT for review · **Date:** 2026-06-26
+**Status:** IMPLEMENTED (PR #22 — PR-B/C/D shipped; PR-E/PR-F deferred per §7.1) · **Date:** 2026-06-26
 **Author:** UI/UX lane
 **Purpose:** Decide *which* screens and flows we can now assemble, ground each in **what the backend actually provides today**, and lay out an implementation that lets the destination UX be *felt* tonight while throwing away as little code as possible.
 

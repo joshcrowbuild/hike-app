@@ -2,6 +2,8 @@
 
 *Research output for Workplan Stage 1. Compiled June 19, 2026. Pilot region: US mid-Atlantic / Virginia.*
 
+> **STATUS: ACTIVE — reference catalog.** Still the working source catalog. The recommended Phase-0 stack below has shipped (corpus pipeline Epic 012, live adapters + Valhalla Epic 013, commons fork Epic 010). **Read when** you need a source's format/auth/license/authority tier.
+
 > **What this is.** The whole system is *verified synthesis over open data*, so before we design the graph schema (Stage 2), the corpus pipeline (Stage 3), or the confidence model, we need to know what raw material actually exists — its shape, quality, license, and rate of change. This catalogs every evaluated source, classifies each **corpus** (slow/structural, bulk-ingested) vs. **live** (fast/ephemeral, fetched JIT), ranks authority, summarizes license obligations, identifies East-Coast coverage gaps, and assesses **conflation feasibility** (the meatiest unknown). It closes with a recommended Phase-0 source stack.
 
 > **Confidence legend.** ✅ independently verified (primary source or this author cross-checked) · 🟢 high (multiply-sourced) · 🟡 medium (single-source / search-snippet — verify before coding) · 🔴 flagged risk / changing.
@@ -265,8 +267,8 @@ For **Shenandoah NP + GWJ NF** (a clean NPS + USFS two-agency test in VA):
 - **Land context:** PAD-US 4.1 (public-land filter + manager).
 - **Permits:** RIDB API (Shenandoah backcountry + GWJ campgrounds) — requirements only in Phase 0; availability is a risk to defer.
 - **Live overlay (Verifier):** NWS (forecast + alerts), USGS Water **OGC API**, FIRMS, AirNow — JIT on the shortlist, source-stamped.
-- **Drive-time:** self-hosted Valhalla (isochrones) for origin/radius.
-- **Commons fork (cheap stub):** de-identified, endpoint-trimmed observation write — schema-aware from day one (§5.1 keeps the OSM layer separable).
+- **Drive-time:** self-hosted Valhalla (isochrones) for origin/radius. *(BUILT — Epic 013.)*
+- **Commons fork (BUILT — Epic 010):** de-identified, endpoint-trimmed observation write — schema-aware from day one (§5.1 keeps the OSM layer separable).
 
 Everything here is free and either public-domain or ODbL-personal-safe. The only spend is a small VPS for self-hosted Valhalla (and later the always-on poller).
 

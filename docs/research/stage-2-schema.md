@@ -2,7 +2,7 @@
 
 *Workplan Stage 2. Draft v0.1 — June 19, 2026. Designed against Stage 1 findings (`stage-1-data-sources.md`).*
 
-> **Status: DRAFT for review.** This is the first concrete schema proposal. Decisions marked 🅓 are open for Josh's call (§10). The goal of Stage 2 is to settle the **core shape** — the part expensive to retrofit (Decision Log §23) — while keeping the thin-v0 discipline (§6: "don't let it become a schema project").
+> **STATUS: IMPLEMENTED** — schema shipped (Neo4j v0.2.0): commons fork by Epic 010, the `scopedQuery`/`ScopedSession` access seam by Epic 011, live-Neo4j CI guardrail by Epic 015. *(Design below kept as spec provenance; "DRAFT" framing is historical.)* This is the first concrete schema proposal. Decisions marked 🅓 are open for Josh's call (§10). The goal of Stage 2 is to settle the **core shape** — the part expensive to retrofit (Decision Log §23) — while keeping the thin-v0 discipline (§6: "don't let it become a schema project").
 
 > **What this produces (per workplan):** canonical world nodes (trail/segment/trailhead/area) · the provenance model (source attribution as edges, `SAME_AS` resolution) · attachment points for the private overlay and the commons · the confidence model's storage vs. computation · a schema-versioning approach. Honors **T2** (access-control-at-query-layer) from here on.
 
