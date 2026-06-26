@@ -1,15 +1,17 @@
 # Stage 9 — Commons (design)
 
-*Workplan Stage 9. Draft v0.1 — June 24, 2026. Builds on Stage 6 (the episode pipeline + the forked commons write (T3) — designed, not yet built per gap-audit C1); consumes Stage 2's reserved `:CommonsObservation`/`:CommonsStat` labels and the k=confidence-floor unification (Decision Log §7, §11–12). Gated by **T6** (OSM/ODbL + consent) before any public release.*
+*Workplan Stage 9. Draft v0.1 — June 24, 2026. Builds on Stage 6 (the episode pipeline + the forked commons write (T3) — **BUILT (Epic 010; gap-audit C1 CLOSED)**); consumes Stage 2's reserved `:CommonsObservation`/`:CommonsStat` labels and the k=confidence-floor unification (Decision Log §7, §11–12). Gated by **T6** (OSM/ODbL + consent) before any public release.*
 
 > **Status: DESIGN.** Specifies the de-identification pipeline (sever link · endpoint-trim · unlinkability proof), the k-anonymity + aggregation design with **k as the single confidence floor (one gate, two jobs)**, contributor-side capability-band computation, the **pace-calibration model first** (the first emergent attribute) and how the other emergent attributes follow it, and the differential-privacy posture. Decisions in §11. Honors rules #1, #2, #3, #4, #5, #6, #8, #9, #10.
 
 > **What this produces (per workplan):** the de-identification pipeline (sever link / endpoint-trim) · k-anonymity + aggregation design · capability-band computation · the **pace-calibration model first**, then the other emergent attributes · the differential-privacy posture.
 
-> **What this stage does NOT do:** it does not switch the commons public. The forked write (T3) is **designed to accrete** `:CommonsObservation` rows from Phase 0 — **not yet built (gap-audit C1)**; **aggregation stays dormant until volume**, and **public exposure is gated by T6** (§8). Stage 9 is the design that turns the accreted substrate into trustworthy aggregate statistics — and the privacy proof that lets it ship.
+> **What this stage does NOT do:** it does not switch the commons public. The forked write (T3) **accretes** `:CommonsObservation` rows from Phase 0 — **BUILT (Epic 010; gap-audit C1 CLOSED)**; **aggregation stays dormant until volume**, and **public exposure is gated by T6** (§8). Stage 9 is the design that turns the accreted substrate into trustworthy aggregate statistics — and the privacy proof that lets it ship.
 
 > **Legend:** ✅ decided · 🔶 recommended, confirm in build · ❓ open.
 
+> ✅ **UPDATE (2026-06-26): RESOLVED — Epic 010 is DONE; gap-audit C1 CLOSED.** `create_episode()` now forks the severed `:CommonsObservation` write inside its transaction, and the structural privacy test (§2) landed with it. The forked write **accretes today**; the historical correction below is kept as provenance.
+>
 > ⚠️ **Correction (gap-audit C1, 2026-06-24):** this doc was drafted assuming the T3 forked write is already accreting. It is **not** — `create_episode()` does not yet write `:CommonsObservation` (the committed decision-log's commons-fork ✅s at **§30:265 / §31:282** and `stage-6` **S6-10:373** are wrong memory, demoted to 🔶 in `decision-log-additions-proposed.md §40`). Read every "✅ accreting since Phase 0" below as **🔶 designed, not yet built — Epic 010 (`epic-010-commons-fork-write.md`) pending**. The design here is correct; the write half must actually ship (inside `create_episode()`'s transaction) before any of it accretes, and the structural privacy test (§2) must land with it. The earlier a builder reads this, the more it matters: nothing is accreting yet.
 
 ---

@@ -2,7 +2,7 @@
 
 *Workplan Stage 6. Draft v0.1 — June 23, 2026. Builds on Stage 5 (memory schema); feeds into Stage 7 (eval) and Stage 9 (commons).*
 
-> **Status: DESIGN.** Specifies the Garmin + Coros ingestion pipeline, FIT extraction, episode creation, belief update mechanics, MCP config, and privacy discipline for all watch-derived data. Decisions in §7. Honors rules #6, #7, #9, #10.
+> **STATUS: largely IMPLEMENTED** — the watch ingestion pipeline shipped via the device-integration seam (Epic 004; Garmin + Coros adapters, FIT extraction, episode creation, belief updates, in-process poller) and the commons fork (Epic 010). *Remaining:* the **readiness filter** (Epic 007, unwritten) + the **always-on host** decision (roadmap R7). *(Design narrative below kept as spec provenance.)* Specifies the Garmin + Coros ingestion pipeline, FIT extraction, episode creation, belief update mechanics, MCP config, and privacy discipline for all watch-derived data. Decisions in §7. Honors rules #6, #7, #9, #10.
 
 > **What this produces (per workplan):** Garmin access (library + auth + fragility handling) · Coros access (official MCP) · FIT parsing · the **readiness filter** logic · polling / ingestion jobs + the always-on decision.
 
@@ -370,6 +370,6 @@ The frontend renders this as an attributive note in the card's rationale section
 | S6-7 | pace_on_grade via Naismith (`(distance_m + ascent_m * 10) / 1000`); α=0.3 EWMA (per S5-6 — tune in spike) | 🔶 |
 | S6-8 | heat_response: NWS archived temp at episode date; 2 heat-hit episodes before belief promotion; degrades gracefully if NWS unavailable | 🔶 Depends on NWS historical data availability |
 | S6-9 | All LLM calls in ingest path route to local provider via `provider_registry.route(sensitivity="private")`; enforced at job entrypoint | ✅ |
-| S6-10 | Commons fork writes `CommonsObservation` in same transaction as Episode; person link severed at write; 250m endpoint trim; 4-band capability substitution | 🔶 designed, not built — Epic 010 pending (was wrongly marked built; demoted per gap-audit C1) |
+| S6-10 | Commons fork writes `CommonsObservation` in same transaction as Episode; person link severed at write; 250m endpoint trim; 4-band capability substitution | 🔶→Built (Epic 010, 2026-06-24); glyph pinned by `tests/test_commons_doc_lint.py` AC-1.5 — see NEEDS-PM |
 | S6-11 | Garmin is **not** in `.mcp.json`; batch ingestion = scheduled job; MCP reserved for interactive agent queries; MCP tools never write Episode nodes directly | ✅ |
 | S6-12 | Always-on poller (for true push / same-day sync) is deferred; Phase-1 syncs on machine wake or manual trigger | 🔶 Revisit when always-on infra is decided (Stage 8 gating event) |

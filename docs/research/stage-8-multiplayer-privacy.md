@@ -10,13 +10,15 @@
 
 > **What this produces (per workplan):** identity/household + account model · auth mechanism + provider · the grant/permission model (schema + semantics) · the access-control-at-query-layer implementation · the party-composition algorithm (constraint merge / readiness gate / taste merge — "minimize the bigger disappointment") · sharing UX (request-approve, tiers, revoke). **Honors:** access-at-query-layer (#4), private-by-default / share-the-conclusion-not-the-substrate (#5), provenance+confidence+timestamp on every belief (#7), capability≠preference (#7), source-or-silence applied to beliefs (#1/§9), secrets-never-in-repo (#10), no-training (#9).
 
+> ✅ **STATUS UPDATE (2026-06-26): all three §0 preconditions are CLOSED** — the scoped-**write** seam (Epic 011), authenticated **viewer_id** (Epic 014), and the **owned-label manifest + live-Neo4j CI guardrail** (Epic 015) all shipped; gap-audit C2/C3/M9 are closed. The grant model below may now build on them. *(Stage 8 multiplayer itself remains Phase-2 / unbuilt.)* The original precondition warning is kept below as provenance.
+>
 > **Precondition warning — this stage is NOT "purely additive" today.** The June-2026 architecture gap-audit (`docs/research/architecture-gap-audit-2026-06.md`) flags **three Stage-8-blocking gaps** in the seam this stage builds on. They are listed as **§0 hard preconditions** and must be closed *before* the grant model below can be trusted. The seam's *read* path was built right early (Stage 2 §7); the *write* path, the auth contract, and the owned-label manifest were not — and the grant model touches all three. Do not start Stage 8 build until §0 is done.
 
 ---
 
 ## 0. Hard preconditions (gap-audit, must close before Stage 8 build)
 
-These are not Stage-8 *design* questions — they are unbuilt foundations the grant model assumes. Stage 8 introduces shared/party-level **writes** and **authenticated viewers**, which is exactly where each gap becomes a live leak. Each is owned by the audit; Stage 8 inherits the requirement.
+These are not Stage-8 *design* questions — they are foundations the grant model assumes, **now BUILT (Epics 011/014/015; gap-audit C2/C3/M9 closed)**. *(Kept as the spec of what those preconditions required.)* Stage 8 introduces shared/party-level **writes** and **authenticated viewers**, which is exactly where each gap becomes a live leak. Each is owned by the audit; Stage 8 inherits the requirement.
 
 | # | Audit | Gap | Why it blocks Stage 8 | Stage-8 dependency |
 |---|---|---|---|---|
