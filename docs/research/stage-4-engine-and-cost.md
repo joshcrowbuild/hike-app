@@ -2,7 +2,7 @@
 
 *Workplan Stage 4. Draft v0.1 — June 19, 2026. The Phase-0 spine. Builds on Stages 1–3.*
 
-> **Status: DESIGN (planning mode).** Specifies the orchestration substrate, the Scout → Verifier → Curator engine, the live-adapter pattern, the truthfulness eval, and a **cost estimate** to be replaced by a real measurement (the Stage-4 spike). Decisions marked 🅓 are flagged for review (§9).
+> **STATUS: IMPLEMENTED by Epic 013 (LiveAdapter seam + Valhalla drive-time) — the Scout→Verifier→Curator engine + live adapters shipped.** *(Design below kept as spec provenance; the real cost-per-session measurement — Stage-4 spike, roadmap R5 — remains the one open item.)* Specifies the orchestration substrate, the Scout → Verifier → Curator engine, the live-adapter pattern, the truthfulness eval, and a **cost estimate** to be replaced by a real measurement (the Stage-4 spike). Decisions marked 🅓 are flagged for review (§9).
 
 > **What this produces (per workplan):** the orchestration substrate choice · **Scout** (candidate generation) · **Verifier** (live-call logic + per-source adapters + source-or-silence enforcement) · **Curator** (constraints-as-filters + ranking) · a thin **truthfulness eval** (T4) · a **real cost number** (estimated here, measured in the spike). **Honors:** source-or-silence (#1), confidence-never-penalizes-rank (#2), graph-holds-slow-data (#3), access-at-query-layer (#4), no-training (#9).
 

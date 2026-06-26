@@ -2,7 +2,7 @@
 
 *Workplan Stage 3. Draft v0.1 — June 19, 2026. Builds on `stage-1-data-sources.md` (the sources) and `stage-2-schema.md` (the target graph).*
 
-> **Status: DESIGN (planning mode).** This specifies *how* raw sources become the indexed graph — the architecture, the transform/hygiene rules, the conflation step, and the refresh/idempotency model. Actually *running* it against the pilot region is the first build-mode task; design decisions marked 🅓 are flagged for review (§10).
+> **STATUS: IMPLEMENTED by Epic 012 (CorpusSource seam) — the corpus pipeline shipped; the Shenandoah + GW&Jefferson pilot was ingested.** *(Design narrative below kept as spec provenance; "DESIGN / first build-mode task" framing is historical.)* This specifies *how* raw sources become the indexed graph — the architecture, the transform/hygiene rules, the conflation step, and the refresh/idempotency model. Actually *running* it against the pilot region is the first build-mode task; design decisions marked 🅓 are flagged for review (§10).
 
 > **What this produces (per workplan):** the ingestion architecture (bulk-load → transform → validate/hygiene → conflate → dedup → load) · refresh cadence + idempotency · geographic scoping + expansion · (then) the first real East-Coast regional corpus. **Honors:** Rule #3 (slow data only), the §6 thin-v0 discipline, T6 (license obligations), T3 (the forked commons write).
 
