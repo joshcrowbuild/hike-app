@@ -123,13 +123,18 @@ def trail_detail(canonical_id: str) -> tuple[str, dict[str, Any]]:
     for one trail (Epic 016 S1 + Epic 017 S4). World nodes only (CanonicalTrail /
     Segment / Trailhead) → inherently public, no owner scope. Returns the
     precomputed `route_geom_wkt` plus the raw `Segment.geom_wkt`s for the API's
-    runtime-assembly fallback, the first accessing trailhead's point (or the trail's
-    own point as fallback), and the elevation parallel-arrays + scalars."""
+    runtime-assembly fallback, the lexicographically-first accessing trailhead's
+    point by `trailhead_id` (or the trail's own point as fallback), and the elevation
+    parallel-arrays + scalars. The `ORDER BY h.trailhead_id` makes the trailhead
+    choice deterministic when a trail has more than one accessing Trailhead — `collect`
+    has no defined order otherwise, so the served start marker must not flip between
+    requests (null-safe: the OPTIONAL MATCH's null `h` is dropped by `collect`)."""
     cypher = (
         "MATCH (t:CanonicalTrail {canonical_id: $cid})\n"
         "OPTIONAL MATCH (t)-[:HAS_SEGMENT]->(s:Segment)\n"
         "WITH t, collect(s.geom_wkt) AS segment_wkts\n"
         "OPTIONAL MATCH (h:Trailhead)-[:ACCESSES]->(t)\n"
+        "WITH t, segment_wkts, h ORDER BY h.trailhead_id\n"
         "WITH t, segment_wkts, collect(h.point) AS th_points\n"
         "RETURN t.canonical_id        AS canonical_id,\n"
         "       t.name                 AS name,\n"

@@ -226,13 +226,18 @@ def _run_enrichment(
 # ── Load ──────────────────────────────────────────────────────────────────────
 
 
-def _persist_segments(runner: Any, canonical_id: str, assembled: Any, iv: str) -> None:
-    """Persist one `Segment` per assembled-route part + its `HAS_SEGMENT` link (Epic
-    016 S1). Call *after* the CanonicalTrail exists so the link's MATCH resolves;
-    `assembled` is the already-assembled route geometry (assembled once at the call
-    site and reused for the stored `route_geom_wkt`)."""
-    from graph.load import load_segment
+def _replace_segments(runner: Any, canonical_id: str, assembled: Any, iv: str) -> None:
+    """Re-persist the trail's `Segment`s idempotently (Epic 016 S1): clear any prior
+    segments first (so a re-ingest with fewer/no route parts can't orphan stale ones
+    — see `clear_trail_segments`), then persist one `Segment` per assembled-route
+    part + its `HAS_SEGMENT` link. Call *after* the CanonicalTrail exists so the
+    link's MATCH resolves. `assembled` is the already-assembled route geometry (or
+    None when the trail has no line — then segments are only cleared, not added)."""
+    from graph.load import clear_trail_segments, load_segment
 
+    clear_trail_segments(runner, canonical_id)
+    if assembled is None:
+        return
     for i, part in enumerate(line_parts(assembled)):
         centroid = part.centroid
         load_segment(
@@ -285,8 +290,7 @@ def _load_matches(
             route_geom_wkt=route_wkt,
             ingest_version=iv,
         )
-        if assembled is not None:
-            _persist_segments(runner, canonical_id, assembled, iv)
+        _replace_segments(runner, canonical_id, assembled, iv)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
         load_source_record(
             runner,
@@ -349,8 +353,7 @@ def _load_matches(
             route_geom_wkt=route_wkt,
             ingest_version=iv,
         )
-        if assembled is not None:
-            _persist_segments(runner, canonical_id, assembled, iv)
+        _replace_segments(runner, canonical_id, assembled, iv)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
         load_source_record(
             runner,

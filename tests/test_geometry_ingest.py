@@ -76,8 +76,8 @@ def test_point_only_feature_has_no_geometry_no_fabrication():
     _load_matches(runner, [], [pt], tier_by_name={"osm": 2}, iv="t")
 
     ct = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
-    assert ct and "route_geom_wkt" not in ct[0]  # null geometry, never faked
-    assert not any("MERGE (s:Segment" in c for c, _ in calls)
+    assert ct and ct[0]["route_geom_wkt"] is None  # geometry explicitly cleared, never faked
+    assert not any("MERGE (s:Segment" in c for c, _ in calls)  # no fabricated segment
 
 
 # ── CanonicalNode carries the assembled route for geometry-consuming enrichment ─

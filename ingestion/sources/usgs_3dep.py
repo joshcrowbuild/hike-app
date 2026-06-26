@@ -109,6 +109,10 @@ class UsgsThreeDEPSource(CorpusSource):
         dem_version: str = _DEFAULT_DEM_VERSION,
         min_coverage: float = DEFAULT_MIN_COVERAGE,
     ) -> None:
+        if resolution_m <= 0:
+            # A non-positive spacing is a misconfiguration — fail loud here rather than
+            # let it surface later as a swallowed ZeroDivisionError (silent null).
+            raise ValueError(f"resolution_m must be positive; got {resolution_m!r}")
         self._sampler = sampler
         self._resolution_m = resolution_m
         self._dem_version = dem_version

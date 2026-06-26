@@ -34,6 +34,10 @@ _EARTH_RADIUS_M = 6_371_000.0
 DEFAULT_RESOLUTION_M = 20.0
 DEFAULT_NOISE_THRESHOLD_M = 3.0
 DEFAULT_MIN_COVERAGE = 0.6
+# Max grade is measured over this ground window, not between adjacent samples, so a
+# single noisy DEM cell can't manufacture an alarming grade (D2 — the same noise
+# discipline applied to gain/loss).
+DEFAULT_GRADE_WINDOW_M = 100.0
 
 
 class ElevationSampler(Protocol):
@@ -92,17 +96,50 @@ def densify(
     return out
 
 
+def _max_grade_pct(distances_m: list[float], elevations_m: list[float], window_m: float) -> float:
+    """Steepest sustained grade (%), measured over a ~`window_m` ground window via a
+    two-pointer sweep. Windowing (not adjacent samples) is what keeps a single noisy
+    10 m-DEM cell from manufacturing a spurious wall (D2)."""
+    n = len(elevations_m)
+    if n < 2:
+        return 0.0
+    total_run = distances_m[-1] - distances_m[0]
+    if total_run <= 0:
+        return 0.0
+    if total_run < window_m:  # route shorter than the window → measure end to end
+        return abs(elevations_m[-1] - elevations_m[0]) / total_run * 100.0
+    max_grade = 0.0
+    j = 1
+    for i in range(n):
+        if j <= i:
+            j = i + 1
+        while j < n and distances_m[j] - distances_m[i] < window_m:
+            j += 1
+        if j >= n:
+            break  # remaining windows can't be filled; earlier i's already cover them
+        run = distances_m[j] - distances_m[i]
+        if run > 0:
+            max_grade = max(max_grade, abs(elevations_m[j] - elevations_m[i]) / run * 100.0)
+    return max_grade
+
+
 def compute_gain_loss_grade(
     distances_m: list[float],
     elevations_m: list[float],
     noise_threshold_m: float = DEFAULT_NOISE_THRESHOLD_M,
+    grade_window_m: float = DEFAULT_GRADE_WINDOW_M,
 ) -> tuple[float, float, float]:
     """Total gain, total loss (both ≥ 0), and max grade (%) from a sampled series.
 
     Gain/loss use a minimum-change accumulator: a move is credited only once it
     exceeds `noise_threshold_m` from the last counted elevation, so sub-threshold
-    DEM jitter doesn't inflate the totals (D2). Max grade is the steepest
-    rise/run between consecutive samples."""
+    DEM jitter doesn't inflate the totals (D2). Max grade is measured over a
+    `grade_window_m` ground window (`_max_grade_pct`) for the same reason — adjacent
+    raw samples would let one noisy cell report an alarming false wall.
+
+    Conservative tail: a trailing monotonic move smaller than the threshold is left
+    uncredited, so gain/loss can under-report by up to ~`noise_threshold_m` — a
+    deliberate bias toward not inventing climb (source-or-silence)."""
     if len(elevations_m) < 2:
         return 0.0, 0.0, 0.0
     gain = loss = 0.0
@@ -115,13 +152,7 @@ def compute_gain_loss_grade(
         elif -delta >= noise_threshold_m:
             loss += -delta
             ref = elev
-    max_grade = 0.0
-    for i in range(1, len(elevations_m)):
-        run = distances_m[i] - distances_m[i - 1]
-        if run > 0:
-            grade = abs(elevations_m[i] - elevations_m[i - 1]) / run * 100.0
-            max_grade = max(max_grade, grade)
-    return gain, loss, max_grade
+    return gain, loss, _max_grade_pct(distances_m, elevations_m, grade_window_m)
 
 
 def build_profile(
@@ -144,7 +175,11 @@ def build_profile(
             continue
         if last_pt is not None:
             # Bridge a between-parts gap by distance only — do NOT densely sample the
-            # bridge (it isn't real trail). Keeps distances monotonic + honest.
+            # bridge (it isn't real trail). Keeps distances monotonic + honest. Max
+            # grade can't be inflated by the bridge because grade is measured over a
+            # ground window (≥ the bridge's own run), not adjacent samples; gain/loss
+            # across the bridge reflect the real elevation delta between the two
+            # covered endpoints (multi-part routes are rare — segments usually join).
             cum += haversine_m(last_pt, part[0])
         local = densify(part, resolution_m)
         densified.extend((lon, lat, cum + d) for lon, lat, d in local)
@@ -155,13 +190,34 @@ def build_profile(
     if len(densified) < 2:
         return None
 
+    # Sample, tracking interior DEM holes. A run of consecutive uncovered points that
+    # sits BETWEEN covered points and spans more than `max_gap_m` is a real coverage
+    # hole — we return null rather than draw/credit a straight line across it (Rule #1
+    # / D3). Leading/trailing uncovered runs simply truncate to the covered span.
+    max_gap_m = max(5 * resolution_m, 100.0)
     distances: list[float] = []
     elevations: list[float] = []
+    pending_hole_m = 0.0
+    prev_dist: float | None = None
+    in_covered = False
     for lon, lat, dist in densified:
+        step = (dist - prev_dist) if prev_dist is not None else 0.0
+        prev_dist = dist
         elev = sampler.sample(lon, lat)
-        if elev is not None:
-            distances.append(dist)
-            elevations.append(float(elev))
+        if elev is None:
+            if in_covered:
+                pending_hole_m += step
+            continue
+        if in_covered and pending_hole_m > max_gap_m:
+            log.info(
+                "Elevation: %.0fm interior DEM coverage hole → null (source-or-silence)",
+                pending_hole_m,
+            )
+            return None
+        in_covered = True
+        pending_hole_m = 0.0
+        distances.append(dist)
+        elevations.append(float(elev))
 
     if len(elevations) < 2:
         log.info("Elevation: no DEM coverage along route (source-or-silence → null)")

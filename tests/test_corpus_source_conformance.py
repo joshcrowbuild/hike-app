@@ -182,7 +182,10 @@ def test_ac6_1c_load_is_idempotent(source):
 
     assert size_after_first > 0, "load produced no nodes/edges"
     assert size_after_second == size_after_first  # second load adds nothing (MERGE)
-    assert all("MERGE" in s for s in statements)
+    # Every write is MERGE-idempotent; the per-trail segment clear (DETACH DELETE,
+    # Epic 016 S1 re-ingest hygiene) is likewise idempotent — clear-then-MERGE yields
+    # the same final state on a re-run.
+    assert all(("MERGE" in s) or ("DETACH DELETE" in s) for s in statements)
 
 
 # ── AC-6.2 — EchoSource passes the suite as a registered source (above) ───────

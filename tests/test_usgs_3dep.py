@@ -121,6 +121,13 @@ def test_enrich_swallows_sampler_errors():
 # ── from_config: DEM path required (misconfig fails loud — corpus seam) ────────
 
 
+def test_nonpositive_resolution_fails_loud():
+    # A misconfigured spacing must fail at construction, not surface as a swallowed
+    # ZeroDivisionError → silent null later.
+    with pytest.raises(ValueError, match="resolution_m must be positive"):
+        UsgsThreeDEPSource(sampler=_Ramp(), resolution_m=0.0)
+
+
 def test_from_config_requires_dem_path():
     with pytest.raises(ValueError, match="ADVENTURE_3DEP_DEM"):
         UsgsThreeDEPSource.from_config(Settings.from_env({}))

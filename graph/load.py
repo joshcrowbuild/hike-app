@@ -22,6 +22,11 @@ from typing import Any
 
 Runner = Callable[[str, dict[str, Any]], Any]
 
+# Distinguishes "caller omitted this optional property" from "caller explicitly passed
+# None to CLEAR it". Used by load_canonical_trail so a re-ingest that loses geometry
+# can null out a now-stale property rather than leave it standing (source-or-silence).
+_UNSET: Any = object()
+
 
 def make_runner(neo4j_session: Any) -> Runner:
     """Wrap a live neo4j.Session into the Runner interface."""
@@ -57,13 +62,24 @@ _CYPHER_RESERVED = frozenset(
 )
 
 
+# Access-control keys a world-layer write must never set via a dynamic property name:
+# `owner_id` (+ scoping params) exist only on OWNED labels (graph.queries.OWNED_LABELS),
+# and the access model relies on that invariant. Blocking them here keeps a buggy/hostile
+# enrichment source from stamping `owner_id` onto a world node (CanonicalTrail) — cheap
+# defense-in-depth so "owner_id is owned-only" stays true by construction.
+_FORBIDDEN_PROPERTY_NAMES = frozenset({"owner_id", "granted_ids", "viewer_id"})
+
+
 def _validate_property_name(name: Any) -> None:
     """Guard a dynamically-interpolated Cypher property name (rule: fail loud at the
-    boundary). Raises `ValueError` on a non-identifier or a reserved word."""
+    boundary). Raises `ValueError` on a non-identifier, a reserved word, or an
+    access-control key that must not appear on a world node."""
     if not isinstance(name, str) or not name.isidentifier():
         raise ValueError(f"property name {name!r} is not a valid Cypher property name")
     if name.lower() in _CYPHER_RESERVED:
         raise ValueError(f"property name {name!r} is a Cypher reserved word")
+    if name.lower() in _FORBIDDEN_PROPERTY_NAMES:
+        raise ValueError(f"property name {name!r} is an access-control key (owned-labels only)")
 
 
 # ── World nodes ──────────────────────────────────────────────────────────────
@@ -107,7 +123,7 @@ def load_canonical_trail(
     length_source: str | None = None,
     gain_ft: float | None = None,
     gain_source: str | None = None,
-    route_geom_wkt: str | None = None,
+    route_geom_wkt: str | None = _UNSET,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -119,9 +135,11 @@ def load_canonical_trail(
         params["lat"] = lat
         params["lon"] = lon
         set_clauses.append("t.point = point({latitude: $lat, longitude: $lon})")
-    if route_geom_wkt is not None:
+    if route_geom_wkt is not _UNSET:
         # The precomputed assembled route (Epic 016 S1) — stored ready-to-serve so
         # the trip/detail API is a simple read, not a runtime segment-walk (D3/D4).
+        # Passing None explicitly SETs null (Neo4j drops the property), so a re-ingest
+        # that loses geometry clears the stale route rather than serving it (Rule #1).
         params["route_geom_wkt"] = route_geom_wkt
         set_clauses.append("t.route_geom_wkt = $route_geom_wkt")
     if is_loop is not None:
@@ -178,6 +196,21 @@ def load_segment(
         "MATCH (s:Segment {segment_id: $sid})\n"
         "MERGE (t)-[:HAS_SEGMENT]->(s)",
         {"cid": canonical_id, "sid": segment_id},
+    )
+
+
+def clear_trail_segments(runner: Runner, canonical_id: str) -> None:
+    """Detach + delete a trail's existing `Segment`s before re-persisting (Epic 016
+    S1 re-ingest hygiene). A monthly re-run whose route assembles into fewer parts —
+    or loses geometry entirely — would otherwise orphan the higher-index `Segment`s
+    and their `HAS_SEGMENT` edges; the trip/detail runtime-assembly fallback
+    (`collect(s.geom_wkt)`) would then fold that stale geometry back into the served
+    route (idempotency + Rule #1). Segments are trail-private (their id embeds the
+    `canonical_id`), so deleting the trail's own is safe."""
+    runner(
+        "MATCH (t:CanonicalTrail {canonical_id: $cid})-[:HAS_SEGMENT]->(s:Segment)\n"
+        "DETACH DELETE s",
+        {"cid": canonical_id},
     )
 
 

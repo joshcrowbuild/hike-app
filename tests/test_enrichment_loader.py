@@ -74,6 +74,14 @@ def test_rejects_unsafe_attribute_name():
         load_enrichment_facts(runner, [_fact("bad-name", 1, "ct:1")])  # not an identifier
 
 
+def test_rejects_access_control_attribute_name():
+    # A world-node write must never stamp owner_id (it's owned-labels-only) via a
+    # source-controlled attribute name — keeps the access invariant true by construction.
+    runner = lambda c, p: None  # noqa: E731
+    with pytest.raises(ValueError, match="access-control"):
+        load_enrichment_facts(runner, [_fact("owner_id", "mem:x", "ct:1")])
+
+
 def test_idempotent_shape_all_merge():
     calls: list[tuple[str, dict]] = []
     runner = lambda c, p: calls.append((c, p))  # noqa: E731

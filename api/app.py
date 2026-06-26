@@ -201,21 +201,28 @@ def _point_latlon(point: Any) -> tuple[float, float] | None:
 
 
 def _geometry(row: dict[str, Any]) -> GeoJsonGeometry | None:
-    """The route as GeoJSON: the precomputed `route_geom_wkt` when present, else
+    """The route as GeoJSON: the precomputed `route_geom_wkt` when it parses, else
     assembled on the fly from the trail's `Segment.geom_wkt`s (runtime fallback for
-    data ingested before the precompute, e.g. the seed). `None` (route not mapped)
-    when neither yields a line — never a fabricated route (Rule #1 / D5)."""
-    wkt = row.get("route_geom_wkt") or assemble_route(row.get("segment_wkts") or [])
-    geo = wkt_to_geojson(wkt)
+    data ingested before the precompute — e.g. the seed — or a corrupt stored route).
+    `None` (route not mapped) when neither yields a line — never a fabricated route
+    (Rule #1 / D5)."""
+    geo = wkt_to_geojson(row.get("route_geom_wkt"))
+    if geo is None:  # absent or unparseable → fall back to assembling the segments
+        geo = wkt_to_geojson(assemble_route(row.get("segment_wkts") or []))
     return GeoJsonGeometry(**geo) if geo else None
 
 
 def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
     """Reassemble the stored parallel arrays + scalars into the `elevationProfile`
-    contract. `None` when no profile is stored (no DEM coverage) — not faked (D3)."""
+    contract. `None` when no profile is stored (no DEM coverage) — not faked (D3).
+    Provenance is read straight from the stored `elev_source`, never defaulted: a
+    profile missing its source is treated as absent rather than mislabeled (Rule #1).
+    The loader always writes the arrays and `elev_source` together, so a present
+    profile carries real provenance."""
     distances = row.get("profile_distances_m")
     elevations = row.get("profile_elevations_m")
-    if not distances or not elevations or len(distances) != len(elevations):
+    source = row.get("elev_source")
+    if not distances or not elevations or len(distances) != len(elevations) or not source:
         return None
     samples = [
         ElevationSample(distanceMeters=float(d), elevationMeters=float(e))
@@ -226,7 +233,7 @@ def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
         totalGainMeters=float(row.get("total_gain_m") or 0.0),
         totalLossMeters=float(row.get("total_loss_m") or 0.0),
         maxGradePercent=float(row.get("max_grade_pct") or 0.0),
-        source=row.get("elev_source") or "usgs-3dep",
+        source=source,
         resolutionMeters=float(row.get("elev_resolution_m") or 0.0),
     )
 

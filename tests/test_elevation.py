@@ -93,6 +93,23 @@ def test_max_grade_is_steepest_rise_over_run():
     assert abs(grade - 50.0) < 1e-6  # 50 m over 100 m = 50%
 
 
+def test_max_grade_windowed_rejects_single_cell_spike():
+    # Flat ground with one +4 m DEM spike at 40 m. Adjacent 20 m samples would report
+    # 4/20 = 20%; the 100 m window washes the single cell out (the CRITICAL fix).
+    dists = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+    elevs = [100, 100, 104, 100, 100, 100, 100, 100, 100, 100, 100.0]
+    _, _, grade = compute_gain_loss_grade(dists, elevs, grade_window_m=100.0)
+    assert grade < 6.0
+
+
+def test_max_grade_still_captures_a_sustained_grade():
+    # A real sustained 10% over the first 100 m must survive the windowing.
+    dists = [0, 20, 40, 60, 80, 100, 120, 140]
+    elevs = [0, 2, 4, 6, 8, 10, 10, 10.0]
+    _, _, grade = compute_gain_loss_grade(dists, elevs, grade_window_m=100.0)
+    assert 9.0 <= grade <= 11.0
+
+
 # ── synthetic hill: known gain within tolerance (AC-3.2) ──────────────────────
 
 

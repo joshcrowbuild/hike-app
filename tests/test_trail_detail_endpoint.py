@@ -51,6 +51,40 @@ _SEGMENTS_ONLY_ROW = {
     "elev_resolution_m": None,
 }
 
+# A trail whose precomputed route is corrupt/unparseable but whose segments are good.
+_CORRUPT_ROUTE_ROW = {
+    "canonical_id": "ct:corrupt",
+    "name": "Corrupt Route Trail",
+    "route_geom_wkt": "LINESTRING(garbage not wkt",
+    "segment_wkts": ["LINESTRING(0 0, 1 1)", "LINESTRING(1 1, 2 2)"],
+    "trail_point": {"latitude": 1.0, "longitude": 1.0},
+    "trailhead_point": None,
+    "profile_distances_m": None,
+    "profile_elevations_m": None,
+    "total_gain_m": None,
+    "total_loss_m": None,
+    "max_grade_pct": None,
+    "elev_source": None,
+    "elev_resolution_m": None,
+}
+
+# A trail with profile arrays but NO provenance source (a data-integrity anomaly).
+_NO_SOURCE_ROW = {
+    "canonical_id": "ct:nosrc",
+    "name": "No Source Trail",
+    "route_geom_wkt": "LINESTRING(0 0, 1 1)",
+    "segment_wkts": ["LINESTRING(0 0, 1 1)"],
+    "trail_point": {"latitude": 0.5, "longitude": 0.5},
+    "trailhead_point": None,
+    "profile_distances_m": [0.0, 100.0],
+    "profile_elevations_m": [10.0, 20.0],
+    "total_gain_m": 10.0,
+    "total_loss_m": 0.0,
+    "max_grade_pct": 10.0,
+    "elev_source": None,  # missing provenance
+    "elev_resolution_m": 20.0,
+}
+
 # A trail with NO geometry at all (trailhead only) and no profile.
 _BARE_ROW = {
     "canonical_id": "ct:bare",
@@ -68,7 +102,10 @@ _BARE_ROW = {
     "elev_resolution_m": None,
 }
 
-_ROWS = {r["canonical_id"]: r for r in (_FULL_ROW, _SEGMENTS_ONLY_ROW, _BARE_ROW)}
+_ROWS = {
+    r["canonical_id"]: r
+    for r in (_FULL_ROW, _SEGMENTS_ONLY_ROW, _CORRUPT_ROUTE_ROW, _NO_SOURCE_ROW, _BARE_ROW)
+}
 
 
 class _FakeSession:
@@ -148,6 +185,36 @@ def test_segments_only_assembles_geometry_and_nulls_profile():
     # No trailhead point → falls back to the trail point.
     assert body["trailhead"] == {"lat": 1.0, "lon": 1.0}
     assert body["elevationProfile"] is None  # no profile stored → null, not faked
+
+
+# ── robustness: a corrupt stored route falls back to assembling the segments ──
+
+
+def test_corrupt_route_falls_back_to_segment_assembly():
+    client = _client()
+    try:
+        body = client.get("/trail/ct:corrupt").json()
+    finally:
+        client.__exit__(None, None, None)
+
+    # The unparseable route_geom_wkt must not blank the map; segments assemble instead.
+    assert body["geometry"]["type"] == "LineString"
+    assert body["geometry"]["coordinates"] == [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]
+
+
+# ── honesty: a stored profile missing its provenance is treated as absent ──────
+
+
+def test_profile_without_source_is_null_not_mislabeled():
+    client = _client()
+    try:
+        body = client.get("/trail/ct:nosrc").json()
+    finally:
+        client.__exit__(None, None, None)
+
+    # Provenance is never defaulted/fabricated → no source means no profile (Rule #1).
+    assert body["elevationProfile"] is None
+    assert body["geometry"] is not None  # geometry still served
 
 
 # ── honest null geometry (trailhead only) — Rule #1 / D5 ──────────────────────
