@@ -54,9 +54,7 @@ def test_unknown_kind_with_dict_uses_str_dict() -> None:
 
 
 def test_weather_body_without_temperature_uses_forecast_only() -> None:
-    line = summarize_fact(
-        "weather", _fact({"short_forecast": "Cloudy"}), _high(), now=NOW
-    )
+    line = summarize_fact("weather", _fact({"short_forecast": "Cloudy"}), _high(), now=NOW)
     assert "Cloudy" in line.text
     assert "°" not in line.text
 
@@ -83,9 +81,7 @@ def test_permits_body_defaults_to_zero_count() -> None:
 
 
 def test_water_body_prefers_monitoring_location() -> None:
-    line = summarize_fact(
-        "water", _fact({"monitoring_location": "Potomac"}), _high(), now=NOW
-    )
+    line = summarize_fact("water", _fact({"monitoring_location": "Potomac"}), _high(), now=NOW)
     assert "Potomac" in line.text
 
 

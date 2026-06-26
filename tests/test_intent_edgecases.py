@@ -42,7 +42,7 @@ def test_parse_returns_empty_on_missing_fence_closer() -> None:
 
 
 def test_parse_returns_empty_on_top_level_array() -> None:
-    assert _parse('[1, 2, 3]') == Intent()
+    assert _parse("[1, 2, 3]") == Intent()
 
 
 def test_parse_returns_empty_on_top_level_string() -> None:
@@ -50,7 +50,7 @@ def test_parse_returns_empty_on_top_level_string() -> None:
 
 
 def test_parse_returns_empty_on_null() -> None:
-    assert _parse('null') == Intent()
+    assert _parse("null") == Intent()
 
 
 def test_parse_rejects_bool_radius() -> None:
@@ -89,7 +89,7 @@ def test_parse_accepts_string_profile() -> None:
 
 
 def test_parse_missing_fields_use_defaults() -> None:
-    intent = _parse('{}')
+    intent = _parse("{}")
     assert intent.radius_m is None
     assert intent.filters == {}
     assert intent.profile is None
