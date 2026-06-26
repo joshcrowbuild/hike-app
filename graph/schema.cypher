@@ -74,8 +74,15 @@ MERGE (ntd:Source {name: "USGS_NTD"})
 // A realistic minimal slice: one Area, one CanonicalTrail with OSM + NPS
 // SourceRecords joined by SAME_AS, two Segments, a Junction, and a Trailhead.
 // Geometry: a representative Point for spatial lookup + the line as geom_wkt
-// on the Segment (computed at ingest; default #2). WKT here is truncated/
-// illustrative — real lines carry full vertex lists. Values illustrative.
+// on each Segment (computed at ingest; default #2). The two Segments share the
+// junction vertex so they assemble into one route; `route_geom_wkt` on the trail
+// is that precomputed assembled route (Epic 016 S1), served as GeoJSON by
+// GET /trail/{id}. The elevation profile (Epic 017: route_geom_wkt is sampled into
+// profile_distances_m / profile_elevations_m + total_gain_m / total_loss_m /
+// max_grade_pct / elev_source / elev_resolution_m / elev_version) is populated by
+// the 3DEP enrichment source, NOT seeded — an un-enriched trail correctly serves
+// `elevationProfile: null` (source-or-silence). Coords short but valid WKT;
+// values illustrative.
 
 MERGE (shen:Area {area_id: "nps:shen"})
   SET shen.name = "Shenandoah National Park",
@@ -90,6 +97,8 @@ MERGE (oldrag:CanonicalTrail {canonical_id: "ct:old-rag-loop"})
       oldrag.region = "mid-atlantic/va",
       oldrag.point = point({latitude: 38.5519, longitude: -78.2861}),
       oldrag.is_loop = true,
+      // assembled route precomputed at ingest (Epic 016 S1) from the Segments below:
+      oldrag.route_geom_wkt = "LINESTRING(-78.2898 38.5546, -78.2870 38.5530, -78.2845 38.5512, -78.2820 38.5490, -78.2800 38.5470)",
       // computed best-view cache of facts (recomputed on ingest from SourceRecords):
       oldrag.length_mi = 9.1, oldrag.length_source = "NPS",
       oldrag.gain_ft = 2415, oldrag.gain_source = "USGS_3DEP",
@@ -122,11 +131,11 @@ MERGE (oldrag)<-[sn:SAME_AS {source: "NPS"}]-(sr_nps)
 
 // Segments (conflation unit) + a Junction + the Trailhead
 MERGE (seg1:Segment {segment_id: "seg:old-rag-ridge"})
-  SET seg1.geom_wkt = "LINESTRING(-78.2898 38.5546, ...)", seg1.length_mi = 2.9,
+  SET seg1.geom_wkt = "LINESTRING(-78.2898 38.5546, -78.2870 38.5530, -78.2845 38.5512)", seg1.length_mi = 2.9,
       seg1.source_seg_ids = ["OSM:way/111","NPS:OBJECTID=4021a"],
       seg1.point = point({latitude: 38.5546, longitude: -78.2898});
 MERGE (seg2:Segment {segment_id: "seg:saddle-fire-road"})
-  SET seg2.geom_wkt = "LINESTRING(-78.2820 38.5490, ...)", seg2.length_mi = 6.2,
+  SET seg2.geom_wkt = "LINESTRING(-78.2845 38.5512, -78.2820 38.5490, -78.2800 38.5470)", seg2.length_mi = 6.2,
       seg2.source_seg_ids = ["OSM:way/112"],
       seg2.point = point({latitude: 38.5490, longitude: -78.2820});
 MERGE (oldrag)-[:HAS_SEGMENT]->(seg1);

@@ -16,16 +16,23 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.schemas import (
+    ElevationProfile,
+    ElevationSample,
     FeedCardResponse,
     FeedLineResponse,
     FeedResponse,
+    GeoJsonGeometry,
     GraphStats,
     HealthResponse,
     OutcomeBody,
     OutcomeResponse,
     PlanRequest,
+    TrailheadPoint,
+    TripDetailResponse,
 )
 from graph.client import GraphClient
+from graph.queries import trail_detail as trail_detail_query
+from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
@@ -174,6 +181,91 @@ def plan(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal error") from exc
+
+
+def _point_latlon(point: Any) -> tuple[float, float] | None:
+    """Extract `(lat, lon)` from a graph point — a neo4j WGS84 Point (`.latitude`/
+    `.longitude`), a dict, or `None`. Returns `None` when there's no usable point."""
+    if point is None:
+        return None
+    lat = getattr(point, "latitude", None)
+    lon = getattr(point, "longitude", None)
+    if lat is not None and lon is not None:
+        return float(lat), float(lon)
+    if isinstance(point, dict):
+        lat = point.get("latitude", point.get("lat"))
+        lon = point.get("longitude", point.get("lon"))
+        if lat is not None and lon is not None:
+            return float(lat), float(lon)
+    return None
+
+
+def _geometry(row: dict[str, Any]) -> GeoJsonGeometry | None:
+    """The route as GeoJSON: the precomputed `route_geom_wkt` when present, else
+    assembled on the fly from the trail's `Segment.geom_wkt`s (runtime fallback for
+    data ingested before the precompute, e.g. the seed). `None` (route not mapped)
+    when neither yields a line — never a fabricated route (Rule #1 / D5)."""
+    wkt = row.get("route_geom_wkt") or assemble_route(row.get("segment_wkts") or [])
+    geo = wkt_to_geojson(wkt)
+    return GeoJsonGeometry(**geo) if geo else None
+
+
+def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
+    """Reassemble the stored parallel arrays + scalars into the `elevationProfile`
+    contract. `None` when no profile is stored (no DEM coverage) — not faked (D3)."""
+    distances = row.get("profile_distances_m")
+    elevations = row.get("profile_elevations_m")
+    if not distances or not elevations or len(distances) != len(elevations):
+        return None
+    samples = [
+        ElevationSample(distanceMeters=float(d), elevationMeters=float(e))
+        for d, e in zip(distances, elevations)
+    ]
+    return ElevationProfile(
+        samples=samples,
+        totalGainMeters=float(row.get("total_gain_m") or 0.0),
+        totalLossMeters=float(row.get("total_loss_m") or 0.0),
+        maxGradePercent=float(row.get("max_grade_pct") or 0.0),
+        source=row.get("elev_source") or "usgs-3dep",
+        resolutionMeters=float(row.get("elev_resolution_m") or 0.0),
+    )
+
+
+def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailResponse:
+    latlon = _point_latlon(row.get("trailhead_point")) or _point_latlon(row.get("trail_point"))
+    trailhead = TrailheadPoint(lat=latlon[0], lon=latlon[1]) if latlon else None
+    return TripDetailResponse(
+        canonical_id=canonical_id,
+        name=row.get("name") or canonical_id,
+        geometry=_geometry(row),
+        trailhead=trailhead,
+        elevationProfile=_elevation_profile(row),
+    )
+
+
+@app.get("/trail/{canonical_id}", response_model=TripDetailResponse)
+def trail_detail(
+    canonical_id: str,
+    viewer_id: str = "anonymous",
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> TripDetailResponse:
+    """Trip/detail: the assembled route geometry + trailhead + elevation profile for
+    one trail (Epic 016 S1 + Epic 017 S4). World data → anonymous-browsable; a
+    non-anonymous viewer is still auth-gated (Rule #5). 404 when the trail is
+    unknown; honest `null`s when geometry/elevation are absent (Rule #1)."""
+    if _graph_client is None or _settings is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    try:
+        session = _graph_client.scoped_session(viewer_id)
+        rows = session.run(trail_detail_query(canonical_id))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal error") from exc
+    if not rows:
+        raise HTTPException(status_code=404, detail="Trail not found")
+    return _trip_detail_response(canonical_id, rows[0])
 
 
 def _drain_queue_bg(queue, graph_client) -> None:

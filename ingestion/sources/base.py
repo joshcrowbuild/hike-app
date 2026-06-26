@@ -81,12 +81,18 @@ class Region:
 class CanonicalNode:
     """A just-conflated canonical trail, handed to enrichment sources' `enrich`.
     The minimal identity an enrichment join needs (id + name + a point); enrichment
-    sources spatial-join or key-match against it post-conflation (SS-4)."""
+    sources spatial-join or key-match against it post-conflation (SS-4).
+
+    `geom_wkt` is the node's **assembled route** (Epic 016 S1) when one was
+    precomputed — the same line the API serves — so a geometry-consuming enrichment
+    source (USGS 3DEP, Epic 017) samples along the trail without re-walking the
+    segment graph. `None` when the trail has no route (drives source-or-silence)."""
 
     canonical_id: str
     name: str
     lat: float | None = None
     lon: float | None = None
+    geom_wkt: str | None = None
 
 
 @dataclass(frozen=True)

@@ -88,6 +88,12 @@ class Settings:
     # from config (rule #10); None = the USFS transport's own default path.
     corpus_sources: tuple[str, ...] = ("osm", "nps", "usfs")
     usfs_geojson_path: str | None = None
+    # USGS-3DEP elevation enrichment (Epic 017). `dem_path` is the local 3DEP DEM
+    # raster the adapter samples (rule #10: from config, never the repo); absent →
+    # the `usgs-3dep` source fails loud in `from_config` (a misconfiguration, per
+    # the corpus seam). `elev_resolution_m` is the along-route sampling spacing.
+    dem_path: str | None = None
+    elev_resolution_m: float = 20.0
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> "Settings":
@@ -139,4 +145,6 @@ class Settings:
             # UsfsSource.from_config so it can fail loud (AC-3.2); unset → None →
             # the USFS transport's default path.
             usfs_geojson_path=e.get("ADVENTURE_USFS_GEOJSON"),
+            dem_path=e.get("ADVENTURE_3DEP_DEM") or None,
+            elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
         )

@@ -20,7 +20,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [014](epic-014-overlay-egress-and-viewer-auth.md) | Private-overlay egress + viewer-auth hardening (C3 + C4) | DONE ✅ | 1 | Epic 003 |
 | [015](epic-015-ci-neo4j-integration.md) | CI Neo4j integration (live owner-isolation guardrail; separate required leg) | DONE ✅ | 1 | Epic 011 |
 | [016](epic-016-maps-and-terrain.md) | Maps & terrain (topographic Detail map · route · elevation profile) | DEFINED | 1 | Epic 013 · 017 (S5) |
-| [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | DEFINED | 1 | Epic 012 · `geom_wkt` |
+| [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | IN_PROGRESS | 1 | Epic 012 · `geom_wkt` |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >

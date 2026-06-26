@@ -15,7 +15,8 @@ nodes (Episode, Belief, etc.) are a Phase-1 concern (Stage 5).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any
 
@@ -29,6 +30,40 @@ def make_runner(neo4j_session: Any) -> Runner:
         return neo4j_session.run(cypher, **params)
 
     return run
+
+
+# Cypher reserved words that are also valid Python identifiers would produce invalid
+# property access (`t.return`, `r.where`, …). A property name interpolated into Cypher
+# (a SourceRecord `extra`, an EnrichmentFact `attribute`) must be a bare identifier and
+# not one of these — both are author/config-controlled, but we fail loud rather than
+# emit broken Cypher.
+_CYPHER_RESERVED = frozenset(
+    {
+        "return",
+        "where",
+        "match",
+        "create",
+        "merge",
+        "delete",
+        "set",
+        "with",
+        "order",
+        "limit",
+        "skip",
+        "call",
+        "yield",
+        "union",
+    }
+)
+
+
+def _validate_property_name(name: Any) -> None:
+    """Guard a dynamically-interpolated Cypher property name (rule: fail loud at the
+    boundary). Raises `ValueError` on a non-identifier or a reserved word."""
+    if not isinstance(name, str) or not name.isidentifier():
+        raise ValueError(f"property name {name!r} is not a valid Cypher property name")
+    if name.lower() in _CYPHER_RESERVED:
+        raise ValueError(f"property name {name!r} is a Cypher reserved word")
 
 
 # ── World nodes ──────────────────────────────────────────────────────────────
@@ -72,6 +107,7 @@ def load_canonical_trail(
     length_source: str | None = None,
     gain_ft: float | None = None,
     gain_source: str | None = None,
+    route_geom_wkt: str | None = None,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -83,6 +119,11 @@ def load_canonical_trail(
         params["lat"] = lat
         params["lon"] = lon
         set_clauses.append("t.point = point({latitude: $lat, longitude: $lon})")
+    if route_geom_wkt is not None:
+        # The precomputed assembled route (Epic 016 S1) — stored ready-to-serve so
+        # the trip/detail API is a simple read, not a runtime segment-walk (D3/D4).
+        params["route_geom_wkt"] = route_geom_wkt
+        set_clauses.append("t.route_geom_wkt = $route_geom_wkt")
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")
@@ -97,6 +138,46 @@ def load_canonical_trail(
     runner(
         f"MERGE (t:CanonicalTrail {{canonical_id: $cid}}) SET {', '.join(set_clauses)}",
         params,
+    )
+
+
+def load_segment(
+    runner: Runner,
+    segment_id: str,
+    geom_wkt: str,
+    *,
+    canonical_id: str,
+    length_mi: float | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    ingest_version: str | None = None,
+) -> None:
+    """Upsert a trail `Segment` (the geometry-bearing unit — `Segment.geom_wkt`) and
+    wire `(:CanonicalTrail)-[:HAS_SEGMENT]->(:Segment)` (Epic 016 S1). Idempotent:
+    both the node and the edge are MERGEd, so a monthly re-run with a stable
+    `segment_id` rewrites in place rather than duplicating."""
+    params: dict[str, Any] = {
+        "sid": segment_id,
+        "geom_wkt": geom_wkt,
+        "iv": ingest_version or _today(),
+    }
+    set_clauses = ["s.geom_wkt = $geom_wkt", "s.ingest_version = $iv"]
+    if length_mi is not None:
+        params["length_mi"] = length_mi
+        set_clauses.append("s.length_mi = $length_mi")
+    if lat is not None and lon is not None:
+        params["lat"] = lat
+        params["lon"] = lon
+        set_clauses.append("s.point = point({latitude: $lat, longitude: $lon})")
+    runner(
+        f"MERGE (s:Segment {{segment_id: $sid}}) SET {', '.join(set_clauses)}",
+        params,
+    )
+    runner(
+        "MATCH (t:CanonicalTrail {canonical_id: $cid})\n"
+        "MATCH (s:Segment {segment_id: $sid})\n"
+        "MERGE (t)-[:HAS_SEGMENT]->(s)",
+        {"cid": canonical_id, "sid": segment_id},
     )
 
 
@@ -136,31 +217,8 @@ def load_source_record(
     if length_mi is not None:
         params["length_mi"] = length_mi
         set_clauses.append("r.length_mi = $length_mi")
-    # Cypher reserved words that are also valid Python identifiers would produce
-    # invalid property access (r.return, r.where, etc.). Block the most dangerous.
-    _CYPHER_RESERVED = frozenset(
-        {
-            "return",
-            "where",
-            "match",
-            "create",
-            "merge",
-            "delete",
-            "set",
-            "with",
-            "order",
-            "limit",
-            "skip",
-            "call",
-            "yield",
-            "union",
-        }
-    )
     for k, v in (extra or {}).items():
-        if not k.isidentifier():
-            raise ValueError(f"extras key {k!r} is not a valid property name")
-        if k.lower() in _CYPHER_RESERVED:
-            raise ValueError(f"extras key {k!r} is a Cypher reserved word")
+        _validate_property_name(k)
         params[f"ex_{k}"] = v
         set_clauses.append(f"r.{k} = $ex_{k}")
     runner(
@@ -263,6 +321,47 @@ def load_trailhead(
             """,
             {"th_id": trailhead_id, "area_id": area_id},
         )
+
+
+# ── Enrichment loader (Epic 017 S1) — the deferred graph write, now real ───────
+
+
+def load_enrichment_facts(runner: Runner, facts: Iterable[Any]) -> int:
+    """Persist `EnrichmentFact`s onto their target `CanonicalTrail` nodes — the
+    "no graph write yet" gap the pipeline left for the first enrichment source
+    (Epic 017 AC-1.1). Generic by design: each fact's `attribute` becomes a node
+    property and its `value` the value, grouped per node into ONE idempotent
+    MERGE+SET. The seam/protocol (`CorpusSource`/`EnrichmentFact`) is reused, not
+    rebuilt — this is only its loader.
+
+    `CanonicalTrail` is a world (unowned) node, so writes go through the world-layer
+    `runner`, not the owner-scoped write seam (which guards owned labels only). A
+    fact with no `canonical_id` is skipped (nothing to attach it to). Within a node,
+    a later fact for the same attribute wins. Returns the number of nodes written.
+
+    Facts are duck-typed (`.canonical_id`, `.attribute`, `.value`) so this lower
+    `graph` layer never imports the `ingestion` seam (no layering cycle)."""
+    by_node: dict[str, dict[str, Any]] = defaultdict(dict)
+    for fact in facts:
+        cid = getattr(fact, "canonical_id", None)
+        if not cid:
+            continue
+        attr = fact.attribute
+        _validate_property_name(attr)
+        by_node[cid][attr] = fact.value
+
+    for cid, attrs in by_node.items():
+        params: dict[str, Any] = {"cid": cid}
+        set_clauses: list[str] = []
+        for i, (attr, value) in enumerate(attrs.items()):
+            pkey = f"v{i}"
+            params[pkey] = value
+            set_clauses.append(f"t.{attr} = ${pkey}")
+        runner(
+            f"MERGE (t:CanonicalTrail {{canonical_id: $cid}}) SET {', '.join(set_clauses)}",
+            params,
+        )
+    return len(by_node)
 
 
 def _today() -> str:

@@ -118,6 +118,36 @@ def candidate_trails_near_direct(
     return cypher, params
 
 
+def trail_detail(canonical_id: str) -> tuple[str, dict[str, Any]]:
+    """Trip/detail read: the assembled route + trailhead + stored elevation profile
+    for one trail (Epic 016 S1 + Epic 017 S4). World nodes only (CanonicalTrail /
+    Segment / Trailhead) → inherently public, no owner scope. Returns the
+    precomputed `route_geom_wkt` plus the raw `Segment.geom_wkt`s for the API's
+    runtime-assembly fallback, the first accessing trailhead's point (or the trail's
+    own point as fallback), and the elevation parallel-arrays + scalars."""
+    cypher = (
+        "MATCH (t:CanonicalTrail {canonical_id: $cid})\n"
+        "OPTIONAL MATCH (t)-[:HAS_SEGMENT]->(s:Segment)\n"
+        "WITH t, collect(s.geom_wkt) AS segment_wkts\n"
+        "OPTIONAL MATCH (h:Trailhead)-[:ACCESSES]->(t)\n"
+        "WITH t, segment_wkts, collect(h.point) AS th_points\n"
+        "RETURN t.canonical_id        AS canonical_id,\n"
+        "       t.name                 AS name,\n"
+        "       t.route_geom_wkt       AS route_geom_wkt,\n"
+        "       segment_wkts           AS segment_wkts,\n"
+        "       t.point                AS trail_point,\n"
+        "       th_points[0]           AS trailhead_point,\n"
+        "       t.profile_distances_m  AS profile_distances_m,\n"
+        "       t.profile_elevations_m AS profile_elevations_m,\n"
+        "       t.total_gain_m         AS total_gain_m,\n"
+        "       t.total_loss_m         AS total_loss_m,\n"
+        "       t.max_grade_pct        AS max_grade_pct,\n"
+        "       t.elev_source          AS elev_source,\n"
+        "       t.elev_resolution_m    AS elev_resolution_m"
+    )
+    return cypher, {"cid": canonical_id}
+
+
 def episodes_on_trail(canonical_id: str) -> tuple[str, dict[str, Any]]:
     """Personal-overlay read (reserved for Stage 5) — demonstrates the seam: any
     query touching owned :Episode nodes is owner-scoped."""

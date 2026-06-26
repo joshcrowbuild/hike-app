@@ -20,14 +20,18 @@ from .echo import EchoSource
 from .nps import NpsSource
 from .osm import OsmSource
 from .usfs import UsfsSource
+from .usgs_3dep import UsgsThreeDEPSource
 
 # name -> CorpusSource subclass. Add a source here to register it (step 3 of the
-# §6 checklist). `echo` is the throwaway drop-in proof (S6).
+# §6 checklist). `echo` is the throwaway drop-in proof (S6). `usgs-3dep` is the
+# first ENRICHMENT source (Epic 017) — off by default (it needs a DEM path); add
+# it to ADVENTURE_CORPUS_SOURCES to run elevation enrichment.
 SOURCE_REGISTRY: dict[str, type[CorpusSource]] = {
     "osm": OsmSource,
     "nps": NpsSource,
     "usfs": UsfsSource,
     "echo": EchoSource,
+    "usgs-3dep": UsgsThreeDEPSource,
 }
 
 
