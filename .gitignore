@@ -16,6 +16,8 @@ service-account*.json
 
 # ── Data: large corpus extracts, dumps, scratch ──────────────
 data/
+# …but the frontend's data-source seam is source code, not corpus data.
+!frontend/src/data/
 *.osm.pbf
 *.geojson.gz
 *.fit
