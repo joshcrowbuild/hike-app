@@ -125,10 +125,13 @@ button {
   flex: none;
 }
 
+/* The tuned-state note is a quiet confirmation, not a caution: it stays in the
+   muted meta tier. The accent hue is reserved for the verify Signal only
+   (design-system-v0.1 §4.2, §11). */
 .frame-note {
   margin: 0.5rem 0 0;
   font-size: 0.68rem;
-  color: var(--signal-caution-fg);
+  color: var(--text-muted);
 }
 
 /* ---- stack ---- */
