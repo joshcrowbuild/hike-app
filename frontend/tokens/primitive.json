@@ -53,6 +53,9 @@
     "fast": { "$value": "120ms", "$type": "duration" },
     "base": { "$value": "160ms", "$type": "duration" }
   },
+  "easing": {
+    "standard": { "$value": "cubic-bezier(0.2, 0, 0, 1)", "$type": "cubicBezier" }
+  },
   "font": {
     "family": {
       "sans": {

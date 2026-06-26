@@ -85,6 +85,9 @@ export const vars = createGlobalThemeContract(
       fast: 'duration-fast',
       base: 'duration-base',
     },
+    easing: {
+      standard: 'easing-standard',
+    },
     font: {
       family: {
         sans: 'font-family-sans',

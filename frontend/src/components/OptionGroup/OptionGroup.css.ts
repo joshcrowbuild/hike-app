@@ -26,6 +26,7 @@ export const option = style({
   cursor: 'pointer',
   transitionProperty: 'background, border-color, color',
   transitionDuration: vars.duration.fast,
+  transitionTimingFunction: vars.easing.standard,
   '@media': {
     '(prefers-reduced-motion: reduce)': { transitionProperty: 'none' },
   },

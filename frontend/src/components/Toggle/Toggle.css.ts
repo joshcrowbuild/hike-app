@@ -60,6 +60,7 @@ export const track = style({
   border: `${vars.stroke.hairline} solid ${vars.border.hairline}`,
   transitionProperty: 'background, border-color',
   transitionDuration: vars.duration.fast,
+  transitionTimingFunction: vars.easing.standard,
   '@media': {
     '(prefers-reduced-motion: reduce)': { transitionProperty: 'none' },
   },
@@ -81,6 +82,7 @@ export const thumb = style({
   background: vars.text.muted,
   transitionProperty: 'transform, background',
   transitionDuration: vars.duration.fast,
+  transitionTimingFunction: vars.easing.standard,
   '@media': {
     '(prefers-reduced-motion: reduce)': { transitionProperty: 'none' },
   },

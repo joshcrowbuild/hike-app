@@ -22,6 +22,7 @@ export const overlay = style({
   opacity: 1,
   transitionProperty: 'opacity',
   transitionDuration: vars.duration.fast,
+  transitionTimingFunction: vars.easing.standard,
   '@media': {
     '(prefers-reduced-motion: reduce)': { transitionProperty: 'none' },
   },
@@ -42,6 +43,7 @@ export const sheet = style({
   transform: 'translateY(0)',
   transitionProperty: 'transform',
   transitionDuration: vars.duration.base,
+  transitionTimingFunction: vars.easing.standard,
   '@media': {
     '(prefers-reduced-motion: reduce)': { transitionProperty: 'none' },
   },
