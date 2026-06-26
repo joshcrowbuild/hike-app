@@ -15,6 +15,17 @@ import type { OriginKey } from '../../types'
 
 const TIMEOUT_MS = 10_000
 
+/**
+ * Scoped requests carry the dev-viewer secret so the backend's fail-closed
+ * `_authorize_viewer` admits a non-anonymous viewer. Anonymous browsing needs
+ * no secret. The secret lives only in `.env` (Rule #10) — never in the repo.
+ */
+function authHeaders(scope: ScopeContext): HeadersInit {
+  const base: HeadersInit = { 'content-type': 'application/json' }
+  if (scope.viewerId === 'anonymous') return base
+  return { ...base, 'X-Dev-Viewer-Secret': import.meta.env.VITE_DEV_VIEWER_SECRET ?? '' }
+}
+
 function classify(err: unknown, status?: number): FeedError {
   if (status === 401 || status === 403) return { kind: 'auth', message: 'This view needs you to be signed in.' }
   if (status && status >= 500) return { kind: 'server', message: 'The planner had trouble. Try again in a moment.' }
@@ -67,7 +78,7 @@ export class HttpPlannerClient implements PlannerClient {
     try {
       const resp = await fetch(`${this.baseUrl}/plan`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders(scope),
         body: JSON.stringify(body),
         signal: controller.signal,
       })
@@ -112,7 +123,7 @@ export class HttpPlannerClient implements PlannerClient {
     const params = new URLSearchParams({ viewer_id: scope.viewerId })
     const resp = await fetch(`${this.baseUrl}/episode/${encodeURIComponent(episodeId)}/outcome?${params}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: authHeaders(scope),
       body: JSON.stringify(body),
     })
     if (!resp.ok) throw new Error(`outcome failed: ${resp.status}`)
