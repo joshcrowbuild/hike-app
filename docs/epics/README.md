@@ -17,6 +17,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [012](epic-012-corpus-source-seam.md) | CorpusSource seam (contract + registry; OSM-as-spine a declared role) | DONE ✅ | 1 | Stage 3 ingestion |
 | [013](epic-013-live-adapter-seam.md) | LiveAdapter seam (kind-keyed registry, failover, Valhalla drive-time, TTL) | DONE ✅ | 1 | Epic 003 |
 | [014](epic-014-overlay-egress-and-viewer-auth.md) | Private-overlay egress + viewer-auth hardening (C3 + C4) | DONE ✅ | 1 | Epic 003 |
+| [015](epic-015-ci-neo4j-integration.md) | CI Neo4j integration (live owner-isolation guardrail; separate required leg) | DEFINED | 1 | Epic 011 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
