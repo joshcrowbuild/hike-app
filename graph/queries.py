@@ -340,6 +340,89 @@ def wire_belief_about_person(belief_id: str) -> tuple[str, dict[str, Any]]:
     return cypher, {"bid": belief_id}
 
 
+# ── Outcome card (Epic 002) — owned writes, routed through the scoped-write seam ─
+
+
+def upsert_outcome(
+    episode_id: str,
+    *,
+    outcome_id: str,
+    overall: int | None,
+    delta_question: str | None,
+    delta_answer: str | None,
+    skipped: bool,
+) -> tuple[str, dict[str, Any]]:
+    """MERGE the viewer's post-hike Outcome, idempotent on its natural key (AC-1.5).
+    `owner_id` is part of the MERGE key, so a foreign `episode_id` can never MATCH and
+    re-own another member's Outcome — ownership is structural, not an id-naming
+    convention. ON MATCH refreshes the mutable fields so a re-post updates in place."""
+    cypher = (
+        "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
+        "ON CREATE SET\n"
+        "    o.outcome_id     = $oid,\n"
+        "    o.overall        = $overall,\n"
+        "    o.delta_question = $delta_q,\n"
+        "    o.delta_answer   = $delta_a,\n"
+        "    o.skipped        = $skipped,\n"
+        "    o.surfaces_at    = datetime(),\n"
+        "    o.completed_at   = CASE WHEN NOT $skipped THEN datetime() ELSE null END,\n"
+        "    o.created_at     = datetime()\n"
+        "ON MATCH SET\n"
+        "    o.overall        = $overall,\n"
+        "    o.delta_answer   = $delta_a,\n"
+        "    o.skipped        = $skipped,\n"
+        "    o.updated_at     = datetime()"
+    )
+    params: dict[str, Any] = {
+        "eid": episode_id,
+        "oid": outcome_id,
+        "overall": overall,
+        "delta_q": delta_question,
+        "delta_a": delta_answer,
+        "skipped": skipped,
+    }
+    return cypher, params
+
+
+def wire_episode_has_outcome(episode_id: str) -> tuple[str, dict[str, Any]]:
+    """Wire the viewer's Episode to its Outcome (AC-2.1). Both owned ends are matched
+    on the viewer's owner-key, so the edge can never cross owners."""
+    cypher = (
+        "MATCH (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
+        "MATCH (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
+        "MERGE (e)-[:HAS_OUTCOME]->(o)"
+    )
+    return cypher, {"eid": episode_id}
+
+
+def upsert_stated_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]:
+    """MERGE the viewer's `stated_preference` Belief from an explicit user statement
+    (AC-5: confidence=1.0, decays=false, confirmed_by_user — no LLM). `owner_id` is part
+    of the MERGE key (review finding #2), so a foreign `belief_id` can never MATCH and
+    clobber another member's belief — ownership is enforced by the seam, not by the
+    id-naming convention the seam forbids."""
+    cypher = (
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
+        "ON CREATE SET\n"
+        "    b.subject_id         = $viewer_id,\n"
+        "    b.subject_type       = 'person',\n"
+        "    b.axis               = 'preference',\n"
+        "    b.type               = 'stated',\n"
+        "    b.key                = 'stated_preference',\n"
+        "    b.value              = $value,\n"
+        "    b.confidence         = 1.0,\n"
+        "    b.corroboration_n    = 1,\n"
+        "    b.decays             = false,\n"
+        "    b.confirmed_by_user  = true,\n"
+        "    b.created_at         = datetime(),\n"
+        "    b.last_updated_at    = datetime()\n"
+        "ON MATCH SET\n"
+        "    b.value              = $value,\n"
+        "    b.last_updated_at    = datetime()"
+    )
+    return cypher, {"bid": belief_id, "value": value}
+
+
 # ── Commons fork (Epic 010) — UNOWNED, born-severed by construction ───────────
 
 

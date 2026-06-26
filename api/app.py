@@ -216,7 +216,7 @@ def record_outcome(
         )
         belief_queue = BeliefUpdateQueue()
         scoped = _graph_client.scoped_session(viewer_id)
-        result = write_outcome(episode_id, viewer_id, req, scoped.run, belief_queue=belief_queue)
+        result = write_outcome(episode_id, viewer_id, req, scoped, belief_queue=belief_queue)
         if result is None:
             raise HTTPException(status_code=404, detail="Episode not found")
         # AC-4.3: drain AFTER response is sent, not before (BackgroundTasks)

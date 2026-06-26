@@ -59,18 +59,21 @@ python3 -m ingestion.pipeline --region "${ADVENTURE_REGION:-shenandoah-gwj}"
 # ── Phase 4: Live adapter spot-checks ────────────────────────────────────────
 log "Spot-checking live adapters (NWS, USGS Water)..."
 python3 -c "
+from orchestration.adapters.base import Point
+from orchestration.adapters.registry import default_cache, probes_for
 from orchestration.config import Settings
-from orchestration.verifier import build_probes, verify
+from orchestration.verifier import verify
 
 s = Settings.from_env()
-probes = build_probes(s)
-print('Active probes:', list(probes.keys()))
+probes_by_kind = probes_for(s.live_region, s)
+print('Active probe kinds:', [k.value for k in probes_by_kind])
 
 # Old Rag Mountain: lat=38.5519, lon=-78.2861
-facts = verify(38.5519, -78.2861, probes)
-print('Facts returned:', list(facts.keys()))
+facts = verify(Point(lat=38.5519, lon=-78.2861), probes_by_kind, cache=default_cache())
+print('Facts returned:', [k.value for k in facts])
 for k, f in facts.items():
-    print(f'  {k}: source={f.source}, value_keys={list(f.value.keys()) if isinstance(f.value, dict) else type(f.value).__name__}')
+    value_keys = list(f.value.keys()) if isinstance(f.value, dict) else type(f.value).__name__
+    print(f'  {k.value}: source={f.source}, value_keys={value_keys}')
 "
 
 # ── Phase 5: Eval bake-off ────────────────────────────────────────────────────

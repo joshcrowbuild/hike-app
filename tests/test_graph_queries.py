@@ -62,6 +62,8 @@ def _write_builder_outputs() -> list[tuple[str, tuple[str, dict]]]:
     owner = "mem:adversary"
     eid = f"ep:{owner}:act-1"
     bid = f"belief:{owner}:pace_on_grade_moderate"
+    oid = f"outcome:{owner}:act-1"
+    sbid = f"belief:{owner}:stated_preference:act-1"
     return [
         (
             "Episode",
@@ -87,6 +89,19 @@ def _write_builder_outputs() -> list[tuple[str, tuple[str, dict]]]:
         ("Belief", queries.wire_belief_derived_from_episode(bid, eid)),
         ("Belief", queries.recount_belief_corroboration(bid, 3)),
         ("Belief", queries.wire_belief_about_person(bid)),
+        (
+            "Outcome",
+            queries.upsert_outcome(
+                eid,
+                outcome_id=oid,
+                overall=2,
+                delta_question="What stood out?",
+                delta_answer="loved the exposed ridge",
+                skipped=False,
+            ),
+        ),
+        ("Outcome", queries.wire_episode_has_outcome(eid)),
+        ("Belief", queries.upsert_stated_belief(sbid, "loved the exposed ridge")),
     ]
 
 
@@ -293,8 +308,11 @@ def test_s4_ac4_manifest_coverage_is_explicit() -> None:
     """AC-4.4: coverage is measured against the OWNED_LABELS manifest. A new owned
     label can't be added without classifying its writer (covered vs deferred), so
     the manifest stays the single source of truth the test goes red against."""
-    seam_covered = {"Episode", "Belief", "PhysicalProfile"}  # routed through builders here
-    deferred_writers = {"Outcome", "PartyProfile"}  # Epic 002 outcome.py / Stage 8
+    # Outcome is now routed through builders (review finding #1) — the carve-out that
+    # excused the live Outcome handler from the seam is gone. PartyProfile stays
+    # deferred only because Stage 8 has not built its writer yet (no live handler).
+    seam_covered = {"Episode", "Belief", "PhysicalProfile", "Outcome"}
+    deferred_writers = {"PartyProfile"}  # Stage 8 — no writer exists yet
     assert seam_covered | deferred_writers == set(OWNED_LABELS)
 
     covered: set[str] = set()

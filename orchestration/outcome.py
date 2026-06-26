@@ -4,6 +4,12 @@
 edge, optionally promotes an explicit delta_answer to a `stated` Belief, and
 enqueues a preference belief check for non-negative non-skipped outcomes.
 
+Every owned write (Outcome + HAS_OUTCOME + stated Belief + provenance) is authored
+by `graph.queries` builders and committed together through the scoped-write seam
+(`ScopedSession.execute_write`) — one atomic transaction, owner-scoped to the viewer
+(rule #4 / Epic 011), so no statement can write around the owner-clause guard. The
+episode-ownership check that gates the write is a scoped read (`ScopedSession.run`).
+
 Phase 1 scoping:
   - Preference belief promotion check is QUEUED (not run synchronously in the
     HTTP request path per AC-4.3 / S6 §4.1 queue discipline).
@@ -16,6 +22,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
+
+from graph import queries
 
 log = logging.getLogger(__name__)
 
@@ -59,23 +68,27 @@ def write_outcome(
     episode_id: str,
     viewer_id: str,
     req: OutcomeRequest,
-    runner,
+    scoped,  # ScopedSession
     *,
     belief_queue=None,  # BeliefUpdateQueue | None
 ) -> OutcomeResult | None:
-    """Persist an Outcome node. Returns None if episode not found for viewer (404 path).
+    """Persist an Outcome node. Returns None if the episode is not the viewer's (404).
 
-    Atomic: Outcome MERGE + HAS_OUTCOME edge in sequential queries (Community Edition
-    safe — no multi-statement transactions via Runner). The runner is the caller's
-    responsibility to wrap in a real transaction if needed.
+    `scoped` is a `ScopedSession`: `.run` for the ownership read, `.execute_write` for
+    the owned writes. The Outcome MERGE + HAS_OUTCOME edge and — when an explicit
+    delta_answer is given — the stated Belief + its DERIVED_FROM/ABOUT provenance are
+    built by `graph.queries` and committed in ONE managed transaction, so they are
+    atomic and pass the owned-write guard (rule #4 / Epic 011).
     """
-    # AC-1.4: verify episode belongs to viewer (Rule #4)
-    rows = runner(
+    # AC-1.4: verify episode belongs to viewer before any write (Rule #4). Read path —
+    # the ScopedSession injects $viewer_id; the strict owner-key (not owner_scope) keeps
+    # an outcome a self-write, never recordable against a granted member's episode.
+    rows = scoped.run(
         (
-            "MATCH (e:Episode {episode_id: $eid}) "
-            "WHERE e.owner_id = $owner_id "
+            "MATCH (e:Episode {episode_id: $eid})\n"
+            "WHERE e.owner_id = $viewer_id\n"
             "RETURN e.episode_id AS episode_id",
-            {"eid": episode_id, "owner_id": viewer_id},
+            {"eid": episode_id},
         )
     )
     if not rows:
@@ -84,52 +97,31 @@ def write_outcome(
 
     outcome_id_key = f"outcome:{viewer_id}:{episode_id}"
 
-    # AC-1.5: idempotent MERGE keyed on (episode_id, owner_id)
-    runner(
-        (
-            "MERGE (o:Outcome {episode_id: $episode_id, owner_id: $owner_id}) "
-            "ON CREATE SET "
-            "    o.outcome_id     = $oid, "
-            "    o.overall        = $overall, "
-            "    o.delta_question = $delta_q, "
-            "    o.delta_answer   = $delta_a, "
-            "    o.skipped        = $skipped, "
-            "    o.surfaces_at    = datetime(), "
-            "    o.completed_at   = CASE WHEN NOT $skipped THEN datetime() ELSE null END, "
-            "    o.created_at     = datetime() "
-            "ON MATCH SET "
-            "    o.overall        = $overall, "
-            "    o.delta_answer   = $delta_a, "
-            "    o.skipped        = $skipped, "
-            "    o.updated_at     = datetime()",
-            {
-                "episode_id": episode_id,
-                "owner_id": viewer_id,
-                "oid": outcome_id_key,
-                "overall": req.overall,
-                "delta_q": req.delta_question,
-                "delta_a": req.delta_answer,
-                "skipped": req.skipped,
-            },
-        )
-    )
+    # AC-1.5 / AC-2.1: idempotent Outcome MERGE + HAS_OUTCOME edge, both owner-scoped.
+    writes: list[tuple[str, dict[str, Any]]] = [
+        queries.upsert_outcome(
+            episode_id,
+            outcome_id=outcome_id_key,
+            overall=req.overall,
+            delta_question=req.delta_question,
+            delta_answer=req.delta_answer,
+            skipped=req.skipped,
+        ),
+        queries.wire_episode_has_outcome(episode_id),
+    ]
 
-    # AC-2.1: HAS_OUTCOME edge
-    runner(
-        (
-            "MATCH (e:Episode {episode_id: $eid, owner_id: $owner_id}) "
-            "MATCH (o:Outcome {episode_id: $eid, owner_id: $owner_id}) "
-            "MERGE (e)-[:HAS_OUTCOME]->(o)",
-            {"eid": episode_id, "owner_id": viewer_id},
-        )
-    )
-
-    # AC-5: explicit delta_answer → stated belief (no LLM classification in Phase 1)
+    # AC-5: explicit delta_answer → stated belief + provenance (no LLM in Phase 1).
     delta = (req.delta_answer or "").strip()
     if delta and not req.skipped:
-        _write_stated_belief(episode_id, viewer_id, delta, runner)
+        belief_id = f"belief:{viewer_id}:stated_preference:{episode_id}"
+        writes.append(queries.upsert_stated_belief(belief_id, delta))
+        writes.append(queries.wire_belief_derived_from_episode(belief_id, episode_id))
+        writes.append(queries.wire_belief_about_person(belief_id))
 
-    # AC-4.1 / AC-4.4: enqueue preference check for positive non-skipped outcomes
+    # All owned writes commit together through the scoped-write seam (atomic, guarded).
+    scoped.execute_write(writes)
+
+    # AC-4.1 / AC-4.4: enqueue preference check for positive non-skipped outcomes.
     if not req.skipped and req.overall is not None and req.overall >= _POSITIVE_THRESHOLD:
         if belief_queue is not None:
             from orchestration.belief_update import UpdateTask
@@ -152,60 +144,4 @@ def write_outcome(
         owner_id=viewer_id,
         skipped=req.skipped,
         overall=req.overall,
-    )
-
-
-def _write_stated_belief(episode_id: str, owner_id: str, statement: str, runner) -> None:
-    """Promote an explicit user statement to a `stated` Belief immediately.
-
-    AC-5.1: confidence=1.0  AC-5.3: decays=false  AC-5.5: provenance edges
-    No LLM call — raw statement stored as-is. Phase 1 simplification; Phase 3+
-    can add extraction/normalisation.
-    """
-    belief_id = f"belief:{owner_id}:stated_preference:{episode_id}"
-    runner(
-        (
-            "MERGE (b:Belief {belief_id: $bid}) "
-            "ON CREATE SET "
-            "    b.owner_id           = $owner, "
-            "    b.subject_id         = $owner, "
-            "    b.subject_type       = 'person', "
-            "    b.axis               = 'preference', "
-            "    b.type               = 'stated', "
-            "    b.key                = 'stated_preference', "
-            "    b.value              = $value, "
-            "    b.confidence         = $confidence, "
-            "    b.corroboration_n    = 1, "
-            "    b.decays             = $decays, "
-            "    b.confirmed_by_user  = true, "
-            "    b.created_at         = datetime(), "
-            "    b.last_updated_at    = datetime() "
-            "ON MATCH SET "
-            "    b.value              = $value, "
-            "    b.last_updated_at    = datetime()",
-            {
-                "bid": belief_id,
-                "owner": owner_id,
-                "value": statement,
-                "confidence": 1.0,
-                "decays": False,
-            },
-        )
-    )
-    # Provenance: DERIVED_FROM episode + ABOUT person (both scoped to owner — Rule #4)
-    runner(
-        (
-            "MATCH (b:Belief {belief_id: $bid, owner_id: $owner}) "
-            "MATCH (e:Episode {episode_id: $eid, owner_id: $owner}) "
-            "MERGE (b)-[:DERIVED_FROM]->(e)",
-            {"bid": belief_id, "eid": episode_id, "owner": owner_id},
-        )
-    )
-    runner(
-        (
-            "MATCH (b:Belief {belief_id: $bid, owner_id: $owner}) "
-            "MATCH (p:Person {member_id: $owner}) "
-            "MERGE (b)-[:ABOUT]->(p)",
-            {"bid": belief_id, "owner": owner_id},
-        )
     )
