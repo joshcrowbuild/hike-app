@@ -8,6 +8,38 @@
 
 ---
 
+## 0. Persona-review revisions (BINDING — these override anything below them)
+
+A six-lens adversarial review (personas Josh / Carter / Ruby-advocate / Anonymous, plus NNG heuristics and a calm-utility+honesty guardian) ran against the draft. The following changes are **accepted and binding on the implementation**. Where the older prose in §3–§7 conflicts, this section wins.
+
+**R1 — Provenance is a first-class VM dimension; mock never wears the costume of verified fact.** *(CRITICAL ×3 — Josh, NNG, honesty-guardian)*  Every fact-bearing value in the VM carries `provenance: 'live' | 'mock' | 'sample'`. The default card is the **honest-thin** card (only what `/plan` really returns: name, distance, condition lines with `source`+`confidence_level`, warnings). Enrichment that has **no live source** (mock condition values, freshness, fit line, ascent/duration, terrain geometry) must be **visually + structurally distinguishable** from sourced facts — it renders demoted and/or under a visible **"sample data"** affordance, and the `Confidence`/`Staleness` components **refuse to render a confident tier over non-live provenance**. A fabricated `58°F · breezy · clear` may never sit in the decision row indistinguishable from a verified condition line. *Degradation that is invisible to the viewer is concealment, not disclosure.*
+
+**R2 — Readiness is a hard FILTER applied after ranking, never a rank penalty.** *(CRITICAL — honesty-guardian; echoed by Josh, Ruby)*  The legacy `readinessPenalty()` in `data.ts` (which subtracts from score) is **removed**, not quarantined. The mock implements readiness as a gate over the already-ranked set, disclosing **"N hidden · show anyway"** (reversible), and **never reorders survivors**. A test asserts readiness-on only *removes* cards, never *reorders* them. Rationale copy is **effect-first and trail-facing** ("Showing easier options — you turned on tune-to-today"), never a body diagnosis ("your recovery is low"). Off by default, never silent. When a fresh reading exists, the affordance may surface as a single quiet, dismissible, one-tap line in the feed rather than a buried toggle — but the toggle-on-but-inert (stale/no reading) state shows its **"showing the full feed, nothing filtered"** disclosure *visibly*, not collapsed.
+
+**R3 — No fabricated delta question.** *(CRITICAL — honesty-guardian; echoed by Josh, NNG)*  The backend never generates a `delta_question`, so the outcome card **stops at one face + the Ruby toggle** and ships **no delta question** tonight. The conditional-delta branch defaults to never-shown; the happy path must be complete and satisfying without it. (When a real Curator prediction exists — backend ask #1/#2 — the delta returns, gated behind a genuine prediction.)
+
+**R4 — IA is Home-centric, not a three-tab platform.** *(CRITICAL Josh; MODERATE NNG, honesty, anonymous)*  There is **one center of gravity: Home**. The post-hike nod **finds the user** — a single pending outcome surfaces quietly at the **top of Home** on next open (per `outcome-card-ux` §1.2), not a "Trips" tab you navigate to. **Trips** is demoted to a thin "log a hike I forgot / the one un-logged recent hike" surface, never a reverse-chron stream. **Memory** is demoted from co-equal nav to a **quiet on-demand affordance** (reached from the outcome flow's "why?" or a small profile entry) — `ui-brief` §9 forbids the belief layer becoming a headline self-modeling dashboard. No persistent equal-weight Home·Trips·Memory tab bar.
+
+**R5 — Thread viewer scope + Phase-2 type slots through the seam now (cheap tonight, expensive later).** *(CRITICAL ×2 — Carter)*  (a) Every `PlannerClient` method takes an explicit `ScopeContext { viewerId, grantedIds }` (tonight always `{ viewerId:'josh', grantedIds:[] }`; anonymous = `{ viewerId:'anonymous', grantedIds:[] }`), mirroring the backend's `owner_scope = (owner_id = $viewer OR owner_id IN $granted)`. (b) `BeliefVM` gains `owner` (whose overlay) and a nullable `sharing` slot (null tonight; later `shared-with` / `received-from`, the request-then-approve hook). (c) The subject axis is **`self | dependent | member`** (Ruby = dependent, a real second member = member — *distinct kinds*, never conflated). (d) Correction controls key off `owner === viewer` (received conclusions are read-only). (e) `OutcomeVM` models companionship as a **list of companion refs** `{kind: 'dependent'|'member'}` (default `[]`/`[ruby]`), not a bool. (f) `ReadingVM`/`useReadiness` is shaped so the result can represent a **group gate** (aggregate rationale from N members) even though N=1 tonight. None of this adds P2 UI; it stops the corner being painted.
+
+**R6 — Ruby's constraint is a disclosed GATE, not a silent score drop.** *(CRITICAL ×2 — Ruby-advocate)*  Ruby's hard constraint (off-leash / max-distance / scramble / heat ceiling) is modeled as an explicit gate with a reason, **distinct from any soft party-fit**. Excluded candidates are disclosed via a VM `setAside: { name, reason, restorable }[]` channel rendered like readiness's "N set aside · show anyway" ("Old Rag's scramble isn't a Ruby hike"). **Default party = `solo`** so the canonical solo→Ruby reshape is visible (Card C drops, disclosed). The same constraint object that gates the feed is the one shown in the belief store (editing it there changes what the party facet sets aside).
+
+**R7 — The anonymous path is explicit, tested, and never a teaser.** *(CRITICAL ×2 — Anonymous)*  Promoted from "implicit" to a real slice in PR-B. With empty scope: the **fit line is omitted** (or a world-fact clause — no phantom "you"); **taste re-rank is a no-op** (inclusion = viability/proximity only); the **context sentence is neutral** (no "from Front Royal · with Ruby" shown to a stranger — origin is asked/coarse, party defaults solo, no named dependent); the **readiness affordance is absent** (no watch, its absence is correct). Home/Detail render from **one** implementation; the only difference is `scope = empty` (asserted by test). The **on-ramp** is a calm, declinable invitation shown **only** where a personal concept is invoked (tapping a gated destination) — never an interstitial, Home banner, locked/blurred tab, or count-tease; declining keeps the world fully usable. Acceptance: `a-anon1` usable peer set with no sign-in and no personal narration; `a-anon2` a `/trail/:id` deep-link resolves with no prior feed; `a-anon3` no locked/blurred/teaser chrome anywhere; `a-anon4` on-ramp declinable, world stays usable. Add Playwright screenshots of anonymous Home + anonymous deep-link.
+
+**R8 — Error taxonomy + recovery copy are first-class (not a generic "error").** *(CRITICAL — NNG H9)*  The VM carries `error: { kind: 'offline'|'timeout'|'server'|'auth'|'partial'|'empty' }` with a plain-language, blame-free recovery action per kind (retry / widen / sign-in / dismiss-and-continue-degraded). **Partial failure** (some condition lines verify, some don't) shows the verified lines and discloses the gap — it never collapses the whole card. "Try again" is specified (idempotent re-fetch, visible retry state).
+
+**R9 — "Widen the frame" is one proposed action, not a trip back through tuning.** *(MODERATE — Josh, NNG)*  The empty/sparse state proposes the obvious single relaxation with one tap ("nothing easy nearby today — show moderate too?"), because the app knows the frame. Manual tuning stays for when the user *wants* to steer, never as the only escape from empty. Sparse reads **confident, never apologetic**; empty reads **honest absence**; both carry identical widen wording with differing tone.
+
+**R10 — Confidence/Staleness component-contract precision.** *(MODERATE/MINOR — NNG, honesty)*  The non-numeric **dot** encoding is allowed **only** in the belief store, must always be **paired with the confidence word** ("fresh" / "a guess"), and **never exposes the underlying float** (no `0.62`, no tooltip). On the feed, **`flagged` triggers the `Signal` treatment on that line but never demotes the card's position** (Rule #2 — uncertainty ≠ low quality); a test asserts a flagged card is not ranked below a stated-only card. The three confidence tiers map to the same visual treatment on every surface (the dot encoding being the single documented exception).
+
+**R11 — Honesty on fully-mock surfaces (Detail sources, Memory beliefs, Outcome measured-block).** *(MODERATE — honesty)*  Detail does **not** fabricate a multi-source provenance list — it reuses the **real** per-line `source`+`confidence_level` from `/plan` (the one real provenance we have) or shows an honest "full source inspection lands when trail detail is wired." The Memory store and the Outcome measured-block are seeded **only from data the user actually produced in-session**, or are **clearly labeled sample data about a sample person** — never invented facts/receipts posed as learned truth about Josh. The degrade-and-disclose **"partial episode / dead battery"** copy pattern (source-or-silence on our *own* record) is promoted into **P1** so watch-free is felt, not just asserted.
+
+**R12 — Small calm-utility fixes.** Pre-fill the Ruby outcome toggle from the selected plan's party facet (the common case needs zero extra taps). Trips shows the logged face quietly when present and **nothing** when absent (no "not yet" inbox/badge that reads as a to-do). `useRoute` history contract: **sheets do not push history** (Escape/scrim/back closes them; browser Back leaves the screen); **routes do push**; verify browser + mobile Back against every screen/sheet. Light-touch H10: a one-time dismissible orienting line on first Home open; empty states double as documentation.
+
+> **Net effect on tonight's build:** PR-B and PR-C remain the non-negotiable core, but they now carry the provenance dimension (R1), the readiness-as-filter fix (R2), the scope/Phase-2 slots (R5), the Ruby gate + set-aside (R6), the anonymous slice (R7), and the error taxonomy (R8) from the start — all cheap type-shape decisions that are expensive to retrofit. The outcome card ships without the fake delta (R3); the IA stays Home-centric (R4).
+
+---
+
 ## 1. North star (the destination app, in one breath)
 
 A **calm, private, agentic outdoor-intelligence utility**: open it, see *three or fewer* genuinely-viable hikes for **this exact moment, for me and Ruby**, each live-verified under **source-or-silence**; tap one to answer *"can I actually do this today?"*; go; afterward tap **one face** so it quietly learns — with a **legible, editable memory** you can inspect and correct, and **watch data as enrichment, never a dependency.** It scales from an **anonymous world-browser** → a **personal single-user overlay** → a **private-by-default household** that shares *derived conclusions, never raw substrate*.
@@ -46,14 +78,22 @@ Everything visual is built **once** against a stable seam. This is the single mo
             screens/components  ─────────────┐  depend only on the VM
                                               ▼
    ┌──────────────────────── view-model (VM) ───────────────────────┐
-   │  FeedVM { query, cards: CardVM[], notices[], status }           │
+   │  FeedVM { query, cards: CardVM[], notices[], status,            │
+   │           setAside: SetAside[], error?: { kind } }   ← R6,R8     │
    │  CardVM { id, name, distanceMi, conditionLines: LineVM[],       │
    │           warnings[], enrichment?: CardEnrichment }             │
-   │  LineVM { text, source, confidence: 'stated'|'hedged'|'flagged'}│
+   │  LineVM { text, source, confidence: 'stated'|'hedged'|'flagged',│
+   │           provenance: 'live'|'mock'|'sample' }       ← R1        │
    │  CardEnrichment? { placeCue, area, routeShape, ascentFeet,      │
    │           durationHours, effort, tags[], fitLine, conditionValue,│
-   │           profilePath?, terrainPath?, freshness, caution? }     │
-   │  OutcomeVM, EpisodeVM, BeliefVM, ReadingVM …                    │
+   │           profilePath?, terrainPath?, freshness, caution?,      │
+   │           provenance: 'live'|'mock'|'sample' }       ← R1        │
+   │  SetAside { name, reason, restorable }               ← R6        │
+   │  BeliefVM { …, owner, subject:'self'|'dependent'|'member',      │
+   │             sharing: null, provenance }              ← R5,R11    │
+   │  OutcomeVM { …, companions: {kind}[] }               ← R5        │
+   │  ReadingVM { groupRationale, members:[…] }  (N=1)    ← R5        │
+   │  ScopeContext { viewerId, grantedIds }  threaded     ← R5        │
    └────────────────────────────────────────────────────────────────┘
         ▲                                   ▲
         │ adapters                          │
@@ -81,21 +121,30 @@ Everything visual is built **once** against a stable seam. This is the single mo
 
 Five destinations, calm and flat (no deep nav trees — this is a utility, not an app-as-platform):
 
+**Revised per R4 — one center of gravity, not a three-tab platform:**
+
 ```
   ┌─────────────────────────────────────────────────────────┐
-  │  Home / Curation     (/)            ← the daily glance    │
-  │     └ Trail Detail   (/trail/:id)   ← "can I do this?"    │
+  │  Home / Curation     (/)            ← THE home; one glance│
+  │     ├ pending nod    (top of Home)  ← the outcome FINDS you│
+  │     ├ Trail Detail   (/trail/:id)   ← "can I do this?"    │
   │     └ Tuning sheets  (overlay)      ← progressive tuning  │
-  │  Trips               (/trips)       ← recent hikes        │
-  │     └ Outcome card   (/trips/:id/outcome) ← the one tap   │
-  │  Memory              (/memory)      ← what I've learned    │
-  │     └ Belief receipt (/memory/:id)  ← why I believe it    │
+  │  Outcome card        (/trip/:id/outcome) ← one tap, from  │
+  │                                       the pending nod      │
+  │  Trips (thin)        (/trips)       ← only "log one I      │
+  │                                       forgot"; not a stream│
+  │  Memory (on-demand)  (/memory, /:id)← quiet affordance,    │
+  │                                       NOT a co-equal tab   │
   └─────────────────────────────────────────────────────────┘
-   A quiet bottom/secondary nav for Home · Trips · Memory.
-   (Anonymous mode: only Home + Detail; Trips/Memory require a "you".)
+   No persistent equal-weight tab bar. Home is the single
+   destination; Outcome surfaces ON Home; Memory is reached
+   from the outcome flow's "why?" or a small profile entry.
+   Anonymous: Home + Detail only, rendered identically (scope
+   = empty); gated destinations open the calm on-ramp (R7),
+   never a locked tab.
 ```
 
-Navigation is **flat and reversible**; sheets are for *adjustment within a screen*, full routes for *moving between concerns*. This matches NNG's "match between system and the real world" + "user control and freedom" (every screen has an obvious back; nothing traps).
+Navigation is **flat and reversible**; sheets are for *adjustment within a screen* (and do **not** push history — R12), full routes for *moving between concerns* (these push). This matches NNG's "match between system and the real world" + "user control and freedom" (every screen has an obvious back; nothing traps).
 
 ---
 
