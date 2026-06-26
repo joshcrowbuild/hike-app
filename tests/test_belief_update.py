@@ -312,3 +312,26 @@ def test_s2_process_episode_missing_episode_is_noop():
     session = _FakeSession()  # read returns []
     process_episode("ep:josh:missing", "josh", session)
     assert session.writes == []
+
+
+def test_drain_noops_on_all_none_preference_marker():
+    """Epic 002 enqueues an all-None UpdateTask as a 'preference check available' marker
+    (orchestration/outcome.py): distance_m/ascent_m/pace_on_grade are all None because it
+    carries no capability update. The drain must consume it without issuing a single owned
+    read or write — pace None skips the pace update; distance+ascent None skip the maxima
+    upsert — so the marker can never accidentally mutate a profile or belief."""
+    q = BeliefUpdateQueue()
+    q.enqueue(
+        UpdateTask(
+            episode_id="ep:josh:1",
+            owner_id="josh",
+            distance_m=None,
+            ascent_m=None,
+            pace_on_grade=None,
+        )
+    )
+    session = _FakeSession()
+    processed = q.drain(lambda owner_id: session)
+    assert processed == 1  # the marker was consumed
+    assert session.writes == []  # ...but produced no owned write
+    assert session.reads == []  # and no read either — a true no-op

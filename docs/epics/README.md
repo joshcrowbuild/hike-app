@@ -5,7 +5,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | # | Epic | Status | Phase | Depends on |
 |---|---|---|---|---|
 | [001](epic-001-belief-update-pipeline.md) | Belief update pipeline (EWMA pace, maxima, N=3 promotion) | DONE ✅ | 1 | Stage 5 schema |
-| [002](epic-002-outcome-card-endpoint.md) | Outcome card endpoint (POST /episode/{id}/outcome) | IN_PROGRESS | 1 | Epic 001 |
+| [002](epic-002-outcome-card-endpoint.md) | Outcome card endpoint (POST /episode/{id}/outcome) | DONE ✅ | 1 | Epic 001 |
 | [003](epic-003-context-assembly.md) | Context assembly in engine.plan() | DONE ✅ | 1 | Epic 001 |
 | [004](epic-004-device-integration-seam.md) | Device-integration seam (Garmin + Coros, pluggable) | DONE ✅ | 1 | Epic 001 |
 | [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time integration (post-Scout prune + ranking input) | DONE ✅ | 0 | — (via Epic 013) |
