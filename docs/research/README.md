@@ -41,25 +41,20 @@
 |---|---|---|
 | [design-system-v0.1.md](design-system-v0.1.md) | `ACTIVE` | Design-system contract: DTCG/Style-Dictionary tokens, honesty primitives (confidence/staleness/verify), owned-component stack, §14 done-bar. **Read when** building/refactoring frontend tokens or components. |
 | [home-curation-prototype-spec-v0.3.md](home-curation-prototype-spec-v0.3.md) | `ACTIVE` | Home/Curation UI spec: peer card set, decidable-at-rest cards, calm tuning, cartographic-matte visual system. **Read when** building/reviewing the Home/Curation UX. |
-| [home-curation-prototype-spec-v0.2.md](home-curation-prototype-spec-v0.2.md) | `SUPERSEDED` by v0.3 (archiving in Wave 3) | Older Home/Curation draft. **Read** the v0.3 successor instead; kept for design provenance. |
+| [home-curation-prototype-spec-v0.2.md](archive/home-curation-prototype-spec-v0.2.md) | `SUPERSEDED` by v0.3 (archived) | Older Home/Curation draft. **Read** the v0.3 successor instead; kept for design provenance. |
 | [outcome-card-ux.md](outcome-card-ux.md) | `ACTIVE` (pre-Stage-10 exploration) | Outcome Card / Belief Store / Readiness Filter wireframes + durable invariants. **Read when** designing the personal-intelligence UI. |
 | [ui-brief-v0.2.md](ui-brief-v0.2.md) | `IMPLEMENTED (PR #22)` | UX north-star brief: "quiet premium utility" posture, card model, trust + belief layers, visual language. **Read when** designing app UX or visual language. |
 | [ux-assembly-plan-v1.md](ux-assembly-plan-v1.md) | `IMPLEMENTED (PR #22; PR-E/F deferred)` | Frontend UX assembly plan: VM/adapter seam, mock/http adapters, persona-review (R1–R12) binding constraints. **Read when** working the frontend screens or VM seam. |
 
-## Build provenance (staging draft)
+## Archived (provenance only)
+
+*Off the live surface in [`archive/`](archive/) (see [`archive/README.md`](archive/README.md)). Closed audits + folded/superseded drafts — read only to trace history.*
 
 | Doc | Status | Purpose · read when |
 |---|---|---|
-| [decision-log-additions-proposed.md](decision-log-additions-proposed.md) | `TO FOLD` → archive (Wave 3) | Un-merged decision-log §32–§40 (Stage-3 build, Epic 001, provider seam, API, gap-audit C1–C6 corrections). **Read** for build provenance; being folded into `../decision-log.md`. |
-
-## Closed point-in-time audits (provenance only)
-
-*All fully actioned; archived in `archive/` during Wave 3. Read only to trace why the remediation epics exist.*
-
-| Doc | Status | Purpose · read when |
-|---|---|---|
-| [architecture-gap-audit-2026-06.md](architecture-gap-audit-2026-06.md) | `CLOSED AUDIT` | The cross-lens gap audit that seeded Epics 010–015 (findings C1–C6). **Read** for historical provenance only. |
-| [self-review-2026-06.md](self-review-2026-06.md) | `CLOSED AUDIT` | 2026-06-23 rules-compliance + consistency self-review (2 CRITICALs fixed). **Read** for provenance only. |
-| [integrated-remediation-review-2026-06.md](integrated-remediation-review-2026-06.md) | `CLOSED AUDIT` | Merged-trunk integrated remediation review (1 CRITICAL + 4 MODERATE). **Read** for provenance only. |
-| [conflation-review-2026-06.md](conflation-review-2026-06.md) | `CLOSED AUDIT` | First-ingest OSM×NPS×USFS conflation diagnosis. **Read when** investigating conflation/dedup quality (historical). |
-| [api-verification-2026-06.md](api-verification-2026-06.md) | `CLOSED AUDIT` | Live-endpoint field verification (USGS/NWS/USFS/NPS). **Read when** debugging a live adapter's field mappings (historical). |
+| [decision-log-additions-proposed.md](archive/decision-log-additions-proposed.md) | `FOLDED` → archived | §32–§40 folded into [`../decision-log.md`](../decision-log.md) (Part VII); the archived copy keeps the full forensic detail. |
+| [architecture-gap-audit-2026-06.md](archive/architecture-gap-audit-2026-06.md) | `CLOSED AUDIT` | The cross-lens gap audit that seeded Epics 010–015 (findings C1–C6). **Read** for historical provenance only. |
+| [self-review-2026-06.md](archive/self-review-2026-06.md) | `CLOSED AUDIT` | 2026-06-23 rules-compliance + consistency self-review (2 CRITICALs fixed). **Read** for provenance only. |
+| [integrated-remediation-review-2026-06.md](archive/integrated-remediation-review-2026-06.md) | `CLOSED AUDIT` | Merged-trunk integrated remediation review (1 CRITICAL + 4 MODERATE). **Read** for provenance only. |
+| [conflation-review-2026-06.md](archive/conflation-review-2026-06.md) | `CLOSED AUDIT` | First-ingest OSM×NPS×USFS conflation diagnosis. **Read when** investigating conflation/dedup quality (historical). |
+| [api-verification-2026-06.md](archive/api-verification-2026-06.md) | `CLOSED AUDIT` | Live-endpoint field verification (USGS/NWS/USFS/NPS). **Read when** debugging a live adapter's field mappings (historical). |
