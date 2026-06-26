@@ -272,10 +272,7 @@ function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps
         <OptionGroup
           label="Starting point"
           value={state.origin}
-          onChange={(key) => {
-            setState((current) => ({ ...current, origin: key }))
-            onClose()
-          }}
+          onChange={(key) => setState((current) => ({ ...current, origin: key }))}
         >
           {originOptions.map((key) => (
             <OptionButton key={key} value={key}>
@@ -289,10 +286,7 @@ function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps
         <OptionGroup
           label="Time frame"
           value={state.when}
-          onChange={(key) => {
-            setState((current) => ({ ...current, when: key }))
-            onClose()
-          }}
+          onChange={(key) => setState((current) => ({ ...current, when: key }))}
         >
           {whenOptions.map((key) => (
             <OptionButton key={key} value={key}>
@@ -306,10 +300,7 @@ function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps
         <OptionGroup
           label="Effort"
           value={state.effort}
-          onChange={(key) => {
-            setState((current) => ({ ...current, effort: key }))
-            onClose()
-          }}
+          onChange={(key) => setState((current) => ({ ...current, effort: key }))}
         >
           {effortOptions.map((key) => (
             <OptionButton key={key} value={key}>
@@ -323,10 +314,7 @@ function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps
         <OptionGroup
           label="Who is coming"
           value={state.party}
-          onChange={(key) => {
-            setState((current) => ({ ...current, party: key }))
-            onClose()
-          }}
+          onChange={(key) => setState((current) => ({ ...current, party: key }))}
         >
           {partyOptions.map((key) => (
             <OptionButton key={key} value={key}>
