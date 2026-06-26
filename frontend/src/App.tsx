@@ -10,6 +10,7 @@ import {
   whenLabels,
 } from './data'
 import type { EffortKey, OriginKey, PartyKey, TodayKey, Trail, TuningState, WhenKey } from './types'
+import { Signal } from './components/Signal'
 
 type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
 
@@ -160,7 +161,7 @@ function RecommendationCard({ trail, state, onOpen }: RecommendationCardProps) {
           <span className="condition-value">{trail.conditionValue}</span>
         </div>
 
-        {trail.caution ? <p className="signal">{trail.caution}</p> : null}
+        {trail.caution ? <Signal>{trail.caution}</Signal> : null}
 
         <p className="fit">{buildFitLine(trail, state)}</p>
 
@@ -458,7 +459,7 @@ function DetailView({ trail, state, onBack }: DetailViewProps) {
           <span className="condition-value">{trail.conditionValue}</span>
         </div>
 
-        {trail.caution ? <p className="signal signal--detail">{trail.caution}</p> : null}
+        {trail.caution ? <Signal className="signal--detail">{trail.caution}</Signal> : null}
         <p className="detail-practical">{trail.practicalNote}</p>
       </section>
 

@@ -264,17 +264,11 @@ button {
   color: var(--text-primary);
 }
 
-/* ---- signal (promoted caution) ---- */
-.signal {
-  margin: 0;
-  border-left: 2px solid var(--signal-caution-fg);
-  background: var(--signal-caution-bg);
-  padding: 0.5rem 0.6rem;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 0.86rem;
-  font-weight: 500;
-  color: var(--signal-caution-fg);
-}
+/* ---- signal (promoted caution) ----
+   The visual treatment now lives in the owned <Signal> component
+   (src/components/Signal). Only its detail-surface placement margin remains
+   here (see .signal--detail below), consistent with the other *--detail
+   spacing utilities. */
 
 /* ---- fit line ---- */
 .fit {
