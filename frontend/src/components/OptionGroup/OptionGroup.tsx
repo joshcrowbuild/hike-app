@@ -31,6 +31,13 @@ export function OptionGroup<T extends string>({
   )
 }
 
+/**
+ * `value` is a plain string by design: a child cannot inherit its parent
+ * OptionGroup's generic `T` through JSX, so option-key type-safety relies on
+ * callers mapping from a typed key array (as App does — `originOptions`, etc.),
+ * which is checked at the array. A future caller hand-writing literal values
+ * would not get that check; prefer driving the group from a typed array.
+ */
 export type OptionButtonProps = {
   value: string
   children: ReactNode

@@ -19,9 +19,9 @@ export const signal = style({
   background: vars.signal.caution.bg,
   color: vars.signal.caution.fg,
   fontFamily: vars.font.family.sans,
-  // One tier above the surrounding mono data labels; promotion is typographic
+  // One tier above body, per §7.3 (size.emphasis). Promotion is typographic
   // (size + weight + the field), never chromatic alarm (§7.3, spec C4).
-  fontSize: vars.size.body,
+  fontSize: vars.size.emphasis,
   fontWeight: vars.font.weight.medium,
   lineHeight: 1.4,
 })
