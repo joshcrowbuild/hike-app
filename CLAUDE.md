@@ -53,37 +53,9 @@ Phase 0 spine (Stages 1–4) → Phase 1 personal intelligence + watch (Stages 5
 
 ## Development standards (read before writing any code)
 
-### Git hygiene — atomic commits
-- **One logical change = one commit.** Never bundle an epic's work, a bug fix, and a refactor in a single commit.
-- **Typical atomic split for an epic:** schema additions · new module + core logic · API wiring · tests · epic doc update. Each is its own commit.
-- **Commit message format:**
-  ```
-  <imperative verb> <what, ≤60 chars>
-
-  <WHY this change exists — one or two sentences. What problem does it solve,
-  what invariant does it uphold, what spec section does it implement.>
-
-  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  ```
-- **Subject line rules:** imperative mood ("Add", "Fix", "Enforce" — not "Added", "Fixes"); ≤72 chars; no period at end.
-- **Never commit:** `.env`, `data/`, commented-out code, debug `print()`, unresolved merge markers, half-finished work that breaks tests.
-- **`make check` must pass** (`ruff format --check` + ruff + mypy + pytest) before every commit, no exceptions.
-
-### Code standards
-- **No commented-out code.** If code is removed, remove it. History is in git.
-- **No debug artifacts.** No `print()`, no `logging.WARNING("debug: ...")`, no `# TODO:` or `# FIXME:` in committed code. Use the epic/issue tracker instead.
-- **No hardcoded secrets or values** that belong in config. Everything environment-dependent lives in `Settings.from_env()`.
-- **Fail loudly at boundaries, degrade gracefully at the surface.** Invalid input to a function → `ValueError`. Live adapter failure → `None` (source-or-silence). Never swallow an exception silently.
-- **New modules get tests before they get callers.** Write the test file alongside (or before) the module — never after.
-
-### Review process (see `docs/process/development-process.md` for full detail)
-- After each epic: **spawn a targeted review agent** with a narrow file list and specific rules to check. Do NOT run `/code-review ultra` for routine epics — it's expensive, slow, and crashes.
-- Reserve `/code-review ultra` for Phase-boundary reviews (e.g., before shipping Phase 0 → Phase 1).
-- Every CRITICAL finding from a targeted review must be fixed **before** the commit goes out. MODERATE findings must be fixed or explicitly documented in the epic's DoD.
-
-### Epic / story tracking
-- All epics live in `docs/epics/`. Check `docs/epics/README.md` for status before starting work.
-- Status flow: `BACKLOG` → `DEFINED` → `IN_PROGRESS` → `REVIEW` → `DONE ✅`
-- Change an epic's status field at the top of its file when you start, finish, or block it.
-- Stories use `[ ]` / `[x]` checkboxes within the epic doc. Check them off as ACs pass.
-- Update `docs/epics/README.md` status column when an epic closes.
+The full standards — **Git & commit hygiene, code standards, the review cycle, test standards, and epic/story tracking** — are canonical in **`docs/process/development-process.md`**. The essentials that must always hold:
+- **One logical change = one commit**; imperative ≤72-char subject + a *why* body; trailer `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- **`make check` green** (`ruff format --check` + ruff + mypy + pytest) before every commit. **Never commit** `.env`, `data/`, commented-out code, debug `print()`, or `# TODO`/`# FIXME`.
+- **Fail loudly at boundaries, degrade gracefully at the surface.** New modules get tests before callers.
+- **After each epic:** a targeted self-review agent (not `/code-review ultra` for routine work); fix every CRITICAL before the commit goes out, document MODERATE+.
+- **Epic tracking:** check `docs/epics/README.md` before starting; flip the epic's status field (`BACKLOG → DEFINED → IN_PROGRESS → REVIEW → DONE ✅`) on start/finish/block.

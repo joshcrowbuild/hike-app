@@ -19,12 +19,8 @@ Read it together with `CLAUDE.md`:
 - If you touch a merge-sensitive seam, inspect likely consumers first and call out the risk in the PR.
 
 ## Git and PR hygiene
-- One logical change per PR.
-- Keep diffs small, reviewable, and reversible.
-- Run `make check` before handing work off.
-- Use the PR template and fill in summary, why, scope, validation, and merge-risk notes.
-- Do not assume GitHub-native branch protection is active on this private repo; follow the manual fallback in `docs/process/github-repo-hygiene.md`.
-- Do not merge with unresolved review comments or failing CI.
+- Commit/PR discipline is canonical in [`docs/process/development-process.md`](docs/process/development-process.md): one logical change per PR; small, reviewable, reversible diffs; `make check` before handoff; the PR template (summary/why/scope/validation/merge-risk); never merge with failing CI or unresolved comments.
+- Branch from `main`; open PRs into `main`. `main` is **branch-protected** — PRs only, all required CI checks must pass, no force-push/delete (see [`docs/process/github-repo-hygiene.md`](docs/process/github-repo-hygiene.md)).
 
 ## Review discipline
 - Link the relevant epic, story, acceptance criteria, or design doc.
