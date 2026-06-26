@@ -85,7 +85,7 @@ A chart beneath the map: x = distance, y = elevation; total gain/loss + max grad
 
 ## Stories
 
-**Build sequence (ratified):** the **first ship = S1–S6** (the topo map **and** the elevation profile together). Because S5 needs USGS-3DEP elevation, the gating first step is **S5a (the elevation enrichment)** — see the note under S5; it likely becomes its own corpus/ingestion epic that this one depends on. **S7 (offline) is the fast-follow; S8 is future.** (The earlier topo-only "Phase A first" split is retired by the ratified decision.)
+**Build sequence (ratified):** the **first ship = S1–S6** (the topo map **and** the elevation profile together). The elevation backend (S5a) is now its own epic — **Epic 017 (terrain elevation enrichment)** — which builds **in parallel** with this one: the map + route stories (S1–S4, S6) build against mock data while Epic 017 produces the real profiles; the two lanes converge at **S5b** (the chart consuming real elevation). The shared **elevation-profile contract (Epic 017 S0)** is the only thing that must be frozen before the lanes split. **S7 (offline) is the fast-follow; S8 is future.** (The earlier topo-only "Phase A first" split is retired by the ratified decision.)
 
 ### Phase A — core slice
 
