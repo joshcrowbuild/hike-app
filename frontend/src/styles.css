@@ -61,11 +61,8 @@ button {
 .freshness,
 .open-detail,
 .back,
-.sheet-back,
-.sheet-close,
 .facet-value,
-.refine-label,
-.toggle-switch {
+.refine-label {
   font-family: var(--font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -442,50 +439,7 @@ button {
   color: var(--text-muted);
 }
 
-/* ---- sheets ---- */
-.sheet-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-scrim);
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  padding: 0.75rem;
-}
-
-.sheet {
-  width: min(100%, 29rem);
-  background: var(--surface-canvas);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
-  padding: 1rem;
-  box-shadow: 0 -2px 24px rgba(22, 25, 29, 0.16);
-}
-
-.sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.sheet-back,
-.sheet-close {
-  font-size: 0.68rem;
-  color: var(--text-primary);
-  padding: 0.3rem 0;
-}
-
-.sheet-title {
-  margin: 0;
-  flex: 1;
-  text-align: center;
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
+/* ---- tuning sheet content (the sheet chrome is owned by <Sheet>) ---- */
 .facet-list {
   display: grid;
   gap: 0.55rem;
@@ -546,78 +500,9 @@ button {
   border-color: var(--text-primary);
 }
 
-.option-grid {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.option-button {
-  text-align: left;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  padding: 0.9rem 1rem;
-  color: var(--text-secondary);
-  transition: background 130ms ease, border-color 130ms ease;
-}
-
-.option-button:active {
-  background: var(--surface-press);
-}
-
-.option-button--selected {
-  color: var(--text-primary);
-  font-weight: 500;
-  border-color: var(--text-primary);
-}
-
 .today-sheet {
   display: grid;
   gap: 0.85rem;
-}
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  padding: 0.95rem 1rem;
-  text-align: left;
-}
-
-.toggle-row--active {
-  border-color: var(--text-primary);
-}
-
-.toggle-label {
-  display: block;
-  margin-bottom: 0.3rem;
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.toggle-copy {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-}
-
-.toggle-switch {
-  flex: none;
-  font-size: 0.64rem;
-  color: var(--text-muted);
-  border: 1px solid var(--border-hairline);
-  border-radius: 999px;
-  padding: 0.3rem 0.6rem;
-}
-
-.toggle-row--active .toggle-switch {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: var(--surface-canvas);
 }
 
 @media (max-width: 560px) {

@@ -1,5 +1,18 @@
 import { style } from '@vanilla-extract/css'
 
+import { vars } from './theme.css'
+
+/**
+ * The single, neutral keyboard-focus treatment. Ink (not the signal hue) so it
+ * reads on both surfaces and never competes with the accent (design-system-v0.1
+ * §4.3). Spread into a component's `&[data-focus-visible]` / `&:focus-visible`
+ * selector. RAC primitives only flag `data-focus-visible` on keyboard focus.
+ */
+export const focusRing = {
+  outline: `${vars.stroke.path} solid ${vars.focus.ring}`,
+  outlineOffset: vars.space[1],
+} as const
+
 /**
  * Visually hide content while keeping it in the accessibility tree.
  *

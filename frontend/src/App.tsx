@@ -10,7 +10,7 @@ import {
   whenLabels,
 } from './data'
 import type { EffortKey, OriginKey, PartyKey, TodayKey, Trail, TuningState, WhenKey } from './types'
-import { Signal } from './components/Signal'
+import { OptionButton, OptionGroup, Sheet, Signal, Toggle } from './components'
 
 type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
 
@@ -267,89 +267,97 @@ function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps
   }
 
   return (
-    <div className="sheet-overlay" role="presentation" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="sheet-header">
-          <button className="sheet-back" type="button" onClick={onBack}>
-            Back
-          </button>
-          <h3 className="sheet-title">{panelTitle(panel)}</h3>
-          <button className="sheet-close" type="button" onClick={onClose}>
-            Done
-          </button>
+    <Sheet isOpen onClose={onClose} onBack={onBack} title={panelTitle(panel)}>
+      {panel === 'origin' ? (
+        <OptionGroup
+          label="Starting point"
+          value={state.origin}
+          onChange={(key) => {
+            setState((current) => ({ ...current, origin: key }))
+            onClose()
+          }}
+        >
+          {originOptions.map((key) => (
+            <OptionButton key={key} value={key}>
+              {originLabels[key]}
+            </OptionButton>
+          ))}
+        </OptionGroup>
+      ) : null}
+
+      {panel === 'when' ? (
+        <OptionGroup
+          label="Time frame"
+          value={state.when}
+          onChange={(key) => {
+            setState((current) => ({ ...current, when: key }))
+            onClose()
+          }}
+        >
+          {whenOptions.map((key) => (
+            <OptionButton key={key} value={key}>
+              {whenLabels[key]}
+            </OptionButton>
+          ))}
+        </OptionGroup>
+      ) : null}
+
+      {panel === 'effort' ? (
+        <OptionGroup
+          label="Effort"
+          value={state.effort}
+          onChange={(key) => {
+            setState((current) => ({ ...current, effort: key }))
+            onClose()
+          }}
+        >
+          {effortOptions.map((key) => (
+            <OptionButton key={key} value={key}>
+              {effortLabels[key]}
+            </OptionButton>
+          ))}
+        </OptionGroup>
+      ) : null}
+
+      {panel === 'party' ? (
+        <OptionGroup
+          label="Who is coming"
+          value={state.party}
+          onChange={(key) => {
+            setState((current) => ({ ...current, party: key }))
+            onClose()
+          }}
+        >
+          {partyOptions.map((key) => (
+            <OptionButton key={key} value={key}>
+              {partyLabels[key]}
+            </OptionButton>
+          ))}
+        </OptionGroup>
+      ) : null}
+
+      {panel === 'today' ? (
+        <div className="today-sheet">
+          <OptionGroup
+            label="Today"
+            value={state.today}
+            onChange={(key) => setState((current) => ({ ...current, today: key }))}
+          >
+            {todayOptions.map((key) => (
+              <OptionButton key={key} value={key}>
+                {todayLabels[key]}
+              </OptionButton>
+            ))}
+          </OptionGroup>
+          <Toggle
+            label="Match today’s readiness"
+            description="Hide what today can’t support. Off unless you turn it on."
+            isSelected={state.readinessOn}
+            onChange={(on) => setState((current) => ({ ...current, readinessOn: on }))}
+          />
         </div>
-
-        {panel === 'origin' ? (
-          <OptionGrid
-            options={originOptions}
-            selected={state.origin}
-            getLabel={(key) => originLabels[key]}
-            onSelect={(key) => {
-              setState((current) => ({ ...current, origin: key }))
-              onClose()
-            }}
-          />
-        ) : null}
-
-        {panel === 'when' ? (
-          <OptionGrid
-            options={whenOptions}
-            selected={state.when}
-            getLabel={(key) => whenLabels[key]}
-            onSelect={(key) => {
-              setState((current) => ({ ...current, when: key }))
-              onClose()
-            }}
-          />
-        ) : null}
-
-        {panel === 'effort' ? (
-          <OptionGrid
-            options={effortOptions}
-            selected={state.effort}
-            getLabel={(key) => effortLabels[key]}
-            onSelect={(key) => {
-              setState((current) => ({ ...current, effort: key }))
-              onClose()
-            }}
-          />
-        ) : null}
-
-        {panel === 'party' ? (
-          <OptionGrid
-            options={partyOptions}
-            selected={state.party}
-            getLabel={(key) => partyLabels[key]}
-            onSelect={(key) => {
-              setState((current) => ({ ...current, party: key }))
-              onClose()
-            }}
-          />
-        ) : null}
-
-        {panel === 'today' ? (
-          <div className="today-sheet">
-            <OptionGrid
-              options={todayOptions}
-              selected={state.today}
-              getLabel={(key) => todayLabels[key]}
-              onSelect={(key) => setState((current) => ({ ...current, today: key }))}
-            />
-            <button
-              className={`toggle-row ${state.readinessOn ? 'toggle-row--active' : ''}`}
-              type="button"
-              onClick={() => setState((current) => ({ ...current, readinessOn: !current.readinessOn }))}
-            >
-              <div>
-                <span className="toggle-label">Match today’s readiness</span>
-                <p className="toggle-copy">Hide what today can’t support. Off unless you turn it on.</p>
-              </div>
-              <span className="toggle-switch">{state.readinessOn ? 'On' : 'Off'}</span>
-            </button>
-          </div>
-        ) : null}
-      </div>
-    </div>
+      ) : null}
+    </Sheet>
   )
 }
 
@@ -367,60 +375,27 @@ function AdjustSheet({ open, state, setState, onClose, onOpenFacet }: AdjustShee
   }
 
   return (
-    <div className="sheet-overlay" role="presentation" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="sheet-header">
-          <h3 className="sheet-title">Adjust</h3>
-          <button className="sheet-close" type="button" onClick={onClose}>
-            Done
+    <Sheet isOpen onClose={onClose} title="Adjust">
+      <div className="facet-list">
+        {facetMeta.map((facet) => (
+          <button key={facet.key} className="facet-row" type="button" onClick={() => onOpenFacet(facet.key)}>
+            <span className="facet-label">{facet.label}</span>
+            <span className="facet-value">{chipValue(facet.key, state)}</span>
           </button>
-        </div>
-
-        <div className="facet-list">
-          {facetMeta.map((facet) => (
-            <button key={facet.key} className="facet-row" type="button" onClick={() => onOpenFacet(facet.key)}>
-              <span className="facet-label">{facet.label}</span>
-              <span className="facet-value">{chipValue(facet.key, state)}</span>
-            </button>
-          ))}
-        </div>
-
-        <label className="refine">
-          <span className="refine-label">Refine with a phrase</span>
-          <input
-            className="refine-input"
-            type="text"
-            value={state.prompt}
-            onChange={(event) => setState((current) => ({ ...current, prompt: event.target.value }))}
-            placeholder="cooler · quieter · good with Ruby"
-          />
-        </label>
+        ))}
       </div>
-    </div>
-  )
-}
 
-type OptionGridProps<T extends string> = {
-  options: readonly T[]
-  selected: T
-  getLabel: (option: T) => string
-  onSelect: (option: T) => void
-}
-
-function OptionGrid<T extends string>({ options, selected, getLabel, onSelect }: OptionGridProps<T>) {
-  return (
-    <div className="option-grid">
-      {options.map((option) => (
-        <button
-          key={option}
-          className={`option-button ${selected === option ? 'option-button--selected' : ''}`}
-          type="button"
-          onClick={() => onSelect(option)}
-        >
-          {getLabel(option)}
-        </button>
-      ))}
-    </div>
+      <label className="refine">
+        <span className="refine-label">Refine with a phrase</span>
+        <input
+          className="refine-input"
+          type="text"
+          value={state.prompt}
+          onChange={(event) => setState((current) => ({ ...current, prompt: event.target.value }))}
+          placeholder="cooler · quieter · good with Ruby"
+        />
+      </label>
+    </Sheet>
   )
 }
 
@@ -486,20 +461,6 @@ function DetailView({ trail, state, onBack }: DetailViewProps) {
         <TrustCue trail={trail} compact={false} />
       </section>
     </section>
-  )
-}
-
-type MetricProps = {
-  label: string
-  value: string
-}
-
-function Metric({ label, value }: MetricProps) {
-  return (
-    <div className="metric">
-      <span className="metric-label">{label}</span>
-      <strong className="metric-value">{value}</strong>
-    </div>
   )
 }
 
