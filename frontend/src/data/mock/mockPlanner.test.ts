@@ -63,6 +63,27 @@ describe('MockPlannerClient — anonymous degrades honestly (R7)', () => {
   })
 })
 
+describe('MockPlannerClient — post-hike loop', () => {
+  it('lists episodes for a viewer but none for anonymous (R7)', async () => {
+    expect((await client.recentEpisodes(JOSH)).length).toBeGreaterThan(0)
+    expect(await client.recentEpisodes(ANON_SCOPE)).toEqual([])
+  })
+
+  it('records an outcome idempotently (re-log updates, never duplicates)', async () => {
+    const before = (await client.recentEpisodes(JOSH)).length
+    await client.recordOutcome('ep-hawksbill', { overall: 3, skipped: false }, [], JOSH)
+    const after = await client.recentEpisodes(JOSH)
+    expect(after.length).toBe(before)
+    expect(after.find((e) => e.id === 'ep-hawksbill')?.outcome?.overall).toBe(3)
+  })
+
+  it('throws for an unknown episode', async () => {
+    await expect(
+      client.recordOutcome('no-such-ep', { overall: 2, skipped: false }, [], JOSH),
+    ).rejects.toThrow()
+  })
+})
+
 describe('MockPlannerClient — getCard resolves independent of the feed', () => {
   it('resolves a known id and returns null for an unknown one', async () => {
     expect(await client.getCard('stony-man', JOSH, 'frontRoyal')).not.toBeNull()

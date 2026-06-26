@@ -1,5 +1,5 @@
 import { originLabels, partyLabels, whenLabels } from '../data/labels'
-import { useFeed } from '../data/PlannerProvider'
+import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { widenFrame } from '../data/widen'
 import type { FeedVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
@@ -16,11 +16,23 @@ export interface HomeProps {
   anonymous: boolean
   onOpenTuning: () => void
   onOpenTrail: (id: string) => void
+  onOpenOutcome: (episodeId: string) => void
   onApplyTuning: (next: TuningState) => void
 }
 
-export function Home({ tuning, anonymous, onOpenTuning, onOpenTrail, onApplyTuning }: HomeProps) {
+export function Home({
+  tuning,
+  anonymous,
+  onOpenTuning,
+  onOpenTrail,
+  onOpenOutcome,
+  onApplyTuning,
+}: HomeProps) {
   const { status, feed, error, reload } = useFeed({ tuning })
+  const { episodes } = useRecentEpisodes()
+  // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
+  // Trips tab to navigate to. Quiet, dismissible by simply not tapping it.
+  const pending = episodes.find((e) => !e.outcome)
 
   return (
     <div className="app-shell">
@@ -28,6 +40,13 @@ export function Home({ tuning, anonymous, onOpenTuning, onOpenTrail, onApplyTuni
         <span className="wordmark">Curation</span>
         {anonymous ? <span className="topbar-mode">Browsing</span> : null}
       </header>
+
+      {pending ? (
+        <button className="pending-nod" type="button" onClick={() => onOpenOutcome(pending.id)}>
+          <span className="pending-nod-text">You hiked {pending.trailName}</span>
+          <span className="pending-nod-cue">How was it? →</span>
+        </button>
+      ) : null}
 
       <section className="frame">
         <button className="context" type="button" onClick={onOpenTuning}>

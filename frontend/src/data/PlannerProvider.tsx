@@ -12,7 +12,7 @@ import type { ScopeContext } from './api'
 import { HttpPlannerClient } from './http/httpPlanner'
 import { MockPlannerClient } from './mock/mockPlanner'
 import type { PlanInput, PlannerClient } from './source'
-import type { CardVM, FeedError, FeedVM } from './vm'
+import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
 
 const useMockDefault = import.meta.env.VITE_USE_MOCK !== 'false'
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
@@ -55,6 +55,60 @@ export function useScope(): ScopeContext {
 
 export function useIsAnonymous(): boolean {
   return usePlanner().scope.viewerId === 'anonymous'
+}
+
+/** Imperative access for actions (recordOutcome). Reads should use the hooks. */
+export function usePlannerClient(): PlannerContextValue {
+  return usePlanner()
+}
+
+export function useRecentEpisodes(): { episodes: EpisodeVM[]; loading: boolean; reload: () => void } {
+  const { client, scope } = usePlanner()
+  const [episodes, setEpisodes] = useState<EpisodeVM[]>([])
+  const [loading, setLoading] = useState(true)
+  const [nonce, setNonce] = useState(0)
+  useEffect(() => {
+    let live = true
+    setLoading(true)
+    client
+      .recentEpisodes(scope)
+      .then((eps) => live && setEpisodes(eps))
+      .finally(() => live && setLoading(false))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope.viewerId, nonce])
+  return { episodes, loading, reload: () => setNonce((n) => n + 1) }
+}
+
+export type EpisodeStatus = 'loading' | 'ready' | 'notfound'
+
+export function useEpisode(id: string | null): {
+  status: EpisodeStatus
+  episode?: EpisodeVM
+  reload: () => void
+} {
+  const { client, scope } = usePlanner()
+  const [state, setState] = useState<{ status: EpisodeStatus; episode?: EpisodeVM }>({ status: 'loading' })
+  const [nonce, setNonce] = useState(0)
+  useEffect(() => {
+    if (!id) {
+      setState({ status: 'notfound' })
+      return
+    }
+    let live = true
+    setState({ status: 'loading' })
+    client.getEpisode(id, scope).then((episode) => {
+      if (!live) return
+      setState(episode ? { status: 'ready', episode } : { status: 'notfound' })
+    })
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, scope.viewerId, nonce])
+  return { ...state, reload: () => setNonce((n) => n + 1) }
 }
 
 export type FeedStatus = 'loading' | 'ready' | 'empty' | 'error'

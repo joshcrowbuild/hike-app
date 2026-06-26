@@ -111,3 +111,45 @@ export interface FeedVM {
   dataSource: 'live' | 'mock'
   error?: FeedError
 }
+
+// ---- Post-hike loop (Outcome) --------------------------------------------
+
+/**
+ * A companion on a hike. Modeled as a list of refs, not a bool (R5): Ruby is a
+ * `dependent`; a real second member would be a `member` — distinct kinds, never
+ * conflated. The current backend has no party field on the outcome, so this is
+ * captured client-side and noted as a backend gap.
+ */
+export interface CompanionRef {
+  kind: 'dependent' | 'member'
+  name: string
+}
+
+/**
+ * An Episode = one recorded hike. Measured facts come from the watch; tonight
+ * they are `sample` provenance and must be disclosed as such — never posed as
+ * the user's real watch data (R11, source-or-silence on our own record).
+ */
+export interface EpisodeVM {
+  id: string
+  trailName: string
+  /** Relative day, e.g. "Saturday" — never a raw datetime. */
+  when: string
+  distanceMiles: number
+  ascentFeet: number
+  movingTime: string
+  /** Optional LLM-extracted note, shown as already-known, never asked. */
+  paceNote?: string
+  companions: CompanionRef[]
+  /** Present once an outcome has been logged (drives the pending-nod surfacing). */
+  outcome?: { overall: 1 | 2 | 3 | null; skipped: boolean }
+  provenance: Provenance
+}
+
+export interface OutcomeVM {
+  outcomeId: string
+  episodeId: string
+  overall: number | null
+  skipped: boolean
+  companions: CompanionRef[]
+}

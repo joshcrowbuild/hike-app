@@ -8,9 +8,9 @@
  */
 import { buildQuery } from '../buildQuery'
 import { originCoords } from '../origins'
-import type { FeedResponse, PlanRequest, ScopeContext } from '../api'
+import type { FeedResponse, OutcomeBody, OutcomeResponse, PlanRequest, ScopeContext } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
-import type { CardVM, FeedError, FeedVM } from '../vm'
+import type { CardVM, EpisodeVM, FeedError, FeedVM, OutcomeVM } from '../vm'
 import type { OriginKey } from '../../types'
 
 const TIMEOUT_MS = 10_000
@@ -89,6 +89,41 @@ export class HttpPlannerClient implements PlannerClient {
     void origin
     const feed = await this.plan({ tuning: fallbackTuning(origin) }, scope)
     return feed.cards.find((c) => c.id === id) ?? null
+  }
+
+  async recentEpisodes(): Promise<EpisodeVM[]> {
+    // No episode list endpoint exists (backend ask #1). Until it lands, the
+    // live adapter has no hikes to show rather than inventing any.
+    return []
+  }
+
+  async getEpisode(): Promise<EpisodeVM | null> {
+    return null
+  }
+
+  async recordOutcome(
+    episodeId: string,
+    body: OutcomeBody,
+    companions: EpisodeVM['companions'],
+    scope: ScopeContext,
+  ): Promise<OutcomeVM> {
+    // The POST contract is real; companions have no wire field yet (backend
+    // gap), so they are not sent — captured client-side only.
+    const params = new URLSearchParams({ viewer_id: scope.viewerId })
+    const resp = await fetch(`${this.baseUrl}/episode/${encodeURIComponent(episodeId)}/outcome?${params}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!resp.ok) throw new Error(`outcome failed: ${resp.status}`)
+    const out = (await resp.json()) as OutcomeResponse
+    return {
+      outcomeId: out.outcome_id,
+      episodeId: out.episode_id,
+      overall: out.overall,
+      skipped: out.skipped,
+      companions,
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import { useRoute } from './app/useRoute'
 import { useIsAnonymous } from './data/PlannerProvider'
 import { Detail } from './screens/Detail'
 import { Home } from './screens/Home'
+import { Outcome } from './screens/Outcome'
 import { AdjustSheet, PanelSheet, type PanelKey } from './screens/Tuning'
 import type { TuningState } from './types'
 
@@ -35,12 +36,15 @@ function App() {
           onBack={back}
           onReplan={() => navigate({ name: 'home' })}
         />
+      ) : route.name === 'outcome' ? (
+        <Outcome episodeId={route.episodeId} onDone={() => navigate({ name: 'home' })} />
       ) : (
         <Home
           tuning={tuning}
           anonymous={anonymous}
           onOpenTuning={() => setTuningOpen(true)}
           onOpenTrail={(id) => navigate({ name: 'trail', id })}
+          onOpenOutcome={(episodeId) => navigate({ name: 'outcome', episodeId })}
           onApplyTuning={(next) => setTuning(next)}
         />
       )}

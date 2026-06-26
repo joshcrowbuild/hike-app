@@ -619,6 +619,155 @@ button {
   gap: 0.5rem;
 }
 
+/* ---- pending outcome nod (the post-hike loop finds you on Home, R4) ---- */
+.pending-nod {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  transition: background 130ms var(--easing-standard);
+}
+
+.pending-nod:active {
+  background: var(--surface-press);
+}
+
+.pending-nod-text {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.pending-nod-cue {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  flex: none;
+}
+
+/* ---- outcome card ---- */
+.outcome {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.outcome-head {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.outcome-name {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.outcome-facts {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* Measured facts are shown as already-known, never re-asked (outcome-card §1.3). */
+.measured {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.measured-label {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.measured-value {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.measured-note {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.faces {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.faces-legend {
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-size: 1.8rem;
+  padding: 0.7rem 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  transition:
+    background 120ms var(--easing-standard),
+    border-color 120ms var(--easing-standard);
+}
+
+.faces {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.face:active {
+  background: var(--surface-press);
+}
+
+.face--on {
+  border-color: var(--text-primary);
+  background: var(--surface-press);
+}
+
+.face:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.outcome-ack {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
 @media (max-width: 560px) {
   .detail-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));

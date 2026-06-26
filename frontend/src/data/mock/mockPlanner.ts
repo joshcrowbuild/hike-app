@@ -7,10 +7,11 @@
  * dressing it as verified (R1).
  */
 import type { OriginKey, TuningState } from '../../types'
-import type { ScopeContext } from '../api'
+import type { OutcomeBody, ScopeContext } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
-import type { CardVM, FeedVM, ReadinessVM, SetAside } from '../vm'
+import type { CardVM, EpisodeVM, FeedVM, OutcomeVM, ReadinessVM, SetAside } from '../vm'
 import { buildFitLine, runFeed, trails } from './engine'
+import { findEpisode, listEpisodes, setOutcome } from './episodes'
 import type { Trail } from '../../types'
 
 const isAnonymous = (scope: ScopeContext): boolean => scope.viewerId === 'anonymous'
@@ -107,6 +108,38 @@ export class MockPlannerClient implements PlannerClient {
     // Frame-agnostic: drive is computed only when an origin is supplied; a cold
     // deep-link / anonymous viewer sees distance-only (R7).
     return toCardVM(trail, neutralize({ ...defaultFrame, origin: origin ?? 'frontRoyal' }), origin, anon)
+  }
+
+  async recentEpisodes(scope: ScopeContext): Promise<EpisodeVM[]> {
+    // Episodes are personal; the anonymous world-browser has none (R7).
+    if (isAnonymous(scope)) return []
+    return listEpisodes()
+  }
+
+  async getEpisode(id: string, scope: ScopeContext): Promise<EpisodeVM | null> {
+    if (isAnonymous(scope)) return null
+    return findEpisode(id)
+  }
+
+  async recordOutcome(
+    episodeId: string,
+    body: OutcomeBody,
+    companions: EpisodeVM['companions'],
+    _scope: ScopeContext,
+  ): Promise<OutcomeVM> {
+    const updated = setOutcome(
+      episodeId,
+      { overall: body.overall, skipped: body.skipped },
+      companions,
+    )
+    if (!updated) throw new Error('episode not found')
+    return {
+      outcomeId: `outcome-${episodeId}`,
+      episodeId,
+      overall: body.overall,
+      skipped: body.skipped,
+      companions,
+    }
   }
 }
 

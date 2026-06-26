@@ -8,8 +8,8 @@
  * Extended per feature: `plan`/`getCard` ship with the spine; outcome/belief
  * methods are added by their own epics so each stays one logical change.
  */
-import type { ScopeContext } from './api'
-import type { CardVM, FeedVM } from './vm'
+import type { OutcomeBody, ScopeContext } from './api'
+import type { CardVM, EpisodeVM, FeedVM, OutcomeVM } from './vm'
 import type { OriginKey, TuningState } from '../types'
 
 export interface PlanInput {
@@ -29,4 +29,17 @@ export interface PlannerClient {
    * degrades to distance-only (R7).
    */
   getCard(id: string, scope: ScopeContext, origin?: OriginKey): Promise<CardVM | null>
+
+  // ---- Post-hike loop ----
+  /** Recent hikes for this viewer (the source of the pending outcome nod). */
+  recentEpisodes(scope: ScopeContext): Promise<EpisodeVM[]>
+  /** One episode by id (deep-link to the outcome card). */
+  getEpisode(id: string, scope: ScopeContext): Promise<EpisodeVM | null>
+  /** Record (or idempotently update) a post-hike outcome. */
+  recordOutcome(
+    episodeId: string,
+    body: OutcomeBody,
+    companions: EpisodeVM['companions'],
+    scope: ScopeContext,
+  ): Promise<OutcomeVM>
 }
