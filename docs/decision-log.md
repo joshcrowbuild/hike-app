@@ -185,10 +185,11 @@ The thing we've barely touched. Surfaces to design:
 
 **The signature design problem (Josh's to own):** what a *calm, anti-engagement* trail feed feels like — legible honesty (showing confidence + sources without clutter), "what's good this weekend" over endless scroll. A real stance, not a default.
 
-## 20. Design system ❓→🔶
-- Josh's actual domain — his call. Considerations: **token-first**, because web-then-native means the same tokens should express in both **Tailwind (web)** and **SwiftUI (native)** — design tokens as the single source of truth (literally his Capital One world).
-- 🔶 Web: shadcn/ui + Radix + Tailwind for speed and themeability, with a custom theme expressing the calm-utility aesthetic. A parallel SwiftUI token set when native arrives.
-- The system should encode the *honesty* primitives too: how confidence/staleness, "unverified," and "verify before you go" render consistently — these are first-class UI states, not afterthoughts.
+## 20. Design system ❓→🔶→✅ *(stack ratified 2026-06 — contract: `docs/research/design-system-v0.1.md`; prototype: `docs/research/home-curation-prototype-spec-v0.3.md`)*
+- Josh's actual domain — **token-first**, because web-then-native means the same tokens express in both web and **SwiftUI (native)** — design tokens as the single source of truth (literally his Capital One world). Tokens authored once in **W3C DTCG JSON → Style Dictionary → web (CSS custom properties) + SwiftUI later**; no platform hand-edits values, three one-directional layers (component → semantic → primitive).
+- ✅ **Web stack (ratified — supersedes the earlier shadcn/Radix/Tailwind sketch below):** **no Tailwind, no shadcn/Radix.** Behavior + accessibility via **React Aria**; styling via **vanilla-extract** (Phase 2); **owned** components (authored, not vendored), documented in **Storybook**. *Why the change:* an owned, token-driven, cross-platform system is the portfolio artifact and the calm-utility aesthetic's actual requirement; a generic Tailwind/shadcn theme is speed at the cost of ownership and the SwiftUI path. The matte cartographic system (glassmorphism removed) already ships in `frontend/src/styles.css` consuming only semantic tokens.
+- ~~🔶 Web: shadcn/ui + Radix + Tailwind for speed and themeability~~ — **superseded** (placeholder before the contract was ratified).
+- The system encodes the **honesty primitives** as first-class, token-backed UI states — confidence, staleness, and "verify before you go" render consistently from semantic `signal.*` tokens, never per-screen improvisation. (Operationalized in `design-system-v0.1.md` §2/§3; the Curator never renders raw personal data verbatim — only its effect.)
 
 ---
 

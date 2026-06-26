@@ -6,6 +6,8 @@
 
 > **What this produces (per workplan):** Garmin access (library + auth + fragility handling) · Coros access (official MCP) · FIT parsing · the **readiness filter** logic · polling / ingestion jobs + the always-on decision.
 
+> **⚠️ Architecture update (June 24):** the device-access design in §1–2 is now formalized as a **config-driven device-provider seam** — see [`device-integration-seam.md`](./device-integration-seam.md) (built as the rescoped Epic 004). Garmin / Coros / future vendors (Suunto, Polar, Wahoo, Apple Health, Strava…) are adapters behind one `DeviceAdapter` contract selected by config; adding a manufacturer is one adapter file + one config line. This doc remains the source of truth for the FIT fields (§1.3), per-vendor endpoints/auth (§1.1–1.2), and the **device-agnostic** episode / belief / commons mechanics (§2–6) the seam feeds into.
+
 ---
 
 ## 1. Data sources
