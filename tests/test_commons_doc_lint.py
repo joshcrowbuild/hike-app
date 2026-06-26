@@ -1,12 +1,19 @@
-"""Doc-lint regression guard for the commons-fork false ✅ (Epic 010 S1, AC-1.5).
+"""Doc-lint guard keeping the commons-fork docs HONEST (Epic 010 S1, AC-1.5).
 
-gap-audit C1: the committed decision log marked the commons forked write ✅ while
-it was never built — wrong memory is worse than none (CLAUDE.md). This test greps
-the EXACT commons-fork lines that carried the false ✅ and fails if any regresses
-to ✅. It deliberately targets the committed `decision-log.md` §30/§31 bullets and
-`stage-6-watch-integration.md` S6-10 — NOT `decision-log-additions-proposed.md
-§32` (the Stage-3 ingestion section, which carries no commons-fork claim and would
-make the guard pass vacuously — the same C1 failure mode this epic kills).
+gap-audit C1 was the lesson "wrong memory is worse than none" (CLAUDE.md): the
+decision log marked the commons forked write ✅ *before it was built*. While the
+fork stayed unbuilt this guard was INVERTED — it failed the build if the glyphs
+read ✅, pinning them to 🔶 "designed, not built — Epic 010 pending". That pin was
+correct only as long as the code did not exist.
+
+Epic 010 has since SHIPPED: the de-identified `:CommonsObservation` forked write
+is DONE (docs/epics/README.md; `graph.queries.create_commons_observation`, forked
+inside `create_episode()`'s transaction). So the old pin would now force the docs
+to keep LYING about a shipped feature. The guard is therefore RE-INVERTED here: it
+greps the EXACT commons-fork lines and fails if any regresses from the truthful ✅
+(built) back to a false 🔶 / "Epic 010 pending". It still targets the committed
+`decision-log.md` §30/§31 bullets and `stage-6-watch-integration.md` S6-10 — the
+same lines that once carried the false ✅, now policed to stay honest.
 """
 
 from __future__ import annotations
@@ -21,8 +28,9 @@ def _lines(rel: str) -> list[str]:
 
 
 def test_s1_no_false_commons_checkmark_decision_log() -> None:
-    """AC-1.5: the §30 'Commons write for episodes' and §31 'Commons fork' bullets
-    in committed decision-log.md must read 🔶 (designed, not built), never ✅."""
+    """AC-1.5 (re-inverted post-Epic-010): the §30 'Commons write for episodes' and
+    §31 'Commons fork' bullets in committed decision-log.md must read ✅ (built) and
+    never regress to a false 🔶 / 'Epic 010 pending' now that the fork has shipped."""
     bullets = [
         ln
         for ln in _lines("docs/decision-log.md")
@@ -31,8 +39,9 @@ def test_s1_no_false_commons_checkmark_decision_log() -> None:
     ]
     assert len(bullets) == 2, f"expected both commons-fork bullets, found {len(bullets)}"
     for ln in bullets:
-        assert "✅" not in ln, f"false commons-fork ✅ regressed in decision-log: {ln!r}"
-        assert "🔶" in ln, f"commons-fork bullet must carry 🔶: {ln!r}"
+        assert "✅" in ln, f"commons-fork bullet must read ✅ (Epic 010 shipped): {ln!r}"
+        assert "🔶" not in ln, f"false 'pending' 🔶 regressed in decision-log: {ln!r}"
+        assert "Epic 010 pending" not in ln, f"stale 'Epic 010 pending' regressed: {ln!r}"
 
 
 def test_s6_ac1_commons_opt_in_default_off_in_schema() -> None:
@@ -45,8 +54,9 @@ def test_s6_ac1_commons_opt_in_default_off_in_schema() -> None:
 
 
 def test_s1_no_false_commons_checkmark_stage6() -> None:
-    """AC-1.5: the S6-10 decision-table row in stage-6-watch-integration.md must
-    read 🔶 'designed, not built — Epic 010 pending', not ✅."""
+    """AC-1.5 (re-inverted post-Epic-010): the S6-10 decision-table row in
+    stage-6-watch-integration.md must read ✅ (built), never a false 🔶 /
+    'Epic 010 pending' now that the fork has shipped."""
     rows = [
         ln
         for ln in _lines("docs/research/stage-6-watch-integration.md")
@@ -54,5 +64,6 @@ def test_s1_no_false_commons_checkmark_stage6() -> None:
     ]
     assert len(rows) == 1, f"expected exactly one S6-10 row, found {len(rows)}"
     row = rows[0]
-    assert "✅" not in row, f"false commons-fork ✅ regressed in stage-6 S6-10: {row!r}"
-    assert "🔶" in row, f"S6-10 must carry 🔶: {row!r}"
+    assert "✅" in row, f"S6-10 must read ✅ (Epic 010 shipped): {row!r}"
+    assert "🔶" not in row, f"false 'pending' 🔶 regressed in stage-6 S6-10: {row!r}"
+    assert "Epic 010 pending" not in row, f"stale 'Epic 010 pending' regressed in S6-10: {row!r}"
