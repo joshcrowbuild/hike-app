@@ -1,36 +1,17 @@
-import type { EffortKey, OriginKey, PartyKey, TodayKey, Trail, TuningState, WhenKey } from './types'
-
-export const originLabels: Record<OriginKey, string> = {
-  frontRoyal: 'Front Royal',
-  luray: 'Luray',
-  charlottesville: 'Charlottesville',
-}
-
-export const whenLabels: Record<WhenKey, string> = {
-  tomorrowMorning: 'Tomorrow morning',
-  weekendMorning: 'Weekend morning',
-  weekendAfternoon: 'Weekend afternoon',
-  fullDay: 'Full day',
-}
-
-export const effortLabels: Record<EffortKey, string> = {
-  easy: 'Easy',
-  moderate: 'Moderate',
-  bigDay: 'Big day',
-}
-
-export const partyLabels: Record<PartyKey, string> = {
-  solo: 'Solo',
-  ruby: 'Solo + Ruby',
-  friends: 'With friends',
-}
-
-export const todayLabels: Record<TodayKey, string> = {
-  standard: 'Standard',
-  seekShade: 'Seek shade',
-  bigViews: 'Big views',
-  quieter: 'Quieter',
-}
+/**
+ * Mock curation engine — the quarantined throwaway. Everything here duplicates
+ * server-side logic (Scout→Verifier→Curator) and is deletable wholesale once
+ * `/plan` is authoritative; no screen imports it directly (only MockPlannerClient
+ * does). It doubles as the test fixture set.
+ *
+ * Two corrections from the persona review live here, on purpose:
+ *  - R2: readiness is NEVER a ranking penalty. `scoreTrail` has no readiness
+ *    term; readiness is applied (when a reading exists) as a post-rank filter.
+ *  - R6: Ruby's constraint is an explicit hard GATE with a reason, distinct
+ *    from the soft `partyFit` taste term, so an excluded option can be disclosed
+ *    ("set aside") rather than silently vanishing.
+ */
+import type { Trail, TuningState } from '../../types'
 
 export const trails: Trail[] = [
   {
@@ -57,27 +38,10 @@ export const trails: Trail[] = [
     },
     practicalNote: 'Parking usually behaves best before mid-morning.',
     sources: ['NPS trail status', 'NWS point forecast'],
-    drives: {
-      frontRoyal: 28,
-      luray: 32,
-      charlottesville: 74,
-    },
-    partyFit: {
-      solo: 6,
-      ruby: 5,
-      friends: 4,
-    },
-    whenFit: {
-      tomorrowMorning: 6,
-      weekendMorning: 6,
-      weekendAfternoon: 3,
-      fullDay: 2,
-    },
-    effortFit: {
-      easy: 1,
-      moderate: 6,
-      bigDay: 2,
-    },
+    drives: { frontRoyal: 28, luray: 32, charlottesville: 74 },
+    partyFit: { solo: 6, ruby: 5, friends: 4 },
+    whenFit: { tomorrowMorning: 6, weekendMorning: 6, weekendAfternoon: 3, fullDay: 2 },
+    effortFit: { easy: 1, moderate: 6, bigDay: 2 },
     promptTerms: ['ridge', 'views', 'short', 'classic'],
     terrainPath: [18, 35, 48, 62, 57, 71, 80, 66, 44],
     profilePath: [12, 18, 32, 46, 58, 66, 71, 72, 70],
@@ -107,27 +71,10 @@ export const trails: Trail[] = [
     },
     practicalNote: 'Recent rain makes the creek feel more present than usual.',
     sources: ['USGS streamflow', 'NPS trail status', 'NWS point forecast'],
-    drives: {
-      frontRoyal: 52,
-      luray: 29,
-      charlottesville: 49,
-    },
-    partyFit: {
-      solo: 5,
-      ruby: 6,
-      friends: 4,
-    },
-    whenFit: {
-      tomorrowMorning: 5,
-      weekendMorning: 5,
-      weekendAfternoon: 6,
-      fullDay: 4,
-    },
-    effortFit: {
-      easy: 2,
-      moderate: 6,
-      bigDay: 2,
-    },
+    drives: { frontRoyal: 52, luray: 29, charlottesville: 49 },
+    partyFit: { solo: 5, ruby: 6, friends: 4 },
+    whenFit: { tomorrowMorning: 5, weekendMorning: 5, weekendAfternoon: 6, fullDay: 4 },
+    effortFit: { easy: 2, moderate: 6, bigDay: 2 },
     promptTerms: ['shade', 'water', 'cool', 'forest', 'ruby'],
     terrainPath: [22, 24, 28, 33, 40, 43, 48, 52, 58],
     profilePath: [8, 16, 21, 29, 35, 45, 56, 59, 60],
@@ -156,27 +103,10 @@ export const trails: Trail[] = [
     },
     practicalNote: 'Best when you have time for the full loop without rushing.',
     sources: ['NPS permit guidance', 'NWS point forecast'],
-    drives: {
-      frontRoyal: 64,
-      luray: 43,
-      charlottesville: 51,
-    },
-    partyFit: {
-      solo: 4,
-      ruby: 0,
-      friends: 6,
-    },
-    whenFit: {
-      tomorrowMorning: 2,
-      weekendMorning: 3,
-      weekendAfternoon: 0,
-      fullDay: 6,
-    },
-    effortFit: {
-      easy: 0,
-      moderate: 1,
-      bigDay: 7,
-    },
+    drives: { frontRoyal: 64, luray: 43, charlottesville: 51 },
+    partyFit: { solo: 4, ruby: 0, friends: 6 },
+    whenFit: { tomorrowMorning: 2, weekendMorning: 3, weekendAfternoon: 0, fullDay: 6 },
+    effortFit: { easy: 0, moderate: 1, bigDay: 7 },
     promptTerms: ['big day', 'ridge', 'iconic', 'views'],
     terrainPath: [10, 28, 44, 67, 80, 72, 84, 63, 40],
     profilePath: [6, 18, 30, 43, 57, 69, 77, 74, 62],
@@ -205,27 +135,10 @@ export const trails: Trail[] = [
     },
     practicalNote: 'Short enough to pair with a longer drive or other stops.',
     sources: ['NPS trail status', 'NWS point forecast'],
-    drives: {
-      frontRoyal: 54,
-      luray: 31,
-      charlottesville: 42,
-    },
-    partyFit: {
-      solo: 5,
-      ruby: 6,
-      friends: 3,
-    },
-    whenFit: {
-      tomorrowMorning: 4,
-      weekendMorning: 4,
-      weekendAfternoon: 5,
-      fullDay: 1,
-    },
-    effortFit: {
-      easy: 7,
-      moderate: 2,
-      bigDay: 0,
-    },
+    drives: { frontRoyal: 54, luray: 31, charlottesville: 42 },
+    partyFit: { solo: 5, ruby: 6, friends: 3 },
+    whenFit: { tomorrowMorning: 4, weekendMorning: 4, weekendAfternoon: 5, fullDay: 1 },
+    effortFit: { easy: 7, moderate: 2, bigDay: 0 },
     promptTerms: ['short', 'water', 'shade', 'easy', 'ruby'],
     terrainPath: [15, 18, 23, 29, 37, 41, 42, 40, 36],
     profilePath: [10, 16, 20, 27, 33, 35, 36, 31, 26],
@@ -254,107 +167,66 @@ export const trails: Trail[] = [
     },
     practicalNote: 'Best used when you want a fast summit rather than a long day.',
     sources: ['NWS point forecast', 'NPS trail status'],
-    drives: {
-      frontRoyal: 56,
-      luray: 28,
-      charlottesville: 46,
-    },
-    partyFit: {
-      solo: 6,
-      ruby: 4,
-      friends: 4,
-    },
-    whenFit: {
-      tomorrowMorning: 6,
-      weekendMorning: 6,
-      weekendAfternoon: 3,
-      fullDay: 2,
-    },
-    effortFit: {
-      easy: 2,
-      moderate: 6,
-      bigDay: 1,
-    },
+    drives: { frontRoyal: 56, luray: 28, charlottesville: 46 },
+    partyFit: { solo: 6, ruby: 4, friends: 4 },
+    whenFit: { tomorrowMorning: 6, weekendMorning: 6, weekendAfternoon: 3, fullDay: 2 },
+    effortFit: { easy: 2, moderate: 6, bigDay: 1 },
     promptTerms: ['views', 'summit', 'ridge', 'short'],
     terrainPath: [24, 30, 40, 51, 59, 67, 72, 61, 46],
     profilePath: [12, 19, 28, 40, 54, 62, 68, 67, 61],
   },
 ]
 
+export interface Scored {
+  trail: Trail
+  score: number
+  promptMiss: boolean
+}
+
 const promptBoost = (trail: Trail, prompt: string): number => {
   const normalized = prompt.trim().toLowerCase()
-  if (!normalized) {
-    return 0
-  }
-
+  if (!normalized) return 0
   return trail.promptTerms.reduce((score, term) => score + (normalized.includes(term) ? 2 : 0), 0)
 }
 
-const readinessPenalty = (trail: Trail, state: TuningState): number => {
-  if (!state.readinessOn) {
-    return 0
-  }
-
-  if (trail.effort === 'bigDay') {
-    return -5
-  }
-
-  if (state.effort === 'easy' && trail.effort !== 'easy') {
-    return -2
-  }
-
-  return 0
-}
-
 const shadeBoost = (trail: Trail, state: TuningState): number => {
-  if (state.today !== 'seekShade') {
-    return 0
-  }
-
-  return trail.tags.includes('shade') || trail.tags.includes('water') ? 3 : trail.tags.includes('ridge') ? -2 : 0
+  if (state.today !== 'seekShade') return 0
+  return trail.tags.includes('shade') || trail.tags.includes('water')
+    ? 3
+    : trail.tags.includes('ridge')
+      ? -2
+      : 0
 }
 
 const viewBoost = (trail: Trail, state: TuningState): number => {
-  if (state.today !== 'bigViews') {
-    return 0
-  }
-
+  if (state.today !== 'bigViews') return 0
   return trail.tags.includes('views') || trail.tags.includes('summit') ? 3 : 0
 }
 
 const quietBoost = (trail: Trail, state: TuningState): number => {
-  if (state.today !== 'quieter') {
-    return 0
-  }
-
+  if (state.today !== 'quieter') return 0
   return trail.id === 'whiteoak-canyon' ? 2 : trail.id === 'stony-man' || trail.id === 'hawksbill' ? -1 : 0
 }
 
 const driveScore = (trail: Trail, state: TuningState): number => {
   const drive = trail.drives[state.origin]
-  if (drive <= 30) {
-    return 4
-  }
-  if (drive <= 50) {
-    return 2
-  }
-  if (drive <= 70) {
-    return 0
-  }
+  if (drive <= 30) return 4
+  if (drive <= 50) return 2
+  if (drive <= 70) return 0
   return -2
 }
 
 const promptFallback = (trail: Trail, state: TuningState): boolean => {
-  if (!state.prompt.trim()) {
-    return false
-  }
-
+  if (!state.prompt.trim()) return false
   return promptBoost(trail, state.prompt) === 0
 }
 
+/**
+ * Pure taste/viability score. No readiness term (R2): readiness is a gate, not
+ * a penalty, so it can never reorder this list.
+ */
 export const scoreTrail = (trail: Trail, state: TuningState): number => {
   const baseline = 6
-
   return (
     baseline +
     trail.partyFit[state.party] +
@@ -364,47 +236,83 @@ export const scoreTrail = (trail: Trail, state: TuningState): number => {
     promptBoost(trail, state.prompt) +
     shadeBoost(trail, state) +
     viewBoost(trail, state) +
-    quietBoost(trail, state) +
-    readinessPenalty(trail, state)
+    quietBoost(trail, state)
   )
 }
 
-export const selectTrails = (state: TuningState) => {
-  const scored = trails
-    .filter((trail) => trail.partyFit[state.party] > 0)
-    .map((trail) => ({
-      trail,
-      score: scoreTrail(trail, state),
-      promptMiss: promptFallback(trail, state),
-    }))
-    .filter(({ score }) => score > 7)
-    .sort((a, b) => b.score - a.score)
+/**
+ * Ruby's hard constraint (R6): a dog-incompatible trail is GATED for the whole
+ * party with a stated reason, distinct from the soft `partyFit` taste term.
+ * Returns the disclosure reason, or null when Ruby can come.
+ */
+export const rubyGate = (trail: Trail): string | null => {
+  if (trail.tags.includes('scramble')) return 'the scramble isn’t a Ruby hike'
+  if (trail.distanceMiles > 7) return 'too long a day for Ruby'
+  return null
+}
 
-  const limited = scored.slice(0, 3)
+export const buildFitLine = (trail: Trail, state: TuningState): string => {
+  if (state.today !== 'standard') return trail.reasons[state.today]
+  return trail.fitBase
+}
 
-  if (limited.length === 0) {
-    return scored.slice(0, 1)
-  }
+const SCORE_FLOOR = 7
 
-  if (limited.length === 1) {
-    return limited
-  }
+function capWithVariety(eligible: Scored[]): Scored[] {
+  const limited = eligible.slice(0, 3)
+  if (limited.length <= 1) return limited
 
   const hasBigDay = limited.some(({ trail }) => trail.archetype === 'bigDay')
   if (!hasBigDay) {
-    const ambitious = scored.find(({ trail }) => trail.archetype === 'bigDay')
+    const ambitious = eligible.find(({ trail }) => trail.archetype === 'bigDay')
     if (ambitious && ambitious.score >= limited[limited.length - 1].score - 1) {
       return [...limited.slice(0, 2), ambitious].sort((a, b) => b.score - a.score)
     }
   }
-
   return limited
 }
 
-export const buildFitLine = (trail: Trail, state: TuningState) => {
-  if (state.today !== 'standard') {
-    return trail.reasons[state.today]
-  }
+export interface FeedComputation {
+  kept: Scored[]
+  /** Excluded by the Ruby party gate, disclosed and restorable. */
+  partySetAside: Array<Scored & { reason: string }>
+  /** Excluded by a fresh readiness reading (none tonight — see MockPlannerClient). */
+  readinessHidden: Scored[]
+}
 
-  return trail.fitBase
+/**
+ * The full curation pass for a frame: rank everything (no gating in the score),
+ * then apply the score floor and the Ruby hard gate, then cap to a peer set.
+ *
+ * Set-aside discloses exactly the options the gate removed *from the visible
+ * set* — i.e. trails that would have appeared but for Ruby (R6). A low-ranked
+ * dog-incompatible trail that wouldn't have shown anyway is not surfaced as
+ * "set aside" (that would be noise, not disclosure).
+ *
+ * Readiness is intentionally NOT applied here — there is no reading in the mock,
+ * so MockPlannerClient fails the filter open and discloses it (R2). The hook is
+ * left (`readinessHidden`) for when a real reading exists.
+ */
+export function runFeed(state: TuningState): FeedComputation {
+  const ranked: Scored[] = trails
+    .map((trail) => ({ trail, score: scoreTrail(trail, state), promptMiss: promptFallback(trail, state) }))
+    .sort((a, b) => b.score - a.score)
+
+  const viable = ranked.filter(({ score }) => score > SCORE_FLOOR)
+
+  // What the user would see if the party gate did not apply.
+  const keptIfUngated = capWithVariety(viable)
+
+  const gated = (s: Scored): string | null => (state.party === 'ruby' ? rubyGate(s.trail) : null)
+
+  const eligible = viable.filter((s) => gated(s) === null)
+  const kept = capWithVariety(eligible)
+
+  // Disclose only the gated options that were actually in the visible set.
+  const partySetAside = keptIfUngated
+    .map((s) => ({ s, reason: gated(s) }))
+    .filter((x): x is { s: Scored; reason: string } => x.reason !== null)
+    .map(({ s, reason }) => ({ ...s, reason }))
+
+  return { kept, partySetAside, readinessHidden: [] }
 }

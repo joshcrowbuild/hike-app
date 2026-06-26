@@ -508,6 +508,286 @@ button {
   gap: 0.85rem;
 }
 
+/* ---- viewer mode + disclosures (data-source seam) ---- */
+.topbar-mode {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  /* secondary (not muted) so the mode chip clears WCAG AA on the canvas. */
+  color: var(--text-secondary);
+}
+
+/* Every primary navigation button gets the same neutral keyboard-focus ring as
+   .text-action / .face / the RAC primitives (design-system §4.3). */
+.context:focus-visible,
+.pending-nod:focus-visible,
+.facet-row:focus-visible,
+.back:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The card tap target uses an inset ring so .card's overflow:hidden can't clip it. */
+.card-tap:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* The sample-data disclosure: calm, unmissable, never alarmist. It is how the
+   mock stays honest — the layout is real, the conditions are not yet live. */
+.sample-strip {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+}
+
+/* Readiness disclosure (R2): effect-first, fails open, never a number. */
+.readiness-line {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* ---- async states: loading / empty / error / not-found (R8) ---- */
+.state-block {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin: 0.5rem 0 1rem;
+}
+
+.state-note {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* A quiet text button for recovery + reversible actions (retry / widen /
+   show anyway). Never the accent hue — that stays reserved for the signal. */
+.text-action {
+  font-family: var(--font-family-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+  padding: 0.3rem 0;
+  border-bottom: 1.5px solid var(--text-primary);
+  border-radius: 0;
+}
+
+.text-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+/* ---- sparse + set-aside (constraint disclosure, R6/R9) ---- */
+.sparse-block {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin-top: 0.85rem;
+}
+
+.set-aside {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.set-aside-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.set-aside-text {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ---- honest-thin condition lines (no enrichment) ---- */
+.condition-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.condition-line {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.condition-lines--detail {
+  margin-top: 0.9rem;
+  gap: 0.5rem;
+}
+
+/* ---- pending outcome nod (the post-hike loop finds you on Home, R4) ---- */
+.pending-nod {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  transition: background 130ms var(--easing-standard);
+}
+
+.pending-nod:active {
+  background: var(--surface-press);
+}
+
+.pending-nod-text {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.pending-nod-cue {
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  flex: none;
+}
+
+/* ---- outcome card ---- */
+.outcome {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.outcome-head {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.outcome-name {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.outcome-facts {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* Measured facts are shown as already-known, never re-asked (outcome-card §1.3). */
+.measured {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.measured-label {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.measured-value {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.measured-note {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.faces {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.faces-legend {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.faces-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  font-size: 1.8rem;
+  padding: 0.7rem 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  transition:
+    background 120ms var(--easing-standard),
+    border-color 120ms var(--easing-standard);
+}
+
+.face:active {
+  background: var(--surface-press);
+}
+
+.face:disabled {
+  cursor: default;
+}
+
+.face--on {
+  border-color: var(--text-primary);
+  background: var(--surface-press);
+}
+
+.face:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.outcome-ack {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
 @media (max-width: 560px) {
   .detail-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
