@@ -180,16 +180,23 @@ def upsert_episode(
     avg_heart_rate: int | None,
     pace_on_grade: float | None,
     now: str,
+    start_date: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Upsert the viewer's Episode. `owner_id` is part of the MERGE key, so a
     foreign `episode_id` can never MATCH (and re-own) another member's node — the
     seam enforces ownership structurally, not by id-naming convention. With the
-    global `episode_id` uniqueness constraint, a cross-owner id fails closed."""
+    global `episode_id` uniqueness constraint, a cross-owner id fails closed.
+
+    `start_date` is the FIT activity's calendar date (``YYYY-MM-DD``); it lands as the
+    `e.date` Date that the 18-month retrieval window filters on (Epic 003 AC-3.2).
+    `date($start_date)` is null-safe — a `None` start_date leaves `e.date` null, so an
+    undated episode is simply absent from the recency window rather than crashing."""
     cypher = (
         "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
         "ON CREATE SET e.created_at = $now\n"
         "SET e.watch_activity_id = $wid,\n"
         "    e.source            = $source,\n"
+        "    e.date              = date($start_date),\n"
         "    e.distance_m        = $distance,\n"
         "    e.ascent_m          = $ascent,\n"
         "    e.descent_m         = $descent,\n"
@@ -204,6 +211,7 @@ def upsert_episode(
         "eid": episode_id,
         "wid": watch_activity_id,
         "source": source,
+        "start_date": start_date,
         "distance": distance_m,
         "ascent": ascent_m,
         "descent": descent_m,
@@ -272,6 +280,23 @@ def upsert_physical_profile_maxima(
         "    pp.updated_at     = datetime()"
     )
     return cypher, {"distance_m": distance_m, "ascent_m": ascent_m}
+
+
+def upsert_physical_profile_last_episode(episode_date: str) -> tuple[str, dict[str, Any]]:
+    """Advance the viewer's `PhysicalProfile.last_episode_at` to this episode's date,
+    kept as a running maximum so an out-of-order backfill never regresses it. Born
+    owner-scoped (MERGE keyed `owner_id = $viewer_id`), so it passes the owned-write
+    guard. `date($episode_date)` parses the ``YYYY-MM-DD`` string server-side."""
+    cypher = (
+        "MERGE (pp:PhysicalProfile {owner_id: $viewer_id})\n"
+        "SET pp.last_episode_at = CASE\n"
+        "        WHEN $episode_date IS NULL THEN pp.last_episode_at\n"
+        "        WHEN pp.last_episode_at IS NULL OR date($episode_date) > pp.last_episode_at\n"
+        "            THEN date($episode_date)\n"
+        "        ELSE pp.last_episode_at END,\n"
+        "    pp.updated_at = datetime()"
+    )
+    return cypher, {"episode_date": episode_date}
 
 
 def upsert_pace_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]:

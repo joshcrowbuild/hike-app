@@ -164,6 +164,67 @@ def test_s3_ac0_full_track_never_on_the_episode() -> None:
     assert "-78.4 38.5" not in co_params["trimmed_track"]
 
 
+# ── Epic 003 — Episode.date + PhysicalProfile.last_episode_at threaded from the FIT ──
+
+
+def test_episode_date_threaded_from_fit_start_time() -> None:
+    """Epic 003 AC-3.2: create_episode threads the FIT start_time into the Episode write's
+    start_date param, so e.date = date($start_date) is persisted — the field the 18-month
+    retrieval window filters on."""
+    session, batches = _tx_session()
+    create_episode(_summary(), "ct:x", "mem:josh", session, commons_salt=_SALT)
+    ep_cypher, ep_params = _stmt(batches[0], "MERGE (e:Episode")
+    assert ep_params["start_date"] == "2026-06-24"  # _summary() start_time's calendar date
+    assert "e.date" in ep_cypher and "date($start_date)" in ep_cypher
+
+
+def test_last_episode_at_stamped_outside_commons_batch() -> None:
+    """Epic 003: create_episode stamps PhysicalProfile.last_episode_at via a SEPARATE
+    owner-scoped write — the Epic-010 commons-fork atomic batch stays exactly
+    Episode + DID + ON + the severed twin (4 writes), unchanged."""
+    writes: list[tuple[str, dict]] = []
+    batches: list[list[tuple[str, dict]]] = []
+
+    def runner(cypher: str, params: dict):
+        writes.append((cypher, params))
+        return []
+
+    def tx_runner(merged: list[tuple[str, dict]]):
+        batches.append(list(merged))
+
+    session = ScopedSession("mem:josh", [], runner, tx_runner)
+    create_episode(_summary(), "ct:x", "mem:josh", session, commons_salt=_SALT)
+
+    assert len(batches) == 1 and len(batches[0]) == 4  # commons atomic batch unchanged
+    last = [(c, p) for c, p in writes if "last_episode_at" in c]
+    assert len(last) == 1
+    assert last[0][1]["episode_date"] == "2026-06-24"
+    assert "MERGE (pp:PhysicalProfile {owner_id: $viewer_id})" in last[0][0]
+
+
+def test_no_start_time_skips_date_and_last_episode() -> None:
+    """No FIT start_time → start_date is None (e.date stays null-safe) and no
+    last_episode_at write is issued."""
+    writes: list[tuple[str, dict]] = []
+    batches: list[list[tuple[str, dict]]] = []
+
+    def runner(cypher: str, params: dict):
+        writes.append((cypher, params))
+        return []
+
+    def tx_runner(merged: list[tuple[str, dict]]):
+        batches.append(list(merged))
+
+    session = ScopedSession("mem:josh", [], runner, tx_runner)
+    summary = _summary()
+    summary.start_time = None
+    create_episode(summary, "ct:x", "mem:josh", session)  # no salt → fork skipped
+
+    _, ep_params = _stmt(batches[0], "MERGE (e:Episode")
+    assert ep_params["start_date"] is None
+    assert not any("last_episode_at" in c for c, _ in writes)
+
+
 # ── S6 — the write fires regardless of commons_opt_in ─────────────────────────
 
 
