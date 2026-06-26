@@ -1,5 +1,7 @@
 # Overnight Build Runbook
 
+> **STATUS: CLOSED (2026-06-26) — historical brief.** This overnight batch completed and merged (Epics 002/003/015 + docs reconcile); see `docs/process/roadmap.md` for current state. Kept for provenance. The `claude/vigilant-bohr-yzdcyh` trunk it targets is **retired** — the baseline is now `main`.
+
 *A self-contained brief for an unattended Claude Code session. Authored by the PM lane (2026-06-26) from an AC-level readiness audit. Every item below is verified buildable from trunk **without product decisions** — if you hit one anyway, STOP that item and leave a note (see Guardrails).*
 
 **Trunk:** `claude/vigilant-bohr-yzdcyh`. **Open PRs into:** `claude/vigilant-bohr-yzdcyh`.
