@@ -2,9 +2,11 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last verified:** 2026-06-26 · **Owner:** PM/planner lane · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v7
+**Last verified:** 2026-06-26 · **Owner:** PM/planner lane · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v8
 
 > **◆ PHASE-1 BASELINE + DOCS OVERHAUL — both complete; `main` is the single line.** Phase-1 build is done (backend personalization + design-system + the personal-intelligence app UX, all verified honest) and collapsed onto `main`, tagged `v0.1-phase1`. Repo is on the `joshcrowbuild` Team org; `main` is the default + protected branch with **7 required CI checks**: `format-check` · `lint` · `typecheck` · `test` · `integration (neo4j)` · `workflow-lint` · `docs-lint`. No force-push/delete; admin override retained. All merged feature branches swept (only `main` remains remote). **The documentation overhaul is complete** (PRs #27–30): 55 live docs (down from 60), ~115KB of closed history archived, 0 broken links, a lean always-load hot path, and a CI `docs-lint` gate that **fails the build on wrong memory** (stale-marker denylist · broken-link check · auto-generated epic index). **Go-forward model:** feature branches off `main`; lanes are conventions, not long-lived branches.
+
+> **◆ NOW LIVE + DOGFOODING (v8).** The app is **deployed on Vercel** (`hike-app.vercel.app`, public, sample-data mode) — the **frontend host is decided: Vercel** (the brain + DB + watch host remain the deferred deep-dive, R7). Dogfooding has started, and the **first finding reset the priority: there are no maps.** Two new epics now define the next build, designed to run **in parallel**: **Epic 016 (Maps & terrain — topographic Detail map + route + elevation)** and **Epic 017 (terrain elevation enrichment — USGS 3DEP)**. Ratified: MapLibre engine · ship map + elevation together · offline a fast-follow. They couple only through a frozen elevation-profile contract (017 S0), then build concurrently and converge at the chart (016 S5b). **Maps is now the next build, ahead of the design-gated 006/007/008/009.** The commons doc-guard cleanup (Epic 010 AC-1.5) is **done (#32)**.
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index — now generated from epic headers). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard. New here? Start at `docs/README.md` (the doc map).
 
@@ -12,7 +14,7 @@
 
 ## TL;DR — where we are
 
-**Phase-1 is complete and the repo is at a clean, drift-guarded baseline.** Backend personalization (Epics 001–005, 010–015 DONE, verified), the design system, and the app UX are all on `main`; the overnight batch closed the last open Phase-1 build work and a 6-reviewer adversarial pass confirmed each DoD is genuinely met (not status-flipped). **R10 — the HTTP-adapter secret gap that would have 403'd every live call — is fixed (#25)**, so live-data wiring is now unblocked (mock is still the default path). The documentation is now top-tier: findable, single-sourced, and CI-guarded against wrong memory. **What remains in Phase 1 is design-gated, not blocked on build capacity** — Epic 008 (API tests, smallest), 006 (novelty — needs a `been_on` producer), 007 (readiness — biggest, safety-adjacent, no epic yet), 009 (eval). **Still unmeasured:** the Stage-4 cost spike (R5). **In flight:** a small build-lane cleanup retiring the now-inverted commons doc-guard (Epic 010 AC-1.5).
+**Phase-1 is complete and the repo is at a clean, drift-guarded baseline.** Backend personalization (Epics 001–005, 010–015 DONE, verified), the design system, and the app UX are all on `main`; the overnight batch closed the last open Phase-1 build work and a 6-reviewer adversarial pass confirmed each DoD is genuinely met (not status-flipped). **R10 — the HTTP-adapter secret gap that would have 403'd every live call — is fixed (#25)**, so live-data wiring is now unblocked (mock is still the default path). The documentation is top-tier and the app is **live on Vercel** (sample-data) — dogfooding has begun. **The next build is Maps** (Epics 016 + 017, parallel), pulled to the front by the first dogfood finding ("no maps"). **Behind it, still design-gated:** Epic 008 (API tests, smallest), 006 (novelty — needs a `been_on` producer), 007 (readiness — biggest, safety-adjacent, no epic yet), 009 (eval). **Still unmeasured:** the Stage-4 cost spike (R5). **Recently closed:** the commons doc-guard cleanup (#32) and R10 (#25, live-data wiring unblocked).
 
 ---
 
@@ -48,12 +50,14 @@
 | 007 | Readiness filter (Body Battery → Curator) | **NOT WRITTEN** | gap-audit M11: no epic file yet; depends on Epic 004 (done); solo-vs-party composition unspecified |
 | 008 | API tests (`/plan` + `/health`) | **BACKLOG** | no epic file yet; no deps — quickest to a buildable state |
 | 009 | Eval harness expansion | **DEFINED** | epic on `main`; needs 002/003/006 to evaluate |
-| 010 | Commons fork write | **DONE ✅** | PR #6 (remediates C1). Cleanup in flight: retire the now-inverted doc-guard (AC-1.5) — build lane |
+| 010 | Commons fork write | **DONE ✅** | PR #6 (remediates C1); doc-guard re-inverted now Epic 010 shipped (#32) |
 | 011 | Scoped-write seam | **DONE ✅** | PR #6 (remediates C2) |
 | 012 | CorpusSource seam | **DONE ✅** | PR #5 (remediates C5) |
 | 013 | LiveAdapter seam | **DONE ✅** | PR #7 (remediates C6; +TTL cache, drive-time) |
 | 014 | Overlay-egress + viewer-auth hardening (C3 + C4) | **DONE ✅** | PR #7 — C4 egress fix + **C3 interim edge auth** (`_authorize_viewer`: non-anonymous `viewer_id` needs `X-Dev-Viewer-Secret`, fails closed 403); full managed-auth deferred (R3) |
 | 015 | CI Neo4j integration (live owner-isolation guardrail) | **DONE ✅** | PR #19 — **required** `integration (neo4j)` job runs live in GH Actions; read+write isolation + a real falsifiability test (removing `owner_scope` reds it). Fast legs stay DB-free |
+| 016 | Maps & terrain (topographic Detail map · route · elevation) | **DEFINED** | #33/#34 — first dogfood finding ("no maps"). MapLibre + USGS topo; route from `geom_wkt`; ships map + elevation together; offline fast-follow. Parallel with 017; join at the chart (S5b) |
+| 017 | Terrain elevation enrichment (USGS 3DEP profiles) | **DEFINED** | #35 — the backend half of maps: enrichment-adapter seam (Stage 3 §7 "second kind") + 3DEP sampler → store → API. Couples to 016 via one frozen contract (S0), then builds in parallel |
 
 **Merged PRs (baseline + docs):** remediation/seam set #5/#6/#7/#9/#10 · UI #14/#17/#22 · overnight batch #18/#19/#20/#21 · R10 secret #25 · roadmap+runbook #26 · **doc overhaul #27/#28/#29/#30** · plus the roadmap/workflow-lint/dependabot housekeeping PRs.
 
@@ -61,7 +65,10 @@
 
 ## Live in-flight
 
-Code queue is **clear** — Phase-1 + the baseline + the docs overhaul all merged. One small cleanup is in flight; everything else is the design-gated Phase-1 remainder (below).
+Phase-1, the baseline, and the docs overhaul are all merged; the app is **live on Vercel** and dogfooding has begun. **The next build is Maps** (Epics 016 + 017, defined + ratified, ready to start as two parallel lanes — see below).
+
+### ◆ Maps & terrain — NEXT BUILD (Epics 016 + 017, parallel)
+First dogfood finding: the deployed app has no maps. The Detail screen was specced for a "full route, contour, elevation profile" block but never built, and the mock data carried no coordinates. Two epics now cover it, ratified to ship **map + elevation together** (MapLibre · USGS topo · offline a fast-follow): **016 (frontend)** builds the topo map + route + trailhead + card glyph against mock data; **017 (backend)** builds the enrichment seam + USGS-3DEP sampler that produces the real elevation profile. They couple only through a frozen contract (017 S0) and **converge at the elevation chart (016 S5b)** — everything else runs concurrently. *Next PM step: the two lane kickoff briefs on Josh's go.*
 
 ### ◆ Baseline promotion — DONE ✅
 Trunk promoted to `main` (`725c442`) · R10 secret fix (#25) · repo → `joshcrowbuild` Team org · default branch → `main` · **branch protection** (7 required checks incl. `integration (neo4j)` + `docs-lint`, no force-push/delete) · tag `v0.1-phase1` cut (`c12be36`) · merged feature branches swept. Nothing outstanding.
@@ -78,24 +85,29 @@ Four waves, one PR each: **(1) Freshness** — killed the stale "current positio
 
 ```
 DONE & BASELINED ─────────────────────────────────────────────────────────
-  ✅ Phase-1 backend (001–005, 010–015) · ✅ app UX · ✅ R10 secret · ✅ docs overhaul · ✅ v0.1-phase1 tag
+  ✅ Phase-1 backend (001–005, 010–015) · ✅ app UX · ✅ R10 secret · ✅ docs overhaul
+  ✅ v0.1-phase1 tag · ✅ live on Vercel (sample-data) · ✅ commons doc-guard (#32)
 
-NEXT WAVE — the remaining Phase-1 epics; each needs a human design/definition pass first
-  Epic 008 (API tests)  ── SMALL: write its epic-with-ACs, ratify → then buildable (no deps)
-  Epic 006 (novelty)    ── epic DEFINED, but needs a been_on belief PRODUCER (unbuilt) + semantics decided
-  Epic 007 (readiness)  ── needs a design session (safety-adjacent: Body-Battery mapping /
-                            vendor normalization / solo-vs-party composition); NO epic file yet
-  Epic 009 (eval)       ── epic DEFINED; needs 006 closed + golden-trip set / cassettes built
+NEXT BUILD — Maps (dogfood-driven), two parallel lanes, ratified & ready to start
+  Epic 017 (Lane A, backend) ── freeze contract (S0) → enrichment seam → 3DEP sampler → store → API
+  Epic 016 (Lane B, frontend) ── topo map + route + trailhead + card glyph, on MOCK (no dep on Lane A)
+        └── JOIN: 016 S5b (elevation chart) needs both lanes; everything else is concurrent
+
+BEHIND IT — the design-gated Phase-1 remainder
+  Epic 008 (API tests)  ── SMALL: write its epic-with-ACs, ratify → buildable (no deps)
+  Epic 006 (novelty)    ── DEFINED, needs a been_on PRODUCER (unbuilt) + semantics decided
+  Epic 007 (readiness)  ── needs a design session (safety-adjacent); NO epic file yet
+  Epic 009 (eval)       ── DEFINED; needs 006 closed + golden-trip set / cassettes
 
 OTHER OPEN
   Stage-4 cost spike (R5) ── measure once the flow is exercised end-to-end against the real corpus
-  Live-data wiring        ── now unblocked (R10 fixed); flip VITE_USE_MOCK=false behind real /plan,/outcome
+  Backend/DB/watch host   ── the deferred hosting deep-dive (R7); frontend host = Vercel (decided)
 ```
 
 **Next-up by lane:**
-- **Needs your design call first (pick one):** Epic 007 (readiness — biggest lift, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs (smallest/quickest to buildable).
-- **Build lane:** finish the commons doc-guard cleanup (in flight); then whichever next-wave epic you ratify.
-- **UI:** continue design-system Phase 2; live-data wiring is now unblocked (R10) when you want it.
+- **Build — Maps (the priority):** kick off the two parallel lanes on Josh's go — Lane A (Epic 017 backend) + Lane B (Epic 016 frontend). PM to write the two kickoff briefs.
+- **Behind maps (your design call, when ready):** Epic 007 (readiness — biggest, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs.
+- **UI:** the app is live on Vercel (sample-data); live-data wiring is unblocked (R10) when wanted.
 
 ---
 
@@ -122,7 +134,7 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 | ~~**R4**~~ | ~~Trunk ↔ design-branch doc divergence (13 docs).~~ | **RESOLVED — #21 + docs overhaul** | All design docs on `main`; the docs overhaul (#27–30) then indexed + drift-guarded the whole surface. |
 | **R5** | **Cost spike unmeasured.** Stage-4 local-vs-cloud bake-off designed; real cost-per-session not yet measured against the real corpus. TTL cache lever now built (Epic 013), so the estimate's main assumption holds. | **OPEN** | Run the spike once Phase-1 flow stabilizes (needs a real flow to measure). |
 | ~~**R6**~~ | ~~M1 `Episode.date` never written.~~ | **RESOLVED — Epic 003 (#20)** | `upsert_episode` SETs `e.date` from `start_time`; 18-month filter proven by a live-DB E2E. |
-| **R7** | **Always-on infra undecided.** The in-process Garmin poller is built (Epic 004); only the **always-on host** (same-day push) + Stage-8 multiplayer need it. | Deferred | Decide host (VPS/Pi/always-on Mac) at Phase-1→2 boundary. |
+| **R7** | **Hosting/compute deep-dive (backend + DB + watch) undecided.** Frontend host is **decided = Vercel** (live, sample-data). Open: the always-running brain (API/engine), the Neo4j DB, and the always-on host the Garmin poller (Epic 004) + Stage-8 multiplayer need — one box can serve all three. | Frontend resolved; rest **deferred** | The deep-dive Josh flagged: managed Neo4j (e.g. Aura) + a small always-on host (cloud box / Pi / always-on Mac), decided once together at the live-data / Phase-1→2 step. |
 | ~~**R8**~~ | ~~CI `workflow-lint` red trunk-wide.~~ | **RESOLVED — #12** | `actionlint` now runs via its official download script; `workflow-lint` green. |
 | ~~**R9**~~ | ~~PR #22 (UI) targets `main`, not trunk.~~ | **RESOLVED** | Retargeted + merged; honesty invariants verified. The contract-check surfaced R10. |
 | ~~**R10**~~ | ~~HTTP-adapter dev-viewer-secret gap (guaranteed 403 on live calls).~~ | **RESOLVED — #25** | `httpPlanner.ts` now injects `X-Dev-Viewer-Secret` from `VITE_DEV_VIEWER_SECRET` for non-anonymous viewers (omitted for anonymous; tested). Live-data wiring is unblocked; secret stays in `.env` (Rule #10). |
