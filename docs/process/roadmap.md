@@ -119,10 +119,11 @@ UI LANE (web-design-parallel) — parallel
 | **R5** | **Cost spike unmeasured.** Stage-4 local-vs-cloud bake-off designed; real cost-per-session not yet measured against the real corpus. TTL cache lever now built (Epic 013), so the estimate's main assumption holds. | **OPEN** | Run the spike once Phase-1 flow stabilizes (needs a real flow to measure). |
 | **R6** | **M1 `Episode.date` never written.** Personalization date filters return zero; invisible until Stage-7 eval shows no memory effect. | **OPEN** | **Folded into next-item #2.** *(backend)* |
 | **R7** | **Always-on infra undecided.** Gates same-day Garmin poller push and Stage-8 multiplayer. | Deferred | Decide host (VPS/Pi/always-on Mac) at Phase-1→2 boundary. |
+| **R8** | **CI `workflow-lint` red trunk-wide.** `.github/workflows/ci.yml:23` pins `rhysd/actionlint@v1`, but that action has no moving `v1` tag (only `v1.7.x`) → job fails at *setup* on every PR (#8, #3, #4 all red); the other legs (format/lint/test/typecheck) pass. Pre-existing, not introduced by any open PR. | **OPEN** | One-line infra-lane fix: pin `@v1.7.12` (or a commit SHA). Not PM-lane code — flagged for infra. |
 
 ### Thread tracker (T1–T7 — mirrors workplan; the M9 fix)
 
-- **T1 · Infra/secrets/CI.** 🔶 `.env` plaintext only; `SecretProvider` seam not built (gap-audit M6, doc-vs-artifact contradiction). CI exists but no Neo4j (R2). FIRMS key log-leak fix in flight.
+- **T1 · Infra/secrets/CI.** 🔶 `.env` plaintext only; `SecretProvider` seam not built (gap-audit M6, doc-vs-artifact contradiction). CI exists but no Neo4j (R2) and `workflow-lint` is red trunk-wide (R8). FIRMS key log-leak fix in flight.
 - **T2 · Access-control-at-query-layer.** ✅ reads (ScopedSession) + writes (Epic 011 `run_write`) seamed — **except** the live Outcome endpoint bypasses it (remediation CRITICAL #1, fix in flight).
 - **T3 · Forked commons write.** ✅ built (Epic 010), accreting born-severed observations. Read/aggregation dormant to Stage 9.
 - **T4 · Evaluation.** 🔶 truthfulness harness exists; golden-trip set/cassettes unbuilt; Epic 009 (deep eval) defined on design-branch.
