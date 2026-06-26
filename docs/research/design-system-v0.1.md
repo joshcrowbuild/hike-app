@@ -1,6 +1,6 @@
 # Design System Contract — v0.1
 
-**Status:** Draft contract. **Stack ratified (2026-06): Adobe-grade** — DTCG + Style Dictionary token spine, React Aria behavior, vanilla-extract styling, owned components, Storybook. No code change is required to adopt this document; §9 defines the build sequence.
+**Status:** Draft contract. **Stack ratified (2026-06): Adobe-grade** — DTCG + Style Dictionary token spine, React Aria behavior, vanilla-extract styling, owned components, Storybook. **Phases 1–4 of §9.2 are now built** (token spine · typed theme + `Signal` · React Aria `Sheet`/`Toggle`/`OptionButton` · Storybook); §9 defines the build sequence and §9.2 the per-phase status.
 **Scope:** Operationalizes `decision-log.md §20` (token-first; one source → Tailwind/web + SwiftUI/native; shadcn/ui + Radix on web; confidence/staleness/verify as first-class UI states).
 **Provenance:** Extracted from the validated `Home / Curation` v0.3 prototype, not invented ahead of it. Where this doc cites a value, it is the value the prototype already shipped in `frontend/src/styles.css`.
 
@@ -273,10 +273,10 @@ frontend/tokens/*.json            (DTCG source of truth)
 
 ### 9.2 Phased rollout (do not boil the ocean on a surface still in flux)
 
-- **Phase 1 — Token spine (now).** Author DTCG tokens (primitive→semantic→component, per §3–§4 and the §12 map); add Style Dictionary; generate `tokens.css`; replace the hand-written `:root`. The prototype renders identically but is now token-driven. Adds one devDependency (`style-dictionary`). Reversible.
-- **Phase 2 — Typed theme + reference component.** Add the vanilla-extract theme contract; convert `Signal` (the verify honesty primitive) first as the reference owned component.
-- **Phase 3 — React Aria primitives.** Rebuild `Sheet` / `Toggle` / `OptionButton` on React Aria; retire bespoke focus/dismiss handling.
-- **Phase 4 — Workbench.** Storybook + axe + visual regression in CI; document tokens and components.
+- **Phase 1 — Token spine.** ✅ **Shipped.** DTCG tokens (primitive→semantic) + Style Dictionary → `tokens.css`; the hand-written `:root` is replaced and the prototype renders identically but token-driven.
+- **Phase 2 — Typed theme + reference component.** ✅ **Shipped.** `src/design/theme.css.ts` is the typed vanilla-extract contract (`createGlobalThemeContract` over the generated vars — Style Dictionary still owns values). `Signal` is the first owned, token-bound component and the sole carrier of the accent hue. *(Confidence and Staleness remain to be built as components; only the verify primitive is done.)*
+- **Phase 3 — React Aria primitives.** ✅ **Shipped.** `Sheet` / `Toggle` / `OptionButton` rebuilt on React Aria (real focus trap, Escape/scrim dismiss, focus return, roving single-select, role=switch); bespoke focus/dismiss handling retired.
+- **Phase 4 — Workbench.** ✅ **Shipped (local).** Storybook 10 (react-vite) with the axe a11y addon and stories for every owned component; static build verified. *(CI integration + visual-regression remain.)*
 
 Each phase is one logical change (`AGENTS.md`).
 
