@@ -2,9 +2,11 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last updated:** 2026-06-26 · **Trunk:** `claude/vigilant-bohr-yzdcyh` @ `42151cc` (PR #1 → `main`, open) · **Version:** v5
+**Last updated:** 2026-06-26 · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** `main` @ `725c442` (default branch; protected) · **Version:** v6
 
-> **◆ BASELINE MOMENT — Phase-1 build complete; promoting trunk → `main`.** The personal-intelligence UX shipped (PR #22, `42151cc`: Home/Detail/Tuning/Outcome screens on a typed data-source seam + Confidence/Staleness honesty primitives, verified honest — Confidence never renders a number, mock disclosed as "Sample, not verified", deferred features absent-not-faked). With that, **Phase-1 build is effectively complete** (backend + design-system + app UX). `main` is 37 commits behind trunk → being promoted as the new baseline. **Go-forward model: collapse to `main` as the single integration line** (retire the `vigilant-bohr` session-trunk; short-lived feature branches off `main`; sweep the ~8 merged branches). Sequence: land roadmap v5 → promote trunk→`main` → tag (`v0.1-phase1`) → secret fast-follow (R10) → sweep. Build agent owns the git mechanics; PM owns this record.
+> **◆ BASELINE CUT — Phase-1 complete; `main` is the line.** Phase-1 build is complete (backend personalization + design-system + the personal-intelligence app UX, PR #22, verified honest). Trunk was promoted to `main` (`725c442`); the R10 secret fix + roadmap v5 are on it. **Repo transferred to the `joshcrowbuild` Team org**, `main` set as default branch, and **branch protection applied** — all 6 CI checks required incl. the live `integration (neo4j)` guardrail, no force-push/delete, admin override retained. Go-forward model is in effect: **feature branches off `main`; lanes are conventions, not long-lived branches.** **Next major effort: the documentation overhaul** — see `docs/process/doc-overhaul-runbook.md` (archive ~115KB closed history · add the doc map + research index · single-source facts · a CI doc-lint that fails on wrong memory).
+>
+> **Remaining baseline housekeeping:** tag `v0.1-phase1` (manual — GitHub Releases UI; the agent git-relay rejects tag pushes) · sweep the ~8 merged branches + retire `vigilant-bohr` (UI).
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard.
 
@@ -61,15 +63,13 @@
 
 ## Live in-flight
 
-Trunk in-flight queue is **clear** — everything merged. The only open work is the **baseline promotion** (below) + this roadmap v5 PR.
+Code queue is **clear** — Phase-1 + the baseline all merged. The active workstream is the **documentation overhaul**.
 
-### ◆ Baseline promotion (in progress — build agent owns git mechanics)
-1. **Land roadmap v5** into trunk (this PR) so the promoted baseline carries an accurate dashboard.
-2. **Promote trunk → `main`** (PR #1 vehicle; `main` 37 commits behind, content = clean subset of trunk → clean promote).
-3. **Tag `v0.1-phase1`** — name the baseline so it's a recoverable point.
-4. **Secret fast-follow (R10)** — the ~4-line dev-viewer-secret injection (inert today; before any live-data wiring).
-5. **Sweep merged branches** — `zen-bohr`, `web-design-parallel`, `ui-merge`, `epic-002/003/015`, `docs-reconcile`, `fix-actionlint` (and `roadmap` *after* v5 merges). Retire `vigilant-bohr` once `main == trunk`.
-6. **Go-forward:** feature branches off `main`; CI (incl. the neo4j gate) gates each; lanes become conventions, not long-lived branches. *(Decide separately: enforce the neo4j gate for real — needs branch protection / GitHub Pro — or keep it trust-based.)*
+### ◆ Baseline promotion — DONE ✅
+Promote (`main`==`725c442`) · R10 secret fix (#25) · roadmap v5 (#24) · repo → `joshcrowbuild` Team org · default branch → `main` · **branch protection applied** (6 required checks incl. `integration (neo4j)`, no force-push/delete). *Remaining manual:* tag `v0.1-phase1` (Releases UI) · branch sweep (UI).
+
+### ◆ Documentation overhaul — STAGED (all-day unattended session)
+Brief: `docs/process/doc-overhaul-runbook.md`. Four waves, one PR each into `main`: **(1) Freshness** — fix the stale "current position" in CLAUDE.md/README/decision-log + research banners; **(2) Navigation** — new `docs/README.md` map + `docs/research/README.md` index + wire the orphaned roadmap into CLAUDE.md; **(3) Dedupe/archive** — `git mv` ~115KB closed audits → `docs/research/archive/`, single-source duplicated facts; **(4) Anti-drift** — generate the epic index from headers + a CI `docs-lint` that fails on wrong memory. *PM owns `roadmap.md`/`workplan.md` — out of the session's scope.*
 
 ---
 
@@ -140,4 +140,4 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 
 ## Lane discipline (this doc's owner)
 
-PM lane owns `docs/process/roadmap.md` + `docs/workplan.md`; `docs/epics/README.md` is read-mostly. Never touch `api/`, `graph/`, `orchestration/`, `ingestion/`, `frontend/`, or another lane's epic spec. Work in the `hike-app-pm` worktree; small commits; pull before push; PRs into `claude/vigilant-bohr-yzdcyh`.
+PM lane owns `docs/process/roadmap.md` + `docs/workplan.md`; `docs/epics/README.md` is read-mostly. Never touch `api/`, `graph/`, `orchestration/`, `ingestion/`, `frontend/`, or another lane's epic spec. Work in the `hike-app-pm` worktree; small commits; pull before push; **PRs into `main`** (the baseline; `claude/vigilant-bohr-yzdcyh` is retired).
