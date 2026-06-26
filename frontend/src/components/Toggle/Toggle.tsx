@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { Switch } from 'react-aria-components'
 
@@ -19,15 +20,28 @@ export type ToggleProps = {
  * §3 — readiness is a filter the user *chooses* to apply, never silent).
  */
 export function Toggle({ label, description, isSelected, onChange, className }: ToggleProps) {
+  const labelId = useId()
+  const descId = useId()
   return (
     <Switch
       className={className ? `${styles.root} ${className}` : styles.root}
       isSelected={isSelected}
       onChange={onChange}
+      // Without these, React Aria folds the description text into the switch's
+      // accessible NAME (a run-on with no description). Bind the name to the
+      // label and the description separately so AT announces them as such.
+      aria-labelledby={labelId}
+      aria-describedby={description ? descId : undefined}
     >
       <span className={styles.text}>
-        <span className={styles.label}>{label}</span>
-        {description ? <span className={styles.description}>{description}</span> : null}
+        <span id={labelId} className={styles.label}>
+          {label}
+        </span>
+        {description ? (
+          <span id={descId} className={styles.description}>
+            {description}
+          </span>
+        ) : null}
       </span>
       <span className={styles.track} aria-hidden="true">
         <span className={styles.thumb} />

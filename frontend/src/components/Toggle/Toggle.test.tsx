@@ -12,6 +12,21 @@ describe('Toggle', () => {
     ).toBeInTheDocument()
   })
 
+  it('keeps the description out of the accessible name', () => {
+    // Regression guard: the name must be exactly the label (not label+description
+    // run together), and the description must be a separate accessible description.
+    render(
+      <Toggle
+        label="Match readiness"
+        description="Hides hard climbs today."
+        isSelected={false}
+        onChange={() => {}}
+      />,
+    )
+    const sw = screen.getByRole('switch', { name: 'Match readiness' })
+    expect(sw).toHaveAccessibleDescription('Hides hard climbs today.')
+  })
+
   it('reflects the on state', () => {
     render(<Toggle label="Readiness" isSelected onChange={() => {}} />)
     expect(screen.getByRole('switch')).toBeChecked()
