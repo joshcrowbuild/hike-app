@@ -2,6 +2,8 @@
 
 A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, private **utility** — not social, not engagement-seeking. (Working title.)
 
+**Last verified:** 2026-06-26 · **Owner:** project (product invariants + architecture)
+
 > Keep this file lean. The full design lives in the two docs below — read the relevant sections when working a stage. Push stage-specific detail into `.claude/rules/*.md` as code grows. **Delete anything stale — wrong memory is worse than none.**
 
 > Read `AGENTS.md` first for repo operating rules, merge-risk discipline, and Git/PR hygiene. Use this file for product invariants, architecture, and development process.
