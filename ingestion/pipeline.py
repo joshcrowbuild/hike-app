@@ -26,6 +26,7 @@ from typing import Any
 from shapely.ops import unary_union
 
 from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
+from ingestion.route import assemble_geometry, line_parts
 from ingestion.sources import registry
 from ingestion.sources.base import (
     CanonicalNode,
@@ -140,26 +141,52 @@ def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
 # ── Canonical-node derivation + enrichment join point ─────────────────────────
 
 
+def _assembled_route_wkt(geom: Any) -> str | None:
+    """The trail's full route assembled from its (segment) geometry, as WKT — the
+    one artifact both Epic 016 (the served `geometry`) and Epic 017 (the elevation
+    sample-line) consume, so geometry is assembled once. `None` when no line."""
+    assembled = assemble_geometry(geom)
+    return assembled.wkt if assembled is not None else None
+
+
 def _canonical_nodes(
     auto_accept: list[Match], spine_features: list[Feature]
 ) -> list[CanonicalNode]:
     """The canonical trails the load loop would create — derived read-only so the
     enrichment step can run over them in both dry-run and live paths. Mirrors the
     load loop's selection (auto-accept spine side + unmatched named spine features)
-    so enrichment joins exactly the nodes that get persisted (SS-4)."""
+    so enrichment joins exactly the nodes that get persisted (SS-4). Each node
+    carries its assembled route `geom_wkt` so a geometry-consuming enrichment source
+    (3DEP) samples the same line the API serves (Epic 017)."""
     nodes: list[CanonicalNode] = []
     matched: set[str] = set()
     for m in auto_accept:
         cid = _build_canonical_id(m.a.source, m.a.ref, m.a.name)
         lat, lon = _safe_geom_centroid(m.a)
-        nodes.append(CanonicalNode(canonical_id=cid, name=m.a.name, lat=lat, lon=lon))
+        nodes.append(
+            CanonicalNode(
+                canonical_id=cid,
+                name=m.a.name,
+                lat=lat,
+                lon=lon,
+                geom_wkt=_assembled_route_wkt(m.a.geom),
+            )
+        )
         matched.add(m.a.ref or m.a.name)
     for feat in spine_features:
         if (feat.ref or feat.name) in matched or not feat.name:
             continue
         cid = _build_canonical_id(feat.source, feat.ref, feat.name)
         lat, lon = _safe_geom_centroid(feat)
-        nodes.append(CanonicalNode(canonical_id=cid, name=feat.name, lat=lat, lon=lon))
+        nodes.append(
+            CanonicalNode(
+                canonical_id=cid,
+                name=feat.name,
+                lat=lat,
+                lon=lon,
+                geom_wkt=_assembled_route_wkt(feat.geom),
+            )
+        )
     return nodes
 
 
@@ -168,12 +195,24 @@ def _run_enrichment(
 ) -> list[EnrichmentFact]:
     """The post-conflation join point Stage 3 §7 promised (AC-5.2). Enrichment
     sources join onto already-canonical nodes and NEVER enter the matcher. With
-    zero enrichment sources (the default config) this is a no-op. No graph write
-    yet — a real enrichment loader lands with the first enrichment source."""
+    zero enrichment sources (the default config) this is a no-op. Collected facts
+    are persisted by `load_enrichment_facts` in the live path (Epic 017 S1).
+
+    Degrade-and-disclose (rule #6 / Epic 017 AC-1.2): a source that raises on a node
+    contributes "no fact" for it (logged) and the run continues — one failing source
+    or node never aborts enrichment for the rest."""
     facts: list[EnrichmentFact] = []
     for s in enrichment_sources:
         for node in canonical_nodes:
-            facts.extend(s.enrich(node))
+            try:
+                facts.extend(s.enrich(node))
+            except Exception as exc:
+                log.warning(
+                    "Enrichment source %s failed on %s, degrading to no fact: %s",
+                    getattr(s, "name", s),
+                    node.canonical_id,
+                    exc,
+                )
     if facts:
         log.info(
             "Enrichment: %d facts from %d source(s) over %d canonical nodes",
@@ -185,6 +224,31 @@ def _run_enrichment(
 
 
 # ── Load ──────────────────────────────────────────────────────────────────────
+
+
+def _replace_segments(runner: Any, canonical_id: str, assembled: Any, iv: str) -> None:
+    """Re-persist the trail's `Segment`s idempotently (Epic 016 S1): clear any prior
+    segments first (so a re-ingest with fewer/no route parts can't orphan stale ones
+    — see `clear_trail_segments`), then persist one `Segment` per assembled-route
+    part + its `HAS_SEGMENT` link. Call *after* the CanonicalTrail exists so the
+    link's MATCH resolves. `assembled` is the already-assembled route geometry (or
+    None when the trail has no line — then segments are only cleared, not added)."""
+    from graph.load import clear_trail_segments, load_segment
+
+    clear_trail_segments(runner, canonical_id)
+    if assembled is None:
+        return
+    for i, part in enumerate(line_parts(assembled)):
+        centroid = part.centroid
+        load_segment(
+            runner,
+            f"seg:{canonical_id}:{i}",
+            part.wkt,
+            canonical_id=canonical_id,
+            lat=centroid.y,
+            lon=centroid.x,
+            ingest_version=iv,
+        )
 
 
 def _load_matches(
@@ -203,6 +267,8 @@ def _load_matches(
     best-view layer."""
     from graph.load import load_canonical_trail, load_source_record, merge_same_as
 
+    # `load_segment` is imported lazily inside `_persist_segments` (same module).
+
     def _tier_extra(source: str) -> dict[str, Any] | None:
         tier = tier_by_name.get(source.lower())
         return {"authority_tier": tier} if tier is not None else None
@@ -213,7 +279,18 @@ def _load_matches(
     for m in auto_accept:
         canonical_id = _build_canonical_id(m.a.source, m.a.ref, m.a.name)
         lat, lon = _safe_geom_centroid(m.a)
-        load_canonical_trail(runner, canonical_id, m.a.name, lat=lat, lon=lon, ingest_version=iv)
+        assembled = assemble_geometry(m.a.geom)
+        route_wkt = assembled.wkt if assembled is not None else None
+        load_canonical_trail(
+            runner,
+            canonical_id,
+            m.a.name,
+            lat=lat,
+            lon=lon,
+            route_geom_wkt=route_wkt,
+            ingest_version=iv,
+        )
+        _replace_segments(runner, canonical_id, assembled, iv)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
         load_source_record(
             runner,
@@ -265,7 +342,18 @@ def _load_matches(
             continue
         canonical_id = _build_canonical_id(feat.source, feat.ref, feat.name)
         lat, lon = _safe_geom_centroid(feat)
-        load_canonical_trail(runner, canonical_id, feat.name, lat=lat, lon=lon, ingest_version=iv)
+        assembled = assemble_geometry(feat.geom)
+        route_wkt = assembled.wkt if assembled is not None else None
+        load_canonical_trail(
+            runner,
+            canonical_id,
+            feat.name,
+            lat=lat,
+            lon=lon,
+            route_geom_wkt=route_wkt,
+            ingest_version=iv,
+        )
+        _replace_segments(runner, canonical_id, assembled, iv)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
         load_source_record(
             runner,
@@ -353,12 +441,13 @@ def run_pipeline(
     if dry_run:
         log.info("DRY-RUN — skipping Neo4j writes. Would load:")
         _print_dry_run_summary(spine_features, auto_accept, review)
-        _run_enrichment(enrichment_sources, canonical_nodes)
+        facts = _run_enrichment(enrichment_sources, canonical_nodes)
+        counts["enrichment_facts"] = len(facts)
         return counts
 
     try:
         from graph.client import GraphClient
-        from graph.load import make_runner
+        from graph.load import load_enrichment_facts, make_runner
     except ImportError as exc:
         log.error("Neo4j not available: %s — run 'pip install -e .[graph]'", exc)
         return counts
@@ -375,11 +464,13 @@ def run_pipeline(
             )
             counts["loaded"] = load_counts["loaded"]
             counts["skipped_hygiene"] = load_counts["skipped_hygiene"]
+            # ── Enrichment join point (post-conflation): collect facts, then persist
+            # them through the enrichment loader (Epic 017 S1). No-op without
+            # enrichment sources; a failing source degrades inside _run_enrichment.
+            facts = _run_enrichment(enrichment_sources, canonical_nodes)
+            counts["enrichment_facts"] = load_enrichment_facts(runner, facts)
     finally:
         gc.close()
-
-    # ── Enrichment join point (post-conflation; no-op without enrichment sources) ─
-    _run_enrichment(enrichment_sources, canonical_nodes)
 
     log.info(
         "Pipeline complete: loaded=%d skipped_hygiene=%d auto_accept=%d review=%d",

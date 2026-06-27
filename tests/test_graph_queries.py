@@ -42,6 +42,17 @@ def test_personal_query_is_owner_scoped() -> None:
     assert params["canonical_id"] == "ct:old-rag-loop"
 
 
+def test_trail_detail_query_shape_and_deterministic_trailhead() -> None:
+    # World read (Epic 016 S1 / Epic 017 S4): no owner scope, and the trailhead pick
+    # is deterministic (ORDER BY) so a multi-trailhead trail serves a stable point.
+    cypher, params = queries.trail_detail("ct:old-rag-loop")
+    assert params == {"cid": "ct:old-rag-loop"}
+    assert "HAS_SEGMENT" in cypher and "ACCESSES" in cypher
+    assert "route_geom_wkt" in cypher and "profile_distances_m" in cypher
+    assert "ORDER BY h.trailhead_id" in cypher  # deterministic trailhead choice
+    assert "owner_id" not in cypher  # world nodes only — no access scope
+
+
 def test_owner_scope_clause() -> None:
     clause = queries.owner_scope("x")
     assert clause == "(x.owner_id = $viewer_id OR x.owner_id IN $granted_ids)"

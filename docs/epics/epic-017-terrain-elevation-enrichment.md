@@ -1,10 +1,13 @@
 # Epic 017 — Terrain elevation enrichment (USGS 3DEP profiles)
 
-**Status:** DEFINED
+**Status:** IN_PROGRESS
+**Owner:** Lane A (backend) — started 2026-06-26
 **Phase:** 1 (pulled forward — the backend prerequisite for Epic 016 Maps)
 **Spec refs:** `stage-1-data-sources` (USGS 3DEP = elevation/grade) · `stage-3-corpus-pipeline` §7 (enrichment joins — the "second kind" of source) · Epic 012 (CorpusSource seam, which this extends) · **Epic 016** (the consumer: the elevation profile chart) · CLAUDE.md Rule #1 (source-or-silence) · Rule #3 (graph holds slow/structural data) · Rule #7 (provenance + timestamp)
 
 > **Built in parallel with Epic 016.** This epic *produces* elevation data; Epic 016 *consumes* it. The only thing coupling them is a small API contract (S0) — freeze it first and the two builds run concurrently. See **Parallelization** at the bottom.
+
+> **✅ Contract FROZEN (Lane A, 2026-06-26).** Both coupling shapes — the assembled `geometry` (Epic 016 S1) and `elevationProfile` (S0 below) — are implemented in `api/schemas.py` (`TripDetailResponse` · `GeoJsonGeometry` · `ElevationProfile`) and served by `GET /trail/{canonical_id}`. Lane B mirrors these as the frontend trip type + realistic mock; the two lanes no longer block each other. Backend production (016 S1 route assembly + 017 S1–S4 loader/3DEP/store/expose) has landed; the elevation profile is precomputed at ingest by the `usgs-3dep` enrichment source (off by default — needs `ADVENTURE_3DEP_DEM`).
 
 ---
 

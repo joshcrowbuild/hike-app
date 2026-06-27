@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from graph.load import (
+    clear_trail_segments,
     link_area_contains,
     load_area,
     load_canonical_trail,
+    load_segment,
     load_source_record,
     load_trailhead,
     merge_same_as,
@@ -114,6 +116,52 @@ def test_link_area_contains():
     assert "CONTAINS" in cypher
     assert params["area_id"] == "nps:shen"
     assert params["cid"] == "ct:old-rag-loop"
+
+
+def test_load_segment_merges_node_and_link():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_segment(
+        runner, "seg:ct:1:0", "LINESTRING(0 0, 1 1)", canonical_id="ct:1", lat=0.5, lon=0.5
+    )
+
+    assert len(calls) == 2
+    assert "MERGE (s:Segment" in calls[0][0]
+    assert calls[0][1]["geom_wkt"] == "LINESTRING(0 0, 1 1)"
+    assert "HAS_SEGMENT" in calls[1][0]
+    assert calls[1][1] == {"cid": "ct:1", "sid": "seg:ct:1:0"}
+
+
+def test_clear_trail_segments_detaches():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    clear_trail_segments(runner, "ct:1")
+    assert len(calls) == 1
+    assert "DETACH DELETE" in calls[0][0] and "HAS_SEGMENT" in calls[0][0]
+    assert calls[0][1] == {"cid": "ct:1"}
+
+
+def test_load_canonical_trail_clears_route_geom_when_none_passed():
+    # Passing route_geom_wkt=None explicitly SETs it (to null → Neo4j drops it), so a
+    # re-ingest that loses geometry clears the stale route rather than serving it.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    load_canonical_trail(runner, "ct:1", "T", route_geom_wkt=None)
+    cypher, params = calls[0]
+    assert "t.route_geom_wkt = $route_geom_wkt" in cypher
+    assert "route_geom_wkt" in params and params["route_geom_wkt"] is None
+
+
+def test_load_canonical_trail_omits_route_geom_when_not_passed():
+    # Omitting it (the sentinel default) leaves the property untouched for callers
+    # that don't manage geometry.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[0]
+    assert "route_geom_wkt" not in params
 
 
 def test_idempotency_shape():
