@@ -114,7 +114,9 @@ class _FakeSession:
 
     def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
         _, params = query
-        row = _ROWS.get(params.get("cid"))
+        if "cids" in params:  # batched trails_detail (feed)
+            return [_ROWS[c] for c in params["cids"] if c in _ROWS]
+        row = _ROWS.get(params.get("cid"))  # single trail_detail (detail endpoint)
         return [row] if row is not None else []
 
 
@@ -146,27 +148,36 @@ def test_full_trail_returns_exact_contract_shape():
 
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"canonical_id", "name", "geometry", "trailhead", "elevationProfile"}
+    assert set(body) == {
+        "canonical_id",
+        "name",
+        "geometry",
+        "trailhead",
+        "geometry_confidence",
+        "summit",
+        "elevation_profile",
+    }
 
     assert body["geometry"]["type"] == "LineString"
     assert body["geometry"]["coordinates"][0] == [-78.30, 38.55]  # (lon, lat) order
-
+    assert body["geometry_confidence"] == "stated"  # clean single LineString
     assert body["trailhead"] == {"lat": 38.5707, "lon": -78.2861}
+    assert body["summit"] is None  # no high-point concept yet → null (source-or-silence)
 
-    prof = body["elevationProfile"]
+    prof = body["elevation_profile"]
     assert set(prof) == {
         "samples",
-        "totalGainMeters",
-        "totalLossMeters",
-        "maxGradePercent",
+        "total_gain_m",
+        "total_loss_m",
+        "max_grade_pct",
         "source",
-        "resolutionMeters",
+        "resolution_m",
     }
-    assert prof["samples"][0] == {"distanceMeters": 0.0, "elevationMeters": 600.0}
-    assert prof["totalGainMeters"] == 300.0
-    assert prof["maxGradePercent"] == 21.5
+    assert prof["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
+    assert prof["total_gain_m"] == 300.0
+    assert prof["max_grade_pct"] == 21.5
     assert prof["source"] == "usgs-3dep"
-    assert prof["resolutionMeters"] == 20.0
+    assert prof["resolution_m"] == 20.0
 
 
 # ── runtime fallback: assemble geometry from segments when no precomputed route ─
@@ -184,7 +195,7 @@ def test_segments_only_assembles_geometry_and_nulls_profile():
     assert body["geometry"]["coordinates"] == [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]
     # No trailhead point → falls back to the trail point.
     assert body["trailhead"] == {"lat": 1.0, "lon": 1.0}
-    assert body["elevationProfile"] is None  # no profile stored → null, not faked
+    assert body["elevation_profile"] is None  # no profile stored → null, not faked
 
 
 # ── robustness: a corrupt stored route falls back to assembling the segments ──
@@ -213,7 +224,7 @@ def test_profile_without_source_is_null_not_mislabeled():
         client.__exit__(None, None, None)
 
     # Provenance is never defaulted/fabricated → no source means no profile (Rule #1).
-    assert body["elevationProfile"] is None
+    assert body["elevation_profile"] is None
     assert body["geometry"] is not None  # geometry still served
 
 
@@ -229,7 +240,7 @@ def test_no_geometry_returns_null_geometry_with_trailhead():
 
     assert body["geometry"] is None  # route not mapped — never fabricated
     assert body["trailhead"] == {"lat": 40.0, "lon": -105.0}
-    assert body["elevationProfile"] is None
+    assert body["elevation_profile"] is None
 
 
 # ── 404 for an unknown trail ──────────────────────────────────────────────────
@@ -242,3 +253,39 @@ def test_unknown_trail_returns_404():
     finally:
         client.__exit__(None, None, None)
     assert r.status_code == 404
+
+
+# ── feed cards carry the same maps fields (batched, per card) ─────────────────
+
+
+def test_feed_card_carries_maps_fields():
+    from types import SimpleNamespace
+
+    session = _FakeSession("anonymous")
+    maps_by_cid = app_mod._fetch_maps_by_canonical(session, ["ct:has", "ct:bare"])
+    assert set(maps_by_cid) == {"ct:has", "ct:bare"}  # batched read returned both
+
+    full = app_mod._card_response(
+        SimpleNamespace(
+            canonical_id="ct:has", name="Old Rag Loop", distance_mi=3.2, lines=[], warnings=[]
+        ),
+        maps_by_cid["ct:has"],
+    ).model_dump()
+    assert full["geometry"]["type"] == "LineString"
+    assert full["geometry_confidence"] == "stated"
+    assert full["trailhead"] == {"lat": 38.5707, "lon": -78.2861}
+    assert full["summit"] is None
+    assert full["elevation_profile"]["total_gain_m"] == 300.0
+    assert full["elevation_profile"]["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
+
+    # A card with no mapped route degrades honestly — geometry/profile null.
+    bare = app_mod._card_response(
+        SimpleNamespace(
+            canonical_id="ct:bare", name="Unmapped", distance_mi=None, lines=[], warnings=[]
+        ),
+        maps_by_cid["ct:bare"],
+    ).model_dump()
+    assert bare["geometry"] is None
+    assert bare["geometry_confidence"] is None
+    assert bare["elevation_profile"] is None
+    assert bare["trailhead"] == {"lat": 40.0, "lon": -105.0}  # trailhead still served

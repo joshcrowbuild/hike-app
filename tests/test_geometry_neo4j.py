@@ -99,8 +99,9 @@ def test_ingest_enrich_then_trail_detail_serves_contract(clean_graph):
     # The API serializer turns the row into the frozen contract.
     resp = _trip_detail_response(cid, row)
     assert resp.geometry is not None and resp.geometry.type in ("LineString", "MultiLineString")
-    assert resp.elevationProfile is not None
-    assert resp.elevationProfile.totalGainMeters > 0
+    assert resp.geometry_confidence in ("stated", "hedged")
+    assert resp.elevation_profile is not None
+    assert resp.elevation_profile.total_gain_m > 0
     assert resp.trailhead is not None  # trail point fallback (no Trailhead node here)
 
 
@@ -134,4 +135,4 @@ def test_no_coverage_trail_yields_null_profile(clean_graph):
     row = sess.run(trail_detail(cid))[0]
     resp = _trip_detail_response(cid, row)
     assert resp.geometry is not None  # geometry present
-    assert resp.elevationProfile is None  # but no profile — null, not faked
+    assert resp.elevation_profile is None  # but no profile — null, not faked

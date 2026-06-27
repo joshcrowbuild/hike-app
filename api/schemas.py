@@ -23,12 +23,72 @@ class FeedLineResponse(BaseModel):
     confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
 
 
+# ── Maps & terrain wire DTOs — the Lane A↔B contract ──────────────────────────
+#
+# These are a literal mirror of `frontend/src/data/api.ts` (the published source of
+# truth): `WireGeometry` / `WirePoint` / `WireElevationSample` / `WireElevationProfile`,
+# plus the maps fields on `FeedCardResponse`. Field names ARE the wire contract — keep
+# them snake_case and verbatim. `null`/absent everywhere means *not available*, never a
+# fabricated value (Rule #1). `tests/test_maps_contract.py` asserts this match.
+
+ConfidenceLevel = Literal["stated", "hedged", "flagged"]
+
+
+class GeoJsonGeometry(BaseModel):
+    """`WireGeometry`: the assembled route as a GeoJSON geometry (WGS84), coordinate
+    order `(lon, lat)` per the spec. `LineString` when the trail's segments join into
+    one continuous line; `MultiLineString` when they don't join cleanly (Epic 016
+    AC-1.1)."""
+
+    type: Literal["LineString", "MultiLineString"]
+    # LineString -> [[lon, lat], ...]; MultiLineString -> [[[lon, lat], ...], ...].
+    coordinates: list[Any]
+
+
+class GeoPoint(BaseModel):
+    """`WirePoint`: a WGS84 point `{lat, lon}` — used for the trailhead start marker
+    and the summit/high-point."""
+
+    lat: float
+    lon: float
+
+
+class ElevationSample(BaseModel):
+    """`WireElevationSample`: one ordered point on the climb profile. `distance_m` is
+    the cumulative along-route distance from the start; samples run start → end."""
+
+    distance_m: float
+    elevation_m: float
+
+
+class ElevationProfile(BaseModel):
+    """`WireElevationProfile`: the precomputed climb profile sampled along the route
+    from USGS 3DEP (Epic 017). The whole field is `null` when a trail has no DEM
+    coverage or no geometry — never an interpolated or faked curve (Rule #1 / D3)."""
+
+    samples: list[ElevationSample]  # ordered start → end
+    total_gain_m: float
+    total_loss_m: float
+    max_grade_pct: float
+    source: str  # provenance, e.g. "usgs-3dep"
+    resolution_m: float  # sampling spacing along the route
+
+
 class FeedCardResponse(BaseModel):
     canonical_id: str
     name: str
     distance_mi: float | None
     lines: list[FeedLineResponse]
     warnings: list[str]
+    # Maps & terrain (Epic 016 S1 / Epic 017 S4). All optional/nullable: a card with no
+    # mapped route omits/nulls them and the client degrades honestly (Rule #1).
+    geometry: GeoJsonGeometry | None = None
+    trailhead: GeoPoint | None = None
+    # Geometry's confidence tier (Rule #2); non-`stated` draws the dashed "approximate"
+    # route (D5). Derived from assembly quality, never hardcoded.
+    geometry_confidence: ConfidenceLevel | None = None
+    summit: GeoPoint | None = None  # high point if known, else null (source-or-silence)
+    elevation_profile: ElevationProfile | None = None
 
 
 class FeedResponse(BaseModel):
@@ -71,64 +131,15 @@ class HealthResponse(BaseModel):
     graph: GraphStats | None = None  # None if Neo4j unreachable
 
 
-# ── Trip-detail contract — the frozen Lane A↔B coupling (Epic 016 S1 + Epic 017) ──
-#
-# This is the SINGLE integration shape the maps/elevation feature is built around:
-# Lane A (this backend) produces it for real trails; Lane B mirrors it as the
-# frontend trip type + mock, so both lanes build concurrently and meet here. The
-# two halves — assembled `geometry` (Epic 016 S1) and `elevationProfile` (Epic 017
-# S0) — are the only cross-lane types. Field names are the wire contract; keep them
-# verbatim. `null` everywhere means *not available*, never fabricated (Rule #1).
-
-
-class GeoJsonGeometry(BaseModel):
-    """The assembled route as a GeoJSON geometry (WGS84). Coordinate order is
-    `(lon, lat)` per the GeoJSON spec. `LineString` when the trail's segments join
-    into one continuous line; `MultiLineString` when they don't join cleanly —
-    each element a connected run (Epic 016 AC-1.1)."""
-
-    type: Literal["LineString", "MultiLineString"]
-    # LineString -> [[lon, lat], ...]; MultiLineString -> [[[lon, lat], ...], ...].
-    coordinates: list[Any]
-
-
-class TrailheadPoint(BaseModel):
-    """The start marker (Epic 016 S1): `Trailhead.point`, or the `CanonicalTrail`
-    representative point as a fallback. Drives the "trailhead only" state when a
-    route is unmapped (D5)."""
-
-    lat: float
-    lon: float
-
-
-class ElevationSample(BaseModel):
-    """One ordered point on the climb profile (Epic 017 S0). `distanceMeters` is the
-    cumulative along-route distance from the start; samples run start → end."""
-
-    distanceMeters: float
-    elevationMeters: float
-
-
-class ElevationProfile(BaseModel):
-    """The precomputed climb profile sampled along the route from USGS 3DEP (Epic
-    017). `null` (the whole field) when a trail has no DEM coverage or no geometry —
-    never an interpolated or faked curve (Rule #1 / D3)."""
-
-    samples: list[ElevationSample]  # ordered start → end
-    totalGainMeters: float
-    totalLossMeters: float
-    maxGradePercent: float
-    source: str  # provenance, e.g. "usgs-3dep"
-    resolutionMeters: float  # sampling spacing along the route
-
-
 class TripDetailResponse(BaseModel):
-    """The trip/detail response (`GET /trail/{canonical_id}`). Carries the spatial
-    truth a single recommendation needs — where it is, the shape of the day — with
-    every geometry/elevation field honestly `null` when absent (Rule #1)."""
+    """The trip/detail response (`GET /trail/{canonical_id}`). The same maps fields the
+    feed card carries, served per-trail — every geometry/elevation field honestly
+    `null` when absent (Rule #1). Snake_case to match `frontend/src/data/api.ts`."""
 
     canonical_id: str
     name: str
     geometry: GeoJsonGeometry | None = None  # null = route not mapped (trailhead only)
-    trailhead: TrailheadPoint | None = None
-    elevationProfile: ElevationProfile | None = None  # null = no coverage
+    trailhead: GeoPoint | None = None
+    geometry_confidence: ConfidenceLevel | None = None
+    summit: GeoPoint | None = None
+    elevation_profile: ElevationProfile | None = None  # null = no coverage

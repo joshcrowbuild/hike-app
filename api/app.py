@@ -22,16 +22,17 @@ from api.schemas import (
     FeedLineResponse,
     FeedResponse,
     GeoJsonGeometry,
+    GeoPoint,
     GraphStats,
     HealthResponse,
     OutcomeBody,
     OutcomeResponse,
     PlanRequest,
-    TrailheadPoint,
     TripDetailResponse,
 )
 from graph.client import GraphClient
 from graph.queries import trail_detail as trail_detail_query
+from graph.queries import trails_detail as trails_detail_query
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
@@ -88,7 +89,7 @@ def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:
         raise HTTPException(status_code=403, detail="viewer_id requires authentication")
 
 
-def _card_response(card: FeedCard) -> FeedCardResponse:
+def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
     return FeedCardResponse(
         canonical_id=card.canonical_id,
         name=card.name,
@@ -102,13 +103,14 @@ def _card_response(card: FeedCard) -> FeedCardResponse:
             for line in card.lines
         ],
         warnings=list(card.warnings),
+        **maps,  # geometry / trailhead / geometry_confidence / summit / elevation_profile
     )
 
 
-def _feed_response(feed: Feed) -> FeedResponse:
+def _feed_response(feed: Feed, maps_by_cid: dict[str, dict[str, Any]]) -> FeedResponse:
     return FeedResponse(
         query=feed.query,
-        cards=[_card_response(c) for c in feed.cards],
+        cards=[_card_response(c, maps_by_cid.get(c.canonical_id, {})) for c in feed.cards],
         card_count=len(feed.cards),
         notices=list(feed.notices),
     )
@@ -176,7 +178,11 @@ def plan(
             k=request.k,
             viewer_id=request.viewer_id,  # AC-5: forward viewer for context assembly
         )
-        return _feed_response(feed)
+        # Attach per-card maps/terrain fields (Epic 016 S1 / Epic 017 S4). World data
+        # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
+        session = _graph_client.scoped_session(request.viewer_id)
+        maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
+        return _feed_response(feed, maps_by_cid)
     except HTTPException:
         raise
     except Exception as exc:
@@ -200,53 +206,90 @@ def _point_latlon(point: Any) -> tuple[float, float] | None:
     return None
 
 
-def _geometry(row: dict[str, Any]) -> GeoJsonGeometry | None:
-    """The route as GeoJSON: the precomputed `route_geom_wkt` when it parses, else
-    assembled on the fly from the trail's `Segment.geom_wkt`s (runtime fallback for
-    data ingested before the precompute — e.g. the seed — or a corrupt stored route).
-    `None` (route not mapped) when neither yields a line — never a fabricated route
-    (Rule #1 / D5)."""
+def _geometry_and_confidence(
+    row: dict[str, Any],
+) -> tuple[GeoJsonGeometry | None, str | None]:
+    """The route as GeoJSON + its confidence tier. Geometry is the precomputed
+    `route_geom_wkt` when it parses, else assembled on the fly from the trail's
+    `Segment.geom_wkt`s (fallback for pre-precompute data — e.g. the seed — or a
+    corrupt stored route). Confidence is derived from assembly quality (Rule #2 /
+    D5): a clean single `LineString` → `stated`; a gappy `MultiLineString` → `hedged`
+    (the client draws non-`stated` as a dashed "approximate" route). `(None, None)`
+    when no line — never a fabricated route (Rule #1)."""
     geo = wkt_to_geojson(row.get("route_geom_wkt"))
     if geo is None:  # absent or unparseable → fall back to assembling the segments
         geo = wkt_to_geojson(assemble_route(row.get("segment_wkts") or []))
-    return GeoJsonGeometry(**geo) if geo else None
+    if geo is None:
+        return None, None
+    confidence = "stated" if geo["type"] == "LineString" else "hedged"
+    return GeoJsonGeometry(**geo), confidence
+
+
+def _trailhead(row: dict[str, Any]) -> GeoPoint | None:
+    """The start marker: the accessing trailhead's point, or the trail's own point as
+    a fallback. `None` when neither exists."""
+    latlon = _point_latlon(row.get("trailhead_point")) or _point_latlon(row.get("trail_point"))
+    return GeoPoint(lat=latlon[0], lon=latlon[1]) if latlon else None
 
 
 def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
-    """Reassemble the stored parallel arrays + scalars into the `elevationProfile`
-    contract. `None` when no profile is stored (no DEM coverage) — not faked (D3).
-    Provenance is read straight from the stored `elev_source`, never defaulted: a
-    profile missing its source is treated as absent rather than mislabeled (Rule #1).
-    The loader always writes the arrays and `elev_source` together, so a present
-    profile carries real provenance."""
+    """Reassemble the stored parallel arrays + scalars into `WireElevationProfile`.
+    `None` when no profile is stored (no DEM coverage) — not faked (D3). Provenance
+    is read straight from the stored `elev_source`, never defaulted: a profile
+    missing its source is treated as absent rather than mislabeled (Rule #1). The
+    loader always writes the arrays and `elev_source` together, so a present profile
+    carries real provenance."""
     distances = row.get("profile_distances_m")
     elevations = row.get("profile_elevations_m")
     source = row.get("elev_source")
     if not distances or not elevations or len(distances) != len(elevations) or not source:
         return None
     samples = [
-        ElevationSample(distanceMeters=float(d), elevationMeters=float(e))
+        ElevationSample(distance_m=float(d), elevation_m=float(e))
         for d, e in zip(distances, elevations)
     ]
     return ElevationProfile(
         samples=samples,
-        totalGainMeters=float(row.get("total_gain_m") or 0.0),
-        totalLossMeters=float(row.get("total_loss_m") or 0.0),
-        maxGradePercent=float(row.get("max_grade_pct") or 0.0),
+        total_gain_m=float(row.get("total_gain_m") or 0.0),
+        total_loss_m=float(row.get("total_loss_m") or 0.0),
+        max_grade_pct=float(row.get("max_grade_pct") or 0.0),
         source=source,
-        resolutionMeters=float(row.get("elev_resolution_m") or 0.0),
+        resolution_m=float(row.get("elev_resolution_m") or 0.0),
     )
 
 
+def _maps_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """The shared maps/terrain fields (Epic 016 S1 / Epic 017 S4) for one trail row,
+    spread onto both the feed card and the detail response so the shape is identical.
+    `summit` is `None` until the graph carries a high-point concept (source-or-silence,
+    Rule #1)."""
+    geometry, confidence = _geometry_and_confidence(row)
+    return {
+        "geometry": geometry,
+        "trailhead": _trailhead(row),
+        "geometry_confidence": confidence,
+        "summit": None,
+        "elevation_profile": _elevation_profile(row),
+    }
+
+
+def _fetch_maps_by_canonical(session: Any, canonical_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch-read the maps fields for a feed's cards (one round trip). Degrades to an
+    empty map on any read error — the cards then render map-free rather than 500."""
+    if not canonical_ids:
+        return {}
+    try:
+        rows = session.run(trails_detail_query(canonical_ids))
+    except Exception:
+        return {}
+    return {r["canonical_id"]: _maps_fields(r) for r in rows if r.get("canonical_id")}
+
+
 def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailResponse:
-    latlon = _point_latlon(row.get("trailhead_point")) or _point_latlon(row.get("trail_point"))
-    trailhead = TrailheadPoint(lat=latlon[0], lon=latlon[1]) if latlon else None
     return TripDetailResponse(
         canonical_id=canonical_id,
         name=row.get("name") or canonical_id,
-        geometry=_geometry(row),
-        trailhead=trailhead,
-        elevationProfile=_elevation_profile(row),
+        **_maps_fields(row),
     )
 
 
