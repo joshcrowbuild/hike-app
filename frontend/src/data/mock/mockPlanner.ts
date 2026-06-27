@@ -52,13 +52,13 @@ function toCardVM(trail: Trail, tuning: TuningState, origin: OriginKey | undefin
       conditionValue: trail.conditionValue,
       freshness: trail.freshness,
       caution: trail.caution,
-      profilePath: trail.profilePath,
-      terrainPath: trail.terrainPath,
       character: trail.detailCharacter,
       practicalNote: trail.practicalNote,
       sources: trail.sources,
       provenance: 'mock',
     },
+    // Sample route + elevation profile (AC-1.4); the map + glyph read this.
+    geo: trail.geo,
   }
 }
 

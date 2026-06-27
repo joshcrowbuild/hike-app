@@ -7,10 +7,20 @@
  * off selects this; no screen changes.
  */
 import { buildQuery } from '../buildQuery'
+import { isDrawableRoute } from '../geo'
 import { originCoords } from '../origins'
-import type { FeedResponse, OutcomeBody, OutcomeResponse, PlanRequest, ScopeContext } from '../api'
+import type {
+  ConfidenceLevel,
+  FeedCardResponse,
+  FeedResponse,
+  OutcomeBody,
+  OutcomeResponse,
+  PlanRequest,
+  ScopeContext,
+  WireElevationProfile,
+} from '../api'
 import type { PlanInput, PlannerClient } from '../source'
-import type { CardVM, EpisodeVM, FeedError, FeedVM, OutcomeVM } from '../vm'
+import type { CardVM, ElevationProfile, EpisodeVM, FeedError, FeedVM, OutcomeVM, TrailGeo } from '../vm'
 import type { OriginKey } from '../../types'
 
 const TIMEOUT_MS = 10_000
@@ -51,6 +61,9 @@ function mapFeed(res: FeedResponse): FeedVM {
         warnings: c.warnings,
         // The API supplies no rich enrichment yet; the card degrades to thin.
         enrichment: undefined,
+        // Geometry/elevation arrive once Lane A's contract lands; map them when
+        // present so the swap is a no-op, else `undefined` → no map (honest).
+        geo: mapGeo(c),
       }),
     ),
     notices: res.notices,
@@ -58,6 +71,42 @@ function mapFeed(res: FeedResponse): FeedVM {
     // Readiness has no HTTP surface yet (Epic 007 backlog); it stays off.
     readiness: { on: false, state: 'off' },
     dataSource: 'live',
+  }
+}
+
+/**
+ * Wire → VM for the maps/terrain payload. A trailhead is required for any map
+ * surface (even the trailhead-only state), so a card without one yields no
+ * `geo`. The dashed "approximate route" derives from the geometry's confidence
+ * tier (D5): anything below `stated` is drawn dashed.
+ */
+function mapGeo(c: FeedCardResponse): TrailGeo | undefined {
+  if (!c.trailhead) return undefined
+  const quality = isApproximate(c.geometry_confidence) ? 'approximate' : 'confident'
+  // Fail loudly at the boundary: a present-but-undrawable geometry (empty or
+  // single-point coordinates from a malformed payload) becomes the honest
+  // trailhead-only state, never an empty line that crashes the map math.
+  return {
+    geometry: isDrawableRoute(c.geometry ?? null) ? (c.geometry ?? null) : null,
+    trailhead: { lat: c.trailhead.lat, lon: c.trailhead.lon },
+    quality,
+    summit: c.summit ? { lat: c.summit.lat, lon: c.summit.lon } : undefined,
+    elevationProfile: mapElevationProfile(c.elevation_profile),
+  }
+}
+
+const isApproximate = (level: ConfidenceLevel | undefined): boolean =>
+  level === 'hedged' || level === 'flagged'
+
+function mapElevationProfile(p: WireElevationProfile | null | undefined): ElevationProfile | null {
+  if (!p) return null
+  return {
+    samples: p.samples.map((s) => ({ distanceMeters: s.distance_m, elevationMeters: s.elevation_m })),
+    totalGainMeters: p.total_gain_m,
+    totalLossMeters: p.total_loss_m,
+    maxGradePercent: p.max_grade_pct,
+    source: p.source,
+    resolutionMeters: p.resolution_m,
   }
 }
 

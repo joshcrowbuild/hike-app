@@ -12,8 +12,10 @@
  *    ("set aside") rather than silently vanishing.
  */
 import type { Trail, TuningState } from '../../types'
+import { buildTrailGeo } from './geoFixtures'
 
-export const trails: Trail[] = [
+/** Base trail records; the sample route + elevation profile is attached below. */
+const BASE_TRAILS: Omit<Trail, 'geo'>[] = [
   {
     id: 'stony-man',
     name: 'Stony Man Loop',
@@ -43,8 +45,6 @@ export const trails: Trail[] = [
     whenFit: { tomorrowMorning: 6, weekendMorning: 6, weekendAfternoon: 3, fullDay: 2 },
     effortFit: { easy: 1, moderate: 6, bigDay: 2 },
     promptTerms: ['ridge', 'views', 'short', 'classic'],
-    terrainPath: [18, 35, 48, 62, 57, 71, 80, 66, 44],
-    profilePath: [12, 18, 32, 46, 58, 66, 71, 72, 70],
   },
   {
     id: 'whiteoak-canyon',
@@ -76,8 +76,6 @@ export const trails: Trail[] = [
     whenFit: { tomorrowMorning: 5, weekendMorning: 5, weekendAfternoon: 6, fullDay: 4 },
     effortFit: { easy: 2, moderate: 6, bigDay: 2 },
     promptTerms: ['shade', 'water', 'cool', 'forest', 'ruby'],
-    terrainPath: [22, 24, 28, 33, 40, 43, 48, 52, 58],
-    profilePath: [8, 16, 21, 29, 35, 45, 56, 59, 60],
   },
   {
     id: 'old-rag',
@@ -108,8 +106,6 @@ export const trails: Trail[] = [
     whenFit: { tomorrowMorning: 2, weekendMorning: 3, weekendAfternoon: 0, fullDay: 6 },
     effortFit: { easy: 0, moderate: 1, bigDay: 7 },
     promptTerms: ['big day', 'ridge', 'iconic', 'views'],
-    terrainPath: [10, 28, 44, 67, 80, 72, 84, 63, 40],
-    profilePath: [6, 18, 30, 43, 57, 69, 77, 74, 62],
   },
   {
     id: 'dark-hollow',
@@ -140,8 +136,6 @@ export const trails: Trail[] = [
     whenFit: { tomorrowMorning: 4, weekendMorning: 4, weekendAfternoon: 5, fullDay: 1 },
     effortFit: { easy: 7, moderate: 2, bigDay: 0 },
     promptTerms: ['short', 'water', 'shade', 'easy', 'ruby'],
-    terrainPath: [15, 18, 23, 29, 37, 41, 42, 40, 36],
-    profilePath: [10, 16, 20, 27, 33, 35, 36, 31, 26],
   },
   {
     id: 'hawksbill',
@@ -172,10 +166,19 @@ export const trails: Trail[] = [
     whenFit: { tomorrowMorning: 6, weekendMorning: 6, weekendAfternoon: 3, fullDay: 2 },
     effortFit: { easy: 2, moderate: 6, bigDay: 1 },
     promptTerms: ['views', 'summit', 'ridge', 'short'],
-    terrainPath: [24, 30, 40, 51, 59, 67, 72, 61, 46],
-    profilePath: [12, 19, 28, 40, 54, 62, 68, 67, 61],
   },
 ]
+
+/**
+ * The mock trail set — each base record enriched with its sample route geometry
+ * + elevation profile (AC-1.4). Attaching `geo` here, from `geoFixtures`, keeps
+ * the profile tied to the trail's own `distanceMiles`/`ascentFeet` with no
+ * duplicated figures.
+ */
+export const trails: Trail[] = BASE_TRAILS.map((trail) => ({
+  ...trail,
+  geo: buildTrailGeo(trail.id, trail.distanceMiles, trail.ascentFeet),
+}))
 
 export interface Scored {
   trail: Trail

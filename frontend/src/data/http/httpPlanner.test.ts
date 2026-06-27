@@ -77,3 +77,65 @@ describe('HttpPlannerClient auth headers', () => {
     expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
   })
 })
+
+describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  it('maps wire geometry + trailhead + elevation profile onto the VM geo', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'stony-man',
+          name: 'Stony Man Loop',
+          distance_mi: 3,
+          lines: [],
+          warnings: [],
+          geometry: { type: 'LineString', coordinates: [[-78.4, 38.5], [-78.39, 38.51]] },
+          trailhead: { lat: 38.5, lon: -78.4 },
+          geometry_confidence: 'hedged',
+          summit: { lat: 38.51, lon: -78.39 },
+          elevation_profile: {
+            samples: [{ distance_m: 0, elevation_m: 1000 }, { distance_m: 500, elevation_m: 1200 }],
+            total_gain_m: 200,
+            total_loss_m: 0,
+            max_grade_pct: 40,
+            source: 'USGS 3DEP',
+            resolution_m: 10,
+          },
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const geo = result.cards[0].geo
+    expect(geo?.geometry?.type).toBe('LineString')
+    expect(geo?.trailhead).toEqual({ lat: 38.5, lon: -78.4 })
+    // hedged confidence → drawn as the dashed "approximate" route (D5).
+    expect(geo?.quality).toBe('approximate')
+    expect(geo?.elevationProfile?.totalGainMeters).toBe(200)
+    expect(geo?.elevationProfile?.samples[1]).toEqual({ distanceMeters: 500, elevationMeters: 1200 })
+  })
+
+  it('yields no geo when the card carries no trailhead (degrade, not fabricate)', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [{ canonical_id: 'x', name: 'X', distance_mi: null, lines: [], warnings: [] }],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].geo).toBeUndefined()
+  })
+})
