@@ -22,10 +22,23 @@ live database; the default runner lazily builds the neo4j driver.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
+import certifi
+
 from graph.queries import assert_scoped_write
+
+# Aura is reached over neo4j+s:// (strict TLS). Python's ssl module verifies the
+# server certificate against the OS trust store, which on some hosts (incl.
+# python:3.11-slim before ca-certificates is installed) has no CA bundle Python can
+# find — the driver then fails with "Unable to retrieve routing information". Point
+# ssl at certifi's bundle BEFORE any driver builds its TLS context (the lazy driver
+# below). `setdefault` so an operator-provided value still wins; verification stays
+# strict — we keep neo4j+s:// and never downgrade to neo4j+ssc:// or trust-all.
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+os.environ.setdefault("SSL_CERT_DIR", os.path.dirname(certifi.where()))
 
 Rows = list[dict[str, Any]]
 Runner = Callable[[str, dict[str, Any]], Rows]
