@@ -2,7 +2,8 @@
 #
 # Installs only the lighter serve surface (pyproject `serve` extra: api + graph +
 # live + providers + shapely), never the rest of the heavy ingestion geo stack.
-# shapely's manylinux wheel bundles GEOS, so no apt build/runtime libs are needed.
+# shapely's manylinux wheel bundles GEOS, so the only apt package needed is
+# ca-certificates (for strict TLS to Neo4j Aura over neo4j+s://).
 # Full deploy click-path: docs/runbooks/deploy-api-render.md
 FROM python:3.11-slim AS runtime
 
@@ -12,6 +13,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
+
+# OS trust store for strict TLS to Aura (neo4j+s://). certifi (a serve dep) also
+# ships a bundle that graph/client.py points ssl at — this is belt-and-suspenders so
+# verification has a CA bundle no matter which path the ssl module takes.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 # Project manifest + readme first (pyproject declares `readme = "README.md"`).
 COPY pyproject.toml README.md ./
