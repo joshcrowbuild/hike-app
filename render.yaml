@@ -27,7 +27,21 @@ services:
       # unset — so it is set explicitly here.
       - key: ADVENTURE_CORS_ALLOW_ORIGINS
         value: https://hike-app.vercel.app
+      # Model providers (non-secret). The default is a LOCAL OpenAI endpoint a Render
+      # box can't reach, so /plan would 500 once it needs a model. Point both tiers at
+      # Anthropic (the API key below). Cheap tier = Haiku, judgment tier = Sonnet.
+      - key: ADVENTURE_PROVIDER_MECHANICAL
+        value: anthropic
+      - key: ADVENTURE_PROVIDER_JUDGMENT
+        value: anthropic
+      - key: ADVENTURE_MODEL_MECHANICAL
+        value: claude-haiku-4-5-20251001
+      - key: ADVENTURE_MODEL_JUDGMENT
+        value: claude-sonnet-4-6
       # ── Injected in the Render dashboard (never committed) ──
+      # Anthropic key — required because both tiers are set to the anthropic provider.
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # Neo4j Aura connection (e.g. NEO4J_URI=neo4j+s://<id>.databases.neo4j.io).
       - key: NEO4J_URI
         sync: false

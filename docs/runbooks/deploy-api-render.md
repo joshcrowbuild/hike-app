@@ -46,6 +46,11 @@ Every var is documented in `.env.example`.
 | `NEO4J_USER` | **yes** | yes | `sync: false` | Usually `neo4j`. |
 | `NEO4J_PASSWORD` | **yes** | yes | `sync: false` | Aura password. |
 | `ADVENTURE_CORS_ALLOW_ORIGINS` | **yes** | no | value set | Comma-separated exact browser origins. Empty = default-deny (browser blocks every call). |
+| `ADVENTURE_PROVIDER_MECHANICAL` | **yes** | no | value set | `anthropic` — the cheap/extract tier (the local default is unreachable from Render). |
+| `ADVENTURE_PROVIDER_JUDGMENT` | **yes** | no | value set | `anthropic` — the judgment/curate tier. |
+| `ADVENTURE_MODEL_MECHANICAL` | **yes** | no | value set | `claude-haiku-4-5-20251001`. |
+| `ADVENTURE_MODEL_JUDGMENT` | **yes** | no | value set | `claude-sonnet-4-6`. |
+| `ANTHROPIC_API_KEY` | **yes** | yes | `sync: false` | Required because both tiers are set to `anthropic`; without it `/plan` 500s. |
 | `ADVENTURE_DEV_VIEWER_SECRET` | for non-anonymous viewers | yes | `sync: false` | Must equal the frontend's `X-Dev-Viewer-Secret` (Epic 014). Absent → only anonymous browsing works (fail-closed 403). |
 | `ADVENTURE_REGION` | no (default `shenandoah-gwj`) | no | — | Pilot ingest region. |
 | `ADVENTURE_LIVE_ADAPTERS` | no (default none) | no | — | Comma-separated live probes (`nws,airnow,…`). Empty = no live conditions; the engine still runs (source-or-silence). |
@@ -54,12 +59,11 @@ Every var is documented in `.env.example`.
 | `FIRMS_MAP_KEY` | only if `firms` enabled | yes | — | NASA FIRMS map key. |
 | `RIDB_API_KEY` | only if `ridb` enabled | yes | — | Recreation.gov key. |
 | `VALHALLA_BASE_URL` | only for drive-time | no | — | Self-hosted Valhalla URL; absent → no drive-time line. |
-| `ANTHROPIC_API_KEY` | only if a tier is set to `anthropic` | yes | — | Cloud yardstick; local-first by default, so unset is fine. |
 
-Model providers default to a **local** OpenAI-compatible endpoint
-(`LOCAL_OPENAI_BASE_URL`), which a Render box cannot reach. The anonymous browse + maps
-surface does not call a model, so the default deploy serves fine; wire a reachable
-provider before relying on model-backed phrasing.
+The codebase's *default* model provider is a **local** OpenAI-compatible endpoint
+(`LOCAL_OPENAI_BASE_URL`) that a Render box cannot reach — so `render.yaml` points both
+tiers at **Anthropic** and the deploy must supply `ANTHROPIC_API_KEY`. Anonymous browse +
+maps don't call a model, but `/plan` synthesis does; without a reachable provider it 500s.
 
 ---
 
