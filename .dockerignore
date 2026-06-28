@@ -1,0 +1,33 @@
+# Keep the build context small and secrets out of it (CLAUDE.md rule #10). The
+# Dockerfile COPYs only the serve-time packages, but this also guarantees .env never
+# enters the build context and speeds the upload.
+
+.git
+.github
+.gitignore
+
+# Secrets & local data — never in an image.
+.env
+.env.*
+!.env.example
+data/
+neo4j/
+
+# Frontend (separate Vercel deploy) and non-serve code/docs.
+frontend/
+regions/
+evals/
+tests/
+spikes/
+docs/
+scripts/
+
+# Python / tooling caches and build artifacts.
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/

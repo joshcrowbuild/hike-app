@@ -26,6 +26,12 @@ live = ["httpx>=0.27"]
 providers = ["anthropic", "openai"]
 # Stage 4 API layer.
 api = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.0"]
+# Serve-time surface for the hosted API (Dockerfile / Render — see
+# docs/runbooks/deploy-api-render.md). The lighter set: api + graph + live +
+# providers, plus shapely — the one geo dep the serve path imports (ingestion.route,
+# for route geometry). Deliberately EXCLUDES the rest of the heavy ingestion stack
+# (geopandas/pyproj/rasterio/thefuzz), which serve-time never imports.
+serve = ["adventure-planner[api,graph,live,providers]", "shapely>=2.0"]
 dev = [
   "ruff>=0.6",
   "mypy>=1.11",
