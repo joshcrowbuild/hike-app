@@ -2,11 +2,11 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last verified:** 2026-06-26 · **Owner:** PM/planner lane · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v8
+**Last verified:** 2026-06-28 · **Owner:** PM/planner lane · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v9
 
 > **◆ PHASE-1 BASELINE + DOCS OVERHAUL — both complete; `main` is the single line.** Phase-1 build is done (backend personalization + design-system + the personal-intelligence app UX, all verified honest) and collapsed onto `main`, tagged `v0.1-phase1`. Repo is on the `joshcrowbuild` Team org; `main` is the default + protected branch with **7 required CI checks**: `format-check` · `lint` · `typecheck` · `test` · `integration (neo4j)` · `workflow-lint` · `docs-lint`. No force-push/delete; admin override retained. All merged feature branches swept (only `main` remains remote). **The documentation overhaul is complete** (PRs #27–30): 55 live docs (down from 60), ~115KB of closed history archived, 0 broken links, a lean always-load hot path, and a CI `docs-lint` gate that **fails the build on wrong memory** (stale-marker denylist · broken-link check · auto-generated epic index). **Go-forward model:** feature branches off `main`; lanes are conventions, not long-lived branches.
 
-> **◆ NOW LIVE + DOGFOODING (v8).** The app is **deployed on Vercel** (`hike-app.vercel.app`, public, sample-data mode) — the **frontend host is decided: Vercel** (the brain + DB + watch host remain the deferred deep-dive, R7). Dogfooding has started, and the **first finding reset the priority: there are no maps.** Two new epics now define the next build, designed to run **in parallel**: **Epic 016 (Maps & terrain — topographic Detail map + route + elevation)** and **Epic 017 (terrain elevation enrichment — USGS 3DEP)**. Ratified: MapLibre engine · ship map + elevation together · offline a fast-follow. They couple only through a frozen elevation-profile contract (017 S0), then build concurrently and converge at the chart (016 S5b). **Maps is now the next build, ahead of the design-gated 006/007/008/009.** The commons doc-guard cleanup (Epic 010 AC-1.5) is **done (#32)**.
+> **◆ MAPS SHIPPED + REAL DATA LOADED — going live (v9).** Two big moves since v8. **(1) Maps shipped:** Epics 016 (frontend) + 017 (backend 3DEP elevation) are **DONE & merged** (#38, #39) — topographic Detail map, assembled route, trailhead, card glyph, and a real elevation profile. The one cross-lane risk (the two lanes guessing differently on the shared wire contract) was caught in pre-merge review and reconciled on #39 before it reached `main`. **(2) Real data exists:** the **Shenandoah-GWJ pilot region is loaded into managed Neo4j (Aura Free)** — **1458 trails, every one with geometry *and* a real 10 m USGS-3DEP elevation profile**, 24 trailheads, ~5.3k nodes / ~6k rels (far under Free caps). Verified honest: 0 half-profiles, full Rule #7 provenance, 96.7% DEM coverage, no-coverage→`null` (never faked). **This flips R7 from "deferred" to "in progress":** frontend = Vercel (decided, live) · DB = Aura Free (provisioned + loaded) · API = Render (deploy config #40 + Aura-TLS CA hardening #41 both merged). **Last two steps to real trails on the phone:** deploy the API to Render + flip the Vercel env to the live API (Josh, this afternoon). A Python CA-path TLS gotcha (Aura over `neo4j+s://`) surfaced during ingest and is fixed app+container + documented (#41).
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index — now generated from epic headers). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard. New here? Start at `docs/README.md` (the doc map).
 
@@ -14,7 +14,7 @@
 
 ## TL;DR — where we are
 
-**Phase-1 is complete and the repo is at a clean, drift-guarded baseline.** Backend personalization (Epics 001–005, 010–015 DONE, verified), the design system, and the app UX are all on `main`; the overnight batch closed the last open Phase-1 build work and a 6-reviewer adversarial pass confirmed each DoD is genuinely met (not status-flipped). **R10 — the HTTP-adapter secret gap that would have 403'd every live call — is fixed (#25)**, so live-data wiring is now unblocked (mock is still the default path). The documentation is top-tier and the app is **live on Vercel** (sample-data) — dogfooding has begun. **The next build is Maps** (Epics 016 + 017, parallel), pulled to the front by the first dogfood finding ("no maps"). **Behind it, still design-gated:** Epic 008 (API tests, smallest), 006 (novelty — needs a `been_on` producer), 007 (readiness — biggest, safety-adjacent, no epic yet), 009 (eval). **Still unmeasured:** the Stage-4 cost spike (R5). **Recently closed:** the commons doc-guard cleanup (#32) and R10 (#25, live-data wiring unblocked).
+**Phase-1 is baselined; Maps shipped; real data is loaded; the app is going live for real.** Backend personalization (Epics 001–005, 010–015 DONE, verified), the design system, and the app UX are all on `main`. **Maps (Epics 016 + 017) are DONE & merged** (#38/#39) — topo Detail map, route, trailhead, elevation profile. **The Shenandoah-GWJ pilot region is now loaded into Aura Free** (1458 trails + geometry + real 10 m elevation, verified honest), so **the live-data path is in flight (R7 now in progress):** frontend = Vercel · DB = Aura (loaded) · API deploy config + Aura-TLS hardening merged (#40/#41). **The only two steps left to real trails on the phone:** Render deploy + Vercel env flip (Josh, this afternoon). **New follow-ups from the ingest** (none block the demo): verify the 1643→1458 slug merge (~185 collapsed `canonical_id`s — same-trail or collision?), commit the untracked `apply_schema.py` + `python3`/preflight tooling fixes, drop the seeded Old Rag duplicate. **Behind all this, still design-gated:** Epic 008 (API tests, smallest), 006 (novelty — needs a `been_on` producer), 007 (readiness — biggest, safety-adjacent, no epic yet), 009 (eval). **Still unmeasured:** the Stage-4 cost spike (R5).
 
 ---
 
@@ -25,14 +25,14 @@
 | 0 Setup | 0 | ✅ | ✅ | Done |
 | 1 Data sources | 0 | ✅ | ✅ | Done |
 | 2 Schema/graph | 0 | ✅ | ✅ v0.2.0 | Done |
-| 3 Corpus pipeline | 0 | ✅ | ✅ | Done — CorpusSource seam landed (Epic 012) |
+| 3 Corpus pipeline | 0 | ✅ | ✅ | Done — CorpusSource seam (012) + **enrichment loader (017)**; **first real region ingested** (Shenandoah-GWJ → Aura, 1458 trails + geometry + 3DEP elevation) |
 | 4 Engine + cost | 0 | ✅ | ✅ | Built — **cost spike (real measurement) still pending (R5)**; TTL cache wired (Epic 013) |
 | 5 Personalization | 1 | ✅ | ✅ | Belief pipeline (001), commons fork (010), outcome (002), context-assembly + `Episode.date` (003) all **DONE**; novelty (006) + readiness (007) remain |
 | 6 Watch integration | 1 | ✅ | 🔶 | Device seam (004) done — **incl. the in-process Garmin poller (`watch_sync`, 55 tests)**; only the **always-on deployment** (R7) + **readiness filter (007, unwritten)** remain |
 | 7 Eval deep-dive | 1 | ✅ | ❌ | Methodology designed (on `main`); Epic 009 **DEFINED**; harness unbuilt |
 | 8 Multiplayer | 2 | ✅ | ❌ | Designed (on `main`); gated by always-on infra + auth provider (R3/R7) |
 | 9 Commons | 3 | ✅ | 🔶 | Write half accreting (010 on `main`); read/aggregation dormant; **gated by T6** |
-| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped | design-system on `main` + **app UX shipped**: Home/Detail/Tuning/Outcome on a typed data-source seam; Confidence/Staleness honesty primitives (verified honest). Mock-first; **live-data wiring now unblocked (R10 fixed)** |
+| 10 Experience/design-system | 4 | ✅ v0.1 | ✅ shipped | design-system + **app UX** (Home/Detail/Tuning/Outcome, Confidence/Staleness honesty primitives) + **Maps (016/017)** all on `main`; topo map + route + real elevation. Going live on real Aura data (R7 final leg) — Render deploy + Vercel flip pending |
 | 11 Native shell | 4 | ❌ | ❌ | Not started |
 
 ---
@@ -56,28 +56,33 @@
 | 013 | LiveAdapter seam | **DONE ✅** | PR #7 (remediates C6; +TTL cache, drive-time) |
 | 014 | Overlay-egress + viewer-auth hardening (C3 + C4) | **DONE ✅** | PR #7 — C4 egress fix + **C3 interim edge auth** (`_authorize_viewer`: non-anonymous `viewer_id` needs `X-Dev-Viewer-Secret`, fails closed 403); full managed-auth deferred (R3) |
 | 015 | CI Neo4j integration (live owner-isolation guardrail) | **DONE ✅** | PR #19 — **required** `integration (neo4j)` job runs live in GH Actions; read+write isolation + a real falsifiability test (removing `owner_scope` reds it). Fast legs stay DB-free |
-| 016 | Maps & terrain (topographic Detail map · route · elevation) | **DEFINED** | #33/#34 — first dogfood finding ("no maps"). MapLibre + USGS topo; route from `geom_wkt`; ships map + elevation together; offline fast-follow. Parallel with 017; join at the chart (S5b) |
-| 017 | Terrain elevation enrichment (USGS 3DEP profiles) | **DEFINED** | #35 — the backend half of maps: enrichment-adapter seam (Stage 3 §7 "second kind") + 3DEP sampler → store → API. Couples to 016 via one frozen contract (S0), then builds in parallel |
+| 016 | Maps & terrain (topographic Detail map · route · elevation) | **DONE ✅** | #38 — MapLibre topo map + assembled route + trailhead + card glyph + elevation chart. Code-split (feed stays map-free), honest empty/failure states, attribution. Built on mock, swaps to live at the contract |
+| 017 | Terrain elevation enrichment (USGS 3DEP profiles) | **DONE ✅** | #39 — enrichment loader (closed the "no graph write yet" gap) + 3DEP sampler → parallel-array store → API on the feed card. Pre-merge review caught + fixed the cross-lane contract drift (snake_case + card placement) before `main`. Real data: 1458 trails carry a 10 m profile in Aura |
 
-**Merged PRs (baseline + docs):** remediation/seam set #5/#6/#7/#9/#10 · UI #14/#17/#22 · overnight batch #18/#19/#20/#21 · R10 secret #25 · roadmap+runbook #26 · **doc overhaul #27/#28/#29/#30** · plus the roadmap/workflow-lint/dependabot housekeeping PRs.
+**Merged PRs (baseline + docs):** remediation/seam set #5/#6/#7/#9/#10 · UI #14/#17/#22 · overnight batch #18/#19/#20/#21 · R10 secret #25 · roadmap+runbook #26 · **doc overhaul #27/#28/#29/#30** · commons doc-guard #32 · **Maps #38 (frontend) + #39 (backend 3DEP)** · **hosting #40 (Render deploy config + CORS) + #41 (Aura-TLS CA hardening)** · plus the roadmap/workflow-lint/dependabot housekeeping PRs.
 
 ---
 
 ## Live in-flight
 
-Phase-1, the baseline, and the docs overhaul are all merged; the app is **live on Vercel** and dogfooding has begun. **The next build is Maps** (Epics 016 + 017, defined + ratified, ready to start as two parallel lanes — see below).
+Phase-1, the baseline, the docs overhaul, **and Maps** are all merged. The current push is **going live for real**: Maps shipped, the Shenandoah region is loaded into Aura, and the API is two manual steps from serving real data to the phone.
 
-### ◆ Maps & terrain — NEXT BUILD (Epics 016 + 017, parallel)
-First dogfood finding: the deployed app has no maps. The Detail screen was specced for a "full route, contour, elevation profile" block but never built, and the mock data carried no coordinates. Two epics now cover it, ratified to ship **map + elevation together** (MapLibre · USGS topo · offline a fast-follow): **016 (frontend)** builds the topo map + route + trailhead + card glyph against mock data; **017 (backend)** builds the enrichment seam + USGS-3DEP sampler that produces the real elevation profile. They couple only through a frozen contract (017 S0) and **converge at the elevation chart (016 S5b)** — everything else runs concurrently. *Next PM step: the two lane kickoff briefs on Josh's go.*
+### ◆ Maps & terrain — SHIPPED ✅ (Epics 016 + 017)
+Built dogfood-first ("no maps, I can't see shit") as two parallel lanes that converged at the elevation chart. **016 (frontend, #38):** MapLibre topo Detail map + assembled route + trailhead + card glyph + elevation profile, code-split so the feed stays map-free, with honest empty/failure states + attribution. **017 (backend, #39):** the enrichment **loader** (closed the long-standing "no graph write yet" gap) + USGS-3DEP sampler → parallel-array store → exposed on the feed card. The lanes were coupled only by a frozen wire contract; a **pre-merge adversarial review caught the one real risk — the two lanes had drifted on field casing + placement — and reconciled it on #39 before it hit `main`** (`tests/test_maps_contract.py` now locks the API shape to the frontend type).
+
+### ◆ Live-data path — IN FLIGHT (R7 hosting, going live)
+Real data now exists: the **Shenandoah-GWJ pilot region is loaded into Aura Free** (1458 trails + per-segment geometry + 10 m 3DEP elevation, 24 trailheads, ~5.3k nodes — verified honest, full provenance, no fabricated curves). The hosting picture (R7) is resolving piece by piece:
+- **Frontend = Vercel** (decided, live) · **DB = Aura Free** (provisioned + loaded) · **API = Render** — deploy config (Docker + `render.yaml` + default-deny CORS, #40) and the Aura-TLS CA hardening (#41) are both merged; a deploy runbook (`docs/runbooks/deploy-api-render.md`) is in place.
+- **Remaining (Josh, this afternoon):** ① deploy the API to Render per the runbook, ② flip Vercel env (`VITE_USE_MOCK=false`, `VITE_API_BASE_URL=<render>`, viewer secret) → real Shenandoah trails on the phone.
+- **Gotcha resolved (#41):** a Python CA-path gap broke the `neo4j+s://` TLS handshake to Aura ("Unable to retrieve routing information"); fixed in app + container via certifi/`ca-certificates`, **strict TLS preserved** (no `+ssc`/trust-all), with a test guarding against future downgrades.
+- **Ingest follow-ups (none block the demo):** verify the 1643→1458 `canonical_id` slug merge (~185 collapsed — same-trail or collision?); commit the untracked `scripts/apply_schema.py` (the Aura schema-applier) + the `make`/`preflight` `python3`/Docker tooling fixes; drop the seeded Old Rag duplicate (`ct:old-rag-loop`); 15/24 trailheads are unlinked (OSM sparsity, not a bug).
+- **Still deferred:** the always-on **watch-poller** host (Garmin sync) — not needed to browse trails.
 
 ### ◆ Baseline promotion — DONE ✅
 Trunk promoted to `main` (`725c442`) · R10 secret fix (#25) · repo → `joshcrowbuild` Team org · default branch → `main` · **branch protection** (7 required checks incl. `integration (neo4j)` + `docs-lint`, no force-push/delete) · tag `v0.1-phase1` cut (`c12be36`) · merged feature branches swept. Nothing outstanding.
 
 ### ◆ Documentation overhaul — COMPLETE ✅ (#27–30)
 Four waves, one PR each: **(1) Freshness** — killed the stale "current position" in CLAUDE.md/README/decision-log + 6 research banners (point at roadmap as the status SSOT). **(2) Navigation** — new `docs/README.md` map + `docs/research/README.md` index (25 docs classified) + wired roadmap into CLAUDE.md. **(3) Dedupe/archive** — `git mv` ~115KB closed audits → `docs/research/archive/`; folded decision-log-additions §32–40 into the decision log; single-sourced git/PR hygiene into `development-process.md`. **(4) Anti-drift** — `scripts/gen_epic_index.py` + `scripts/doc_lint.py` + the CI `docs-lint` job (denylist · broken-link · epic-index-sync). Result: a lean hot path, a findable map, and a gate that fails on wrong memory. *PM follow-ups closed: `docs-lint` added to branch protection; this v7 reconciliation.*
-
-### ◆ Commons doc-guard cleanup — IN FLIGHT (build lane, Epic 010 AC-1.5)
-`tests/test_commons_doc_lint.py` carried an **inverted** guard (forcing the commons-fork glyphs to read 🔶, never ✅) to prevent the gap-audit-C1 false-✅. Epic 010 has since shipped, so the guard now forces the docs to keep lying. Build lane is inverting the two glyph guards (so they assert the shipped truth + fail on a regression to a false "pending") and flipping the coupled decision-log §30/§31 + stage-6 S6-10 glyphs 🔶→✅; the schema-invariant test stays. *Roadmap closes this row to ✅ once its PR merges.*
 
 ---
 
@@ -86,12 +91,14 @@ Four waves, one PR each: **(1) Freshness** — killed the stale "current positio
 ```
 DONE & BASELINED ─────────────────────────────────────────────────────────
   ✅ Phase-1 backend (001–005, 010–015) · ✅ app UX · ✅ R10 secret · ✅ docs overhaul
-  ✅ v0.1-phase1 tag · ✅ live on Vercel (sample-data) · ✅ commons doc-guard (#32)
+  ✅ v0.1-phase1 tag · ✅ commons doc-guard (#32) · ✅ Maps (016/017, #38/#39)
+  ✅ Shenandoah-GWJ loaded into Aura (1458 trails + geometry + 10 m elevation)
 
-NEXT BUILD — Maps (dogfood-driven), two parallel lanes, ratified & ready to start
-  Epic 017 (Lane A, backend) ── freeze contract (S0) → enrichment seam → 3DEP sampler → store → API
-  Epic 016 (Lane B, frontend) ── topo map + route + trailhead + card glyph, on MOCK (no dep on Lane A)
-        └── JOIN: 016 S5b (elevation chart) needs both lanes; everything else is concurrent
+GOING LIVE NOW — the last leg of the real-data path (R7 in progress)
+  ✅ frontend = Vercel · ✅ DB = Aura (loaded) · ✅ API config #40 + Aura-TLS #41 merged
+  ▶ ① deploy API to Render (runbook) → ② flip Vercel env → real trails on the phone (Josh, PM)
+  follow-ups (non-blocking): verify 1643→1458 slug merge · commit apply_schema.py + tooling fixes
+                             · drop seeded Old Rag dup · watch-poller host still deferred
 
 BEHIND IT — the design-gated Phase-1 remainder
   Epic 008 (API tests)  ── SMALL: write its epic-with-ACs, ratify → buildable (no deps)
@@ -100,14 +107,14 @@ BEHIND IT — the design-gated Phase-1 remainder
   Epic 009 (eval)       ── DEFINED; needs 006 closed + golden-trip set / cassettes
 
 OTHER OPEN
-  Stage-4 cost spike (R5) ── measure once the flow is exercised end-to-end against the real corpus
-  Backend/DB/watch host   ── the deferred hosting deep-dive (R7); frontend host = Vercel (decided)
+  Stage-4 cost spike (R5) ── now measurable: a real corpus + Anthropic query-time path exist
+  Watch-poller host       ── the one still-deferred piece of R7 (Garmin sync; not needed to browse)
 ```
 
 **Next-up by lane:**
-- **Build — Maps (the priority):** kick off the two parallel lanes on Josh's go — Lane A (Epic 017 backend) + Lane B (Epic 016 frontend). PM to write the two kickoff briefs.
-- **Behind maps (your design call, when ready):** Epic 007 (readiness — biggest, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs.
-- **UI:** the app is live on Vercel (sample-data); live-data wiring is unblocked (R10) when wanted.
+- **Going live (the priority, Josh this afternoon):** ① deploy the API to Render per the runbook, ② flip the Vercel env to the live API → real Shenandoah trails on the phone. Then dogfood the *real* data and let the next findings set priorities.
+- **Hardening follow-ups (build lane, post-live):** audit the 1643→1458 slug merge; commit `apply_schema.py` + the `python3`/preflight tooling fixes; drop the seeded Old Rag duplicate.
+- **Behind that (your design call, when ready):** Epic 007 (readiness — biggest, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs.
 
 ---
 
@@ -132,9 +139,9 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 | ~~**R2**~~ | ~~No live-Neo4j test coverage.~~ | **RESOLVED — Epic 015 (#19)** | Required `integration (neo4j)` job proves read+write isolation + falsifiability against a real DB, live in CI. |
 | **R3** | **C3 auth — interim built, full auth deferred.** Epic 014 S3 added an edge guard (`_authorize_viewer`): any non-anonymous `viewer_id` must present `X-Dev-Viewer-Secret` (constant-time compare) or gets HTTP 403 — fails closed. But at the query layer `ScopedSession` still trusts `viewer_id` verbatim, so a secret-bearing forged id is still a forged write; the dev-secret is a single shared interim credential, not per-user auth. | **PARTIAL** — interim guard built; full auth deferred | Decide managed auth provider (Supabase/Clerk/Auth0 — undecided) at Stage 8; until then the shared dev-secret is the only gate. |
 | ~~**R4**~~ | ~~Trunk ↔ design-branch doc divergence (13 docs).~~ | **RESOLVED — #21 + docs overhaul** | All design docs on `main`; the docs overhaul (#27–30) then indexed + drift-guarded the whole surface. |
-| **R5** | **Cost spike unmeasured.** Stage-4 local-vs-cloud bake-off designed; real cost-per-session not yet measured against the real corpus. TTL cache lever now built (Epic 013), so the estimate's main assumption holds. | **OPEN** | Run the spike once Phase-1 flow stabilizes (needs a real flow to measure). |
+| **R5** | **Cost spike unmeasured.** Stage-4 local-vs-cloud bake-off designed; real cost-per-session not yet measured. TTL cache lever built (Epic 013); ingest confirmed corpus-load is deterministic (no LLM), so spend is a *query-time* concern (intent + curation). | **OPEN — now measurable** | A real Aura corpus + the Anthropic query-time path now exist; run the spike against live `/plan` once the API is deployed. |
 | ~~**R6**~~ | ~~M1 `Episode.date` never written.~~ | **RESOLVED — Epic 003 (#20)** | `upsert_episode` SETs `e.date` from `start_time`; 18-month filter proven by a live-DB E2E. |
-| **R7** | **Hosting/compute deep-dive (backend + DB + watch) undecided.** Frontend host is **decided = Vercel** (live, sample-data). Open: the always-running brain (API/engine), the Neo4j DB, and the always-on host the Garmin poller (Epic 004) + Stage-8 multiplayer need — one box can serve all three. | Frontend resolved; rest **deferred** | The deep-dive Josh flagged: managed Neo4j (e.g. Aura) + a small always-on host (cloud box / Pi / always-on Mac), decided once together at the live-data / Phase-1→2 step. |
+| **R7** | **Hosting/compute — resolving piece by piece.** Frontend = **Vercel** (live). DB = **Neo4j Aura Free** (provisioned + Shenandoah loaded). API = **Render** (deploy config #40 + Aura-TLS hardening #41 merged; the actual Render deploy + Vercel env flip are the two remaining manual steps). Only the always-on **watch-poller** host (Garmin sync, Epic 004) + Stage-8 multiplayer compute stay deferred. | **IN PROGRESS** — DB+frontend done, API deploy pending | Josh deploys the API to Render + flips Vercel this afternoon → first real-data dogfood. Revisit Aura Free's caps/idle-pause + the watch host if/when usage grows. |
 | ~~**R8**~~ | ~~CI `workflow-lint` red trunk-wide.~~ | **RESOLVED — #12** | `actionlint` now runs via its official download script; `workflow-lint` green. |
 | ~~**R9**~~ | ~~PR #22 (UI) targets `main`, not trunk.~~ | **RESOLVED** | Retargeted + merged; honesty invariants verified. The contract-check surfaced R10. |
 | ~~**R10**~~ | ~~HTTP-adapter dev-viewer-secret gap (guaranteed 403 on live calls).~~ | **RESOLVED — #25** | `httpPlanner.ts` now injects `X-Dev-Viewer-Secret` from `VITE_DEV_VIEWER_SECRET` for non-anonymous viewers (omitted for anonymous; tested). Live-data wiring is unblocked; secret stays in `.env` (Rule #10). |
@@ -145,7 +152,7 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 - **T2 · Access-control-at-query-layer.** ✅✅ reads + writes seamed (Epic 011); Outcome-endpoint bypass closed (#9); **the invariant is proven end-to-end against a live Neo4j in CI on every PR (Epic 015)** — a forgotten owner clause reds the build. (Forged-identity auth is still R3.)
 - **T3 · Forked commons write.** ✅ built (Epic 010), accreting born-severed observations. Read/aggregation dormant to Stage 9. (Doc-guard cleanup in flight — build lane.)
 - **T4 · Evaluation.** 🔶 truthfulness harness exists; golden-trip set/cassettes unbuilt; Epic 009 (deep eval) + the stage-7 methodology on `main` — **DEFINED**, unbuilt.
-- **T5 · UX.** ✅ design-system v0.1 + the **personal-intelligence app UX shipped** (Home/Detail/Tuning/Outcome + Confidence/Staleness honesty primitives, verified honest). Mock-first; **live-data wiring now unblocked (R10 fixed)**.
+- **T5 · UX.** ✅ design-system v0.1 + the **personal-intelligence app UX** (Home/Detail/Tuning/Outcome + Confidence/Staleness honesty primitives, verified honest) + **Maps (016/017): topo map, route, real elevation**. Going live on real Aura data (Render deploy + Vercel flip pending).
 - **T6 · Legal/licensing/consent.** ⚠️ see R1 — gates Stage 9 public release; separability invariant unenforced.
 - **T7 · Naming/branding.** Working title "Adventure Planner"; anytime.
 
