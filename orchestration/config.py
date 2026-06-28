@@ -47,6 +47,12 @@ class Settings:
     # a client-supplied identity (Rule #5 / decision-log §13).
     dev_viewer_secret: str | None = field(repr=False, default=None)
 
+    # Browser CORS allow-list for the hosted API edge (deploy contract). Comma-separated
+    # EXACT origins from ADVENTURE_CORS_ALLOW_ORIGINS (e.g. the Vercel frontend). Empty by
+    # default = default-deny: no browser origin is allowed and the wildcard is never used,
+    # so a misconfigured deploy fails closed rather than exposing the API to any site.
+    cors_allow_origins: tuple[str, ...] = ()
+
     # Live-data source credentials (Stage 1 catalog; most free/keyless).
     nws_user_agent: str | None = None
     airnow_api_key: str | None = field(repr=False, default=None)
@@ -117,6 +123,9 @@ class Settings:
         corpus_raw = e.get("ADVENTURE_CORPUS_SOURCES", "osm,nps,usfs")
         corpus_sources = tuple(s.strip() for s in corpus_raw.split(",") if s.strip())
 
+        cors_raw = e.get("ADVENTURE_CORS_ALLOW_ORIGINS", "")
+        cors_allow_origins = tuple(o.strip() for o in cors_raw.split(",") if o.strip())
+
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),
             neo4j_user=e.get("NEO4J_USER", "neo4j"),
@@ -126,6 +135,7 @@ class Settings:
             tiers={"mechanical": tier("mechanical"), "judgment": tier("judgment")},
             region=e.get("ADVENTURE_REGION", "shenandoah-gwj"),
             dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
+            cors_allow_origins=cors_allow_origins,
             nws_user_agent=e.get("NWS_USER_AGENT") or None,
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,
