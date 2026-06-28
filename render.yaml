@@ -1,0 +1,42 @@
+# Render Blueprint — Adventure Planner API (FastAPI on a Docker web service).
+#
+# Apply from the Render dashboard: New → Blueprint → connect this repo → Apply.
+# Secrets are NOT in this file (CLAUDE.md rule #10); each `sync: false` var is a
+# placeholder you fill in Render's dashboard at deploy time. The non-secret CORS
+# origin is set here so the Vercel frontend is allowed out of the box.
+#
+# Full click-path (connect repo, paste Aura creds, deploy, verify /health):
+# docs/runbooks/deploy-api-render.md
+services:
+  - type: web
+    name: adventure-planner-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Render polls this path; the API answers 200 once settings load, even before
+    # Neo4j is reachable (graph stats degrade to null) — so the service is healthy
+    # the moment it boots.
+    healthCheckPath: /health
+    # Deploy on every commit to the linked branch (current spec; replaces the
+    # deprecated `autoDeploy: true`). Use `checksPass` to gate on CI, `off` to disable.
+    autoDeployTrigger: commit
+    envVars:
+      # Non-secret: the browser origin(s) allowed to call the API (the Vercel app).
+      # Without this the browser blocks every cross-origin request. Default-deny if
+      # unset — so it is set explicitly here.
+      - key: ADVENTURE_CORS_ALLOW_ORIGINS
+        value: https://hike-app.vercel.app
+      # ── Injected in the Render dashboard (never committed) ──
+      # Neo4j Aura connection (e.g. NEO4J_URI=neo4j+s://<id>.databases.neo4j.io).
+      - key: NEO4J_URI
+        sync: false
+      - key: NEO4J_USER
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      # Edge viewer-auth shared secret (Epic 014) — must equal the value the frontend
+      # sends as X-Dev-Viewer-Secret. Absent → only anonymous browsing works (fail
+      # closed); a non-anonymous viewer_id is rejected with 403.
+      - key: ADVENTURE_DEV_VIEWER_SECRET
+        sync: false
