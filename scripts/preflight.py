@@ -24,6 +24,9 @@ if _env_path.exists():
             k, _, v = line.partition("=")
             # Strip surrounding quotes that editors/shells sometimes add
             v = v.strip().strip('"').strip("'")
+            # Populate os.environ so the checks below actually see .env values.
+            # setdefault: a real shell-exported var wins over the file.
+            os.environ.setdefault(k.strip(), v)
 
 RESET = "\033[0m"
 GREEN = "\033[32m"
@@ -65,6 +68,16 @@ def check_neo4j() -> bool:
     if not pw:
         fail("NEO4J_PASSWORD not set")
         return False
+    # Aura (neo4j+s://) presents a cert the default SSL context may not chain to a
+    # trusted root; point it at certifi so strict verification succeeds (matches
+    # scripts/apply_schema.py). Harmless for a local bolt:// instance.
+    if uri.startswith("neo4j+s") and not os.environ.get("SSL_CERT_FILE"):
+        try:
+            import certifi
+
+            os.environ["SSL_CERT_FILE"] = certifi.where()
+        except Exception:
+            pass
     try:
         import neo4j
 
@@ -172,7 +185,11 @@ def main() -> None:
             failures.append(key)
 
     print("\n── Services ─────────────────────────────────────────────────")
-    if not check_docker():
+    # Cloud (Aura) deployments run no local Docker — only require it for local bolt.
+    neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    if neo4j_uri.startswith("neo4j+s") or neo4j_uri.startswith("neo4j+ssc"):
+        ok("Neo4j target is cloud (Aura) — skipping local Docker check")
+    elif not check_docker():
         failures.append("docker")
     if not check_neo4j():
         failures.append("neo4j")
