@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.schemas import (
@@ -63,6 +64,30 @@ app = FastAPI(
     description="Personal, agentic, self-verifying hiking/backpacking trip planner.",
     lifespan=lifespan,
 )
+
+
+def _install_cors(application: FastAPI, settings: Settings) -> None:
+    """Default-deny CORS for the hosted API edge (deploy contract).
+
+    The browser blocks every cross-origin call from the Vercel frontend unless its
+    exact origin is allow-listed here. Origins come from ADVENTURE_CORS_ALLOW_ORIGINS
+    via Settings; an empty list means no origin is allowed (never a wildcard), so a
+    misconfigured deploy fails closed instead of exposing the API to any site. Read
+    once at import — middleware is fixed for the process; per-request config is not a
+    thing in Starlette's stack.
+    """
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_allow_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+# Wire CORS at import (before the app serves a request). Settings.from_env() is a pure
+# env read; lifespan re-reads it into `_settings` for the request path.
+_install_cors(app, Settings.from_env())
 
 
 def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:

@@ -113,3 +113,16 @@ def test_settings_env_var_is_not_mutated() -> None:
     env = {"NEO4J_URI": "bolt://x:7687"}
     Settings.from_env(env)
     assert env == {"NEO4J_URI": "bolt://x:7687"}
+
+
+def test_settings_cors_origins_default_deny() -> None:
+    # Absent env var → empty allow-list → default-deny (no wildcard, fail closed).
+    assert Settings.from_env({}).cors_allow_origins == ()
+
+
+def test_settings_cors_origins_parsed_from_env() -> None:
+    s = Settings.from_env(
+        {"ADVENTURE_CORS_ALLOW_ORIGINS": "https://hike-app.vercel.app, https://staging.test , "}
+    )
+    # Comma-split, trimmed, blanks dropped — same idiom as the adapter lists.
+    assert s.cors_allow_origins == ("https://hike-app.vercel.app", "https://staging.test")

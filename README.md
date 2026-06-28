@@ -34,3 +34,6 @@ make db-up && make schema     # start local Neo4j and apply graph/schema.cypher
 ```
 
 Run `make help` for all targets. Secrets live only in `.env` (git-ignored) — never in the repo (CLAUDE.md rule #10).
+
+## Deploy (API)
+The FastAPI backend ships as a Docker web service via `render.yaml` (Render free tier). The frontend deploys separately on Vercel. Click-path + env contract: [`docs/runbooks/deploy-api-render.md`](./docs/runbooks/deploy-api-render.md).
