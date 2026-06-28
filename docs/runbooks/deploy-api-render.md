@@ -104,6 +104,25 @@ A healthy `/health` returns `status: "ok"` plus `region`, `probes_available`, an
 
 ---
 
+## TLS to Aura (CA certificates)
+
+The API connects to Neo4j Aura over `neo4j+s://` — **strict TLS with full certificate
+verification**. Python's `ssl` module verifies Aura's certificate against a CA bundle,
+which some hosts (including the `python:3.11-slim` base before `ca-certificates` is
+installed) do not expose in a path Python can find — surfacing as
+`Unable to retrieve routing information`. This deploy closes that gap two ways:
+
+- **certifi bundle:** `graph/client.py` sets `SSL_CERT_FILE` / `SSL_CERT_DIR` to certifi's
+  bundle on import — via `setdefault`, before any driver builds its TLS context — so
+  verification always has a CA bundle. An operator-set `SSL_CERT_FILE` still wins.
+- **OS trust store:** the Dockerfile installs `ca-certificates` as a fallback.
+
+Verification stays strict: the connection keeps `neo4j+s://` and is **never** downgraded
+to `neo4j+ssc://` or trust-all. To override the bundle, set `SSL_CERT_FILE` in Render's
+environment.
+
+---
+
 ## After deploy
 
 - **Point the frontend at the API.** Set the frontend's API base URL (in Vercel) to the
