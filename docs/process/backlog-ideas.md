@@ -109,3 +109,60 @@
 - **Two axes emerge.** *Spatial-query* axis: **B001 search · B002 coverage · B005 routing** all want one substrate — "query the trail graph spatially at scale." *Identity/personalization* axis: **B003 import · B004 auth** — who you are and what the system knows about you.
 - **Suggested leverage order (my read, not a decision):** **B003 import** first (ripe, unblocks Epic 006, pre-warms personalization, small-ish). Then **B004 auth** (a decision + integration; substrate's built; needed before sharing the app). **B002 coverage** is the long pole that gates **B001/B005**, so start its scaling/cost design session early even if the build comes later. **B001 search** Mode A (proximity) can sneak in early on Valhalla. **B005 routing** last — biggest, most dependent.
 - **No non-negotiable is violated** by any of the five. Watch for: Rule #7 (B003 — history ≠ preference) and Rule #5 (B003 — haunts are private overlay).
+
+---
+
+## Dump 002 — 2026-06-28
+
+### B006 · Kill dummy messaging in the UI
+**Essence:** Placeholder/sample copy is showing in the UI. It needs to go.
+
+**Expansion — what I found (verified in code):**
+- **Sample episodes exist** in `frontend/src/data/mock/episodes.ts` — "Hawksbill Summit with Ruby," "Stony Man Loop," with invented pace notes/outcomes. Tagged `provenance: 'sample'` and disclosed as sample-about-a-sample-subject (R11).
+- **Live mode is already honest.** With `VITE_USE_MOCK=false`, the HTTP adapter returns `[]` episodes / `null` card (`httpPlanner.ts:154`) — it shows nothing rather than fabricating. So sample episodes only render in **mock mode**.
+- **Therefore the bug is one of two things** — *(needs Josh to confirm which he's seeing)*:
+  1. **The deployed frontend is still in mock mode** (`VITE_USE_MOCK` not flipped to `false` on Vercel) → no code change, an env/deploy fix. *Most likely, given we just went live.*
+  2. **Hardcoded filler copy somewhere else** (a greeting, empty-state line, preset prompt) is reading as dummy → needs locating + rewriting. Candidates to check: `Home.tsx`, the Tuning presets/origins, empty-state strings.
+- **Adjacent cleanup worth doing regardless:** decide the long-term fate of the sample-episode store. Options: (a) keep it strictly mock-only (current), (b) delete it once a real episode endpoint exists, (c) gate it behind a dev flag so it can never reach a production build. Ties to **B003** (real imported history is what eventually replaces it) and the missing episode-list endpoint (backend ask #1).
+
+**Collisions / synergy:** Honesty is a non-negotiable (Rule #1 source-or-silence; R11 sample-disclosure) — so this is *invariant-aligned*, not just polish. The real fix path runs through **B003** (real episodes) + the missing episode endpoint.
+
+**Open questions:** Which mode is the deployed app in? · Is it the sample episodes specifically, or other copy? · Delete vs. dev-gate the sample store?
+
+**Ripeness:** `ready` — concrete cleanup. Likely a one-line env flip + a decision on the sample store. *Pending Josh pointing at the exact screen.*
+
+---
+
+### B007 · Deep review — state of the art (direct competitors)
+**Essence:** A deep review of similar apps/experiences — what's out there, what we can be inspired by.
+
+**Expansion — seeded comparison set (the frame for the research):**
+- **Trail discovery / planning:** AllTrails (the gorilla — crowd reviews, discovery), Komoot (route planning + community routes), Gaia GPS (topo + backcountry nav), onX Backcountry (maps + land ownership + offline), CalTopo (SAR-grade planning), FarOut/Guthook (thru-hike waypoint guides), Hiking Project (REI, free DB), Outdooractive, Wikiloc, PeakVisor.
+- **Recording / social / taste:** Strava (activity tracking, segments, the social axis — our deliberate *anti*-pattern on engagement), Garmin Connect / Coros (device ecosystems — our watch seam, Epic 004).
+- **Live-conditions:** Mountain-Forecast, OpenSnow, avalanche.org, NWS — the JIT-overlay sources we already verify against.
+- **What to extract from each:** their candidate-generation, how (or whether) they personalize, how they present uncertainty/conditions, where they're engagement-seeking (and we won't be), and the gaps they leave that a calm, source-or-silence, personal-intelligence utility could own.
+
+**Collisions / synergy:** Pure research; informs everything (search B001, routing B005, the feed). Should explicitly map each competitor against our **non-negotiables** to find our defensible difference (provenance, private overlay, calm-utility).
+
+**Ripeness:** `shaped` — ready to run as a deep-research deliverable. Naturally one effort with **B008**.
+
+---
+
+### B008 · Lateral inspiration — same *mechanics*, different domains
+**Essence:** Review experiences with similar mechanics we wouldn't obviously think to compare — non-obvious inspiration.
+
+**Expansion — the non-obvious set (this is the high-value lens):**
+- **onX Hunt ("honey holes")** — ⭐ private saved spots + *share-by-exception* with trusted people. This is *almost exactly* our private-overlay + Rule #5 (share the conclusion, not the substrate) model, in another domain. Closest structural analog out there.
+- **Citymapper** — slow static map + **JIT live overlay** (transit times), presented with freshness. Mirrors our four-layer corpus + JIT-verification architecture.
+- **Flighty** — calm, honest, **source-backed** travel utility; surfaces authoritative data with provenance, anti-anxiety tone. Strong tonal + architectural analog to source-or-silence + calm-utility.
+- **Letterboxd** — **log-what-you-did → refine taste**, with a deliberately calm, anti-engagement community. Near-identical to our outcome loop (Epic 002) + belief pipeline (Epic 001).
+- **Oura / Whoop** — **readiness scores** (the Body Battery analog) — directly relevant to **Epic 007** (readiness filter). How they present a single composite readiness number honestly.
+- **Spotify Discover Weekly** — taste modeling → a calm *finite* curated drop (not infinite scroll). The personalization-without-bait pattern.
+- **Beli (restaurant ranking)** — personal ranking from pairwise comparisons; novelty-vs-revisit tension (our novelty filter, Epic 006).
+- **Notion / Obsidian** — personal knowledge **graph** as a product surface (our overlay analog).
+- **Yuka** — **confidence/source scoring of a single fact** with a transparent rationale (our Confidence primitive).
+- **Duolingo** — included as an **anti-pattern**: streaks/engagement mechanics we are explicitly *not* building.
+
+**Collisions / synergy:** Several map 1:1 onto open epics/risks (onX Hunt→Rule #5, Oura→007, Letterboxd→002, Beli→006, Citymapper/Flighty→architecture+tone). The richest source of design moves precisely because the domains differ.
+
+**Ripeness:** `shaped` — run together with **B007** as one two-lens deep review (direct competitors + lateral mechanics).
