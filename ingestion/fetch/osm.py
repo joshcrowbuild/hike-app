@@ -17,6 +17,7 @@ import httpx
 from shapely.geometry import LineString
 
 from ingestion.conflate.match import Feature
+from ingestion.trail_filter import is_trail_worthy
 
 log = logging.getLogger(__name__)
 
@@ -63,15 +64,26 @@ def fetch(
         return []
 
     features: list[Feature] = []
+    skipped = 0
     for el in r.json().get("elements", []):
         coords = [(n["lon"], n["lat"]) for n in el.get("geometry", [])]
         if len(coords) < 2:
             continue
-        name = el.get("tags", {}).get("name")
-        if not name:
+        tags = el.get("tags", {})
+        # Trail-worthiness gate (Lead 1): drop urban/private non-trails (sidewalks,
+        # school/utility footways, private drives) by tag + name, keeping fire roads.
+        if not is_trail_worthy(tags, coords):
+            skipped += 1
             continue
         osm_id = f"{el.get('type', 'way')}/{el['id']}"
-        features.append(Feature(name=name, geom=LineString(coords), source="OSM", ref=osm_id))
+        features.append(
+            Feature(name=tags["name"], geom=LineString(coords), source="OSM", ref=osm_id)
+        )
 
-    log.info("OSM fetch: %d features in bbox %s", len(features), bbox)
+    log.info(
+        "OSM fetch: %d features in bbox %s (%d non-trail ways filtered)",
+        len(features),
+        bbox,
+        skipped,
+    )
     return features
