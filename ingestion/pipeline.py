@@ -496,7 +496,7 @@ def run_pipeline(
 
     try:
         from graph.client import GraphClient
-        from graph.load import load_enrichment_facts, make_runner
+        from graph.load import load_enrichment_facts, make_runner, prune_stale_trails
     except ImportError as exc:
         log.error("Neo4j not available: %s — run 'pip install -e .[graph]'", exc)
         return counts
@@ -518,6 +518,13 @@ def run_pipeline(
             # enrichment sources; a failing source degrades inside _run_enrichment.
             facts = _run_enrichment(enrichment_sources, canonical_nodes)
             counts["enrichment_facts"] = load_enrichment_facts(runner, facts)
+            # ── Prune stale trails: a tighter filter (e.g. dropping a TIGER-misimported
+            # state route) only STOPS refreshing the old MERGE'd node — it never deletes
+            # it — so without this a re-ingest leaves the non-hike serving forever. Gated
+            # on a non-empty load (belt) plus an in-query current-version guard (braces)
+            # so a failed/empty ingest can't wipe the graph.
+            if load_counts["loaded"] > 0:
+                prune_stale_trails(runner, iv, region_id=region.region_id)
     finally:
         gc.close()
 
