@@ -18,6 +18,7 @@ from orchestration.adapters.base import (
     Point,
     VerifiedFact,
 )
+from orchestration.confidence import compute, for_fact
 from orchestration.curator import GuardrailVerdict
 from orchestration.engine import PlannedTrail, Runtime, plan, plan_from_origin, rank_plan
 from orchestration.providers.base import LLMResponse
@@ -214,3 +215,117 @@ def test_s5_ac3_absent_drive_time_applies_no_penalty() -> None:
     untimed = _planned("untimed", 0.0)  # no drive fact
     out = rank_plan([timed, untimed], _FakeJudge('["timed","untimed"]'), "m")
     assert [p.candidate.canonical_id for p in out] == ["timed", "untimed"]
+
+
+# ── CDP-01 corroboration wiring ──
+
+
+class _CorrSession:
+    """Fake session that answers the SAME_AS corroboration read with real counts and
+    returns the scout rows for everything else (other context reads → [])."""
+
+    def __init__(self, rows: list[dict[str, Any]], corr: dict[str, dict[str, Any]]) -> None:
+        self.rows = rows
+        self.corr = corr
+
+    def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        cypher, params = query
+        if "SAME_AS" in cypher:  # the trail_source_corroboration read
+            return [
+                {"canonical_id": cid, **self.corr[cid]}
+                for cid in params["cids"]
+                if cid in self.corr
+            ]
+        if any(k in cypher for k in ("Belief", "PhysicalProfile", "Episode")):
+            return []
+        return self.rows
+
+
+def test_corpus_corroboration_counts_distinct_origins_live_facts_stay_one() -> None:
+    rows = [_row("multi", 38.5, -78.4, 100)]
+
+    def weather(lat: float, lon: float) -> Any:
+        return {"short_forecast": "Clear"}
+
+    session = _CorrSession(rows, {"multi": {"sources": ["OSM", "NPS"], "corroboration": 2}})
+    batch = plan_from_origin(38.5, -78.4, session, _weather_probes(weather), k=10)  # type: ignore[arg-type]
+    trail = batch.trails[0]
+    # corpus identity carries the real distinct-origin count …
+    assert trail.corpus_corroboration == 2
+    assert trail.corpus_sources == ("OSM", "NPS")
+    assert trail.corpus_confidence is not None
+    # … the corpus confidence is genuinely lifted by the 2-origin corroboration …
+    assert trail.corpus_confidence.score > compute(authority="tier1", freshness="slow").score
+    # … while the live weather fact stays an honest single source (count-as-1): its
+    # score is the corroboration=1 value, NOT boosted by the trail's 2 corpus origins.
+    live = trail.confidences[ConditionKind.weather]
+    live_fact = trail.facts[ConditionKind.weather]
+    assert live.score == for_fact(live_fact, corroboration=1).score
+    assert live.score < for_fact(live_fact, corroboration=2).score
+
+
+def _clear_weather(lat: float, lon: float) -> Any:
+    return {"short_forecast": "Clear"}
+
+
+def test_corpus_corroboration_floors_at_one_when_row_absent() -> None:
+    # Read-miss path: no row returned for the trail → engine's .get(..., 1) default.
+    rows = [_row("orphan", 38.5, -78.4, 100)]
+    session = _CorrSession(rows, {})  # no SourceRecords for this trail
+    batch = plan_from_origin(38.5, -78.4, session, _weather_probes(_clear_weather), k=10)  # type: ignore[arg-type]
+    assert batch.trails[0].corpus_corroboration == 1  # honest baseline, never 0
+
+
+def test_corpus_corroboration_floors_real_returned_zero_to_one() -> None:
+    # Production orphan path: the DB DOES return a row, with a real corroboration of 0
+    # (SourceRecord-less trail). The engine's max(1, 0) floors it to the honest baseline —
+    # the branch test_..._row_absent can't reach. Guards against dropping the max() wrapper.
+    rows = [_row("orphan", 38.5, -78.4, 100)]
+    session = _CorrSession(rows, {"orphan": {"sources": [], "corroboration": 0}})
+    batch = plan_from_origin(38.5, -78.4, session, _weather_probes(_clear_weather), k=10)  # type: ignore[arg-type]
+    assert batch.trails[0].corpus_corroboration == 1
+    assert batch.trails[0].corpus_sources == ()
+
+
+class _RaisingCorrSession(_FakeSession):
+    """Scout rows for everything, but the SAME_AS corroboration read RAISES — to exercise
+    the rule-#6 degrade path (enrichment is never a dependency)."""
+
+    def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        cypher, _ = query
+        if "SAME_AS" in cypher:
+            raise RuntimeError("graph unavailable")
+        return super().run(query)
+
+
+def test_corpus_corroboration_read_failure_degrades_not_blocks() -> None:
+    # Rule #6: a corroboration read failure must NOT block the feed — it degrades to the
+    # honest count-as-1 baseline and the cards still build.
+    rows = [_row("safe", 38.5, -78.4, 100)]
+    session = _RaisingCorrSession(rows)
+    batch = plan_from_origin(38.5, -78.4, session, _weather_probes(_clear_weather), k=10)  # type: ignore[arg-type]
+    assert [p.candidate.canonical_id for p in batch.trails] == ["safe"]
+    assert batch.trails[0].corpus_corroboration == 1  # degraded, not crashed
+
+
+def test_confidence_never_reorders_candidates() -> None:
+    """Rule #2 / module boundary: the Curator taste ranking is BLIND to confidence.
+    Two trails — one with a high-corroboration corpus confidence, one flagged/low — must
+    keep the judge's order, and that order must NOT change when the confidences swap."""
+    high = compute(authority="tier1", freshness="slow", corroboration=4)
+    low = compute(authority="low", freshness="stale", corroboration=1)
+
+    def mk(cid: str, conf: Any) -> PlannedTrail:
+        return PlannedTrail(
+            Candidate(cid, cid.upper(), "th", 0.0),
+            {},
+            {},
+            GuardrailVerdict(False),
+            corpus_confidence=conf,
+        )
+
+    judge = _FakeJudge('["b","a"]')  # judge prefers b regardless of confidence
+    a_high = [mk("a", high), mk("b", low)]
+    b_high = [mk("a", low), mk("b", high)]
+    assert [p.candidate.canonical_id for p in rank_plan(a_high, judge, "m")] == ["b", "a"]
+    assert [p.candidate.canonical_id for p in rank_plan(b_high, judge, "m")] == ["b", "a"]

@@ -22,6 +22,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, cast
 
+from graph import queries
 from graph.client import GraphClient, ScopedSession
 from orchestration.adapters.base import (
     ConditionKind,
@@ -58,6 +59,17 @@ class PlannedTrail:
     facts: dict[ConditionKind, VerifiedFact]
     confidences: dict[ConditionKind, Confidence]
     verdict: GuardrailVerdict
+    # CDP-01 corroboration (spike): the corpus/SAME_AS layer is the one place genuine
+    # multi-origin corroboration lives. `corpus_corroboration` is the count of distinct
+    # upstream origins agreeing the trail exists (≥1, honest baseline); `corpus_sources`
+    # names them; `corpus_confidence` is the score with that real count fed to the
+    # corroboration axis. Live condition facts stay an honest single source (their
+    # `confidences` carry corroboration=1) — only the corpus identity carries the count.
+    # Carried on the plan for the corpus-confidence surface; the api response is
+    # intentionally unchanged this PR (labels travel via present.py text instead).
+    corpus_corroboration: int = 1
+    corpus_sources: tuple[str, ...] = ()
+    corpus_confidence: Confidence | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +129,35 @@ def _latlon(point: Any) -> tuple[float, float] | None:
     return None
 
 
+def _corpus_corroboration(
+    candidates: list[Candidate], session: ScopedSession
+) -> tuple[dict[str, int], dict[str, tuple[str, ...]]]:
+    """Read the distinct-origin corroboration count per candidate trail from the
+    SAME_AS cluster (CDP-01 moat — the one place real corroboration lives). One batched
+    world-read. Corroboration is *enrichment, not a dependency* (rule #6 in spirit): a
+    read failure degrades to the honest count-as-1 baseline rather than blocking the
+    feed."""
+    ids = [c.canonical_id for c in candidates]
+    counts: dict[str, int] = {}
+    sources: dict[str, tuple[str, ...]] = {}
+    if not ids:
+        return counts, sources
+    try:
+        rows = session.run(queries.trail_source_corroboration(ids))
+    except Exception:
+        log.debug("corpus corroboration read failed; defaulting to count-as-1", exc_info=True)
+        return counts, sources
+    for row in rows:
+        cid = row.get("canonical_id")
+        if not cid:
+            continue
+        srcs = tuple(s for s in (row.get("sources") or []) if isinstance(s, str))
+        sources[cid] = srcs
+        raw = row.get("corroboration")
+        counts[cid] = raw if isinstance(raw, int) and not isinstance(raw, bool) else len(srcs)
+    return counts, sources
+
+
 def _drive_minutes(fact: VerifiedFact | None) -> float | None:
     if fact is None or not isinstance(fact.value, dict):
         return None
@@ -154,6 +195,9 @@ def plan_from_origin(
         drive_facts = res.facts_by_id
         notices = (res.disclosure,) if res.disclosure else ()
 
+    # CDP-01: distinct-origin corroboration per candidate from the SAME_AS corpus layer.
+    corr_by_id, sources_by_id = _corpus_corroboration(candidates, session)
+
     planned: list[PlannedTrail] = []
     for candidate in candidates:
         coord = _latlon(candidate.point)
@@ -169,8 +213,27 @@ def plan_from_origin(
         drive_fact = drive_facts.get(candidate.canonical_id)
         if drive_fact is not None:
             facts[ConditionKind.drive_time] = drive_fact  # folded in AFTER the guardrail check
-        confidences = {kind: for_fact(fact) for kind, fact in facts.items()}
-        planned.append(PlannedTrail(candidate, facts, confidences, verdict))
+        # Live condition facts are single-source by construction → honest count-as-1
+        # (never imply corroboration we don't have; spike item 2). The real distinct-
+        # origin count is the corpus identity's, passed to the corroboration axis below.
+        confidences = {kind: for_fact(fact, corroboration=1) for kind, fact in facts.items()}
+        corr = max(1, corr_by_id.get(candidate.canonical_id, 1))
+        srcs = sources_by_id.get(candidate.canonical_id, ())
+        # The corpus identity is the one fact that carries genuine multi-origin
+        # corroboration (CDP-01). authority/freshness reflect the slow, bulk-ingested
+        # corpus tier; the count is the live SAME_AS independence count.
+        corpus_confidence = compute(authority="tier1", freshness="slow", corroboration=corr)
+        planned.append(
+            PlannedTrail(
+                candidate,
+                facts,
+                confidences,
+                verdict,
+                corpus_corroboration=corr,
+                corpus_sources=srcs,
+                corpus_confidence=corpus_confidence,
+            )
+        )
     return PlannedBatch(trails=planned, notices=notices)
 
 

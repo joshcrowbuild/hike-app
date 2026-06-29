@@ -42,3 +42,48 @@ def test_hedged_line_prefix() -> None:
     line = summarize_fact("fire", _fact({"hotspot_count": 2}), c, now=NOW)
     assert line.text.startswith("Likely: ")
     assert "2 active-fire" in line.text
+
+
+# ── CDP-01 item 2: honest single-source labeling (never imply >1 for one source) ──
+
+
+def _high() -> Confidence:
+    return Confidence(0.9, "high", "stated", True)
+
+
+def test_water_line_names_single_authoritative_source_with_site_id() -> None:
+    line = summarize_fact("water", _fact({"site_id": "01631000"}), _high(), now=NOW)
+    assert "single authoritative source (USGS site 01631000)" in line.text
+    # the live age-parens are untouched (no corroboration smuggled inside them)
+    assert "(NWS, 10m ago)" in line.text
+
+
+def test_weather_line_carries_nws_office_and_grid_origin() -> None:
+    line = summarize_fact(
+        "weather",
+        _fact({"short_forecast": "Sunny", "forecast_office": "LWX", "grid_x": 96, "grid_y": 70}),
+        _high(),
+        now=NOW,
+    )
+    assert "single authoritative source (NWS LWX 96,70)" in line.text
+
+
+def test_fire_line_carries_distinct_satellites() -> None:
+    line = summarize_fact(
+        "fire", _fact({"hotspot_count": 1, "satellites": ["Aqua", "N"]}), _high(), now=NOW
+    )
+    assert "single authoritative source (FIRMS Aqua/N)" in line.text
+
+
+def test_air_is_labeled_aggregated_not_corroborated() -> None:
+    # AirNow is an aggregator → "aggregated", never implying independent corroboration.
+    line = summarize_fact("air", _fact({"aqi": 42, "category": "Good"}), _high(), now=NOW)
+    assert "single aggregated source" in line.text
+    assert "authoritative" not in line.text
+
+
+def test_label_falls_back_to_bare_descriptor_without_origin() -> None:
+    # No recoverable origin id (e.g. forecast office absent) → bare honest descriptor.
+    line = summarize_fact("weather", _fact({"short_forecast": "Cloudy"}), _high(), now=NOW)
+    assert "single authoritative source" in line.text
+    assert "single authoritative source (" not in line.text  # no empty parens
