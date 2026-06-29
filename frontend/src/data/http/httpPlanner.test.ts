@@ -139,3 +139,51 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
     expect(result.cards[0].geo).toBeUndefined()
   })
 })
+
+describe('HttpPlannerClient /plan cold-start timeout', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  // A fetch that never resolves on its own, only when its abort signal fires —
+  // models the Render free-tier cold start the client has to wait out.
+  function hangingFetch(): AbortSignal {
+    let signal!: AbortSignal
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      signal = init.signal as AbortSignal
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      })
+    })
+    // Capture the signal on first call; the returned ref is read after plan() runs.
+    return new Proxy({} as AbortSignal, { get: (_t, p) => Reflect.get(signal, p, signal) })
+  }
+
+  it('does not abort /plan at the old 10s budget, but does at exactly 60s (cold-start fix)', async () => {
+    const signal = hangingFetch()
+    const promise = new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+
+    // The old 10s timeout would have aborted here — it must not anymore.
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(signal.aborted).toBe(false)
+
+    // Pin the exact 60s boundary so a mid-range regression (e.g. 30s, which may
+    // not clear a real cold start) is caught: still in flight at 59.999s...
+    await vi.advanceTimersByTimeAsync(49_999)
+    expect(signal.aborted).toBe(false)
+
+    // ...aborts on the next tick, classified as a calm "timeout" FeedError.
+    await vi.advanceTimersByTimeAsync(1)
+    const feed = await promise
+    expect(signal.aborted).toBe(true)
+    expect(feed.error?.kind).toBe('timeout')
+    expect(feed.cards).toEqual([])
+  })
+})
