@@ -1,5 +1,8 @@
 .PHONY: help install install-dev fmt lint typecheck test check \
-        format-check db-up db-down schema ingest ingest-dry preflight api-dev eval
+        format-check db-up db-down schema schema-aura ingest ingest-dry preflight api-dev eval
+
+# Python interpreter. Defaults to python3; override with `make PYTHON=python` if needed.
+PYTHON ?= python3
 
 help:
 	@echo "make targets:"
@@ -14,7 +17,8 @@ help:
 	@echo "  preflight    check environment before running the sprint"
 	@echo "  db-up        start local Neo4j (reads NEO4J_PASSWORD from .env)"
 	@echo "  db-down      stop local Neo4j"
-	@echo "  schema       apply graph/schema.cypher to the running Neo4j"
+	@echo "  schema       apply graph/schema.cypher to the local docker Neo4j"
+	@echo "  schema-aura  apply graph/schema.cypher to a remote/Aura Neo4j (NEO4J_URI)"
 	@echo "  ingest       run Stage-3 ingestion for ADVENTURE_REGION"
 	@echo "  ingest-dry   dry-run ingestion (fetch + conflate, no DB writes)"
 	@echo "  api-dev      start FastAPI dev server on :8000"
@@ -59,15 +63,19 @@ schema:
 		-u "$${NEO4J_USER:-neo4j}" -p "$${NEO4J_PASSWORD}" \
 		< graph/schema.cypher
 
+schema-aura:
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	$(PYTHON) scripts/apply_schema.py
+
 ingest:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
-	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} && \
-	python -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj}
+	$(PYTHON) -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} && \
+	$(PYTHON) -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj}
 
 ingest-dry:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
-	python -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run && \
-	python -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run
+	$(PYTHON) -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run && \
+	$(PYTHON) -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run
 
 api-dev:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
@@ -75,4 +83,4 @@ api-dev:
 
 eval:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
-	python -m evals.run_bakeoff
+	$(PYTHON) -m evals.run_bakeoff
