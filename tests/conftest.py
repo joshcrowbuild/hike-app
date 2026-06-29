@@ -18,6 +18,28 @@ import pytest
 _SCHEMA = Path(__file__).resolve().parent.parent / "graph" / "schema.cypher"
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> Any:
+    """Reset the module-level API limiter before each test.
+
+    `api.ratelimit.limiter` accumulates per-IP counts in process; every TestClient call
+    shares the same `testclient` remote address, so without a reset one test's requests
+    would spend another test's budget and trip a spurious 429. Imported lazily, and the
+    import is tolerated-if-absent, so a partial run in an env without the api/slowapi extra
+    (e.g. an ingestion-only unit slice) doesn't fail at fixture setup — there's simply no
+    limiter to reset.
+    """
+    try:
+        from api.ratelimit import limiter
+    except ImportError:
+        yield
+        return
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 def _iter_statements(schema_text: str):
     """Yield individual Cypher statements from schema.cypher.
 
