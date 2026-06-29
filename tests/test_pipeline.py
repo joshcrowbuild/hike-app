@@ -2,8 +2,9 @@
 
 Covers the Epic 012 rewire: the C5-closure (no source literal in run_pipeline),
 spine-by-declaration generality (S4), the enrichment join point (S5), and the
-echo drop-in proof (S6). The consolidate_osm_segments tests are unchanged — that
-step is source-agnostic and stays in the pipeline (AC-3.4).
+echo drop-in proof (S6). The consolidate_osm_segments tests cover the connectivity-
+aware merge (Lead 2): same-name ways merge only when spatially connected, and
+disconnected same-name ways split into separate trails.
 """
 
 from __future__ import annotations
@@ -376,29 +377,52 @@ def test_ac6_3_echo_flows_through_unchanged_pipeline(monkeypatch):
     assert counts["echo"] == 2  # EchoSource returns two fixed features
 
 
-# ── consolidate_osm_segments (unchanged — AC-3.4) ─────────────────────────────
+# ── consolidate_osm_segments (connectivity-aware — Lead 2) ────────────────────
 
 
-def _seg(name: str, lon_start: float) -> Feature:
+def _chain(name: str, n: int, *, source: str = "OSM", start: tuple[float, float] = (-78.28, 38.55)):
+    """`n` end-to-end-connected same-name segments (each starts where the prior ends)
+    → one spatially-connected trail. refs are way/100, way/101, …"""
+    segs = []
+    lon, lat = start
+    for i in range(n):
+        segs.append(
+            Feature(
+                name=name,
+                geom=LineString([[lon, lat], [lon + 0.01, lat + 0.01]]),
+                source=source,
+                ref=f"way/{100 + i}",
+            )
+        )
+        lon, lat = lon + 0.01, lat + 0.01
+    return segs
+
+
+def _seg(name: str, lon_start: float, ref: str | None = None) -> Feature:
     return Feature(
         name=name,
         geom=LineString([[lon_start, 38.55], [lon_start + 0.01, 38.56]]),
         source="OSM",
-        ref=f"way/{int(lon_start * 1000)}",
+        ref=ref or f"way/{abs(int(lon_start * 1000))}",
     )
 
 
-def test_consolidate_merges_same_name_segments():
-    segs = [
-        _seg("Old Rag Loop", -78.28),
-        _seg("Old Rag Loop", -78.27),
-        _seg("Old Rag Loop", -78.26),
-    ]
-    result = consolidate_osm_segments(segs)
+def test_consolidate_merges_connected_same_name_segments():
+    result = consolidate_osm_segments(_chain("Old Rag Loop", 3))
     assert len(result) == 1
     assert result[0].name == "Old Rag Loop"
     assert result[0].source == "OSM"
-    assert result[0].ref is None  # ref cleared when merging multiple ways
+    # Merged → stable, unique ref = min member way id (NOT None — avoids slug collision).
+    assert result[0].ref == "way/100"
+
+
+def test_consolidate_splits_disconnected_same_name_ways():
+    # Same name, far apart (~7 km) → two separate trails, each keeps its own ref.
+    segs = [_seg("Ridge Trail", -78.28, ref="way/1"), _seg("Ridge Trail", -78.35, ref="way/2")]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 2
+    assert {f.ref for f in result} == {"way/1", "way/2"}
+    assert all(f.name == "Ridge Trail" for f in result)
 
 
 def test_consolidate_keeps_distinct_names():
@@ -409,18 +433,18 @@ def test_consolidate_keeps_distinct_names():
 
 
 def test_consolidate_normalizes_before_grouping():
-    segs = [_seg("Old Rag Trail", -78.28), _seg("Old Rag", -78.27)]
+    # Two connected segments whose names normalize equal ("Old Rag Trail" ~ "Old Rag").
+    segs = _chain("Old Rag Trail", 1) + _chain("Old Rag", 1, start=(-78.27, 38.56))
     result = consolidate_osm_segments(segs)
     assert len(result) == 1
     assert result[0].name == "Old Rag Trail"  # longest raw name wins
 
 
 def test_consolidate_combined_geometry_contains_all_coords():
-    segs = [_seg("Ridge Trail", -78.28), _seg("Ridge Trail", -78.35)]
-    result = consolidate_osm_segments(segs)
+    result = consolidate_osm_segments(_chain("Ridge Trail", 3))
     assert len(result) == 1
     bounds = result[0].geom.bounds
-    assert bounds[0] < -78.34 and bounds[2] >= -78.27
+    assert bounds[0] <= -78.28 and bounds[2] >= -78.25  # spans the whole chain
 
 
 def test_consolidate_single_segment_preserved():
@@ -431,23 +455,10 @@ def test_consolidate_single_segment_preserved():
 
 
 def test_consolidate_merge_preserves_real_source():
-    """Finding #4: a multi-segment merge keeps the group's real `source` (not a
-    hardcoded "OSM"), so a non-OSM spine keeps its authority tier + provenance."""
-    segs = [
-        Feature(
-            name="Skyline Trail",
-            geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
-            source="NPS",
-            ref="nps/1",
-        ),
-        Feature(
-            name="Skyline Trail",
-            geom=LineString([[-78.27, 38.56], [-78.26, 38.57]]),
-            source="NPS",
-            ref="nps/2",
-        ),
-    ]
+    """A multi-segment merge keeps the group's real `source` (not a hardcoded "OSM"),
+    so a non-OSM spine keeps its authority tier + provenance."""
+    segs = _chain("Skyline Trail", 2, source="NPS")
     result = consolidate_osm_segments(segs)
     assert len(result) == 1
     assert result[0].source == "NPS"  # real provenance preserved on merge
-    assert result[0].ref is None
+    assert result[0].ref == "way/100"  # stable min-member ref
