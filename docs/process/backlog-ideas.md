@@ -175,3 +175,27 @@
 - **Duolingo (+ Strava/Garmin/Beli engagement machinery)** → explicit do-not-build list. Key insight: anti-engagement is also **pro-accuracy** — gamified logging poisons the taste signal.
 
 These are candidate sources for future epics (notably a Rule #1 Verifier-freshness epic, Epic 006, Epic 007) — not yet promoted to epics themselves.
+
+---
+
+## Dump 003 — 2026-06-29
+
+### B009 · Cross-domain pattern research (round 2 — beyond hiking/fitness)
+**Essence:** Review #1 covered competitors + consumer-app lateral mechanics; the only true outlier was Duolingo (anti-pattern). Go *further* — mine genuinely distant domains for adoptable methods: high-stakes professions (aviation, marine, trucking), rigorous provenance/trust systems, graph-database/connected-data use cases, and calm/boring-by-design utilities.
+
+**The thesis (the reframe):** the outdoor-app world is immature at our hardest invariants *because the stakes are usually low*. The domains where bad data is **lethal** — aviation, marine nav, avalanche, emergency medicine, intelligence — have spent decades formalizing exactly source-or-silence, confidence rating, staleness/validity, and go/no-go under uncertainty. Product thesis to pressure-test: **"bring cockpit-grade decision discipline to the trailhead."** Review #1 was "what UX widgets do we steal"; this is "what rigorous *methods, formal models, architecture patterns, and cautionary failures* do we adopt."
+
+**The 5 research lenses** (weighted to 2 & 3 per Josh):
+1. **High-stakes go/no-go under uncertainty** — aviation personal-minimums + NOTAM-overload (cautionary), marine CATZOC spatial confidence bands, avalanche conceptual-model, clinical GRADE (evidence-quality vs recommendation-strength), SAR probability-of-detection, wildfire ICS.
+2. **Provenance, trust & validity** *(HEAVY)* — Admiralty Code (2-axis source×info rating), Analysis of Competing Hypotheses (conflict resolution), legal **Shepardizing/citators** (is this fact still "good law"?), journalism/OSINT chain-of-custody, NewsGuard source labels, FAIR/W3C-PROV, Wikipedia verifiability, supply-chain (+ blockchain-theater cautionary).
+3. **Connected-data & graph architecture** *(HEAVY)* — **Google Zanzibar/ReBAC** (permissions as graph edges → Rule #4/#5), fraud/AML graphs, KG provenance (named graphs/RDF-star), Palantir entity+access model, graph recsys (Pinterest Pixie → Epic 006), entity-resolution/conflation, temporal/bitemporal graphs (→ Rule #3), spatial routing/isochrones, genealogy household modeling.
+4. **Capability vs. preference & readiness, formalized** — trucking HOS/ELD (mandated capability floor → Epic 007), conjoint analysis (→ Epic 006), blind tasting (revealed vs stated), dating stated-vs-revealed gap.
+5. **Calm utility & boring-by-design** — GOV.UK design system, glass-cockpit UI under stress, medical-device alarm design, ambient/glanceable info.
+
+**Decisions made (with Josh):**
+- **Breadth + depth**, ultracode — ~76 agents, Lenses 2 & 3 weighted (9 domains each).
+- **Decision-ready** — every pattern tagged `adopt / adapt / cautionary / just-interesting` with an actual decision + epic candidate.
+- **UX dimension woven in** — every pattern carries a "what the user literally sees/does" field + one consolidated UX-implications section (first-class, not over-indexed).
+- **Output format** *(designed to serve feature-dev + evaluation)*: an **adopt-first decision queue** up top (the direct feature-dev input), a full **pattern register** index, per-lens cards, and a consolidated **evaluation-hooks** section (each adopt → how we'd know it works, feeding Epic 009). **Two docs**: `cross-domain-pattern-library.md` (product/design-facing) + `graph-architecture-patterns.md` (architecture-lane technical brief, Lens 3).
+
+**Ripeness:** `promoted → workflow running (2026-06-29)`. Outputs will land at `docs/research/cross-domain-pattern-library.md` + `docs/research/graph-architecture-patterns.md`.
