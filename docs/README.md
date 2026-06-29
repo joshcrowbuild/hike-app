@@ -2,7 +2,7 @@
 
 *Start here. This is the router for everything under `docs/` — which doc answers which question, what's always loaded vs. read-on-demand, and the single source of truth (SSOT) for each kind of fact.*
 
-**Last verified:** 2026-06-26 · **Owner:** docs
+**Last verified:** 2026-06-29 · **Owner:** docs
 
 > Project root: [`../CLAUDE.md`](../CLAUDE.md) (product invariants + architecture) · [`../AGENTS.md`](../AGENTS.md) (repo operating contract).
 
@@ -10,12 +10,15 @@
 
 | If you're trying to… | Read |
 |---|---|
+| Understand the north star / what we'll never build / the bet | [`vision.md`](vision.md) — the evergreen vision brief |
+| See the sequenced path from prototype to a complete app (why this order) | [`strategy/path-to-complete.md`](strategy/path-to-complete.md) — the strategic sequencing layer |
 | Check current build status / what's next / open risks | [`process/roadmap.md`](process/roadmap.md) — the live status **SSOT** |
 | Add, work, or close a feature | [`epics/README.md`](epics/README.md) → then the specific `epics/epic-NNN-*.md` |
 | Understand or change a design decision | [`decision-log.md`](decision-log.md) (✅/🔶/❓ legend) |
 | See the dependency-ordered plan / cross-cutting threads | [`workplan.md`](workplan.md) |
 | Touch the graph schema / provenance / access control | `../graph/` (schema + access wrapper) + [`decision-log.md`](decision-log.md) §28 + [`research/stage-2-schema.md`](research/stage-2-schema.md) |
 | Know how to commit / review / run CI | [`process/development-process.md`](process/development-process.md) + [`process/github-repo-hygiene.md`](process/github-repo-hygiene.md) |
+| Deploy / operate the live app (API on Render, etc.) | [`runbooks/`](runbooks/) → [`runbooks/deploy-api-render.md`](runbooks/deploy-api-render.md) |
 | Understand a stage's design (sources, engine, watch, commons…) | [`research/README.md`](research/README.md) → the stage's doc |
 | Build/refactor frontend UI | [`research/design-system-v0.1.md`](research/design-system-v0.1.md) + [`research/home-curation-prototype-spec-v0.3.md`](research/home-curation-prototype-spec-v0.3.md) |
 
@@ -26,17 +29,21 @@
 - [`../AGENTS.md`](../AGENTS.md) — session startup, merge-risk discipline, Git/PR hygiene.
 
 **Load on demand (read only what the task needs):**
+- [`vision.md`](vision.md) — the evergreen north star (ages slowly; read when you need the *why* above the roadmap) → [`strategy/path-to-complete.md`](strategy/path-to-complete.md) for the sequenced path.
 - [`process/roadmap.md`](process/roadmap.md) — live status dashboard (check at session start).
 - [`epics/README.md`](epics/README.md) + the relevant `epics/epic-NNN-*.md` — before coding a feature.
 - [`decision-log.md`](decision-log.md) — when a decision is in question.
 - [`workplan.md`](workplan.md) — for stage order / threads.
 - [`research/README.md`](research/README.md) → a stage/seam/UX doc — for design detail.
 - [`process/development-process.md`](process/development-process.md) — epic→story→AC→test→review workflow.
+- [`runbooks/`](runbooks/) — operational runbooks (e.g. [`runbooks/deploy-api-render.md`](runbooks/deploy-api-render.md)) — read when deploying or operating the live app.
 
 ## Single sources of truth (don't restate — link)
 
 | Fact | SSOT |
 |---|---|
+| North star / pillars / refusals (the evergreen bet) | [`vision.md`](vision.md) (vision-owned) |
+| The sequenced path to "complete" + the why-this-order | [`strategy/path-to-complete.md`](strategy/path-to-complete.md) (vision-PM-owned) |
 | Live build status, next work, open risks | [`process/roadmap.md`](process/roadmap.md) (PM-owned) |
 | Per-epic status (BACKLOG→DONE) | [`epics/README.md`](epics/README.md) |
 | Decisions (what & why) | [`decision-log.md`](decision-log.md) |
