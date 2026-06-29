@@ -8,6 +8,7 @@ Run dev server: uvicorn api.app:app --reload --port 8000
 
 from __future__ import annotations
 
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from typing import Any
@@ -38,6 +39,8 @@ from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
+
+logger = logging.getLogger(__name__)
 
 _VERSION = "0.0.0"
 
@@ -146,14 +149,17 @@ def _graph_stats() -> GraphStats | None:
         return None
     try:
         session = _graph_client.scoped_session("health-check")
+        # COUNT {} subqueries (Cypher 5 and Cypher 25) — the old size([(pattern)|x])
+        # pattern-comprehension form is rejected by Aura's Cypher 25 (42I06: Invalid
+        # input '|'), which silently left graph=null on every /health.
         rows = session.run(
             (
                 "MATCH (m:Meta {id: 'schema'}) "
                 "RETURN m.schema_version AS sv, "
-                "       size([(t:CanonicalTrail) | t]) AS trails, "
-                "       size([(r:SourceRecord) | r]) AS srs, "
-                "       size([(h:Trailhead) | h]) AS ths, "
-                "       size([()-[:SAME_AS]->() | 1]) AS edges",
+                "       COUNT { (t:CanonicalTrail) } AS trails, "
+                "       COUNT { (r:SourceRecord) } AS srs, "
+                "       COUNT { (h:Trailhead) } AS ths, "
+                "       COUNT { ()-[:SAME_AS]->() } AS edges",
                 {},
             )
         )
@@ -168,6 +174,9 @@ def _graph_stats() -> GraphStats | None:
             schema_version=r.get("sv"),
         )
     except Exception:
+        # Degrade-and-disclose (Rule #1): report graph=null to the caller, but log the
+        # cause server-side — a swallowed exception here hid the Cypher-25 bug for hours.
+        logger.exception("graph stats query failed; reporting graph=null")
         return None
 
 
@@ -211,6 +220,9 @@ def plan(
     except HTTPException:
         raise
     except Exception as exc:
+        # Log the real cause (e.g. a missing/misconfigured model provider) before
+        # returning a generic 500 — never swallow it silently.
+        logger.exception("plan failed for query=%r viewer=%r", request.query, request.viewer_id)
         raise HTTPException(status_code=500, detail="Internal error") from exc
 
 
@@ -306,6 +318,8 @@ def _fetch_maps_by_canonical(session: Any, canonical_ids: list[str]) -> dict[str
     try:
         rows = session.run(trails_detail_query(canonical_ids))
     except Exception:
+        # Maps degrade to absent (Rule #1: map-free cards, never a 500) — but disclose.
+        logger.exception("maps batch read failed; cards render map-free")
         return {}
     return {r["canonical_id"]: _maps_fields(r) for r in rows if r.get("canonical_id")}
 
@@ -337,6 +351,7 @@ def trail_detail(
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("trail detail failed for canonical_id=%r", canonical_id)
         raise HTTPException(status_code=500, detail="Internal error") from exc
     if not rows:
         raise HTTPException(status_code=404, detail="Trail not found")
@@ -399,9 +414,12 @@ def record_outcome(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("record outcome failed for episode_id=%r", episode_id)
         raise HTTPException(status_code=500, detail="Internal error") from exc
 
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Any, exc: Exception) -> JSONResponse:
+    # Last-resort handler for anything not caught in a route — disclose server-side.
+    logger.exception("unhandled exception")
     return JSONResponse(status_code=500, content={"detail": str(exc)})

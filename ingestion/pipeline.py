@@ -98,18 +98,52 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
 # ── OSM consolidation ─────────────────────────────────────────────────────────
 
 
-def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
-    """Merge OSM way segments that share a normalized name into one Feature.
+# Two OSM ways whose geometries come within this distance are treated as one
+# connected trail. ~40 m bridges typical OSM way-endpoint snapping/rounding without
+# merging genuinely-separate trails (the 300–800 m gaps the name-only merge produced).
+_SEGMENT_GAP_M = 40.0
+# Inverse of the match.py lat/lon average metres-per-degree at ~38°N (≈98 000 m/deg).
+_DEG_PER_M = 1.0 / 98_000.0
 
-    OSM encodes a continuous trail as many disconnected `way` elements. Running
-    conflation against individual 200m segments produces artificially low geometry
-    overlap against full-length NPS/USFS records (score=100, overlap=0.02). Merging
-    first gives the matcher the full trail geometry and turns most of those "review"
-    cases into auto-accepts.
 
-    Groups solely by normalized name within the fetched bbox — geographic separation
-    (two parks with "Ridge Trail") is acceptable at pilot scale; add spatial clustering
-    later if cross-park false-merges become a problem.
+def _connected_components(features: list[Feature], gap_deg: float) -> list[list[Feature]]:
+    """Cluster features into spatially-connected components (union-find): two ways join
+    when their geometries are within `gap_deg` of each other. O(n²) in the group size —
+    fine, since same-name groups are small."""
+    n = len(features)
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if find(i) != find(j) and features[i].geom.distance(features[j].geom) <= gap_deg:
+                parent[find(i)] = find(j)
+
+    comps: dict[int, list[Feature]] = defaultdict(list)
+    for i in range(n):
+        comps[find(i)].append(features[i])
+    return list(comps.values())
+
+
+def consolidate_osm_segments(
+    features: list[Feature], *, gap_m: float = _SEGMENT_GAP_M
+) -> list[Feature]:
+    """Merge OSM way segments that share a name AND are spatially connected into one
+    Feature; split same-named-but-disconnected ways into separate trails.
+
+    OSM encodes a continuous trail as many disconnected `way` elements. Merging gives
+    the conflation matcher the full trail geometry (a 200 m segment overlaps a
+    full-length NPS record at ~0.02; merged it auto-accepts). But merging *solely* by
+    name unioned genuinely-distinct ways that happen to share a name (two parks'
+    "Ridge Trail"; the many "Rivanna Trail" / "Appalachian Trail" sections) into one
+    gappy MultiLineString — the "map routes are nonsense" (Lead 2). Clustering each
+    name-group by spatial connectivity keeps real contiguous trails merged (clean
+    LineString) while disconnected ways become their own CanonicalTrails.
     """
     by_norm: dict[str, list[Feature]] = defaultdict(list)
     dropped = 0
@@ -122,19 +156,34 @@ def consolidate_osm_segments(features: list[Feature]) -> list[Feature]:
     if dropped:
         log.warning("consolidate_osm_segments: dropped %d suffix-only named features", dropped)
 
+    gap_deg = gap_m * _DEG_PER_M
     consolidated: list[Feature] = []
+    split_groups = 0
     for _, group in by_norm.items():
         if len(group) == 1:
             consolidated.append(group[0])
             continue
-        # Prefer the longest raw name as the display name; merge all geometries.
-        name = max(group, key=lambda f: len(f.name)).name
-        combined = unary_union([f.geom for f in group])
-        # ref=None: a merge spans multiple source way IDs. `source` carries the group's
-        # real provenance (not a hardcoded "OSM") so a non-OSM spine keeps its authority
-        # tier and SourceRecord/SAME_AS provenance (C5 / AC-4.3).
-        consolidated.append(Feature(name=name, geom=combined, source=group[0].source, ref=None))
+        components = _connected_components(group, gap_deg)
+        if len(components) > 1:
+            split_groups += 1
+        for comp in components:
+            if len(comp) == 1:
+                consolidated.append(comp[0])
+                continue
+            # Prefer the longest raw name as the display name; merge the component.
+            name = max(comp, key=lambda f: len(f.name)).name
+            combined = unary_union([f.geom for f in comp])
+            # Stable, unique ref per component (the min member way id) so each connected
+            # component is its OWN CanonicalTrail — no slug collision between disconnected
+            # same-named ways, and the id is stable across re-ingests.
+            ref = min((f.ref for f in comp if f.ref), default=None)
+            consolidated.append(Feature(name=name, geom=combined, source=comp[0].source, ref=ref))
 
+    if split_groups:
+        log.info(
+            "consolidate_osm_segments: split %d same-name group(s) into disconnected components",
+            split_groups,
+        )
     return consolidated
 
 
