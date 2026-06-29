@@ -10,6 +10,8 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 
 ## Canonical design docs (read on demand)
 - **`docs/README.md`** — **the doc map**: read-this-for-that router + always-load/on-demand split + the SSOT table. **Start here.**
+- `docs/vision.md` — **north star** (evergreen): the bet, the five pillars, the refusals. *(Vision-owned — ages slowly; sits one altitude above the roadmap.)*
+- `docs/strategy/path-to-complete.md` — **the sequenced path** from today's prototype to a complete app: phases A–G, the CDP adopt-queue coverage map, open strategic decisions. *(Vision-PM-owned — the why-this-order; defers to the roadmap on status.)*
 - `docs/process/roadmap.md` — **live status** (the dashboard SSOT): current build state, next work, open risks. *(PM-owned — link to it, don't restate it.)*
 - `docs/decision-log.md` — **state**: everything decided, with a ✅/🔶/❓ legend.
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.

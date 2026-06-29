@@ -276,7 +276,7 @@ frontend/tokens/*.json            (DTCG source of truth)
 ### 9.2 Phased rollout (do not boil the ocean on a surface still in flux)
 
 - **Phase 1 — Token spine.** ✅ **Shipped.** DTCG tokens (primitive→semantic) + Style Dictionary → `tokens.css`; the hand-written `:root` is replaced and the prototype renders identically but token-driven.
-- **Phase 2 — Typed theme + reference component.** ✅ **Shipped.** `src/design/theme.css.ts` is the typed vanilla-extract contract (`createGlobalThemeContract` over the generated vars — Style Dictionary still owns values). `Signal` is the first owned, token-bound component and the sole carrier of the accent hue. *(Confidence and Staleness remain to be built as components; only the verify primitive is done.)*
+- **Phase 2 — Typed theme + reference component.** ✅ **Shipped.** `src/design/theme.css.ts` is the typed vanilla-extract contract (`createGlobalThemeContract` over the generated vars — Style Dictionary still owns values). `Signal` is the first owned, token-bound component and the sole carrier of the accent hue. *(All three honesty primitives now ship as owned, token-bound components with tests + stories: `src/components/{Confidence,Staleness,Signal}/` each with `*.tsx` + `*.test.tsx` + `*.stories.tsx` — verified 2026-06-29.)*
 - **Phase 3 — React Aria primitives.** ✅ **Shipped.** `Sheet` / `Toggle` / `OptionButton` rebuilt on React Aria (real focus trap, Escape/scrim dismiss, focus return, roving single-select, role=switch); bespoke focus/dismiss handling retired.
 - **Phase 4 — Workbench.** ✅ **Shipped (local).** Storybook 10 (react-vite) with the axe a11y addon and stories for every owned component; static build verified. *(CI integration + visual-regression remain.)*
 

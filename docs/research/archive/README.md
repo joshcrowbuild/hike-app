@@ -11,3 +11,4 @@ Closed, point-in-time documents — fully actioned and kept for provenance only.
 | api-verification-2026-06.md | Live-endpoint field verification (USGS/NWS/USFS/NPS); adapter fixes applied. |
 | home-curation-prototype-spec-v0.2.md | Superseded by `../home-curation-prototype-spec-v0.3.md`. |
 | decision-log-additions-proposed.md | Staging draft §32–§40; folded into `../../decision-log.md`, kept as full-detail provenance. |
+| parallel-integration-runbook.md | CLOSED 2026-06-26 — gap-audit remediation merge sequence (Epics 010–015); targeted trunk retired, baseline now `main`. Moved here from `process/` (all closed audits live in `archive/`). |
