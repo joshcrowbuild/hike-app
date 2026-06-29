@@ -144,7 +144,7 @@
 
 **Collisions / synergy:** Pure research; informs everything (search B001, routing B005, the feed). Should explicitly map each competitor against our **non-negotiables** to find our defensible difference (provenance, private overlay, calm-utility).
 
-**Ripeness:** `shaped` — ready to run as a deep-research deliverable. Naturally one effort with **B008**.
+**Ripeness:** `promoted → docs/research/competitive-lateral-review.md` (2026-06-28). Ran as a 57-agent adversarially-verified deep review (22 apps + 5 themes). Headline: the whole field's dominant failure is *epistemic* — almost everyone shows undated, unsourced data as current truth; best-in-class provenance exists only at the **feature** level (FarOut Water Status), never the app level. Our defensible white space = honest uncertainty + un-paywalled live truth + private personal intelligence.
 
 ---
 
@@ -165,4 +165,13 @@
 
 **Collisions / synergy:** Several map 1:1 onto open epics/risks (onX Hunt→Rule #5, Oura→007, Letterboxd→002, Beli→006, Citymapper/Flighty→architecture+tone). The richest source of design moves precisely because the domains differ.
 
-**Ripeness:** `shaped` — run together with **B007** as one two-lens deep review (direct competitors + lateral mechanics).
+**Ripeness:** `promoted → docs/research/competitive-lateral-review.md` (2026-06-28). The "steal these first" list maps onto our existing work — the most actionable extractions:
+- **FarOut Water Status (source-or-silence shipped)** → the template for Rule #1 at the Verifier layer: *no fresh source → no claim*, per-data-type freshness windows, four distinct empty-states (no-data / no-hazard / not-fetched / stale-degraded).
+- **Yuka worst-element ceiling** → Rule #2 Confidence: one critical hazard *caps* the safety verdict, but confidence still never penalizes desirability ranking.
+- **Beli pairwise capture** → **Epic 006** (taste/novelty): 3-bucket sentiment → binary-insertion-sort → derived 0–10 the user never types; store the private ordinal as substrate. (Note the cold-start gap: needs a bootstrap before a ranked list exists.)
+- **Oura/WHOOP readiness + watch-as-capability-floor** → **Epic 007**: readiness as a JIT, hedged, capability-only effort floor (never a score/ring/streak); party = weakest-link with per-member disclosure.
+- **onX Hunt folder grants + Find My time-boxed revocation** → Rule #5 / Stage 8: conclusion-level, revocable, no-re-share sharing enforced at the Cypher layer; strip residual substrate before emit (Strava's leak is the cautionary tale).
+- **Spotify finite drop + Citymapper subscribe-to-entity alerts** → Rule #6 Curator feed: replace-don't-accumulate, finiteness driven by what's verifiable; opt-in per-trail/gauge/permit alerts that state the *derived consequence*.
+- **Duolingo (+ Strava/Garmin/Beli engagement machinery)** → explicit do-not-build list. Key insight: anti-engagement is also **pro-accuracy** — gamified logging poisons the taste signal.
+
+These are candidate sources for future epics (notably a Rule #1 Verifier-freshness epic, Epic 006, Epic 007) — not yet promoted to epics themselves.

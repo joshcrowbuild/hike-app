@@ -36,6 +36,7 @@
 | [device-integration-seam.md](device-integration-seam.md) | `IMPLEMENTED (Epic 004)` | Config-driven device-provider seam (Garmin/Coros + future vendors). **Read when** adding a device-vendor adapter. |
 | [source-seams-corpus-and-live.md](source-seams-corpus-and-live.md) | `IMPLEMENTED (Epics 012/013)` | CorpusSource + LiveAdapter contracts, registries, conformance suites. **Read when** adding a corpus source or live-condition adapter. |
 | [novelty-filter-spec.md](novelty-filter-spec.md) | `ACTIVE` (basis for Epic 006, unbuilt) | Curator novelty filter — `been_on` surfacing, soft recency/repeat discount, explore/exploit dial. **Read when** implementing novelty ranking. |
+| [competitive-lateral-review.md](competitive-lateral-review.md) | `ACTIVE` (dogfood inputs B007/B008) | Competitive + lateral-inspiration review: 22 apps (12 direct + 9 lateral mechanic-donors + Duolingo anti-pattern) + 5 themes, adversarially verified against the 6 invariants. Steal-first list, defensible white space, per-app moves, anti-pattern rules, invariant map. **Read when** shaping search/discovery/sharing/readiness UX or arguing the product's defensible difference. |
 
 ## UX & design system
 
