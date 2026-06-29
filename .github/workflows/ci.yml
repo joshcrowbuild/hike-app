@@ -65,9 +65,14 @@ jobs:
     timeout-minutes: 15
     services:
       neo4j:
-        image: neo4j:5-community
+        # Neo4j 2025 with CYPHER_25 as the default query language mirrors what Aura
+        # runs in production, so this leg catches Cypher-25-only regressions (e.g. the
+        # pattern-comprehension /health bug that returned graph=null on Aura but passed
+        # under Cypher 5). The job name stays "integration (neo4j)" (the required check).
+        image: neo4j:2025-community
         env:
           NEO4J_AUTH: neo4j/testpassword
+          NEO4J_db_query_default__language: CYPHER_25
         ports:
           - 7687:7687
     env:
