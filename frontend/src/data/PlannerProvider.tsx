@@ -121,10 +121,18 @@ export function useEpisode(id: string | null): {
 
 export type FeedStatus = 'loading' | 'ready' | 'empty' | 'error'
 
+/** A still-loading request is "slow" once it crosses this mark — long enough that
+ *  a fast response stays silent, short enough to explain a Render cold start
+ *  before the 60s /plan budget elapses. Drives the "waking the server" copy. */
+const SLOW_LOAD_MS = 8_000
+
 export interface FeedState {
   status: FeedStatus
   feed?: FeedVM
   error?: FeedError
+  /** True while `status === 'loading'` past {@link SLOW_LOAD_MS} — the request is
+   *  likely waiting on a cold-starting server, so the surface can say so. */
+  slow: boolean
   /** Re-run the request (idempotent retry — H9 recovery). */
   reload: () => void
 }
@@ -134,6 +142,7 @@ export function useFeed(input: PlanInput): FeedState {
   const [state, setState] = useState<{ status: FeedStatus; feed?: FeedVM; error?: FeedError }>({
     status: 'loading',
   })
+  const [slow, setSlow] = useState(false)
   // Re-run when the tuning frame, k, viewer, or a manual reload nonce changes.
   const [nonce, setNonce] = useState(0)
   const key = JSON.stringify({ t: input.tuning, k: input.k, v: scope.viewerId, g: scope.grantedIds })
@@ -141,6 +150,10 @@ export function useFeed(input: PlanInput): FeedState {
   useEffect(() => {
     let live = true
     setState({ status: 'loading' })
+    setSlow(false)
+    // Flip to the "waking the server" affordance only if the request is still in
+    // flight past the slow mark; cleared on resolve, unmount, or re-key.
+    const slowTimer = setTimeout(() => live && setSlow(true), SLOW_LOAD_MS)
     client
       .plan(input, scope)
       .then((feed) => {
@@ -153,14 +166,19 @@ export function useFeed(input: PlanInput): FeedState {
         if (!live) return
         setState({ status: 'error', error: { kind: 'offline', message: String(err) } })
       })
+      .finally(() => {
+        if (live) setSlow(false)
+        clearTimeout(slowTimer)
+      })
     return () => {
       live = false
+      clearTimeout(slowTimer)
     }
     // key encodes the meaningful inputs; client/scope are stable per provider.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, nonce])
 
-  return { ...state, reload: () => setNonce((n) => n + 1) }
+  return { ...state, slow, reload: () => setNonce((n) => n + 1) }
 }
 
 export type CardStatus = 'loading' | 'ready' | 'notfound' | 'error'
