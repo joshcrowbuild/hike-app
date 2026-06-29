@@ -23,7 +23,13 @@ import type { PlanInput, PlannerClient } from '../source'
 import type { CardVM, ElevationProfile, EpisodeVM, FeedError, FeedVM, OutcomeVM, TrailGeo } from '../vm'
 import type { OriginKey } from '../../types'
 
-const TIMEOUT_MS = 10_000
+// The Render free-tier API cold-starts in 30–60s after idling out. A 10s budget
+// lost that race — the browser aborted /plan while a long-timeout curl succeeded
+// (the "first tap fails on mobile" bug). 60s clears the worst-case cold start; a
+// warm-ping cron (.github/workflows/warm-ping.yml) keeps this path rare. Only
+// /plan (and getCard, which reruns plan) carries this budget — recordOutcome has
+// no timeout — so a single constant suffices.
+const PLAN_TIMEOUT_MS = 60_000
 
 /**
  * Scoped requests carry the dev-viewer secret so the backend's fail-closed
@@ -123,7 +129,7 @@ export class HttpPlannerClient implements PlannerClient {
       viewer_id: scope.viewerId,
     }
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
     try {
       const resp = await fetch(`${this.baseUrl}/plan`, {
         method: 'POST',
@@ -148,6 +154,10 @@ export class HttpPlannerClient implements PlannerClient {
     // the set returns null until the detail endpoint lands.
     void origin
     const feed = await this.plan({ tuning: fallbackTuning(origin) }, scope)
+    // A transient failure (notably the cold-start timeout this branch now waits
+    // out for up to 60s) must not masquerade as "not found": throw so `useCard`
+    // maps it to a retryable error state, not an authoritative absence (R1).
+    if (feed.error) throw new Error(feed.error.message)
     return feed.cards.find((c) => c.id === id) ?? null
   }
 

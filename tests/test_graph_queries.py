@@ -53,6 +53,20 @@ def test_trail_detail_query_shape_and_deterministic_trailhead() -> None:
     assert "owner_id" not in cypher  # world nodes only — no access scope
 
 
+def test_trail_source_corroboration_is_world_read_counting_distinct_origins() -> None:
+    # CDP-01: distinct upstream origins per SAME_AS cluster — a world read (no owner
+    # scope), counting DISTINCT SourceRecord.source (not echoed feeds).
+    cypher, params = queries.trail_source_corroboration(["ct:old-rag-loop", "ct:x"])
+    assert "SAME_AS" in cypher
+    assert "(t)<-[:SAME_AS]-(sr:SourceRecord)" in cypher
+    assert "collect(DISTINCT source)" in cypher  # distinct origins, never echoes
+    assert "ORDER BY source" in cypher  # deterministic sorted `sources` contract
+    assert "size(sources)" in cypher
+    assert "owner_id" not in cypher  # world nodes only — no access scope
+    assert "$viewer_id" not in cypher
+    assert params == {"cids": ["ct:old-rag-loop", "ct:x"]}
+
+
 def test_owner_scope_clause() -> None:
     clause = queries.owner_scope("x")
     assert clause == "(x.owner_id = $viewer_id OR x.owner_id IN $granted_ids)"

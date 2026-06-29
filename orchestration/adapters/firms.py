@@ -51,8 +51,19 @@ def fetch(
         return None
 
     rows = list(csv.DictReader(io.StringIO(text)))
+    # Origin-at-boundary (CDP-03 / spike item 3): each detection names its satellite/
+    # sensor (MODIS Aqua/Terra vs VIIRS Suomi-NPP/NOAA-20). Capturing the distinct
+    # satellites — not just the requested `dataset` — preserves the genuine independence
+    # signal: two detections from *different* satellites corroborate; two from the same
+    # pass do not. The column is absent on some product schemas → empty list, never a lie.
+    satellites = sorted({s for r in rows if (s := (r.get("satellite") or "").strip())})
     return VerifiedFact(
-        value={"hotspot_count": len(rows), "dataset": dataset, "window_days": days},
+        value={
+            "hotspot_count": len(rows),
+            "dataset": dataset,
+            "window_days": days,
+            "satellites": satellites,
+        },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
         confidence_inputs={"authority": "tier1_gov", "freshness": "near_real_time"},
