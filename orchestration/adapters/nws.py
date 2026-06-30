@@ -50,6 +50,14 @@ def fetch(
     if not forecast_url:
         return None
 
+    # Origin-at-boundary (CDP-03 / spike item 3): the forecast office (CWA / gridId) and
+    # gridpoint uniquely identify which NWS product this reading came from. Captured now
+    # so the day weather gets a second provider, the independence check is already wired —
+    # two readings from the same office+grid are NOT independent corroboration.
+    forecast_office = props.get("gridId") or props.get("cwa")
+    grid_x = props.get("gridX")
+    grid_y = props.get("gridY")
+
     forecast = _http.get_json(c, forecast_url)
     periods = forecast.get("properties", {}).get("periods") if isinstance(forecast, dict) else None
     if not periods:
@@ -77,6 +85,9 @@ def fetch(
             "temperature": p.get("temperature"),
             "temperature_unit": p.get("temperatureUnit"),
             "active_alerts": active_alerts,
+            "forecast_office": forecast_office,
+            "grid_x": grid_x,
+            "grid_y": grid_y,
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),

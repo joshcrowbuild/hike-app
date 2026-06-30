@@ -60,10 +60,57 @@ def _body(kind: str, value: Any) -> str:
     return str(value)
 
 
+# Kinds whose provider is an *aggregator* of upstream monitors (AirNow pools EPA
+# stations) — labeled "aggregated" so we never imply independent corroboration where a
+# single feed already merged its inputs (CDP-01 spike: AirNow corroboration = 1).
+_AGGREGATOR_KINDS = frozenset({"air"})
+
+
+def _origin(kind: str, value: Any) -> str:
+    """The recoverable distinct-origin id for a live single-source fact (CDP-01 spike
+    item 2 / CDP-03 origin-at-boundary). Empty when no id is captured — we name the
+    origin where we have it, never fabricate one. These ids are what a future second
+    provider for the same kind would be checked against for genuine independence."""
+    if not isinstance(value, dict):
+        return ""
+    if kind == "water":
+        sid = value.get("site_id")
+        return f"USGS site {sid}" if sid else ""
+    if kind == "weather":
+        office = value.get("forecast_office")
+        gx, gy = value.get("grid_x"), value.get("grid_y")
+        if office and gx is not None and gy is not None:
+            return f"NWS {office} {gx},{gy}"
+        return f"NWS {office}" if office else ""
+    if kind == "fire":
+        sats = [s for s in (value.get("satellites") or []) if isinstance(s, str)]
+        return f"FIRMS {'/'.join(sats)}" if sats else ""
+    # permits (RIDB → Recreation.gov) is a single federal origin — corroboration moot
+    # (spike). No origin id is emitted: it would only restate the provider already in the
+    # source-parens, never serve as an independence key.
+    return ""
+
+
+def _source_note(kind: str, value: Any) -> str:
+    """Honest single-source label: live conditions come from exactly one source by
+    construction, so we say so (and name the origin) rather than leaving the corroboration
+    axis to imply more than one (CDP-01 spike item 2). Corroboration >1 lives only on the
+    corpus layer (PlannedTrail.corpus_*), never on a live fact."""
+    descriptor = (
+        "single aggregated source" if kind in _AGGREGATOR_KINDS else "single authoritative source"
+    )
+    origin = _origin(kind, value)
+    return f"{descriptor} ({origin})" if origin else descriptor
+
+
 def summarize_fact(
     kind: str, fact: VerifiedFact, confidence: Confidence, *, now: datetime | None = None
 ) -> FeedLine:
     now = now or datetime.now(timezone.utc)
     hedge = _HEDGE.get(confidence.presentation, "")
-    text = f"{hedge}{_body(kind, fact.value)} ({fact.source}, {_age(fact.fetched_at, now)})"
+    body = _body(kind, fact.value)
+    text = (
+        f"{hedge}{body} ({fact.source}, {_age(fact.fetched_at, now)}) "
+        f"· {_source_note(kind, fact.value)}"
+    )
     return FeedLine(kind=kind, text=text, source=fact.source, presentation=confidence.presentation)

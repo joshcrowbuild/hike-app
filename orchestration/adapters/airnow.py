@@ -59,6 +59,12 @@ def fetch(
         return None
     category = worst.get("Category") or {}
 
+    # No distinct-origin id is captured on purpose (CDP-01 spike): AirNow is an
+    # *aggregator* of EPA monitors and returns only a coarse `reporting_area`, so two
+    # AQI feeds both pulling AirNow share an origin by definition. Corroboration is
+    # honestly 1 ("single aggregated source"); a monitor id here would falsely imply
+    # an independence the feed doesn't expose.
+
     return VerifiedFact(
         value={
             "aqi": worst.get("AQI"),

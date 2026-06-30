@@ -10,13 +10,24 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
+from api.observability import PlanMetrics, cache_size, estimate_tokens, scrub_viewer
+from api.ratelimit import (
+    detail_limit,
+    health_limit,
+    limiter,
+    outcome_limit,
+    plan_limit,
+    rate_limit_exceeded_handler,
+)
 from api.schemas import (
     ElevationProfile,
     ElevationSample,
@@ -67,6 +78,11 @@ app = FastAPI(
     description="Personal, agentic, self-verifying hiking/backpacking trip planner.",
     lifespan=lifespan,
 )
+
+# Per-IP rate limiting (Phase B): the limiter lives on app.state so slowapi's decorators
+# and exception handler can reach it; RateLimitExceeded → a clean JSON 429.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 def _install_cors(application: FastAPI, settings: Settings) -> None:
@@ -181,7 +197,8 @@ def _graph_stats() -> GraphStats | None:
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+@limiter.limit(health_limit)
+def health(request: Request) -> HealthResponse:
     if _settings is None:
         raise HTTPException(status_code=503, detail="Settings not loaded")
     return HealthResponse(
@@ -194,36 +211,63 @@ def health() -> HealthResponse:
 
 
 @app.post("/plan", response_model=FeedResponse)
+@limiter.limit(plan_limit)
 def plan(
-    request: PlanRequest,
+    request: Request,  # required by slowapi for per-IP keying (also gives us the edge)
+    body: PlanRequest,
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> FeedResponse:
     if _settings is None or _graph_client is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(request.viewer_id, x_dev_viewer_secret)
+    _authorize_viewer(body.viewer_id, x_dev_viewer_secret)
+    # Observability (Phase B): time the fan-out and snapshot the live-probe cache so we can
+    # see latency + how much third-party quota the call spent. Never logs viewer_id in the
+    # clear (Rule #5).
+    started = time.perf_counter()
+    cache_before = 0
     try:
-        runtime = build_runtime(_settings, _graph_client, request.viewer_id)
+        runtime = build_runtime(_settings, _graph_client, body.viewer_id)
         from orchestration.engine import plan as engine_plan
 
+        cache_before = cache_size(runtime.cache)
         feed = engine_plan(
-            request.query,
-            (request.lat, request.lon),
+            body.query,
+            (body.lat, body.lon),
             runtime,
-            k=request.k,
-            viewer_id=request.viewer_id,  # AC-5: forward viewer for context assembly
+            k=body.k,
+            viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
         )
         # Attach per-card maps/terrain fields (Epic 016 S1 / Epic 017 S4). World data
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
-        session = _graph_client.scoped_session(request.viewer_id)
+        session = _graph_client.scoped_session(body.viewer_id)
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
-        return _feed_response(feed, maps_by_cid)
+        response = _feed_response(feed, maps_by_cid)
+        cache_after = cache_size(runtime.cache)
     except HTTPException:
         raise
     except Exception as exc:
         # Log the real cause (e.g. a missing/misconfigured model provider) before
         # returning a generic 500 — never swallow it silently.
-        logger.exception("plan failed for query=%r viewer=%r", request.query, request.viewer_id)
+        logger.exception(
+            "plan failed for query=%r viewer=%s", body.query, scrub_viewer(body.viewer_id)
+        )
         raise HTTPException(status_code=500, detail="Internal error") from exc
+    # Emit metrics AFTER the response is built and OUTSIDE the 500-mapping try: the fan-out
+    # already succeeded and its cost is already spent, so a metrics bug must never discard a
+    # good response and bill the user for a 500 (degrade gracefully at the surface).
+    try:
+        line_texts = [line.text for card in feed.cards for line in card.lines]
+        PlanMetrics(
+            viewer_tag=scrub_viewer(body.viewer_id),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(feed.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            est_tokens=estimate_tokens(body.query, *line_texts),
+        ).emit()
+    except Exception:
+        logger.exception("plan observability emit failed (response already sent)")
+    return response
 
 
 def _point_latlon(point: Any) -> tuple[float, float] | None:
@@ -333,7 +377,9 @@ def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailR
 
 
 @app.get("/trail/{canonical_id}", response_model=TripDetailResponse)
+@limiter.limit(detail_limit)
 def trail_detail(
+    request: Request,  # required by slowapi for per-IP keying
     canonical_id: str,
     viewer_id: str = "anonymous",
     x_dev_viewer_secret: str | None = Header(default=None),
@@ -371,7 +417,9 @@ def _drain_queue_bg(queue, graph_client) -> None:
 
 
 @app.post("/episode/{episode_id}/outcome", response_model=OutcomeResponse)
+@limiter.limit(outcome_limit)
 def record_outcome(
+    request: Request,  # required by slowapi for per-IP keying
     episode_id: str,
     body: OutcomeBody,
     background_tasks: BackgroundTasks,

@@ -28,7 +28,7 @@ export function Home({
   onOpenOutcome,
   onApplyTuning,
 }: HomeProps) {
-  const { status, feed, error, reload } = useFeed({ tuning })
+  const { status, feed, error, slow, reload } = useFeed({ tuning })
   const { episodes } = useRecentEpisodes()
   // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
   // Trips tab to navigate to. Quiet, dismissible by simply not tapping it.
@@ -67,7 +67,15 @@ export function Home({
 
       {feed ? <ReadinessLine feed={feed} /> : null}
 
-      {status === 'loading' ? <p className="state-note">Reading conditions…</p> : null}
+      {status === 'loading' ? (
+        // A slow request is almost always the free-tier API cold-starting; say so
+        // (calmly, same primitive) rather than leaving the user on a stalled
+        // "Reading conditions…" that looks like a failure. role="status" makes the
+        // dynamic swap reach screen readers too (WCAG 4.1.3, as elsewhere here).
+        <p className="state-note" role="status">
+          {slow ? 'Waking the server — this can take up to a minute…' : 'Reading conditions…'}
+        </p>
+      ) : null}
 
       {status === 'error' ? (
         <div className="state-block">

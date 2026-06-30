@@ -58,6 +58,7 @@ Every var is documented in `.env.example`.
 | `AIRNOW_API_KEY` | only if `airnow` enabled | yes | — | EPA AirNow key. |
 | `FIRMS_MAP_KEY` | only if `firms` enabled | yes | — | NASA FIRMS map key. |
 | `RIDB_API_KEY` | only if `ridb` enabled | yes | — | Recreation.gov key. |
+| `ADVENTURE_RATELIMIT_{PLAN,HEALTH,DETAIL,OUTCOME}` | no (defaults `10`/`60`/`60`/`20` per minute) | no | — | Per-IP slowapi bounds (Phase-B abuse guard); over the limit → clean 429 with `Retry-After`. True per-IP keying behind Render's proxy needs uvicorn `--proxy-headers --forwarded-allow-ips` (deploy follow-up); without it the cap is global but still bounds budget. |
 | `VALHALLA_BASE_URL` | only for drive-time | no | — | Self-hosted Valhalla URL; absent → no drive-time line. |
 
 The codebase's *default* model provider is a **local** OpenAI-compatible endpoint

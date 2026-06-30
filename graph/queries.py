@@ -164,6 +164,37 @@ def trails_detail(canonical_ids: list[str]) -> tuple[str, dict[str, Any]]:
     return cypher, {"cids": list(canonical_ids)}
 
 
+def trail_source_corroboration(canonical_ids: list[str]) -> tuple[str, dict[str, Any]]:
+    """Distinct-origin corroboration per trail — the CDP-01 moat (spike:
+    `docs/research/cdp-01-corroboration-feasibility-spike.md`). Corroboration's locus is
+    the corpus/`SAME_AS` layer, not the single-source live path: each trail is joined by
+    `SAME_AS` to one `:SourceRecord` per independent upstream origin (OSM + NPS + USFS +
+    USGS_NTD …), so the count of DISTINCT `SourceRecord.source` in a cluster is the real
+    independence count — origins that agree the trail *exists*, never echoed feeds.
+
+    World nodes only (CanonicalTrail / SourceRecord) → inherently public, no owner scope.
+    Returns one row per matched id with the sorted distinct `sources` (so a caller can
+    reason per-attribute: existence is corroborated by the whole cluster, a specific
+    attribute only by its survivorship winner) and the `corroboration` count. A trail
+    with no SourceRecords yields an empty list / count 0 — `collect` drops the OPTIONAL
+    MATCH's null; the caller floors it at the honest baseline of 1 (the trail came from
+    somewhere). Batched (one round trip for a whole feed)."""
+    cypher = (
+        "MATCH (t:CanonicalTrail)\n"
+        "WHERE t.canonical_id IN $cids\n"
+        "OPTIONAL MATCH (t)<-[:SAME_AS]-(sr:SourceRecord)\n"
+        # ORDER BY before collect so `sources` is deterministically sorted (collect's
+        # order is otherwise unspecified); the null source from an unmatched OPTIONAL
+        # MATCH is dropped by collect, yielding [] for a SourceRecord-less trail.
+        "WITH t, sr.source AS source ORDER BY source\n"
+        "WITH t, collect(DISTINCT source) AS sources\n"
+        "RETURN t.canonical_id AS canonical_id,\n"
+        "       sources              AS sources,\n"
+        "       size(sources)        AS corroboration"
+    )
+    return cypher, {"cids": list(canonical_ids)}
+
+
 def episodes_on_trail(canonical_id: str) -> tuple[str, dict[str, Any]]:
     """Personal-overlay read (reserved for Stage 5) — demonstrates the seam: any
     query touching owned :Episode nodes is owner-scoped."""
