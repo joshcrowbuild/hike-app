@@ -214,6 +214,82 @@ def clear_trail_segments(runner: Runner, canonical_id: str) -> None:
     )
 
 
+def prune_stale_trails(
+    runner: Runner,
+    ingest_version: str,
+    *,
+    region_id: str,
+    min_current: int = 1,
+) -> None:
+    """Delete CanonicalTrails (+ their Segments and SourceRecords) left behind by a
+    PRIOR ingest of this region — the nodes a now-tighter filter stopped refreshing.
+
+    The loaders are MERGE-only (idempotent upsert), so a re-ingest that newly *drops*
+    a way — e.g. a TIGER-misimported state route the trail filter now rejects (finding
+    #1) — never deletes the node last month's run created. It just stops touching it,
+    leaving a stale CanonicalTrail serving forever in /plan. This prunes every
+    same-region trail whose `ingest_version` is not the current run's, closing that gap
+    so a tighter filter actually self-heals on re-ingest.
+
+    Guard — a failed or empty ingest must NEVER wipe the graph (the whole point of the
+    prune is to delete *non-current* nodes, which is everything if the current run wrote
+    nothing). The delete fires only when at least `min_current` trails carry the current
+    `ingest_version`: an ingest that loaded nothing (Overpass down, region misconfigured)
+    leaves `n_cur = 0 < min_current`, the WHERE drops the only row, and the downstream
+    MATCH/DELETE never runs. Callers should additionally gate on a successful load count.
+
+    Region-scoped: only nodes whose `ingest_version` IS this region's id or starts with
+    `"{region_id}-"` are candidates (`ingest_version` is `"{region_id}"` or
+    `"{region_id}-{suffix}"`). The separator anchor matters — a bare `STARTS WITH
+    region_id` would let region "shen" prune region "shenandoah", a silent cross-region
+    wipe — so the prefix must end on the `-` boundary.
+
+    Two passes, because a SourceRecord is NOT guaranteed 1:1 with its trail (the matcher
+    can `SAME_AS` one source feature to several canonicals, and a re-keyed canonical_id
+    leaves the old `SAME_AS` standing). Pass 1 deletes the stale trails and their
+    trail-private Segments (the id embeds the canonical_id) — DETACH drops their
+    `SAME_AS` edges. Pass 2 then deletes only the SourceRecords that are now *orphaned*
+    (no surviving `SAME_AS` to any CanonicalTrail) AND stale-versioned in this region —
+    so a SourceRecord still corroborating a surviving current-version trail is kept
+    (rule #1 source-or-silence / rule #7 provenance)."""
+    prefix = f"{region_id}-"
+    # Empty-ingest guard: no current trails → the WHERE drops the only row → no delete.
+    guard = (
+        "MATCH (cur:CanonicalTrail {ingest_version: $iv})\n"
+        "WITH count(cur) AS n_cur\n"
+        "WHERE n_cur >= $min_current\n"
+    )
+    # Same-region, not-current candidate predicate (separator-anchored prefix).
+    region_pred = (
+        "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)\n"
+        "  AND node.ingest_version <> $iv"
+    )
+    params: dict[str, Any] = {
+        "iv": ingest_version,
+        "region_id": region_id,
+        "prefix": prefix,
+        "min_current": min_current,
+    }
+    # Pass 1 — stale trails + their private segments.
+    runner(
+        guard
+        + "MATCH (node:CanonicalTrail)\n"
+        + f"WHERE {region_pred}\n"
+        + "OPTIONAL MATCH (node)-[:HAS_SEGMENT]->(s:Segment)\n"
+        + "DETACH DELETE node, s",
+        params,
+    )
+    # Pass 2 — SourceRecords now orphaned by pass 1 (still-referenced ones survive).
+    runner(
+        guard
+        + "MATCH (node:SourceRecord)\n"
+        + f"WHERE {region_pred}\n"
+        + "  AND NOT (node)-[:SAME_AS]->(:CanonicalTrail)\n"
+        + "DETACH DELETE node",
+        params,
+    )
+
+
 def load_source_record(
     runner: Runner,
     sr_uid: str,

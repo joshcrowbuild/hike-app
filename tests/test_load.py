@@ -11,6 +11,7 @@ from graph.load import (
     load_source_record,
     load_trailhead,
     merge_same_as,
+    prune_stale_trails,
 )
 
 
@@ -162,6 +163,56 @@ def test_load_canonical_trail_omits_route_geom_when_not_passed():
     load_canonical_trail(runner, "ct:1", "T")
     _, params = calls[0]
     assert "route_geom_wkt" not in params
+
+
+def test_prune_stale_trails_query_shape():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    prune_stale_trails(runner, "shenandoah-gwj-v11", region_id="shenandoah-gwj")
+
+    # Two passes: stale trails+segments, then orphaned SourceRecords.
+    assert len(calls) == 2
+    trail_cypher, params = calls[0]
+    sr_cypher, _ = calls[1]
+
+    # Both passes carry the empty-ingest guard.
+    for cypher in (trail_cypher, sr_cypher):
+        assert "count(cur)" in cypher and "n_cur >= $min_current" in cypher
+        assert "DETACH DELETE" in cypher
+        # Region scope is separator-anchored (no bare STARTS WITH region_id).
+        assert (
+            "node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix" in cypher
+        )
+        assert "node.ingest_version <> $iv" in cypher
+
+    # Pass 1 removes the trail + its private segments.
+    assert "CanonicalTrail" in trail_cypher and "HAS_SEGMENT" in trail_cypher
+    # Pass 2 deletes only SourceRecords with no surviving SAME_AS to a trail.
+    assert "SourceRecord" in sr_cypher
+    assert "NOT (node)-[:SAME_AS]->(:CanonicalTrail)" in sr_cypher
+
+    assert params["iv"] == "shenandoah-gwj-v11"
+    assert params["region_id"] == "shenandoah-gwj"
+    assert params["prefix"] == "shenandoah-gwj-"
+    assert params["min_current"] == 1
+
+
+def test_prune_stale_trails_prefix_is_separator_anchored():
+    # The prefix param must end on the '-' boundary so region "shen" can't prune
+    # region "shenandoah-gwj" (cross-region wipe guard).
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    prune_stale_trails(runner, "shen-v3", region_id="shen")
+    assert calls[0][1]["prefix"] == "shen-"
+
+
+def test_prune_stale_trails_respects_min_current_override():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    prune_stale_trails(runner, "shenandoah-gwj", region_id="shenandoah-gwj", min_current=50)
+    assert calls[0][1]["min_current"] == 50
 
 
 def test_idempotency_shape():
