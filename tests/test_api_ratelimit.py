@@ -42,6 +42,7 @@ class _Feed:
     query: str
     cards: list[_Card]
     notices: tuple[str, ...] = ()
+    set_aside: tuple[object, ...] = ()
 
 
 class _Runtime:

@@ -25,9 +25,22 @@ AQI_WARN = 101  # "Unhealthy for Sensitive Groups" and above
 
 
 @dataclass(frozen=True)
+class BlockReason:
+    """A single hard-block cause, source-stamped (Epic 018 S5 AC-5.1). The `reason`
+    is the cause on its own ("weather alert: Flash Flood Warning"); `source` is the
+    live fact's provenance ("NWS api.weather.gov") so a set-aside trail can be
+    disclosed with its cause AND source (AC-5.2), never dropped without a trace. A
+    block is a *safety* gate — it carries no confidence/ranking signal (Rule #2)."""
+
+    kind: str  # ConditionKind.value the block came from, e.g. "weather"
+    reason: str  # the cause alone, e.g. "air quality hazardous (AQI 250)"
+    source: str  # the blocking fact's provenance, e.g. "AirNow"
+
+
+@dataclass(frozen=True)
 class GuardrailVerdict:
     blocked: bool
-    blocks: tuple[str, ...] = ()
+    blocks: tuple[BlockReason, ...] = ()
     warnings: tuple[str, ...] = ()
 
 
@@ -58,14 +71,14 @@ def _hotspots(fact: VerifiedFact) -> int:
 
 
 def evaluate_guardrails(facts: Mapping[ConditionKind, VerifiedFact]) -> GuardrailVerdict:
-    blocks: list[str] = []
+    blocks: list[BlockReason] = []
     warnings: list[str] = []
 
     weather = facts.get(ConditionKind.weather)
     if weather is not None:
         for event in _alerts(weather):
             if any(kw in event.lower() for kw in BLOCKING_ALERT_KEYWORDS):
-                blocks.append(f"weather alert: {event}")
+                blocks.append(BlockReason("weather", f"weather alert: {event}", weather.source))
             else:
                 warnings.append(f"weather alert: {event}")
 
@@ -73,7 +86,7 @@ def evaluate_guardrails(facts: Mapping[ConditionKind, VerifiedFact]) -> Guardrai
     if air is not None:
         aqi = _aqi(air)
         if aqi is not None and aqi >= AQI_BLOCK:
-            blocks.append(f"air quality hazardous (AQI {aqi})")
+            blocks.append(BlockReason("air", f"air quality hazardous (AQI {aqi})", air.source))
         elif aqi is not None and aqi >= AQI_WARN:
             warnings.append(f"air quality elevated (AQI {aqi})")
 

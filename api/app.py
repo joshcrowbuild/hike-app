@@ -41,6 +41,8 @@ from api.schemas import (
     OutcomeBody,
     OutcomeResponse,
     PlanRequest,
+    SetAsideReasonResponse,
+    SetAsideResponse,
     TripDetailResponse,
 )
 from graph.client import GraphClient
@@ -151,12 +153,23 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
     )
 
 
+def _set_aside_response(trail: Any) -> SetAsideResponse:
+    return SetAsideResponse(
+        canonical_id=trail.canonical_id,
+        name=trail.name,
+        reasons=[
+            SetAsideReasonResponse(text=r.text, source=r.source, kind=r.kind) for r in trail.reasons
+        ],
+    )
+
+
 def _feed_response(feed: Feed, maps_by_cid: dict[str, dict[str, Any]]) -> FeedResponse:
     return FeedResponse(
         query=feed.query,
         cards=[_card_response(c, maps_by_cid.get(c.canonical_id, {})) for c in feed.cards],
         card_count=len(feed.cards),
         notices=list(feed.notices),
+        set_aside=[_set_aside_response(t) for t in feed.set_aside],
     )
 
 

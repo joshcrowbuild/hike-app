@@ -85,11 +85,30 @@ export interface WireElevationProfile {
   resolution_m: number
 }
 
+/** One source-stamped cause a trail was set aside by a hard live guardrail (Epic 018 S5). */
+export interface SetAsideReasonResponse {
+  text: string
+  source: string
+  kind: string
+}
+
+/**
+ * A trail a hazardous live condition ruled out — disclosed with its cause + source
+ * (Epic 018 S5), never dropped without a trace. A safety gate, not a ranking signal.
+ */
+export interface SetAsideResponse {
+  canonical_id: string
+  name: string
+  reasons: SetAsideReasonResponse[]
+}
+
 export interface FeedResponse {
   query: string
   cards: FeedCardResponse[]
   card_count: number
   notices: string[]
+  /** Trails a hard live guardrail set aside, disclosed with cause + source (Epic 018 S5). */
+  set_aside?: SetAsideResponse[]
 }
 
 // ---- POST /episode/{id}/outcome ------------------------------------------
