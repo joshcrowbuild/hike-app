@@ -60,3 +60,10 @@ def test_plan_logs_cause_and_returns_generic_500(monkeypatch, caplog) -> None:
     # ...but the real cause is logged server-side with a traceback.
     records = [r for r in caplog.records if r.levelname == "ERROR" and r.exc_info]
     assert records, "expected an ERROR log with a traceback"
+    # The log carries the exception CLASS + a correlation id (reliability lane), and the
+    # same id rides back in a header so the residual 500 is one grep away in Render logs.
+    message = records[0].getMessage()
+    assert "error_class=RuntimeError" in message
+    assert "cid=" in message
+    correlation_id = resp.headers.get("X-Correlation-Id")
+    assert correlation_id and correlation_id in message

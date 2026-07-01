@@ -914,6 +914,70 @@ button {
   gap: 0.5rem;
 }
 
+/* ---- the four legible silence states (CDP-02, Epic 018 AC-4.2) ----
+   Absent/degraded conditions are disclosed, never blank and never a false-clear.
+   Each state is visibly distinct — a leading glyph AND its own treatment, so
+   meaning survives without colour (§4.3). Same gray for all four is a fail. */
+.condition-silence {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.condition-silence-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+/* not-fetched — neutral + inviting: a dashed ring says "action available". */
+.condition-silence--not-fetched .condition-silence-glyph {
+  border: 1px dashed var(--color-neutral-alpha-40);
+  color: var(--text-muted);
+}
+
+/* checked-clear — a calm, confirmed positive: filled chip, firmer text. */
+.condition-silence--checked-clear {
+  color: var(--text-secondary);
+}
+.condition-silence--checked-clear .condition-silence-glyph {
+  background: var(--color-neutral-100);
+  color: var(--text-secondary);
+}
+
+/* no-data — a plain absence: italic, no ornament, reads as "nothing here". */
+.condition-silence--no-data {
+  font-style: italic;
+}
+.condition-silence--no-data .condition-silence-glyph {
+  color: var(--text-muted);
+}
+
+/* stale-degraded — the only cautionary one: the signal hue, "may have changed". */
+.condition-silence--stale-degraded {
+  color: var(--signal-caution-fg);
+}
+.condition-silence--stale-degraded .condition-silence-glyph {
+  background: var(--signal-caution-bg);
+  color: var(--signal-caution-fg);
+}
+
+/* When shown beside present lines, it's a quieter footnote (AC-4.3). */
+.condition-silence--partial {
+  margin-top: 0.4rem;
+  font-size: 0.76rem;
+}
+
 /* ---- pending outcome nod (the post-hike loop finds you on Home, R4) ---- */
 .pending-nod {
   width: 100%;

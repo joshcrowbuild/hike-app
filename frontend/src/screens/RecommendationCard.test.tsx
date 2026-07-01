@@ -58,3 +58,57 @@ describe('RecommendationCard feed glyph (S4)', () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
+  const silence = (over: Partial<CardVM> = {}) =>
+    render(<RecommendationCard card={card({ conditionLines: [], enrichment: undefined, ...over })} onOpen={vi.fn()} />)
+
+  it('renders the honest not-fetched state instead of a blank card (AC-4.2)', () => {
+    const { container } = silence()
+    // The old `return null` produced nothing; now a legible silence shows.
+    expect(container.querySelector('.condition-silence--not-fetched')).toBeInTheDocument()
+    expect(screen.getByText(/conditions not checked/i)).toBeInTheDocument()
+  })
+
+  it('renders four visibly distinct silence states — never the same gray (AC-4.2)', () => {
+    const states = ['not-fetched', 'checked-clear', 'no-data', 'stale-degraded'] as const
+    const glyphs = new Set<string>()
+    const classes = new Set<string>()
+    for (const state of states) {
+      const { container, unmount } = silence({ conditionSilence: { state } })
+      const el = container.querySelector('.condition-silence')
+      expect(el, state).toBeInTheDocument()
+      expect(el?.className, state).toContain(`condition-silence--${state}`)
+      classes.add(el!.className)
+      glyphs.add(container.querySelector('.condition-silence-glyph')!.textContent ?? '')
+      unmount()
+    }
+    // Four distinct treatments and four distinct glyphs: no two states collide.
+    expect(classes.size).toBe(4)
+    expect(glyphs.size).toBe(4)
+  })
+
+  it('discloses stale age through the Staleness primitive (AC-4.2)', () => {
+    silence({ conditionSilence: { state: 'stale-degraded', detail: '4h ago' } })
+    expect(screen.getByText(/last known conditions/i)).toBeInTheDocument()
+    expect(screen.getByText('4h ago')).toBeInTheDocument()
+  })
+
+  it('shows present lines AND a residual silence so the set is not implied exhaustive (AC-4.3)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          conditionLines: [{ text: '54°F · clear (NWS, 12m ago)', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+          conditionSilence: { state: 'no-data', detail: 'streamflow, air' },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.condition-line')).toBeInTheDocument()
+    const note = container.querySelector('.condition-silence--partial')
+    expect(note).toBeInTheDocument()
+    expect(note?.textContent).toMatch(/other conditions/i)
+    expect(note?.textContent).toMatch(/streamflow, air/)
+  })
+})
