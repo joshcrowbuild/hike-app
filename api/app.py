@@ -19,7 +19,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from api.observability import PlanMetrics, cache_size, estimate_tokens, scrub_viewer
+from api.observability import (
+    PlanMetrics,
+    cache_size,
+    estimate_tokens,
+    probe_stats_snapshot,
+    scrub_viewer,
+)
 from api.ratelimit import (
     detail_limit,
     health_limit,
@@ -232,11 +238,13 @@ def plan(
     # clear (Rule #5).
     started = time.perf_counter()
     cache_before = 0
+    stats_before = probe_stats_snapshot(None)  # zeroed until the runtime cache exists
     try:
         runtime = build_runtime(_settings, _graph_client, body.viewer_id)
         from orchestration.engine import plan as engine_plan
 
         cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
         feed = engine_plan(
             body.query,
             (body.lat, body.lon),
@@ -250,6 +258,7 @@ def plan(
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
         response = _feed_response(feed, maps_by_cid)
         cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
     except HTTPException:
         raise
     except Exception as exc:
@@ -284,6 +293,8 @@ def plan(
             cache_entries_before=cache_before,
             cache_entries_after=cache_after,
             est_tokens=estimate_tokens(body.query, *line_texts),
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")

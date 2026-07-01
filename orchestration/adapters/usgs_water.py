@@ -109,7 +109,10 @@ class UsgsWaterAdapter(LiveAdapter):
 
     name = "usgs_water"
     kind = ConditionKind.water
-    ttl_seconds = 900  # ~15 min (Stage 4 §4)
+    # Streamflow is the most volatile of our sources (a gauge can spike in a storm), so
+    # its window is minutes-to-hours and kept deliberately shorter than weather's
+    # (CDP-08 "streamflow min-hours"); USGS posts instantaneous values ~every 15–30 min.
+    ttl_seconds = 1800  # ~30 min — streamflow min-hours window (CDP-08)
 
     def __init__(self, *, client: httpx.Client | None = None) -> None:
         self._client = client

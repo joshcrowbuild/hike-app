@@ -74,7 +74,10 @@ class RidbAdapter(LiveAdapter):
 
     name = "ridb"
     kind = ConditionKind.permits
-    ttl_seconds = 3600  # hours; use the 60-min floor
+    # Facility / permit-requirement data is near-static (rules and nearby facilities
+    # change on the order of days, not hours), so a 1-day window is right and spends the
+    # keyed RIDB quota once per day per locale (CDP-08 "permits days").
+    ttl_seconds = 86400  # ~1 day — permits window (CDP-08)
 
     def __init__(self, api_key: str, *, client: httpx.Client | None = None) -> None:
         self._api_key = api_key

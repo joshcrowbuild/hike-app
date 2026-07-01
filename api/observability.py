@@ -63,6 +63,17 @@ def cache_size(cache: Any) -> int:
     return len(store) if store is not None else 0
 
 
+def probe_stats_snapshot(cache: Any) -> Any:
+    """A detached snapshot of the live-probe cost/latency counters (Epic 018 S6 AC-6.1),
+    read defensively. The TTLCache exposes cumulative `stats` (a ProbeStats); a `None`
+    cache or a stub without one yields a zeroed ProbeStats so the route can snapshot
+    before/after unconditionally and observability can never break the request path."""
+    from orchestration.adapters.registry import ProbeStats
+
+    stats = getattr(cache, "stats", None)
+    return stats.snapshot() if stats is not None else ProbeStats()
+
+
 def _usd_per_1k() -> float:
     raw = os.environ.get("ADVENTURE_LLM_USD_PER_1K")
     if raw is None:
@@ -84,6 +95,12 @@ class PlanMetrics:
     cache_entries_before: int
     cache_entries_after: int
     est_tokens: int
+    # Live fan-out cost/latency (Epic 018 S6 AC-6.1): before/after snapshots of the
+    # cache's cumulative ProbeStats. Deltas give this request's true third-party call
+    # count and per-kind wall-clock (defaulted so the field is optional at call sites /
+    # in tests). `Any` to avoid a hard import cycle back into the adapter registry here.
+    probe_stats_before: Any = None
+    probe_stats_after: Any = None
 
     @property
     def cache_misses(self) -> int:
@@ -99,13 +116,43 @@ class PlanMetrics:
         return self.cache_misses == 0 and self.cache_entries_before > 0
 
     @property
+    def live_calls(self) -> int:
+        """This request's true underlying third-party probe count (miss delta) — exact,
+        unlike `cache_misses` which under-counts at the FIFO cap. 0 when stats absent."""
+        return max(0, self._after("misses") - self._before("misses"))
+
+    @property
+    def cache_hits(self) -> int:
+        """Probes this request served from the TTL cache — quota the tuned windows saved."""
+        return max(0, self._after("hits") - self._before("hits"))
+
+    @property
+    def wall_ms_by_kind(self) -> dict[str, float]:
+        """Per-`ConditionKind` underlying-probe wall-clock spent this request (after−before,
+        per kind), so a slow source is visible. Empty when stats absent (AC-6.1)."""
+        before = getattr(self.probe_stats_before, "wall_ms_by_kind", {}) or {}
+        after = getattr(self.probe_stats_after, "wall_ms_by_kind", {}) or {}
+        out: dict[str, float] = {}
+        for kind, ms in after.items():
+            delta = round(ms - before.get(kind, 0.0), 1)
+            if delta > 0:
+                out[kind] = delta
+        return out
+
+    def _before(self, attr: str) -> int:
+        return int(getattr(self.probe_stats_before, attr, 0) or 0)
+
+    def _after(self, attr: str) -> int:
+        return int(getattr(self.probe_stats_after, attr, 0) or 0)
+
+    @property
     def est_cost_usd(self) -> float:
         return round(self.est_tokens / 1000 * _usd_per_1k(), 6)
 
     def emit(self) -> None:
         logger.info(
             "plan viewer=%s latency_ms=%.1f cards=%d cache=%d->%d miss=%d warm=%s "
-            "est_tokens=%d est_cost_usd=%.6f",
+            "live_calls=%d cache_hits=%d wall_by_kind=%s est_tokens=%d est_cost_usd=%.6f",
             self.viewer_tag,
             self.latency_ms,
             self.card_count,
@@ -113,6 +160,9 @@ class PlanMetrics:
             self.cache_entries_after,
             self.cache_misses,
             self.cache_warm,
+            self.live_calls,
+            self.cache_hits,
+            self.wall_ms_by_kind,
             self.est_tokens,
             self.est_cost_usd,
         )
