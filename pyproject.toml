@@ -76,4 +76,5 @@ testpaths = ["tests"]
 # legs stay DB-free; the CI `integration` job runs `pytest -m neo4j` against a live service.
 markers = [
   "neo4j: integration test requiring a live Neo4j database (deselected by `make test`)",
+  "live_smoke: hits a real live API; skipped unless ADVENTURE_LIVE_SMOKE=1 (never in `make check`)",
 ]

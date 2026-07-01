@@ -1,0 +1,27 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "Recorded observation-list shape near a Shenandoah point. The API_KEY travels in the query string, never the response body, so no secret is recorded here. Worst (max-AQI) observation is selected.",
+  "interactions": [
+    {
+      "match": "airnowapi.org",
+      "status": 200,
+      "json": [
+        {
+          "DateObserved": "2026-06-23",
+          "ParameterName": "O3",
+          "AQI": 38,
+          "Category": {"Number": 1, "Name": "Good"},
+          "ReportingArea": "Shenandoah Valley"
+        },
+        {
+          "DateObserved": "2026-06-23",
+          "ParameterName": "PM2.5",
+          "AQI": 45,
+          "Category": {"Number": 1, "Name": "Good"},
+          "ReportingArea": "Shenandoah Valley"
+        }
+      ]
+    }
+  ]
+}
