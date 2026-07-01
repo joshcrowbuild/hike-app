@@ -64,6 +64,11 @@ function mapFeed(res: FeedResponse): FeedVM {
           confidence: l.confidence_level,
           provenance: 'live',
         })),
+        // Source-or-silence: a live card with no lines gets the honest
+        // `not-fetched` state, not a blank (CDP-02). We never claim `checked-clear`
+        // here — that needs a real per-source signal the thin `/plan` doesn't yet
+        // carry, so asserting it would be a false-clear (Rule #1).
+        conditionSilence: c.lines.length === 0 ? { state: 'not-fetched' } : undefined,
         warnings: c.warnings,
         // The API supplies no rich enrichment yet; the card degrades to thin.
         enrichment: undefined,

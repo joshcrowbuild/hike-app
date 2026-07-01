@@ -93,6 +93,12 @@ def main() -> int:
     if index_check.returncode != 0:
         failed = True
 
+    state_check = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "gen_state.py"), "--check"]
+    )
+    if state_check.returncode != 0:
+        failed = True
+
     deny = check_denylist(ROOT, rels)
     if deny:
         failed = True

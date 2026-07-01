@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from .base import LLMRequest, LLMResponse, ModelProvider
+from .retry import retry_transient
 
 
 class AnthropicProvider(ModelProvider):
@@ -27,17 +28,24 @@ class AnthropicProvider(ModelProvider):
         if self._client is None:
             import anthropic  # lazy: only needed for real calls
 
-            self._client = anthropic.Anthropic(api_key=self._api_key)
+            # max_retries=0: this seam owns the retry policy (retry_transient below), so
+            # the SDK's own 2 retries must not stack on top and blow the latency budget.
+            self._client = anthropic.Anthropic(api_key=self._api_key, max_retries=0)
         return self._client
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         client = self._ensure_client()
-        resp = client.messages.create(
-            model=request.model,
-            max_tokens=request.max_tokens,
-            system=request.system,
-            messages=request.messages,
-            **request.options,  # provider-specific levers (thinking, output_config, cache_control)
+        # A transient blip (429 / 5xx / 529 overloaded / connection reset) is retried with
+        # bounded backoff so it never reaches /plan as a 500 (reliability lane). Both the
+        # mechanical and judgment tiers route through here, so both are covered.
+        resp = retry_transient(
+            lambda: client.messages.create(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                system=request.system,
+                messages=request.messages,
+                **request.options,  # provider levers (thinking, output_config, cache_control)
+            )
         )
         text = "".join(
             block.text for block in resp.content if getattr(block, "type", None) == "text"
