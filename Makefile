@@ -1,5 +1,6 @@
 .PHONY: help install install-dev fmt lint typecheck test check \
-        format-check db-up db-down schema schema-aura ingest ingest-dry preflight api-dev eval
+        format-check db-up db-down schema schema-aura ingest ingest-dry preflight api-dev eval \
+        ground state docs-lint
 
 # Python interpreter. Defaults to python3; override with `make PYTHON=python` if needed.
 PYTHON ?= python3
@@ -23,6 +24,9 @@ help:
 	@echo "  ingest-dry   dry-run ingestion (fetch + conflate, no DB writes)"
 	@echo "  api-dev      start FastAPI dev server on :8000"
 	@echo "  eval         truthfulness eval / provider bake-off"
+	@echo "  ground       print the current-state grounding report (git/corpus/PRs)"
+	@echo "  state        refresh the generated state.json + STATUS.md snapshot"
+	@echo "  docs-lint    run the doc-lint gate (links, stale markers, generated-doc sync)"
 
 install:
 	pip install -e ".[all]"
@@ -84,3 +88,12 @@ api-dev:
 eval:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	$(PYTHON) -m evals.run_bakeoff
+
+ground:
+	@$(PYTHON) scripts/ground.py
+
+state:
+	$(PYTHON) scripts/gen_state.py --refresh
+
+docs-lint:
+	$(PYTHON) scripts/doc_lint.py

@@ -1,0 +1,21 @@
+{
+  "generated_by": "scripts/gen_state.py --refresh (do not hand-edit)",
+  "refreshed_at": "2026-07-01T12:19:44+00:00",
+  "main_sha": "50c9b44cacdc8465f8f649a68a4a6eb0ceae1cc1",
+  "main_committed_at": "2026-07-01T08:15:25-04:00",
+  "region": "shenandoah-gwj",
+  "corpus": {
+    "canonical_trails": 1481,
+    "source_records": 1637,
+    "trailheads": 24,
+    "same_as_edges": 1642,
+    "schema_version": "0.1.0"
+  },
+  "api": {
+    "url": "https://adventure-planner-api.onrender.com",
+    "reachable": true,
+    "region": "shenandoah-gwj"
+  },
+  "open_prs": [],
+  "narrative": "docs/process/roadmap.md"
+}
