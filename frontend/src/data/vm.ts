@@ -23,6 +23,32 @@ export interface LineVM {
 }
 
 /**
+ * The four legible silence states (CDP-02). An honest app in a data-sparse spot
+ * must never read as broken or *falsely clear*: absence of a condition is a
+ * distinct, disclosed state, never a blank. Each renders a visibly different
+ * treatment — same-looking gray for all four is a fail (Epic 018 AC-4.2).
+ *
+ * - `not-fetched`  — no live probe has run yet (open to verify). The honest
+ *                    default for today's thin `/plan`, which never claims coverage.
+ * - `checked-clear`— a source ran and found nothing to flag (a real positive
+ *                    result — only shown on an explicit backend signal, never assumed).
+ * - `no-data`      — no source covers this kind at this spot (e.g. no gauge near).
+ * - `stale-degraded`— a last-known value exists but is past its rate-of-change
+ *                    horizon and may have changed (carries a relative age).
+ */
+export type SilenceState = 'not-fetched' | 'checked-clear' | 'no-data' | 'stale-degraded'
+
+export interface ConditionSilence {
+  state: SilenceState
+  /**
+   * Optional specifics for the state, already humanised — e.g. a relative age
+   * ("4h ago") for `stale-degraded`, or which kinds are uncovered for `no-data`.
+   * Never a raw datetime (§7.2).
+   */
+  detail?: string
+}
+
+/**
  * The rich card vocabulary the v0.3 design wants but the API does not yet
  * provide. Optional by construction: the HTTP adapter drops what it can't
  * supply, and the card degrades to the honest-thin rendering. Everything here
@@ -59,6 +85,13 @@ export interface CardVM {
   /** Crow-flies origin→trail miles (the API's `distance_mi`), null when unknown. */
   distanceMi: number | null
   conditionLines: LineVM[]
+  /**
+   * The honest silence for absent/degraded conditions (CDP-02). Used to render a
+   * legible silence state when no usable line exists, or — alongside present
+   * lines — to disclose that the shown set isn't exhaustive (AC-4.3). Absent →
+   * the card falls back to the honest `not-fetched` default when it has no lines.
+   */
+  conditionSilence?: ConditionSilence
   /** Safety guardrail strings from the engine (the API's `warnings`). */
   warnings: string[]
   enrichment?: CardEnrichment
