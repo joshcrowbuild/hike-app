@@ -1,0 +1,17 @@
+{
+  "adapter": "ridb",
+  "source": "Recreation.gov RIDB",
+  "note": "Recorded facilities lookup near a Shenandoah point. The apikey travels in a request header, never the response body, so no secret is recorded here.",
+  "interactions": [
+    {
+      "match": "ridb.recreation.gov",
+      "status": 200,
+      "json": {
+        "RECDATA": [
+          {"FacilityID": "234059", "FacilityName": "Big Meadows Campground", "Reservable": true},
+          {"FacilityID": "234060", "FacilityName": "Lewis Mountain Campground", "Reservable": true}
+        ]
+      }
+    }
+  ]
+}

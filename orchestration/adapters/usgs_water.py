@@ -13,6 +13,7 @@ Field names confirmed against live API 2026-06-23:
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,20 @@ DISCHARGE_URL = "https://waterservices.usgs.gov/nwis/iv/"
 
 
 _USGS_NO_DATA = frozenset({"-999999", "-999999.0", "Ice", "Bkw", "Ssn", "Rat", "Eqp"})
+
+# Static fallback disclosure — used only when the gauge's own coordinates are missing
+# so we cannot compute the point-to-gauge distance (source-or-silence on the distance).
+_NEAREST_GAUGE_UNKNOWN = "Nearest gauge may be miles from the trail; treat as indicative."
+
+
+def _approx_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Equirectangular great-circle approximation (miles) — accurate to well under a
+    percent at the sub-degree gauge-search radius, and never over-claims precision the
+    'may be miles away' disclosure needs."""
+    mean_lat = math.radians((lat1 + lat2) / 2)
+    dx = math.radians(lon2 - lon1) * math.cos(mean_lat)
+    dy = math.radians(lat2 - lat1)
+    return math.hypot(dx, dy) * 3958.8
 
 
 def _latest_discharge_cfs(site_id: str, client: httpx.Client) -> float | None:
@@ -91,6 +106,18 @@ def fetch(
     site_id = props.get("monitoring_location_number")
     discharge = _latest_discharge_cfs(site_id, c) if site_id else None
 
+    # Disclose the actual point-to-gauge distance when the gauge exposes coordinates —
+    # "may be miles away" is only honest if we say how many (AC-3.2). Fall back to the
+    # unquantified wording when coordinates are absent rather than fabricate a distance.
+    coords = (
+        (nearest.get("geometry") or {}).get("coordinates") if isinstance(nearest, dict) else None
+    )
+    if isinstance(coords, list) and len(coords) >= 2:
+        miles = _approx_miles(lat, lon, coords[1], coords[0])
+        disclosure = f"Nearest gauge is ~{miles:.1f} mi from the point; treat as indicative."
+    else:
+        disclosure = _NEAREST_GAUGE_UNKNOWN
+
     return VerifiedFact(
         value={
             "monitoring_location": site_name,
@@ -100,7 +127,7 @@ def fetch(
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
-        disclosures=("Nearest gauge may be miles from the trail; treat as indicative.",),
+        disclosures=(disclosure,),
     )
 
 

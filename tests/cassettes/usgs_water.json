@@ -1,0 +1,48 @@
+{
+  "adapter": "usgs_water",
+  "source": "USGS Water Data (OGC API + WaterServices)",
+  "note": "Recorded shape near a Shenandoah point. Keyless; no secret. Sub-calls: monitoring-locations bbox items -> nearest gauge, then legacy waterservices latest discharge (parameterCd=00060, cfs).",
+  "interactions": [
+    {
+      "match": "monitoring-locations",
+      "status": 200,
+      "json": {
+        "features": [
+          {
+            "geometry": {"coordinates": [-78.4356, 38.5219]},
+            "properties": {
+              "monitoring_location_name": "HAWKSBILL CREEK NEAR LURAY, VA",
+              "monitoring_location_number": "01628500"
+            }
+          },
+          {
+            "geometry": {"coordinates": [-78.6789, 38.2611]},
+            "properties": {
+              "monitoring_location_name": "SOUTH RIVER NEAR WAYNESBORO, VA",
+              "monitoring_location_number": "01626000"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "match": "waterservices",
+      "status": 200,
+      "json": {
+        "value": {
+          "timeSeries": [
+            {
+              "values": [
+                {
+                  "value": [
+                    {"value": "123", "dateTime": "2026-06-23T12:00:00.000-04:00"}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

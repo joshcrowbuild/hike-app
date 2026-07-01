@@ -1,0 +1,12 @@
+{
+  "adapter": "firms",
+  "source": "NASA FIRMS",
+  "note": "Recorded VIIRS_SNPP_NRT area CSV near a Shenandoah bbox. The MAP_KEY travels in the URL path, never the response body, so no secret is recorded here. One detection so the satellite-origin column is exercised.",
+  "interactions": [
+    {
+      "match": "firms.modaps",
+      "status": 200,
+      "text": "country_id,latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight\nUSA,38.531,-78.402,301.4,0.42,0.38,2026-06-23,0712,N,nominal,2.0NRT,289.1,1.7,N\n"
+    }
+  ]
+}

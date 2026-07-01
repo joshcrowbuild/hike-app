@@ -1,0 +1,44 @@
+{
+  "adapter": "nws",
+  "source": "api.weather.gov",
+  "note": "Recorded response shape at a Shenandoah point (Big Meadows ~38.52,-78.44). NWS is keyless; no secret is present. Sub-calls: /points -> forecast url, the forecast, /alerts/active.",
+  "interactions": [
+    {
+      "match": "/points/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "forecast": "https://api.weather.gov/gridpoints/LWX/96,70/forecast",
+          "gridId": "LWX",
+          "cwa": "LWX",
+          "gridX": 96,
+          "gridY": 70
+        }
+      }
+    },
+    {
+      "match": "/gridpoints/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "periods": [
+            {
+              "number": 1,
+              "name": "This Afternoon",
+              "shortForecast": "Partly Sunny",
+              "temperature": 68,
+              "temperatureUnit": "F"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "match": "/alerts/active",
+      "status": 200,
+      "json": {
+        "features": []
+      }
+    }
+  ]
+}
