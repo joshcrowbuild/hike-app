@@ -19,7 +19,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from api.observability import PlanMetrics, cache_size, estimate_tokens, scrub_viewer
+from api.observability import (
+    PlanMetrics,
+    cache_size,
+    estimate_tokens,
+    probe_stats_snapshot,
+    scrub_viewer,
+)
 from api.ratelimit import (
     detail_limit,
     health_limit,
@@ -66,6 +72,13 @@ async def lifespan(app: FastAPI) -> Any:
     global _settings, _graph_client, _probe_keys
     _settings = Settings.from_env()
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
+    # Best-effort: warm the connection pool and surface a dead/misconfigured graph at boot
+    # rather than on a user's first /plan. Never fatal — a transient blip at startup must not
+    # take the service down; the lazy driver + managed-transaction retry recover on first use.
+    try:
+        _graph_client.verify_connectivity()
+    except Exception:
+        logger.warning("graph connectivity check failed at startup; will connect lazily")
     _probe_keys = [k.value for k in registry.probes_for(_settings.live_region, _settings)]
     yield
     if _graph_client:
@@ -225,11 +238,13 @@ def plan(
     # clear (Rule #5).
     started = time.perf_counter()
     cache_before = 0
+    stats_before = probe_stats_snapshot(None)  # zeroed until the runtime cache exists
     try:
         runtime = build_runtime(_settings, _graph_client, body.viewer_id)
         from orchestration.engine import plan as engine_plan
 
         cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
         feed = engine_plan(
             body.query,
             (body.lat, body.lon),
@@ -243,15 +258,29 @@ def plan(
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
         response = _feed_response(feed, maps_by_cid)
         cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
     except HTTPException:
         raise
     except Exception as exc:
-        # Log the real cause (e.g. a missing/misconfigured model provider) before
-        # returning a generic 500 — never swallow it silently.
+        # A transient graph/provider blip self-heals upstream (managed-tx + provider retry);
+        # only a genuinely unrecoverable failure reaches here. Log the real cause with its
+        # exception CLASS and a short correlation id (extends the #53 observability line) so
+        # the residual 500 is one grep away in Render logs, and hand the same id back in a
+        # header for a user report to reference. Never log viewer_id in the clear (Rule #5).
+        # The body stays a generic typed 500 the frontend's classify() maps to kind:"server".
+        correlation_id = secrets.token_hex(4)
         logger.exception(
-            "plan failed for query=%r viewer=%s", body.query, scrub_viewer(body.viewer_id)
+            "plan failed cid=%s error_class=%s query=%r viewer=%s",
+            correlation_id,
+            type(exc).__name__,
+            body.query,
+            scrub_viewer(body.viewer_id),
         )
-        raise HTTPException(status_code=500, detail="Internal error") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
     # Emit metrics AFTER the response is built and OUTSIDE the 500-mapping try: the fan-out
     # already succeeded and its cost is already spent, so a metrics bug must never discard a
     # good response and bill the user for a 500 (degrade gracefully at the surface).
@@ -264,6 +293,8 @@ def plan(
             cache_entries_before=cache_before,
             cache_entries_after=cache_after,
             est_tokens=estimate_tokens(body.query, *line_texts),
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")

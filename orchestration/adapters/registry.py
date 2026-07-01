@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from orchestration.adapters.airnow import AirNowAdapter
@@ -90,6 +91,34 @@ def probes_for(region: str, settings: Settings) -> dict[ConditionKind, list[Live
 MAX_CACHE_ENTRIES = 4096
 
 
+@dataclass
+class ProbeStats:
+    """Cumulative cost/latency counters for the live fan-out (Epic 018 S6 AC-6.1).
+
+    `misses` is the true count of underlying third-party probes actually spent — the
+    live-API call count — and `hits` is calls served from the TTL cache (quota the
+    tuned windows saved). `calls_by_kind` / `wall_ms_by_kind` break those underlying
+    calls down per `ConditionKind` so a slow source (e.g. NWS's two-call points→forecast
+    hop) is visible per kind. Counters are cumulative on the process-wide cache; the API
+    layer snapshots them before/after a request to report per-`/plan` deltas (the same
+    coarse before/after pattern as cache occupancy — exact enough for a cost signal, not
+    a billing ledger, under concurrent requests)."""
+
+    hits: int = 0
+    misses: int = 0
+    calls_by_kind: dict[str, int] = field(default_factory=dict)
+    wall_ms_by_kind: dict[str, float] = field(default_factory=dict)
+
+    def snapshot(self) -> "ProbeStats":
+        """A detached copy (dicts copied) so a before/after delta isn't mutated mid-flight."""
+        return ProbeStats(
+            hits=self.hits,
+            misses=self.misses,
+            calls_by_kind=dict(self.calls_by_kind),
+            wall_ms_by_kind=dict(self.wall_ms_by_kind),
+        )
+
+
 class TTLCache:
     """Per-source TTL cache (M3) wrapping `probe()`, keyed by (name, rounded point,
     when). A repeat within the adapter's `ttl_seconds` returns the cached fact without
@@ -100,6 +129,10 @@ class TTLCache:
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._store: dict[tuple, tuple[VerifiedFact, float]] = {}
         self._clock = clock
+        # Cost/latency counters (Epic 018 S6 AC-6.1). `clock` doubles as the wall-clock
+        # timer for underlying probes: it is `time.monotonic` in production and a fake in
+        # tests, so timing is deterministic under test and real in the deploy.
+        self.stats = ProbeStats()
 
     @staticmethod
     def _key(adapter: LiveAdapter, point: Point, when: datetime | None) -> tuple:
@@ -118,6 +151,7 @@ class TTLCache:
         if hit[1] <= self._clock():
             self._store.pop(key, None)  # evict on expired read
             return None
+        self.stats.hits += 1  # served from cache — no third-party call spent
         return hit[0]
 
     def probe(
@@ -128,9 +162,18 @@ class TTLCache:
         hit = self._store.get(key)
         if hit is not None:
             if hit[1] > now:
+                self.stats.hits += 1  # fresh cache hit — no third-party call spent
                 return hit[0]
             self._store.pop(key, None)  # expired → drop before re-probing
+        # Cache miss → a real underlying probe. Count it and time it per kind so the
+        # live-API call count and per-kind wall-clock are observable off one /plan (AC-6.1).
+        kind = adapter.kind.value
+        started = self._clock()
         fact = adapter.probe(point, when)
+        elapsed_ms = max(0.0, (self._clock() - started) * 1000)
+        self.stats.misses += 1
+        self.stats.calls_by_kind[kind] = self.stats.calls_by_kind.get(kind, 0) + 1
+        self.stats.wall_ms_by_kind[kind] = self.stats.wall_ms_by_kind.get(kind, 0.0) + elapsed_ms
         if fact is not None:
             if len(self._store) >= MAX_CACHE_ENTRIES:
                 self._store.pop(next(iter(self._store)), None)  # FIFO evict oldest

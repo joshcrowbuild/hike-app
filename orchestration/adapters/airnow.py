@@ -84,7 +84,7 @@ class AirNowAdapter(LiveAdapter):
 
     name = "airnow"
     kind = ConditionKind.air
-    ttl_seconds = 3600  # ~60 min (Stage 4 §4)
+    ttl_seconds = 3600  # ~1 h — AQI is reported hourly (CDP-08 air-hours window)
 
     def __init__(self, api_key: str, *, client: httpx.Client | None = None) -> None:
         self._api_key = api_key
