@@ -2,11 +2,11 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last verified:** 2026-06-29 · **Owner:** PM/planner lane · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v10
+**Last verified:** 2026-07-01 · **Owner:** PO (product-owner lane) · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v11
 
 > **◆ PHASE-1 BASELINE + DOCS OVERHAUL — both complete; `main` is the single line.** Phase-1 build is done (backend personalization + design-system + the personal-intelligence app UX, all verified honest) and collapsed onto `main`, tagged `v0.1-phase1`. Repo is on the `joshcrowbuild` Team org; `main` is the default + protected branch with **7 required CI checks**: `format-check` · `lint` · `typecheck` · `test` · `integration (neo4j)` · `workflow-lint` · `docs-lint`. No force-push/delete; admin override retained. All merged feature branches swept (only `main` remains remote). **The documentation overhaul is complete** (PRs #27–30): 55 live docs (down from 60), ~115KB of closed history archived, 0 broken links, a lean always-load hot path, and a CI `docs-lint` gate that **fails the build on wrong memory** (stale-marker denylist · broken-link check · auto-generated epic index). **Go-forward model:** feature branches off `main`; lanes are conventions, not long-lived branches.
 
-> **◆ HOSTED & LIVE — better, still not a good place for a real user (v10.1).** Full stack deployed and plumbing works: Vercel → Render API → Aura; maps+terrain (016/017) serve real geometry + 3DEP elevation; Cypher-25/provider/TLS fixed (#41/#44). **Progress this round:** the re-ingest ran (corpus 1458 → 1532, conflation split applied); the cold-start fix is up (#52, raises the client timeout + "waking the server" UX + warm-ping). Four parallel lanes landed clean, well-tested PRs (#51–54). **But the primary surface still serves junk** — dogfood finding #1 is improved, not closed. Root cause (audited on live Aura): `ingestion/trail_filter.py:is_trail_worthy()` never inspects `ref`/`tiger:*`, so **TIGER-mis-imported numbered state routes tagged `highway=track` survive** ("Little Loop Road" = SR 652, "Snake Road" = SR 650, both car roads) plus a private institutional footway ("Andreae … Trail"). The "Road" case is **systemic** (every region has TIGER state routes). Fix = ref-keyed disqualifier + a stale-node prune in `graph/load.py` (MERGE-only, no prune today) + a re-ingest; filter-alone is invisible. **Top product priority: the corpus-filter lane** (`claude/corpus-filter-tiger`). Rule still holds: **substrate before surface.** Verdict: good bones, now good craft — one focused corpus lane from honestly-good.
+> **◆ HOSTED & LIVE — dogfood #1 CLOSED; the primary surface now serves clean data (v11).** Full stack deployed: Vercel → Render API → Aura; maps+terrain (016/017) serve real geometry + 3DEP elevation; Cypher-25/provider/TLS fixed (#41/#44). **This round:** the corpus-filter fix landed (#56 — a ref-keyed disqualifier for TIGER-mis-imported numbered state routes, a `wellness` token for the institutional-footway class, and a stale-node prune in `graph/load.py`), and the overnight re-ingest applied it (corpus 1532 → **1481**, the right direction). **Verified on live /plan near Front Royal (38.918,-78.194):** no SR/CR state routes, no "Snake Road"/"Little Loop Road"/"Andreae" — and real trails serve (Dickey Ridge, Fox Hollow, Snead Farm Loop, Front Royal Connector), with legit fire roads (Compton Gap Road, `ref=None`) correctly kept. Cold-start fixed (#52) and **Render upgraded to the always-on paid tier — instance no longer idles, cold-start eliminated**; /plan secured (#53), corroboration wired (#54), API tests merged (#57). **Live-reliability finding (2026-07-01):** /plan intermittently 500'd on a first-after-idle request (dogfood: 1 fail → then 12/12 incl. 6 concurrent = 200); always-on + the 5s `/health` graph-probe now keep the Aura pool warm, and a hardening lane (`claude/plan-reliability`, in flight) adds driver + provider transient-retry so a blip self-heals. **New watch item — candidate dogfood #2, NOT the systemic TIGER class:** residential-style "Lane" names survive (Turkey Lane, Yard Bird Lane) — they carry no SR/CR `ref`, so they're outside #56's filter and need a separate signal. Rule still holds: **substrate before surface.** Verdict: honestly-good on the core surface; now iterate the long tail.
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index — now generated from epic headers). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard. New here? Start at `docs/README.md` (the doc map).
 
@@ -14,14 +14,15 @@
 
 ## TL;DR — where we are
 
-**Hosted end-to-end; primary surface still serves junk pending one corpus lane.** Phase-1 backend, design system, app UX, Maps (016/017) on `main`; plumbing works (Vercel → Render → Aura). The hard moat is built: invariant-faithful engine, CI-proven query-layer access control, provenance graph. **Phase A (now), pre-Milestone-1** per path-to-complete (#48). Phase-A status:
-> - **Re-ingest** — DONE (corpus 1458 → 1532).
-> - **Cold-start** — fix up in #52 (CLEAN): client timeout 10s → 60s + "waking" UX + warm-ping (warm-ping fragile on a private repo).
-> - **Dogfood #1 (junk on /plan)** — IMPROVED, NOT CLOSED. Root cause: `trail_filter.py` ignores `ref`/`tiger:*`, so TIGER state routes tagged `highway=track` survive (SR 652 / SR 650) + an institutional footway. Systemic. **Top product priority: `claude/corpus-filter-tiger`** = ref-keyed disqualifier + a stale-node prune in `graph/load.py` + re-ingest (filter-alone is invisible).
+**Hosted end-to-end; primary surface now serves clean data — dogfood #1 closed.** Phase-1 backend, design system, app UX, Maps (016/017) on `main`; plumbing works (Vercel → Render → Aura). The hard moat is built: invariant-faithful engine, CI-proven query-layer access control, provenance graph. **Phase A (now), pre-Milestone-1** per path-to-complete (#48). Phase-A status:
+> - **Re-ingest** — DONE (corpus 1532 → 1481 after the #56 filter; TIGER state routes + the Andreae footway gone, verified on live /plan).
+> - **Cold-start / API hosting** — DONE + hardened: #52 (60s timeout + "waking" UX) and **Render upgraded to always-on paid**, so the instance no longer idles and cold-start is eliminated (the warm-ping cron was throttled to every 2–5h on the private repo and never held it warm). R7 API-hosting resolved; only the watch-poller host stays deferred.
+> - **Live reliability (new, 2026-07-01)** — /plan intermittently 500'd on a first-after-idle request (1 fail → then 12/12 incl. 6 concurrent = 200). Likely a stale Aura connection (Aura idle-closes; first query after idle throws before reconnect); always-on + the 5s `/health` graph-probe now keep the pool warm, and `claude/plan-reliability` (in flight) adds driver resilience (`execute_read`/liveness) + provider transient-retry so a blip self-heals. Transient provider errors are the residual path this lane closes.
+> - **Dogfood #1 (junk on /plan)** — CLOSED (#56 + re-ingest): ref-keyed disqualifier dropped the systemic TIGER state-route class; verified absent on live /plan near Front Royal, real trails + legit fire roads kept. **Long-tail follow-on (dogfood #2):** residential-style "Lane" names (Turkey Lane, Yard Bird Lane) survive — no SR/CR `ref`, outside #56's filter; needs a separate signal, not a regression.
 > - **Corroboration** (CDP-01) — wired in #54 but unsurfaced (no user value yet); honest single-source labels only.
 > - **Defend-and-secure /plan** — #53 (rate-limit + obs); deploy caveat: `/health` 60/min collapses to one bucket behind Render's proxy — confirm probe + warm-ping cadence <60/min.
 
-Four lanes (#51–54) landed clean, lane-disjoint, well-tested. **Behind Phase A, still design-gated:** Epic 008 (API tests), 006 (novelty), 007 (readiness), 009 (eval). **Still unmeasured:** R5 cost spike.
+Lanes #51–57 landed clean and merged (incl. Epic 008 API tests, #57). **In flight:** `claude/plan-reliability` (transient-retry hardening of /plan). **Behind Phase A, still design-gated:** 006 (novelty), 007 (readiness), 009 (eval). **Still unmeasured:** R5 cost spike.
 
 ---
 
@@ -39,7 +40,7 @@ Four lanes (#51–54) landed clean, lane-disjoint, well-tested. **Behind Phase A
 | 7 Eval deep-dive | 1 | ✅ | ❌ | Methodology designed (on `main`); Epic 009 **DEFINED**; harness unbuilt |
 | 8 Multiplayer | 2 | ✅ | ❌ | Designed (on `main`); gated by always-on infra + auth provider (R3/R7) |
 | 9 Commons | 3 | ✅ | 🔶 | Write half accreting (010 on `main`); read/aggregation dormant; **gated by T6** |
-| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped, **live broken** | design-system + **app UX** + **Maps (016/017)** on `main`; hosted Vercel→Render→Aura. **P0:** live corpus is junk (re-ingest not run) + first tap fails (cold-start timeout). Cards thin/anonymous (viewer=`anonymous`, `lines:[]`). Gate G1/G2 must clear |
+| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped, **live serving clean data** | design-system + **app UX** + **Maps (016/017)** on `main`; hosted Vercel→Render→Aura. **Corpus junk (dogfood #1) CLOSED** (#56 filter + re-ingest, verified on /plan); **cold-start eliminated** (#52 + Render always-on paid). Remaining: cards thin/anonymous (viewer=`anonymous`, `lines:[]`); a transient-500 hardening lane in flight; residential-"Lane" tail (dogfood #2). Gate G1/G2 |
 | 11 Native shell | 4 | ❌ | ❌ | Not started |
 
 ---
@@ -55,7 +56,7 @@ Four lanes (#51–54) landed clean, lane-disjoint, well-tested. **Behind Phase A
 | 005 | Valhalla drive-time | **DONE ✅** | absorbed into Epic 013 / PR #7 |
 | 006 | Novelty filter in Curator | **DEFINED** | epic on `main`; depends on Epic 003 (done) + a `been_on` belief **producer** (unbuilt) + semantics decided |
 | 007 | Readiness filter (Body Battery → Curator) | **NOT WRITTEN** | gap-audit M11: no epic file yet; depends on Epic 004 (done); solo-vs-party composition unspecified |
-| 008 | API tests (`/plan` + `/health`) | **BACKLOG** | no epic file yet; no deps — quickest to a buildable state |
+| 008 | API tests (`/plan` + `/health`) | **DONE ✅** | PR #57 merged — hermetic `/plan` + `/health` tests (provider + driver mocked); now the harness for the plan-reliability lane |
 | 009 | Eval harness expansion | **DEFINED** | epic on `main`; needs 002/003/006 to evaluate |
 | 010 | Commons fork write | **DONE ✅** | PR #6 (remediates C1); doc-guard re-inverted now Epic 010 shipped (#32) |
 | 011 | Scoped-write seam | **DONE ✅** | PR #6 (remediates C2) |
@@ -77,10 +78,10 @@ Phase-1, the baseline, the docs overhaul, **and Maps** are all merged. The curre
 ### ◆ Maps & terrain — SHIPPED ✅ (Epics 016 + 017)
 Built dogfood-first ("no maps, I can't see shit") as two parallel lanes that converged at the elevation chart. **016 (frontend, #38):** MapLibre topo Detail map + assembled route + trailhead + card glyph + elevation profile, code-split so the feed stays map-free, with honest empty/failure states + attribution. **017 (backend, #39):** the enrichment **loader** (closed the long-standing "no graph write yet" gap) + USGS-3DEP sampler → parallel-array store → exposed on the feed card. The lanes were coupled only by a frozen wire contract; a **pre-merge adversarial review caught the one real risk — the two lanes had drifted on field casing + placement — and reconciled it on #39 before it hit `main`** (`tests/test_maps_contract.py` now locks the API shape to the frontend type).
 
-### ◆ Live-data path — IN FLIGHT (R7 hosting, going live)
-Real data now exists: the **Shenandoah-GWJ pilot region is loaded into Aura Free** (1458 trails + per-segment geometry + 10 m 3DEP elevation, 24 trailheads, ~5.3k nodes — verified honest, full provenance, no fabricated curves). The hosting picture (R7) is resolving piece by piece:
-- **Frontend = Vercel** (decided, live) · **DB = Aura Free** (provisioned + loaded) · **API = Render** — deploy config (Docker + `render.yaml` + default-deny CORS, #40) and the Aura-TLS CA hardening (#41) are both merged; a deploy runbook (`docs/runbooks/deploy-api-render.md`) is in place.
-- **Remaining (Josh, this afternoon):** ① deploy the API to Render per the runbook, ② flip Vercel env (`VITE_USE_MOCK=false`, `VITE_API_BASE_URL=<render>`, viewer secret) → real Shenandoah trails on the phone.
+### ◆ Live-data path — DONE ✅ (R7 API-hosting resolved)
+Real data serves end-to-end on the phone: the **Shenandoah-GWJ region is loaded into Aura and served live** (now **1481 trails** after the #56 corpus-filter re-ingest + per-segment geometry + 10 m 3DEP elevation, 24 trailheads — verified honest, full provenance, no fabricated curves). The hosting picture (R7 API path) is resolved:
+- **Frontend = Vercel** (live) · **DB = Aura Free** (loaded) · **API = Render, always-on paid tier** — deploy config (Docker + `render.yaml` + default-deny CORS, #40) + Aura-TLS CA hardening (#41) merged; deployed and no longer idles.
+- **DONE:** API deployed to Render, Vercel env flipped (`VITE_USE_MOCK=false`, `VITE_API_BASE_URL=<render>`, viewer secret) → real Shenandoah trails on the phone; dogfood #1 (junk trails) closed; cold-start eliminated by the always-on upgrade. **Open:** a transient-500 hardening lane (`claude/plan-reliability`) so first-after-idle blips self-heal.
 - **Gotcha resolved (#41):** a Python CA-path gap broke the `neo4j+s://` TLS handshake to Aura ("Unable to retrieve routing information"); fixed in app + container via certifi/`ca-certificates`, **strict TLS preserved** (no `+ssc`/trust-all), with a test guarding against future downgrades.
 - **Ingest follow-ups (none block the demo):** verify the 1643→1458 `canonical_id` slug merge (~185 collapsed — same-trail or collision?); commit the untracked `scripts/apply_schema.py` (the Aura schema-applier) + the `make`/`preflight` `python3`/Docker tooling fixes; drop the seeded Old Rag duplicate (`ct:old-rag-loop`); 15/24 trailheads are unlinked (OSM sparsity, not a bug).
 - **Still deferred:** the always-on **watch-poller** host (Garmin sync) — not needed to browse trails.
@@ -101,11 +102,10 @@ DONE & BASELINED ─────────────────────
   ✅ v0.1-phase1 tag · ✅ commons doc-guard (#32) · ✅ Maps (016/017, #38/#39)
   ✅ Shenandoah-GWJ loaded into Aura (1458 trails + geometry + 10 m elevation)
 
-GOING LIVE NOW — the last leg of the real-data path (R7 in progress)
-  ✅ frontend = Vercel · ✅ DB = Aura (loaded) · ✅ API config #40 + Aura-TLS #41 merged
-  ▶ ① deploy API to Render (runbook) → ② flip Vercel env → real trails on the phone (Josh, PM)
-  follow-ups (non-blocking): verify 1643→1458 slug merge · commit apply_schema.py + tooling fixes
-                             · drop seeded Old Rag dup · watch-poller host still deferred
+LIVE ✅ — real-data path complete (R7 API-hosting done)
+  ✅ frontend = Vercel · ✅ DB = Aura (1481 trails) · ✅ API on Render (always-on paid) · ✅ Vercel flipped
+  ✅ real trails on the phone · ✅ dogfood #1 closed (#56 + re-ingest) · ✅ cold-start eliminated
+  ▶ IN FLIGHT: claude/plan-reliability — transient graph+provider retry so /plan self-heals a blip
 
 BEHIND IT — the design-gated Phase-1 remainder
   Epic 008 (API tests)  ── SMALL: write its epic-with-ACs, ratify → buildable (no deps)
@@ -119,7 +119,7 @@ OTHER OPEN
 ```
 
 **Next-up by lane:**
-- **Going live (the priority, Josh this afternoon):** ① deploy the API to Render per the runbook, ② flip the Vercel env to the live API → real Shenandoah trails on the phone. Then dogfood the *real* data and let the next findings set priorities.
+- **Live & clean (done):** hosted end-to-end on always-on Render; dogfood #1 (junk trails) closed. **Now:** ① harden reliability (`claude/plan-reliability`, in flight) so a first-after-idle blip self-heals; ② the thin-cards surface gap (viewer=`anonymous`, `lines:[]` — cards render anonymous + condition-less); ③ dogfood #2 (residential "Lane" tail). Then let the next dogfood findings set priorities.
 - **Hardening follow-ups (build lane, post-live):** audit the 1643→1458 slug merge; commit `apply_schema.py` + the `python3`/preflight tooling fixes; drop the seeded Old Rag duplicate.
 - **Behind that (your design call, when ready):** Epic 007 (readiness — biggest, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs.
 
@@ -148,7 +148,7 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 | ~~**R4**~~ | ~~Trunk ↔ design-branch doc divergence (13 docs).~~ | **RESOLVED — #21 + docs overhaul** | All design docs on `main`; the docs overhaul (#27–30) then indexed + drift-guarded the whole surface. |
 | **R5** | **Cost spike unmeasured.** Stage-4 local-vs-cloud bake-off designed; real cost-per-session not yet measured. TTL cache lever built (Epic 013); ingest confirmed corpus-load is deterministic (no LLM), so spend is a *query-time* concern (intent + curation). | **OPEN — now measurable** | A real Aura corpus + the Anthropic query-time path now exist; run the spike against live `/plan` once the API is deployed. |
 | ~~**R6**~~ | ~~M1 `Episode.date` never written.~~ | **RESOLVED — Epic 003 (#20)** | `upsert_episode` SETs `e.date` from `start_time`; 18-month filter proven by a live-DB E2E. |
-| **R7** | **Hosting/compute — resolving piece by piece.** Frontend = **Vercel** (live). DB = **Neo4j Aura Free** (provisioned + Shenandoah loaded). API = **Render** (deploy config #40 + Aura-TLS hardening #41 merged; the actual Render deploy + Vercel env flip are the two remaining manual steps). Only the always-on **watch-poller** host (Garmin sync, Epic 004) + Stage-8 multiplayer compute stay deferred. | **IN PROGRESS** — DB+frontend done, API deploy pending | Josh deploys the API to Render + flips Vercel this afternoon → first real-data dogfood. Revisit Aura Free's caps/idle-pause + the watch host if/when usage grows. |
+| **R7** | **Hosting/compute — API path RESOLVED.** Frontend = **Vercel** (live). DB = **Neo4j Aura Free** (Shenandoah loaded, 1481 trails). API = **Render, always-on paid** (deployed; #40 config + #41 Aura-TLS). Cold-start eliminated. Deferred: the always-on **watch-poller** host (Garmin sync, Epic 004) + Stage-8 multiplayer compute. | **RESOLVED (API)** — watch-poller still deferred | Aura Free still idle-closes connections → the `claude/plan-reliability` lane hardens the driver against that; watch Aura caps/idle if usage grows. Stand up the watch host when Garmin sync is needed. |
 | ~~**R8**~~ | ~~CI `workflow-lint` red trunk-wide.~~ | **RESOLVED — #12** | `actionlint` now runs via its official download script; `workflow-lint` green. |
 | ~~**R9**~~ | ~~PR #22 (UI) targets `main`, not trunk.~~ | **RESOLVED** | Retargeted + merged; honesty invariants verified. The contract-check surfaced R10. |
 | ~~**R10**~~ | ~~HTTP-adapter dev-viewer-secret gap (guaranteed 403 on live calls).~~ | **RESOLVED — #25** | `httpPlanner.ts` now injects `X-Dev-Viewer-Secret` from `VITE_DEV_VIEWER_SECRET` for non-anonymous viewers (omitted for anonymous; tested). Live-data wiring is unblocked; secret stays in `.env` (Rule #10). |
@@ -159,7 +159,7 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 - **T2 · Access-control-at-query-layer.** ✅✅ reads + writes seamed (Epic 011); Outcome-endpoint bypass closed (#9); **the invariant is proven end-to-end against a live Neo4j in CI on every PR (Epic 015)** — a forgotten owner clause reds the build. (Forged-identity auth is still R3.)
 - **T3 · Forked commons write.** ✅ built (Epic 010), accreting born-severed observations. Read/aggregation dormant to Stage 9. (Doc-guard cleanup in flight — build lane.)
 - **T4 · Evaluation.** 🔶 truthfulness harness exists; golden-trip set/cassettes unbuilt; Epic 009 (deep eval) + the stage-7 methodology on `main` — **DEFINED**, unbuilt.
-- **T5 · UX.** ✅ design-system v0.1 + the **personal-intelligence app UX** (Home/Detail/Tuning/Outcome + Confidence/Staleness honesty primitives, verified honest) + **Maps (016/017): topo map, route, real elevation**. Going live on real Aura data (Render deploy + Vercel flip pending).
+- **T5 · UX.** ✅ design-system v0.1 + the **personal-intelligence app UX** (Home/Detail/Tuning/Outcome + Confidence/Staleness honesty primitives, verified honest) + **Maps (016/017): topo map, route, real elevation**. Live on real Aura data (Render always-on + Vercel flipped); dogfood #1 closed.
 - **T6 · Legal/licensing/consent.** ⚠️ see R1 — gates Stage 9 public release; separability invariant unenforced.
 - **T7 · Naming/branding.** Working title "Adventure Planner"; anytime.
 
@@ -167,4 +167,4 @@ All four landed and merged; a 6-reviewer adversarial pass confirmed each DoD is 
 
 ## Lane discipline (this doc's owner)
 
-PM lane owns `docs/process/roadmap.md` + `docs/workplan.md`; `docs/epics/README.md` is read-mostly (now generated by `gen_epic_index.py`). Never touch `api/`, `graph/`, `orchestration/`, `ingestion/`, `frontend/`, or another lane's epic spec. Work in the `hike-app-pm` worktree; small commits; pull before push; **PRs into `main`** (the baseline).
+The **Product Owner** persona (formerly the "PM/planner lane") owns `docs/process/roadmap.md` + `docs/workplan.md`; `docs/epics/README.md` is read-mostly (generated by `gen_epic_index.py`). Never touch `api/`, `graph/`, `orchestration/`, `ingestion/`, `frontend/`, or another lane's epic spec. Branch off freshly-fetched `origin/main` in a dedicated worktree (rule G3); small commits; **PRs into `main`** (the baseline). Full personas, grounding rules (G1–G4), and handoffs: `docs/process/agent-operating-model.md` (PO-owned).
