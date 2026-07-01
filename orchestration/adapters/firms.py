@@ -76,7 +76,11 @@ class FirmsAdapter(LiveAdapter):
 
     name = "firms"
     kind = ConditionKind.fire
-    ttl_seconds = 600  # ~10 min (Stage 4 §4)
+    # FIRMS near-real-time hotspots come from satellite overpasses that recur only every
+    # few hours, so a sub-hour TTL just re-fetches an identical payload; a 1 h window cuts
+    # that waste without hiding anything the upstream would have shown (CDP-08 hours). A
+    # fresher hotspot inside the window still gates via the guardrail path (Epic 018 S5).
+    ttl_seconds = 3600  # ~1 h — fire (satellite-pass) window (CDP-08)
 
     def __init__(self, map_key: str, *, client: httpx.Client | None = None) -> None:
         self._map_key = map_key
