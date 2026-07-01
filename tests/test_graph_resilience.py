@@ -188,7 +188,11 @@ def test_run_write_happy_path_executes_once() -> None:
 
 
 def test_driver_built_with_resilience_config(monkeypatch: Any) -> None:
-    import neo4j
+    # neo4j is a lazy/optional dep absent from the base test env; inject a fake module so
+    # `import neo4j` inside _ensure_driver picks it up and we capture the driver kwargs
+    # without the package (keeps this a hermetic DB-free unit test).
+    import sys
+    import types
 
     captured: dict[str, Any] = {}
 
@@ -201,7 +205,10 @@ def test_driver_built_with_resilience_config(monkeypatch: Any) -> None:
         captured.update(kwargs)
         return _D()
 
-    monkeypatch.setattr(neo4j.GraphDatabase, "driver", _spy)
+    fake_neo4j = types.ModuleType("neo4j")
+    fake_neo4j.GraphDatabase = type("_GDB", (), {"driver": staticmethod(_spy)})  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "neo4j", fake_neo4j)
+
     GraphClient("bolt://x", "u", "p")._ensure_driver()
 
     assert captured["auth"] == ("u", "p")
