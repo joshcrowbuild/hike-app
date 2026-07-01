@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/ground.py --warn-stale",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
