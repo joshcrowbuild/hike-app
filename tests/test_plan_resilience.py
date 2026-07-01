@@ -20,8 +20,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import anthropic
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -29,11 +27,13 @@ import api.app as app_mod
 from graph.client import GraphClient
 from orchestration.config import Settings
 
-# Faithful driver double raising the same is_retryable()-shaped errors the real driver does.
+# Doubles reused from the per-unit suites (no anthropic import → runs in the base test env):
+# a driver stub raising is_retryable()-shaped errors, and a duck-typed provider status error
+# (the seam keys retry on .status_code, so this drives it identically to a real SDK error).
 from tests.test_graph_resilience import _NonRetryable, _StubDriver
+from tests.test_provider_retry import _DuckStatusError
 
 _PLAN_BODY = {"query": "something mellow", "lat": 38.5, "lon": -78.4}
-_REQ_URL = "https://api.anthropic.com/v1/messages"
 
 
 @pytest.fixture(autouse=True)
@@ -163,12 +163,6 @@ class _FlakyAnthropic:
         return _O(content=[_O(type="text", text="ok")], model=kw["model"], usage=None)
 
 
-def _status_error(code: int, cls: type[anthropic.APIStatusError]) -> Exception:
-    return cls(
-        "x", response=httpx.Response(code, request=httpx.Request("POST", _REQ_URL)), body=None
-    )
-
-
 def _plan_that_calls_provider(errors: list[Exception]) -> Any:
     fake = _FlakyAnthropic(errors)
 
@@ -186,9 +180,7 @@ def _plan_that_calls_provider(errors: list[Exception]) -> Any:
 
 
 def test_plan_200_when_provider_recovers_from_transient(monkeypatch: Any) -> None:
-    plan_impl = _plan_that_calls_provider(
-        [_status_error(529, anthropic.APIStatusError)]
-    )  # overloaded
+    plan_impl = _plan_that_calls_provider([_DuckStatusError(529)])  # overloaded, then success
     client = _install(monkeypatch, _graph_client_with(_StubDriver()), plan_impl)
     try:
         resp = client.post("/plan", json=_PLAN_BODY)
@@ -200,8 +192,7 @@ def test_plan_200_when_provider_recovers_from_transient(monkeypatch: Any) -> Non
 
 
 def test_plan_500_typed_when_provider_persistently_overloaded(monkeypatch: Any) -> None:
-    errors = [_status_error(529, anthropic.APIStatusError) for _ in range(3)]
-    plan_impl = _plan_that_calls_provider(errors)
+    plan_impl = _plan_that_calls_provider([_DuckStatusError(529) for _ in range(3)])
     client = _install(monkeypatch, _graph_client_with(_StubDriver()), plan_impl)
     try:
         resp = client.post("/plan", json=_PLAN_BODY)

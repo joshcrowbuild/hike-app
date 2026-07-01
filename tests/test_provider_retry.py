@@ -8,9 +8,11 @@ retried with bounded backoff so it never surfaces as a /plan 500; a client error
   * both adapters (`AnthropicProvider`, `LocalOpenAIProvider`) driving a flaky injected
     client so the seam's wiring is exercised end to end.
 
-The Anthropic error classes are constructed faithfully (real SDK exceptions over an httpx
-Response, so `.status_code` is real); the OpenAI SDK isn't installed, so its transient is a
-duck-typed status carrier — which is exactly what the SDK-agnostic predicate keys on.
+Neither SDK is a base-install dependency (both are imported lazily), so this module must
+NOT import `anthropic` at collection time. The seam tests therefore drive the flaky client
+with duck-typed status carriers — exactly what the SDK-agnostic predicate keys on — so they
+run everywhere; a single faithfulness test importorskips the real SDK to confirm the real
+exception shapes classify correctly.
 """
 
 from __future__ import annotations
@@ -18,20 +20,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import anthropic
-import httpx
 import pytest
 
 from orchestration.providers.anthropic_claude import AnthropicProvider
 from orchestration.providers.base import LLMRequest
 from orchestration.providers.local_openai import LocalOpenAIProvider
 from orchestration.providers.retry import is_transient_api_error, retry_transient
-
-_REQ = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-
-
-def _anthropic_status_error(code: int, cls: type[anthropic.APIStatusError]) -> Exception:
-    return cls("simulated", response=httpx.Response(code, request=_REQ), body=None)
 
 
 class _DuckStatusError(Exception):
@@ -56,17 +50,23 @@ def test_client_error_statuses_are_not_retryable(code: int) -> None:
 
 
 def test_real_anthropic_errors_classified() -> None:
-    # Faithful: real SDK exceptions over a real httpx Response.
-    assert is_transient_api_error(
-        _anthropic_status_error(529, anthropic.APIStatusError)
-    )  # overloaded
-    assert is_transient_api_error(_anthropic_status_error(429, anthropic.RateLimitError))
-    assert is_transient_api_error(_anthropic_status_error(503, anthropic.InternalServerError))
-    assert is_transient_api_error(anthropic.APIConnectionError(request=_REQ))  # reset
-    assert is_transient_api_error(anthropic.APITimeoutError(request=_REQ))  # read timeout
-    assert not is_transient_api_error(_anthropic_status_error(400, anthropic.BadRequestError))
-    assert not is_transient_api_error(_anthropic_status_error(401, anthropic.AuthenticationError))
-    assert not is_transient_api_error(_anthropic_status_error(403, anthropic.PermissionDeniedError))
+    # Faithfulness check against the REAL SDK exception shapes — skipped where anthropic
+    # isn't installed (the base test env); the duck-typed tests above carry the coverage.
+    anthropic = pytest.importorskip("anthropic")
+    httpx = pytest.importorskip("httpx")
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def status_error(code: int, cls: Any) -> Exception:
+        return cls("simulated", response=httpx.Response(code, request=req), body=None)
+
+    assert is_transient_api_error(status_error(529, anthropic.APIStatusError))  # overloaded
+    assert is_transient_api_error(status_error(429, anthropic.RateLimitError))
+    assert is_transient_api_error(status_error(503, anthropic.InternalServerError))
+    assert is_transient_api_error(anthropic.APIConnectionError(request=req))  # reset
+    assert is_transient_api_error(anthropic.APITimeoutError(request=req))  # read timeout
+    assert not is_transient_api_error(status_error(400, anthropic.BadRequestError))
+    assert not is_transient_api_error(status_error(401, anthropic.AuthenticationError))
+    assert not is_transient_api_error(status_error(403, anthropic.PermissionDeniedError))
 
 
 def test_unknown_exception_is_not_transient() -> None:
@@ -232,25 +232,24 @@ def _no_real_sleep(monkeypatch: Any) -> None:
 
 
 def test_anthropic_retries_transient_529_then_succeeds() -> None:
-    overloaded = _anthropic_status_error(529, anthropic.APIStatusError)
-    fake = _FlakyAnthropic([overloaded])
+    # 529 overloaded is keyed by .status_code, so a duck-typed carrier drives the seam
+    # identically to a real anthropic.OverloadedError (see the faithfulness test above).
+    fake = _FlakyAnthropic([_DuckStatusError(529)])
     resp = AnthropicProvider("key", client=fake).complete(_req())
     assert resp.text == "claude-ok"  # recovered
     assert fake.calls == 2  # retried once
 
 
 def test_anthropic_does_not_retry_client_error() -> None:
-    bad = _anthropic_status_error(400, anthropic.BadRequestError)
-    fake = _FlakyAnthropic([bad])
-    with pytest.raises(anthropic.BadRequestError):
+    fake = _FlakyAnthropic([_DuckStatusError(400)])
+    with pytest.raises(_DuckStatusError):
         AnthropicProvider("key", client=fake).complete(_req())
     assert fake.calls == 1  # single call — a bad request is never retried
 
 
 def test_anthropic_exhausts_and_raises_on_persistent_transient() -> None:
-    errors = [_anthropic_status_error(503, anthropic.InternalServerError) for _ in range(3)]
-    fake = _FlakyAnthropic(errors)
-    with pytest.raises(anthropic.InternalServerError):
+    fake = _FlakyAnthropic([_DuckStatusError(503) for _ in range(3)])
+    with pytest.raises(_DuckStatusError):
         AnthropicProvider("key", client=fake).complete(_req())
     assert fake.calls == 3  # bounded attempts, then the real cause propagates (→ typed 5xx)
 
