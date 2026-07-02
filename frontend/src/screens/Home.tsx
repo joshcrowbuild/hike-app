@@ -9,8 +9,10 @@ import { RecommendationCard } from './RecommendationCard'
  *  picks an origin (R7 world-browse), so the region tag must track it too — never
  *  the Shenandoah pilot region regardless of what's actually selected. */
 function contextSentence(tuning: TuningState, anonymous: boolean): string {
-  if (anonymous) return `${whenLabels[tuning.when]} · ${regionLabels[tuning.origin]}`
-  return `${whenLabels[tuning.when]} · from ${originLabels[tuning.origin]} · ${partyLabels[tuning.party]}`
+  const region = tuning.originCoords ? 'Near you' : regionLabels[tuning.origin]
+  const origin = tuning.originCoords ? 'your location' : originLabels[tuning.origin]
+  if (anonymous) return `${whenLabels[tuning.when]} · ${region}`
+  return `${whenLabels[tuning.when]} · from ${origin} · ${partyLabels[tuning.party]}`
 }
 
 export interface HomeProps {
@@ -95,7 +97,7 @@ export function Home({
           {feed.cards.length > 0 ? (
             <p className="stack-meta">
               {feed.cards.length === 1 ? '1 option' : `${feed.cards.length} options`} ·{' '}
-              {regionLabels[tuning.origin]}
+              {tuning.originCoords ? 'Near you' : regionLabels[tuning.origin]}
             </p>
           ) : null}
 

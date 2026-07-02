@@ -7,12 +7,7 @@
  * `buildQuery`. Components keep using `TuningState` unchanged; the mock honors
  * the structured intent directly, the HTTP adapter serializes it into `query`.
  */
-import type { OriginKey } from '../types'
-
-export interface Coords {
-  lat: number
-  lon: number
-}
+import type { Coords, OriginKey } from '../types'
 
 /**
  * Approximate town centers per origin (WGS84). The `frontRoyal`/`luray`/

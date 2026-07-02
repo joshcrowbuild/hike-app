@@ -43,6 +43,11 @@ export type Trail = {
   geo: TrailGeo
 }
 
+export interface Coords {
+  lat: number
+  lon: number
+}
+
 export type TuningState = {
   origin: OriginKey
   when: WhenKey
@@ -51,4 +56,12 @@ export type TuningState = {
   today: TodayKey
   readinessOn: boolean
   prompt: string
+  /**
+   * A live device fix from "Near me", when set. Overrides `origin`'s named
+   * coordinates for planning (httpPlanner) so the feed searches from the
+   * viewer's actual position. `origin` itself is left untouched so the named
+   * picker, its labels, and the mock's drive-time table keep working — this is
+   * purely an override at the coordinate-resolution seam.
+   */
+  originCoords?: Coords
 }

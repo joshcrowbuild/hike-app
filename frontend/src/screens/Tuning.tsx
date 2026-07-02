@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { OptionButton, OptionGroup, Sheet, Toggle } from '../components'
 import { effortLabels, originLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
 import type { EffortKey, OriginKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
@@ -45,7 +47,7 @@ export function panelTitle(panel: PanelKey): string {
 function chipValue(panel: PanelKey, state: TuningState): string {
   switch (panel) {
     case 'origin':
-      return originLabels[state.origin]
+      return state.originCoords ? 'Your location' : originLabels[state.origin]
     case 'when':
       return whenLabels[state.when]
     case 'effort':
@@ -58,6 +60,74 @@ function chipValue(panel: PanelKey, state: TuningState): string {
 }
 
 type SetState = React.Dispatch<React.SetStateAction<TuningState>>
+
+/**
+ * "Near me": drives the search origin from a live device fix, not just the
+ * map (Josh's stated preference — see PR notes). Button-triggered, so
+ * permission is requested only on tap. Source-or-silence for location itself:
+ * a denial or an unavailable API surfaces an honest message and falls back to
+ * the named picker below — it never fabricates a position.
+ */
+function NearMeControl({ state, setState }: { state: TuningState; setState: SetState }) {
+  const [locating, setLocating] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  const useMyLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setNote('Location isn’t available here — pick a starting point below.')
+      return
+    }
+    setLocating(true)
+    setNote(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false)
+        setState((current) => ({
+          ...current,
+          originCoords: { lat: pos.coords.latitude, lon: pos.coords.longitude },
+        }))
+      },
+      (err) => {
+        setLocating(false)
+        setNote(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied — pick a starting point below.'
+            : 'Couldn’t get your location — pick a starting point below.',
+        )
+      },
+      { enableHighAccuracy: true, timeout: 10_000 },
+    )
+  }
+
+  if (state.originCoords) {
+    return (
+      <div className="facet-row" role="status">
+        <span className="facet-label">Near me</span>
+        <button
+          type="button"
+          className="text-action"
+          onClick={() => setState((current) => ({ ...current, originCoords: undefined }))}
+        >
+          Use a named place instead
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button type="button" className="facet-row" onClick={useMyLocation} disabled={locating}>
+        <span className="facet-label">Near me</span>
+        <span className="facet-value">{locating ? 'Locating…' : 'Use current location'}</span>
+      </button>
+      {note ? (
+        <p className="near-me-note" role="alert">
+          {note}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 export interface AdjustSheetProps {
   open: boolean
@@ -115,17 +185,20 @@ export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelShe
   return (
     <Sheet isOpen onClose={onClose} onBack={onBack} title={panelTitle(panel)}>
       {panel === 'origin' ? (
-        <OptionGroup
-          label="Starting point"
-          value={state.origin}
-          onChange={(key) => setState((current) => ({ ...current, origin: key }))}
-        >
-          {originOptions.map((key) => (
-            <OptionButton key={key} value={key}>
-              {originLabels[key]}
-            </OptionButton>
-          ))}
-        </OptionGroup>
+        <div className="origin-sheet">
+          <NearMeControl state={state} setState={setState} />
+          <OptionGroup
+            label="Starting point"
+            value={state.origin}
+            onChange={(key) => setState((current) => ({ ...current, origin: key, originCoords: undefined }))}
+          >
+            {originOptions.map((key) => (
+              <OptionButton key={key} value={key}>
+                {originLabels[key]}
+              </OptionButton>
+            ))}
+          </OptionGroup>
+        </div>
       ) : null}
 
       {panel === 'when' ? (
