@@ -101,6 +101,13 @@ class Settings:
     dem_path: str | None = None
     elev_resolution_m: float = 20.0
 
+    # API startup warm-up budget (seconds) for one round over /plan's dependency
+    # stack — chiefly how long the graph connectivity check may retry before the
+    # round reports failure. /health stays 503 until a round succeeds, so this is
+    # the ceiling on how long a deploy waits for a slow-but-alive Aura, not a hang:
+    # past it the failure is surfaced in /health instead.
+    warmup_deadline_s: float = 30.0
+
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> "Settings":
         e = os.environ if env is None else env
@@ -157,4 +164,5 @@ class Settings:
             usfs_geojson_path=e.get("ADVENTURE_USFS_GEOJSON"),
             dem_path=e.get("ADVENTURE_3DEP_DEM") or None,
             elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
+            warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
         )
