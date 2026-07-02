@@ -9,6 +9,7 @@ Run dev server: uvicorn api.app:app --reload --port 8000
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -49,6 +50,7 @@ from api.schemas import (
     PlanRequest,
     SetAsideReasonResponse,
     SetAsideResponse,
+    StatusResponse,
     TripDetailResponse,
 )
 from graph.client import GraphClient
@@ -222,6 +224,46 @@ def _graph_stats() -> GraphStats | None:
         return None
 
 
+def _iso_or_none(value: Any) -> str | None:
+    """Render a graph temporal value as an ISO-8601 string. neo4j's DateTime carries
+    iso_format(); anything else falls back to str(); None stays None (Rule #1)."""
+    if value is None:
+        return None
+    iso = getattr(value, "iso_format", None)
+    if callable(iso):
+        return str(iso())
+    return str(value)
+
+
+def _graph_freshness() -> tuple[str | None, str | None]:
+    """(meta_updated_at, last_ingest) for /status — one scoped read alongside
+    _graph_stats(). last_ingest prefers the most recent SourceRecord.fetched_at (a real
+    datetime) and falls back to the coarse ingest_version ("YYYY-MM") when fetched_at is
+    absent. Degrades to (None, None) on any failure — never a 500 (Rule #1)."""
+    if _graph_client is None or _settings is None:
+        return None, None
+    try:
+        session = _graph_client.scoped_session("health-check")
+        rows = session.run(
+            (
+                "MATCH (m:Meta {id: 'schema'}) "
+                "OPTIONAL MATCH (r:SourceRecord) "
+                "RETURN m.updated_at AS updated_at, "
+                "       max(r.fetched_at) AS fetched_at, "
+                "       max(r.ingest_version) AS ingest_version",
+                {},
+            )
+        )
+        if not rows:
+            return None, None
+        r = rows[0]
+        last_ingest = _iso_or_none(r.get("fetched_at")) or _iso_or_none(r.get("ingest_version"))
+        return _iso_or_none(r.get("updated_at")), last_ingest
+    except Exception:
+        logger.exception("graph freshness query failed; reporting nulls")
+        return None, None
+
+
 @app.get("/health", response_model=HealthResponse)
 @limiter.limit(health_limit)
 def health(request: Request) -> HealthResponse:
@@ -233,6 +275,30 @@ def health(request: Request) -> HealthResponse:
         region=_settings.region,
         probes_available=_probe_keys,
         graph=_graph_stats(),
+    )
+
+
+@app.get("/status", response_model=StatusResponse)
+@limiter.limit(health_limit)
+def status(request: Request) -> StatusResponse:
+    """Current deployed state for cross-surface grounding (agent operating model):
+    what commit is running (Render env), which corpus/live region it serves, and how
+    fresh the graph is. World/Meta reads only, through the scoped session (Rule #4);
+    every graph-derived field degrades to null when the graph is unreachable, mirroring
+    /health's graph=null (Rule #1)."""
+    if _settings is None:
+        raise HTTPException(status_code=503, detail="Settings not loaded")
+    corpus = _graph_stats()
+    meta_updated_at, last_ingest = _graph_freshness()
+    return StatusResponse(
+        deploy_sha=os.environ.get("RENDER_GIT_COMMIT"),
+        deploy_branch=os.environ.get("RENDER_GIT_BRANCH"),
+        region=_settings.region,
+        live_region=_settings.live_region,
+        schema_version=corpus.schema_version if corpus else None,
+        meta_updated_at=meta_updated_at,
+        last_ingest=last_ingest,
+        corpus=corpus,
     )
 
 
