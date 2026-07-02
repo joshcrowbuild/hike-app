@@ -30,6 +30,7 @@ class Candidate:
     is_loop: bool | None = None
     length_mi: float | None = None
     point: Any = None
+    trailhead_point: Any = None
 
 
 def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
@@ -46,6 +47,7 @@ def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
         is_loop=row.get("is_loop"),
         length_mi=row.get("length_mi"),
         point=row.get("point"),
+        trailhead_point=row.get("trailhead_point"),
     )
 
 
