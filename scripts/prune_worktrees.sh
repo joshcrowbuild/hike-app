@@ -33,7 +33,8 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
   if [ "$branch" = "HEAD" ]; then
     echo "keep   $wt   (detached HEAD — inspect manually)"; kept=$((kept+1)); continue
   fi
-  if git merge-base --is-ancestor "$wt"@ origin/main 2>/dev/null; then
+  tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null || echo '')"
+  if [ -n "$tip" ] && git merge-base --is-ancestor "$tip" origin/main 2>/dev/null; then
     if [ "$FORCE" = "--force" ]; then
       git worktree remove --force "$wt" && echo "PRUNED $wt   ($branch — merged, clean)"
     else
