@@ -330,6 +330,14 @@ def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any
         pytest.param({"query": "x", "lat": "north", "lon": -78.4}, id="lat-wrong-type"),
         pytest.param({"query": "x", "lat": 38.5, "lon": -78.4, "k": 0}, id="k-below-min"),
         pytest.param({"query": "x", "lat": 38.5, "lon": -78.4, "k": 999}, id="k-above-max"),
+        pytest.param(
+            {"query": "x", "lat": 38.5, "lon": -78.4, "viewer_id": "josh; DROP TABLE"},
+            id="viewer-id-bad-chars",
+        ),
+        pytest.param(
+            {"query": "x", "lat": 38.5, "lon": -78.4, "viewer_id": "a" * 65},
+            id="viewer-id-too-long",
+        ),
     ],
 )
 def test_plan_malformed_body_is_422_never_500(client: Any, body: dict[str, Any]) -> None:

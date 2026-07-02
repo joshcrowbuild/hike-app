@@ -243,6 +243,27 @@ def test_no_geometry_returns_null_geometry_with_trailhead():
     assert body["elevation_profile"] is None
 
 
+# ── viewer_id validation (AH4) — invalid shape 422s before reaching Cypher ─────
+
+
+def test_viewer_id_bad_chars_is_422_never_500():
+    client = _client()
+    try:
+        r = client.get("/trail/ct:has", params={"viewer_id": "josh; DROP TABLE"})
+    finally:
+        client.__exit__(None, None, None)
+    assert r.status_code == 422
+
+
+def test_viewer_id_too_long_is_422_never_500():
+    client = _client()
+    try:
+        r = client.get("/trail/ct:has", params={"viewer_id": "a" * 65})
+    finally:
+        client.__exit__(None, None, None)
+    assert r.status_code == 422
+
+
 # ── 404 for an unknown trail ──────────────────────────────────────────────────
 
 

@@ -6,6 +6,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# Shape of a viewer identity (AH4): the anonymous default, or an alphanumeric/underscore/
+# hyphen/colon token (":" separates the household-member prefix, e.g. "mem:josh"),
+# length-bounded so a malformed value 422s before it ever reaches Cypher (access control
+# at the query/data layer, rule #4) or a log line (rule #5).
+VIEWER_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,64}$"
+
 
 class PlanRequest(BaseModel):
     query: str = Field(
@@ -14,7 +20,11 @@ class PlanRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Origin latitude (WGS84)")
     lon: float = Field(..., ge=-180, le=180, description="Origin longitude (WGS84)")
     k: int = Field(default=10, ge=1, le=50, description="Max results")
-    viewer_id: str = Field(default="anonymous", description="Viewer identity for graph scoping")
+    viewer_id: str = Field(
+        default="anonymous",
+        pattern=VIEWER_ID_PATTERN,
+        description="Viewer identity for graph scoping",
+    )
 
 
 class FeedLineResponse(BaseModel):

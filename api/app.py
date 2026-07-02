@@ -19,7 +19,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -40,6 +40,7 @@ from api.ratelimit import (
     rate_limit_exceeded_handler,
 )
 from api.schemas import (
+    VIEWER_ID_PATTERN,
     CardWarningResponse,
     ElevationProfile,
     ElevationSample,
@@ -593,7 +594,7 @@ def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailR
 def trail_detail(
     request: Request,  # required by slowapi for per-IP keying
     canonical_id: str,
-    viewer_id: str = "anonymous",
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> TripDetailResponse:
     """Trip/detail: the assembled route geometry + trailhead + elevation profile for
@@ -635,7 +636,8 @@ def record_outcome(
     episode_id: str,
     body: OutcomeBody,
     background_tasks: BackgroundTasks,
-    viewer_id: str = "anonymous",  # Phase 1: query param; Stage 8 replaces with auth header
+    # Phase 1: query param; Stage 8 replaces with auth header.
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> OutcomeResponse:
     """Record a post-hike outcome (rating + optional reflection).

@@ -106,3 +106,17 @@ def test_s4_ac3_drain_registered_as_background_task_not_run_inline(monkeypatch) 
     # with exactly one enqueued preference-check marker (overall>=2).
     drain_calls = [e for e in events if isinstance(e, tuple) and e[0] == "drain"]
     assert drain_calls and drain_calls[0][1] == 1
+
+
+def test_viewer_id_bad_chars_is_422_never_500() -> None:
+    """AH4: an unvalidated viewer_id could reach Cypher; the query param must 422 on a
+    malformed value before it's ever bound into a scoped session."""
+    with TestClient(app) as client:
+        app_mod._settings = Settings.from_env({})
+        app_mod._graph_client = _FakeGraphClient([])  # type: ignore[assignment]
+        r = client.post(
+            "/episode/ep:anon:1/outcome",
+            params={"viewer_id": "josh; DROP TABLE"},
+            json={"overall": 2, "skipped": False},
+        )
+    assert r.status_code == 422
