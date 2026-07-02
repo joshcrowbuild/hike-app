@@ -56,14 +56,16 @@ def outcome_limit() -> str:
 
 # Module-level singleton: counts must accumulate across requests within a worker.
 #
-# DEPLOY NOTE (per-IP keying behind a proxy): get_remote_address keys on the direct peer
-# (request.client.host). Behind a reverse proxy (e.g. Render's edge), that peer is the
-# proxy, so without proxy-header handling every client collapses into ONE shared bucket —
-# the cap still bounds total budget/upstream quota (the primary R5 goal), but it stops
-# distinguishing IPs, so one abuser can starve others. To restore true per-IP keying, run
-# uvicorn with `--proxy-headers --forwarded-allow-ips <edge hop>` (a serve-command change,
-# tracked as a Phase-B deploy follow-up). Do NOT switch to a header that trusts an
-# arbitrary X-Forwarded-For from any caller — that turns the limiter into a trivial bypass.
+# DEPLOY NOTE (per-IP keying behind a proxy): get_remote_address keys on
+# request.client.host. Behind Render's proxy the raw TCP peer is the proxy for every
+# request, so production runs uvicorn with `--proxy-headers --forwarded-allow-ips='*'`
+# (Dockerfile CMD): uvicorn's ProxyHeadersMiddleware rewrites request.client to the first
+# X-Forwarded-For entry before slowapi ever sees it, restoring true per-IP buckets.
+# Trust-all is safe on Render specifically — Render rewrites X-Forwarded-For so its first
+# entry is the real client IP, and the origin is unreachable except through that proxy,
+# so end clients cannot spoof their key. If this ever moves to a host where the origin is
+# directly reachable or the proxy merely APPENDS to X-Forwarded-For, '*' becomes a
+# trivial limiter bypass — narrow --forwarded-allow-ips to the proxy's hop instead.
 limiter = Limiter(key_func=get_remote_address)
 
 

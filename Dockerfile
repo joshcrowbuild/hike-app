@@ -45,4 +45,14 @@ EXPOSE 8000
 
 # Bind 0.0.0.0 and honor $PORT. A single worker keeps the lifespan-built graph-client
 # singleton simple on the free tier.
-CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+#
+# --proxy-headers --forwarded-allow-ips='*': every request's TCP peer is Render's proxy
+# (the container port is not directly reachable from the public internet), so without
+# these flags request.client.host is the proxy for ALL clients and slowapi collapses
+# per-IP rate limits into one shared bucket. Trust-all makes uvicorn take the FIRST
+# X-Forwarded-For entry as the client — safe on Render specifically because Render
+# rewrites that header so its first entry is the real client IP (clients can't smuggle
+# a spoofed one past it, and there's no proxy-bypass path to the origin). On any host
+# where the origin is directly reachable or the proxy merely appends to X-Forwarded-For,
+# '*' would be a limiter bypass — narrow it to the proxy's hop instead.
+CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
