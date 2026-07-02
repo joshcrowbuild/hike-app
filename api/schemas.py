@@ -91,11 +91,33 @@ class FeedCardResponse(BaseModel):
     elevation_profile: ElevationProfile | None = None
 
 
+class SetAsideReasonResponse(BaseModel):
+    """One source-stamped cause a trail was set aside by a hard live guardrail (Epic
+    018 S5). `text` is the ready-to-show disclosure ("cause (source)"); `source`/`kind`
+    keep the pieces structured. Mirrors `frontend/src/data/api.ts`."""
+
+    text: str
+    source: str
+    kind: str  # the condition kind, e.g. "weather" | "air"
+
+
+class SetAsideResponse(BaseModel):
+    """A trail a hazardous live condition ruled out — disclosed with its cause + source
+    (Epic 018 S5 AC-5.2), never dropped without a trace. A safety gate, not a ranking
+    signal (Rule #2). Mirrors `frontend/src/data/api.ts`."""
+
+    canonical_id: str
+    name: str
+    reasons: list[SetAsideReasonResponse]
+
+
 class FeedResponse(BaseModel):
     query: str
     cards: list[FeedCardResponse]
     card_count: int
     notices: list[str] = []  # feed-level disclosures (e.g. drive times unavailable)
+    # Trails a hard live guardrail set aside, disclosed with cause + source (Epic 018 S5).
+    set_aside: list[SetAsideResponse] = []
 
 
 class GraphStats(BaseModel):

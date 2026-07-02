@@ -91,10 +91,25 @@ class _Card:
 
 
 @dataclass
+class _SetAsideReason:
+    text: str
+    source: str
+    kind: str
+
+
+@dataclass
+class _SetAside:
+    canonical_id: str
+    name: str
+    reasons: tuple[_SetAsideReason, ...]
+
+
+@dataclass
 class _Feed:
     query: str
     cards: list[_Card]
     notices: tuple[str, ...] = ()
+    set_aside: tuple[_SetAside, ...] = ()
 
 
 class _Runtime:
@@ -119,6 +134,19 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
             ),
         ],
         notices=("Drive times unavailable",),
+        set_aside=(
+            _SetAside(
+                canonical_id="ct:fire-ridge",
+                name="Fire Ridge",
+                reasons=(
+                    _SetAsideReason(
+                        text="weather alert: Red Flag Warning (NWS api.weather.gov)",
+                        source="NWS api.weather.gov",
+                        kind="weather",
+                    ),
+                ),
+            ),
+        ),
     )
 
 
@@ -215,6 +243,19 @@ def test_plan_happy_path_contract(client: Any) -> None:
     assert [line["confidence_level"] for line in card["lines"]] == ["stated", "hedged"]
     assert card["lines"][0]["text"] == "Stream is flowing"
     assert card["lines"][0]["source"] == "usgs"
+
+    # Set-aside disclosure (Epic 018 S5): a hazard-ruled trail rides the feed with its
+    # cause + source, kept off `cards` (a safety gate, never a ranked demotion).
+    assert [c["canonical_id"] for c in payload["cards"]] == ["ct:mellow-loop"]
+    assert len(payload["set_aside"]) == 1
+    aside = payload["set_aside"][0]
+    assert aside["canonical_id"] == "ct:fire-ridge"
+    assert aside["name"] == "Fire Ridge"
+    reason = aside["reasons"][0]
+    assert reason["kind"] == "weather"
+    assert reason["source"] == "NWS api.weather.gov"
+    assert "Red Flag Warning" in reason["text"]
+    assert reason["source"] in reason["text"]  # source-stamped
 
     # Maps/terrain fields degrade to null when absent — never fabricated (Rule #1).
     assert card["geometry"] is None
