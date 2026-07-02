@@ -120,3 +120,28 @@ def test_viewer_id_bad_chars_is_422_never_500() -> None:
             json={"overall": 2, "skipped": False},
         )
     assert r.status_code == 422
+
+
+def test_delta_answer_over_max_length_is_422() -> None:
+    """AL3: delta_answer is stored verbatim as a stated Belief — cap the free-text body
+    so it 422s before an unbounded payload becomes stored substrate."""
+    with TestClient(app) as client:
+        app_mod._settings = Settings.from_env({})
+        app_mod._graph_client = _FakeGraphClient([])  # type: ignore[assignment]
+        r = client.post(
+            "/episode/ep:anon:1/outcome",
+            json={"overall": 2, "skipped": False, "delta_answer": "x" * 2001},
+        )
+    assert r.status_code == 422
+
+
+def test_delta_answer_at_max_length_is_accepted() -> None:
+    events: list[Any] = []
+    with TestClient(app) as client:
+        app_mod._settings = Settings.from_env({})
+        app_mod._graph_client = _FakeGraphClient(events)  # type: ignore[assignment]
+        r = client.post(
+            "/episode/ep:anon:1/outcome",
+            json={"overall": 2, "skipped": False, "delta_answer": "x" * 2000},
+        )
+    assert r.status_code == 200

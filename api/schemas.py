@@ -158,7 +158,12 @@ class OutcomeBody(BaseModel):
         description="1 (😞) | 2 (😐) | 3 (🙂); null when skipped",
     )
     delta_question: str | None = None
-    delta_answer: str | None = Field(default=None, description="User's free-text reflect-back")
+    # AL3: this free-text answer is stored verbatim as a `stated` Belief (never decays,
+    # confidence 1.0 — orchestration/outcome.py), so an unbounded body is unbounded
+    # substrate. 2000 chars is ample for a reflect-back answer.
+    delta_answer: str | None = Field(
+        default=None, max_length=2000, description="User's free-text reflect-back"
+    )
     skipped: bool = False
 
 
