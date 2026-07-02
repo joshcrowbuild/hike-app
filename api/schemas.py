@@ -24,7 +24,9 @@ class PlanRequest(BaseModel):
     )
     lat: float = Field(..., ge=-90, le=90, description="Origin latitude (WGS84)")
     lon: float = Field(..., ge=-180, le=180, description="Origin longitude (WGS84)")
-    k: int = Field(default=10, ge=1, le=50, description="Max results")
+    # 10 is the product norm; 20 is ample headroom. Each candidate fans out to several
+    # live probes (AH3), so the public max is capped well below the old le=50.
+    k: int = Field(default=10, ge=1, le=20, description="Max results")
     viewer_id: str = Field(
         default="anonymous",
         pattern=VIEWER_ID_PATTERN,

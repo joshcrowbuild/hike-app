@@ -292,6 +292,13 @@ def test_plan_happy_path_contract(client: Any) -> None:
 # ── /plan: viewer authorization (Epic 014 S3) ──────────────────────────────────
 
 
+def test_plan_k_at_new_cap_is_accepted(client: Any) -> None:
+    # AH3: the public max was lowered from 50 to 20 (each candidate fans out to
+    # several live probes) — 20 itself must still be a valid, accepted value.
+    resp = client.post("/plan", json={**_PLAN_BODY, "k": 20})
+    assert resp.status_code == 200
+
+
 def test_plan_defaults_to_anonymous_viewer(client: Any) -> None:
     # No viewer_id in the body → anonymous default → the open world path serves a 200,
     # not an auth wall.
@@ -330,6 +337,8 @@ def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any
         pytest.param({"query": "x", "lat": "north", "lon": -78.4}, id="lat-wrong-type"),
         pytest.param({"query": "x", "lat": 38.5, "lon": -78.4, "k": 0}, id="k-below-min"),
         pytest.param({"query": "x", "lat": 38.5, "lon": -78.4, "k": 999}, id="k-above-max"),
+        # AH3: each candidate fans out to several live probes; the public max is 20.
+        pytest.param({"query": "x", "lat": 38.5, "lon": -78.4, "k": 21}, id="k-above-new-cap"),
         pytest.param(
             {"query": "x", "lat": 38.5, "lon": -78.4, "viewer_id": "josh; DROP TABLE"},
             id="viewer-id-bad-chars",
