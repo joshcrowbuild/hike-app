@@ -22,7 +22,7 @@ import type {
 } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
 import type { CardVM, ElevationProfile, EpisodeVM, FeedError, FeedVM, OutcomeVM, TrailGeo } from '../vm'
-import type { OriginKey } from '../../types'
+import type { TuningState } from '../../types'
 
 // The Render free-tier API cold-starts in 30–60s after idling out. A 10s budget
 // lost that race — the browser aborted /plan while a long-timeout curl succeeded
@@ -169,12 +169,14 @@ export class HttpPlannerClient implements PlannerClient {
     }
   }
 
-  async getCard(id: string, scope: ScopeContext, origin?: OriginKey): Promise<CardVM | null> {
-    // No GET /trail/{id} exists yet (backend ask #1/#5). Re-run the plan and
-    // resolve the id from the current set; a true deep-link to a card outside
-    // the set returns null until the detail endpoint lands.
-    void origin
-    const feed = await this.plan({ tuning: fallbackTuning(origin) }, scope)
+  async getCard(id: string, scope: ScopeContext, tuning?: TuningState): Promise<CardVM | null> {
+    // No GET /trail/{id} exists yet (backend ask #1/#5), so `useCard` only calls
+    // this when the id isn't already in the in-memory feed. Re-run the plan with
+    // the CALLER'S current tuning (never a rebuilt default — a reset frame
+    // returns a different, often thinner, set that may not contain the card,
+    // which is what made every non-default-origin trail read as "not found").
+    // A true deep-link to a card outside the set still returns null.
+    const feed = await this.plan({ tuning: tuning ?? fallbackTuning() }, scope)
     // A transient failure (notably the cold-start timeout this branch now waits
     // out for up to 60s) must not masquerade as "not found": throw so `useCard`
     // maps it to a retryable error state, not an authoritative absence (R1).
@@ -231,14 +233,16 @@ function emptyFeed(input: PlanInput, error: FeedError): FeedVM {
   }
 }
 
-function fallbackTuning(origin?: OriginKey) {
+// The last resort when there's no current tuning at all — a genuinely cold
+// deep-link with nothing in context yet. Mirrors App's own default frame.
+function fallbackTuning(): TuningState {
   return {
-    origin: origin ?? 'frontRoyal',
+    origin: 'frontRoyal',
     when: 'weekendMorning',
     effort: 'moderate',
     party: 'solo',
     today: 'standard',
     readinessOn: false,
     prompt: '',
-  } as const
+  }
 }

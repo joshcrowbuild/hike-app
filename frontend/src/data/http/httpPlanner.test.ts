@@ -236,6 +236,60 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
   })
 })
 
+describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current set" fix)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  function coordsOf(call: unknown): { lat: number; lon: number } {
+    const init = (call as [string, RequestInit])[1]
+    const body = JSON.parse(init.body as string) as { lat: number; lon: number }
+    return { lat: body.lat, lon: body.lon }
+  }
+
+  it('refetches with the CALLER-SUPPLIED tuning, not a rebuilt default — a non-default origin still resolves', async () => {
+    const nagsHead: TuningState = { ...TUNING, origin: 'nagsHead' }
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [{ canonical_id: 'jockeys-ridge', name: "Jockey's Ridge", distance_mi: 1, lines: [], warnings: [] }],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const card = await new HttpPlannerClient('http://api').getCard('jockeys-ridge', ANON_SCOPE, nagsHead)
+
+    expect(card?.id).toBe('jockeys-ridge')
+    // Nags Head's coordinates, not Front Royal's default — proves the fallback
+    // never rebuilds a fresh default tuning when a caller tuning is supplied.
+    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 35.957, lon: -75.624 })
+  })
+
+  it('falls back to the Front Royal default only when no tuning at all is supplied (true cold link)', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    await new HttpPlannerClient('http://api').getCard('some-id', ANON_SCOPE)
+    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 38.918, lon: -78.194 })
+  })
+
+  it('returns null for a genuine absence (id not in the refetched set)', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    const card = await new HttpPlannerClient('http://api').getCard('no-such-trail', ANON_SCOPE, TUNING)
+    expect(card).toBeNull()
+  })
+
+  it('throws — never a false "not found" — when the refetch itself fails (R1: stays retryable)', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 503 } as Response))
+    await expect(
+      new HttpPlannerClient('http://api').getCard('some-id', ANON_SCOPE, TUNING),
+    ).rejects.toThrow()
+  })
+})
+
 describe('HttpPlannerClient /plan cold-start timeout', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

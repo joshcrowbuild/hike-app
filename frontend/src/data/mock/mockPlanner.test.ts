@@ -86,12 +86,12 @@ describe('MockPlannerClient — post-hike loop', () => {
 
 describe('MockPlannerClient — getCard resolves independent of the feed', () => {
   it('resolves a known id and returns null for an unknown one', async () => {
-    expect(await client.getCard('stony-man', JOSH, 'frontRoyal')).not.toBeNull()
+    expect(await client.getCard('stony-man', JOSH, frame)).not.toBeNull()
     expect(await client.getCard('no-such-trail', JOSH)).toBeNull()
   })
 
-  it('includes drive only when an origin is supplied (R7 cold deep-link)', async () => {
-    const withOrigin = await client.getCard('stony-man', JOSH, 'frontRoyal')
+  it('includes drive only when a tuning frame is supplied (R7 cold deep-link)', async () => {
+    const withOrigin = await client.getCard('stony-man', JOSH, frame)
     const without = await client.getCard('stony-man', ANON_SCOPE)
     expect(withOrigin?.enrichment?.driveMinutes).toBeGreaterThan(0)
     expect(without?.enrichment?.driveMinutes).toBeUndefined()
