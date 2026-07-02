@@ -23,6 +23,22 @@ export interface LineVM {
 }
 
 /**
+ * One prominent hazard warning a card wears (decision of 2026-07-01): a VERIFIED
+ * hazard — an alert with a source and a timestamp — SHOWS on the trail, never
+ * hides it. Mirrors LineVM's provenance-carrying shape; presentation only, never
+ * a ranking signal (Rule #2).
+ */
+export interface WarningVM {
+  text: string
+  source: string
+  /** Already-humanised relative age ("2h ago") — raw datetimes are forbidden (§7.2). */
+  observedAgo: string
+  /** The condition kind it came from, e.g. "weather" | "air" | "fire". */
+  kind: string
+  provenance: Provenance
+}
+
+/**
  * The four legible silence states (CDP-02). An honest app in a data-sparse spot
  * must never read as broken or *falsely clear*: absence of a condition is a
  * distinct, disclosed state, never a blank. Each renders a visibly different
@@ -92,8 +108,8 @@ export interface CardVM {
    * the card falls back to the honest `not-fetched` default when it has no lines.
    */
   conditionSilence?: ConditionSilence
-  /** Safety guardrail strings from the engine (the API's `warnings`). */
-  warnings: string[]
+  /** Prominent source-stamped hazard warnings from the engine (the API's `warnings`). */
+  warnings: WarningVM[]
   enrichment?: CardEnrichment
   /**
    * Maps & terrain payload (Epic 016). Absent until the geometry/elevation
@@ -179,6 +195,20 @@ export interface SetAside {
   restorable: boolean
 }
 
+/**
+ * A trail a hard live guardrail held back (the API's `set_aside`, Epic 018 S5) —
+ * an UNVERIFIABLE required condition (a failed weather probe is never "clear",
+ * Rule #1) or a hard threshold. Disclosed at feed level so nothing silently
+ * vanishes; distinct from `SetAside` (a reversible constraint with a card to
+ * restore) — a held-back trail has only its cause + source. A VERIFIED hazard is
+ * never here: it stays a card wearing a warning (decision of 2026-07-01).
+ */
+export interface HeldBackVM {
+  id: string
+  name: string
+  reasons: { text: string; source: string; kind: string }[]
+}
+
 /** Readiness disclosure (R2): a gate over the ranked set, never a rank penalty. */
 export interface ReadinessVM {
   on: boolean
@@ -205,6 +235,8 @@ export interface FeedVM {
   notices: string[]
   /** Constraint-excluded candidates, disclosed and restorable. */
   setAside: SetAside[]
+  /** Guardrail-held trails (unverifiable conditions), disclosed at feed level. */
+  heldBack: HeldBackVM[]
   readiness: ReadinessVM
   /** Whether this whole feed is live or sample data — drives the calm sample strip. */
   dataSource: 'live' | 'mock'

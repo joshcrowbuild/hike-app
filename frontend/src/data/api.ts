@@ -41,12 +41,25 @@ export interface FeedLineResponse {
   confidence_level: ConfidenceLevel
 }
 
+/**
+ * One prominent, source-stamped hazard warning a card wears (decision of
+ * 2026-07-01): a VERIFIED hazard shows on the trail, never hides it. Mirrors
+ * how `FeedLineResponse` carries source; `observed_at` is the ISO-8601 fetch
+ * timestamp of the hazard fact.
+ */
+export interface CardWarningResponse {
+  text: string
+  source: string
+  observed_at: string
+  kind: string
+}
+
 export interface FeedCardResponse {
   canonical_id: string
   name: string
   distance_mi: number | null
   lines: FeedLineResponse[]
-  warnings: string[]
+  warnings: CardWarningResponse[]
   /**
    * Maps & terrain (Epic 016 S1). Optional: the current `/plan` omits them, so
    * the adapter degrades; once the geometry/detail endpoint lands these arrive
@@ -93,8 +106,10 @@ export interface SetAsideReasonResponse {
 }
 
 /**
- * A trail a hazardous live condition ruled out — disclosed with its cause + source
- * (Epic 018 S5), never dropped without a trace. A safety gate, not a ranking signal.
+ * A trail a hard live guardrail ruled out — an unverifiable required condition or
+ * a hard threshold — disclosed with its cause + source (Epic 018 S5), never dropped
+ * without a trace. A VERIFIED hazard is NOT set aside: it stays a card carrying a
+ * `warnings` entry (decision of 2026-07-01). A safety gate, not a ranking signal.
  */
 export interface SetAsideResponse {
   canonical_id: string

@@ -6,6 +6,7 @@
  * so the card degrades to its honest-thin rendering. Flipping `VITE_USE_MOCK`
  * off selects this; no screen changes.
  */
+import { relativeAge } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
 import { originCoords } from '../origins'
@@ -69,7 +70,15 @@ function mapFeed(res: FeedResponse): FeedVM {
         // here — that needs a real per-source signal the thin `/plan` doesn't yet
         // carry, so asserting it would be a false-clear (Rule #1).
         conditionSilence: c.lines.length === 0 ? { state: 'not-fetched' } : undefined,
-        warnings: c.warnings,
+        // A VERIFIED hazard rides the card as a prominent warning — shown, never
+        // hidden (decision of 2026-07-01). Source + humanised age, like a line.
+        warnings: c.warnings.map((w) => ({
+          text: w.text,
+          source: w.source,
+          observedAgo: relativeAge(w.observed_at),
+          kind: w.kind,
+          provenance: 'live',
+        })),
         // The API supplies no rich enrichment yet; the card degrades to thin.
         enrichment: undefined,
         // Geometry/elevation arrive once Lane A's contract lands; map them when
@@ -79,6 +88,13 @@ function mapFeed(res: FeedResponse): FeedVM {
     ),
     notices: res.notices,
     setAside: [],
+    // Guardrail-held trails (an unverifiable required condition — Epic 018 S5):
+    // disclosed at feed level so nothing the engine held back silently vanishes.
+    heldBack: (res.set_aside ?? []).map((s) => ({
+      id: s.canonical_id,
+      name: s.name,
+      reasons: s.reasons.map((r) => ({ text: r.text, source: r.source, kind: r.kind })),
+    })),
     // Readiness has no HTTP surface yet (Epic 007 backlog); it stays off.
     readiness: { on: false, state: 'off' },
     dataSource: 'live',
@@ -208,6 +224,7 @@ function emptyFeed(input: PlanInput, error: FeedError): FeedVM {
     cards: [],
     notices: [],
     setAside: [],
+    heldBack: [],
     readiness: { on: false, state: 'off' },
     dataSource: 'live',
     error,

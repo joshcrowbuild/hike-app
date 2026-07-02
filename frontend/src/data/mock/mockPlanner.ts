@@ -96,6 +96,8 @@ export class MockPlannerClient implements PlannerClient {
       cards,
       notices: [],
       setAside,
+      // The mock engine has no live guardrail path; an honest empty, never faked.
+      heldBack: [],
       readiness: readinessDisclosure(input.tuning, anon),
       dataSource: 'mock',
     }

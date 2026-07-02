@@ -24,6 +24,7 @@ const READY_FEED: FeedVM = {
   cards: [{ id: 'a', name: 'A', distanceMi: 1, conditionLines: [], warnings: [] }],
   notices: [],
   setAside: [],
+  heldBack: [],
   readiness: { on: false, state: 'off' },
   dataSource: 'live',
 }

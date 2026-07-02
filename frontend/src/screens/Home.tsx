@@ -1,7 +1,7 @@
 import { originLabels, partyLabels, whenLabels } from '../data/labels'
 import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { widenFrame } from '../data/widen'
-import type { FeedVM, SetAside } from '../data/vm'
+import type { FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { RecommendationCard } from './RecommendationCard'
 
@@ -110,6 +110,8 @@ export function Home({
             <SetAsideList items={feed.setAside} onOpenTrail={onOpenTrail} />
           ) : null}
 
+          {feed.heldBack.length > 0 ? <HeldBackNote items={feed.heldBack} /> : null}
+
           {feed.notices.map((notice) => (
             <p key={notice} className="frame-note">
               {notice}
@@ -174,6 +176,23 @@ function SparseNote({
       <p className="sparse-note">One option really holds under this frame.</p>
       <WidenAction tuning={tuning} onApplyTuning={onApplyTuning} />
     </div>
+  )
+}
+
+/**
+ * Guardrail-held trails (Epic 018 S5): a quiet feed-level disclosure so nothing
+ * the engine held back silently vanishes (Rule #1). These are the UNVERIFIABLE
+ * class — a required condition no source could confirm — so there is no card to
+ * restore; the note carries the cause(s), source-stamped by the backend. A
+ * verified hazard never lands here: it stays in the feed wearing its warning.
+ */
+function HeldBackNote({ items }: { items: HeldBackVM[] }) {
+  const causes = [...new Set(items.flatMap((t) => t.reasons.map((r) => r.text)))]
+  const count = items.length === 1 ? '1 trail held back' : `${items.length} trails held back`
+  return (
+    <p className="frame-note held-back-note" role="note">
+      {count} — {causes.join(' · ')}
+    </p>
   )
 }
 

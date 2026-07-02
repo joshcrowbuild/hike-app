@@ -59,6 +59,35 @@ describe('RecommendationCard feed glyph (S4)', () => {
   })
 })
 
+describe('RecommendationCard verified hazard warnings (2026-07-01: show, never hide)', () => {
+  const warning = {
+    text: 'weather alert: Extreme Heat Warning',
+    source: 'NWS api.weather.gov',
+    observedAgo: '2h ago',
+    kind: 'weather',
+    provenance: 'live' as const,
+  }
+
+  it('wears a prominent warning with its text, source and age', () => {
+    const { container } = render(
+      <RecommendationCard card={card({ warnings: [warning] })} onOpen={vi.fn()} />,
+    )
+    const block = container.querySelector('.card-warnings')
+    expect(block).toBeInTheDocument()
+    expect(block?.textContent).toContain('weather alert: Extreme Heat Warning')
+    expect(block?.textContent).toContain('NWS api.weather.gov') // source-stamped …
+    expect(block?.textContent).toContain('2h ago') // … and aged (§7.2)
+    // Assistive tech gets the same "Warning" framing sighted users read from the
+    // accent treatment — colour is never the only cue.
+    expect(screen.getByText('Warning:')).toBeInTheDocument()
+  })
+
+  it('renders no warning block on a clean card', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    expect(container.querySelector('.card-warnings')).not.toBeInTheDocument()
+  })
+})
+
 describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
   const silence = (over: Partial<CardVM> = {}) =>
     render(<RecommendationCard card={card({ conditionLines: [], enrichment: undefined, ...over })} onOpen={vi.fn()} />)
