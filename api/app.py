@@ -64,6 +64,7 @@ from api.schemas import (
 from graph.client import GraphClient
 from graph.queries import trail_detail as trail_detail_query
 from graph.queries import trails_detail as trails_detail_query
+from ingestion.elevation import DEFAULT_NOISE_THRESHOLD_M, compute_gain_loss_grade
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
@@ -546,29 +547,56 @@ def _trailhead(row: dict[str, Any]) -> GeoPoint | None:
     return None
 
 
+# Naismith's rule (classic): 5 km/h base pace on flat ground, plus one minute of
+# extra time per 10 m of climbed ascent (the traditional "+1 hour per 600 m ascent",
+# restated per-metre: 60 min / 600 m = 0.1 min/m). A computed ESTIMATE, never a
+# stated fact (Rule #1/#7) — `estimated_duration_min` names it so the client can
+# disclose it as such rather than presenting it like a verified duration.
+_NAISMITH_PACE_KMH = 5.0
+_NAISMITH_MIN_PER_ASCENT_M = 0.1
+
+
+def _estimated_duration_min(distance_m: float, gain_m: float) -> float:
+    """Naismith's-rule duration estimate from total route distance + ascent."""
+    base_min = (distance_m / 1000.0) / _NAISMITH_PACE_KMH * 60.0
+    return base_min + gain_m * _NAISMITH_MIN_PER_ASCENT_M
+
+
 def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
-    """Reassemble the stored parallel arrays + scalars into `WireElevationProfile`.
+    """Reassemble the stored parallel sample arrays into `WireElevationProfile`.
     `None` when no profile is stored (no DEM coverage) — not faked (D3). Provenance
     is read straight from the stored `elev_source`, never defaulted: a profile
     missing its source is treated as absent rather than mislabeled (Rule #1). The
     loader always writes the arrays and `elev_source` together, so a present profile
-    carries real provenance."""
+    carries real provenance.
+
+    `total_gain_m`/`total_loss_m`/`max_grade_pct` are derived fresh from the sample
+    arrays here — via the same hysteresis accumulator ingestion uses
+    (`ingestion.elevation.compute_gain_loss_grade`) — rather than trusted from a
+    second stored scalar that could drift from the samples. Only a move exceeding
+    `DEFAULT_NOISE_THRESHOLD_M` (3 m) since the last counted point is credited as
+    real gain/loss, so sub-threshold DEM jitter doesn't inflate "total ascent"."""
     distances = row.get("profile_distances_m")
     elevations = row.get("profile_elevations_m")
     source = row.get("elev_source")
     if not distances or not elevations or len(distances) != len(elevations) or not source:
         return None
+    distances_f = [float(d) for d in distances]
+    elevations_f = [float(e) for e in elevations]
     samples = [
-        ElevationSample(distance_m=float(d), elevation_m=float(e))
-        for d, e in zip(distances, elevations)
+        ElevationSample(distance_m=d, elevation_m=e) for d, e in zip(distances_f, elevations_f)
     ]
+    gain, loss, max_grade = compute_gain_loss_grade(
+        distances_f, elevations_f, noise_threshold_m=DEFAULT_NOISE_THRESHOLD_M
+    )
     return ElevationProfile(
         samples=samples,
-        total_gain_m=float(row.get("total_gain_m") or 0.0),
-        total_loss_m=float(row.get("total_loss_m") or 0.0),
-        max_grade_pct=float(row.get("max_grade_pct") or 0.0),
+        total_gain_m=gain,
+        total_loss_m=loss,
+        max_grade_pct=max_grade,
         source=source,
         resolution_m=float(row.get("elev_resolution_m") or 0.0),
+        estimated_duration_min=_estimated_duration_min(distances_f[-1], gain),
     )
 
 
