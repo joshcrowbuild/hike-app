@@ -91,11 +91,33 @@ class FeedCardResponse(BaseModel):
     elevation_profile: ElevationProfile | None = None
 
 
+class SetAsideReasonResponse(BaseModel):
+    """One source-stamped cause a trail was set aside by a hard live guardrail (Epic
+    018 S5). `text` is the ready-to-show disclosure ("cause (source)"); `source`/`kind`
+    keep the pieces structured. Mirrors `frontend/src/data/api.ts`."""
+
+    text: str
+    source: str
+    kind: str  # the condition kind, e.g. "weather" | "air"
+
+
+class SetAsideResponse(BaseModel):
+    """A trail a hazardous live condition ruled out — disclosed with its cause + source
+    (Epic 018 S5 AC-5.2), never dropped without a trace. A safety gate, not a ranking
+    signal (Rule #2). Mirrors `frontend/src/data/api.ts`."""
+
+    canonical_id: str
+    name: str
+    reasons: list[SetAsideReasonResponse]
+
+
 class FeedResponse(BaseModel):
     query: str
     cards: list[FeedCardResponse]
     card_count: int
     notices: list[str] = []  # feed-level disclosures (e.g. drive times unavailable)
+    # Trails a hard live guardrail set aside, disclosed with cause + source (Epic 018 S5).
+    set_aside: list[SetAsideResponse] = []
 
 
 class GraphStats(BaseModel):
@@ -129,6 +151,24 @@ class HealthResponse(BaseModel):
     region: str
     probes_available: list[str]
     graph: GraphStats | None = None  # None if Neo4j unreachable
+
+
+class StatusResponse(BaseModel):
+    """`GET /status`: current deployed state for cross-surface grounding (the
+    agent-operating-model real-time source). Anything unknowable from this host is
+    honestly `null` — never guessed (Rule #1): deploy fields are `null` off Render,
+    graph-derived fields are `null` when the graph is unreachable."""
+
+    deploy_sha: str | None  # RENDER_GIT_COMMIT; null off Render
+    deploy_branch: str | None  # RENDER_GIT_BRANCH; null off Render
+    region: str  # corpus region (e.g. "shenandoah-gwj")
+    live_region: str  # live-probe registry region (e.g. "US")
+    schema_version: str | None  # (:Meta {id:'schema'}).schema_version
+    meta_updated_at: str | None  # Meta.updated_at (last schema apply), ISO-8601
+    # Most recent SourceRecord.fetched_at (ISO-8601), falling back to the coarse
+    # ingest_version ("YYYY-MM") when no fetched_at is stored.
+    last_ingest: str | None
+    corpus: GraphStats | None  # same shape as /health's graph; None if unreachable
 
 
 class TripDetailResponse(BaseModel):

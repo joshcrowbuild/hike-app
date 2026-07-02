@@ -82,12 +82,36 @@ class FeedCard:
 
 
 @dataclass(frozen=True)
+class SetAsideReason:
+    """One source-stamped cause a trail was set aside (Epic 018 S5 AC-5.1). `text` is
+    the ready-to-show disclosure ("cause (source)"); `source`/`kind` keep the pieces
+    structured for the wire."""
+
+    text: str
+    source: str
+    kind: str  # ConditionKind.value the block came from
+
+
+@dataclass(frozen=True)
+class SetAsideTrail:
+    """A candidate a hard live guardrail ruled out. Disclosed, never silently dropped
+    (Epic 018 S5 AC-5.2): it carries its cause + source so the surface can show *why*
+    it's set aside. A safety gate only — it never feeds ranking/confidence (Rule #2)."""
+
+    canonical_id: str
+    name: str
+    reasons: tuple[SetAsideReason, ...]
+
+
+@dataclass(frozen=True)
 class PlannedBatch:
     """The guardrail-passing trails plus feed-level notices (e.g. the once-per-feed
-    drive-time degrade disclosure — Epic 005 AC-6.4)."""
+    drive-time degrade disclosure — Epic 005 AC-6.4) and the trails a hard live
+    guardrail set aside (Epic 018 S5): disclosed with cause + source, not dropped."""
 
     trails: list[PlannedTrail]
     notices: tuple[str, ...] = ()
+    set_aside: tuple[SetAsideTrail, ...] = ()
 
 
 @dataclass
@@ -113,6 +137,9 @@ class Feed:
     query: str
     cards: list[FeedCard]
     notices: tuple[str, ...] = ()
+    # Trails a hard live guardrail ruled out, disclosed with cause + source (Epic 018
+    # S5 AC-5.2). Kept off the ranked `cards` — a safety set-aside, not a demotion.
+    set_aside: tuple[SetAsideTrail, ...] = ()
 
 
 def _latlon(point: Any) -> tuple[float, float] | None:
@@ -158,6 +185,17 @@ def _corpus_corroboration(
     return counts, sources
 
 
+def _set_aside(candidate: Candidate, verdict: GuardrailVerdict) -> SetAsideTrail:
+    """Build the disclosed set-aside record for a hard-blocked candidate (Epic 018 S5).
+    Each block becomes a source-stamped reason line — the cause, then its source in
+    parens — mirroring how `present.py` stamps a surfaced fact (AC-5.1/5.2)."""
+    reasons = tuple(
+        SetAsideReason(text=f"{b.reason} ({b.source})", source=b.source, kind=b.kind)
+        for b in verdict.blocks
+    )
+    return SetAsideTrail(canonical_id=candidate.canonical_id, name=candidate.name, reasons=reasons)
+
+
 def _drive_minutes(fact: VerifiedFact | None) -> float | None:
     if fact is None or not isinstance(fact.value, dict):
         return None
@@ -199,6 +237,7 @@ def plan_from_origin(
     corr_by_id, sources_by_id = _corpus_corroboration(candidates, session)
 
     planned: list[PlannedTrail] = []
+    set_aside: list[SetAsideTrail] = []
     for candidate in candidates:
         coord = _latlon(candidate.point)
         if coord is None:
@@ -209,7 +248,10 @@ def plan_from_origin(
         facts = verify(probe_point, probes, cache=cache)  # point kinds only (drive_time skipped)
         verdict = evaluate_guardrails(facts)
         if verdict.blocked:
-            continue  # constraints are hard filters (Stage 4 §6)
+            # Hard filter (Stage 4 §6) — but a real hazard is *set aside with its
+            # source-stamped reason*, never silently dropped (Epic 018 S5 AC-5.1/5.2).
+            set_aside.append(_set_aside(candidate, verdict))
+            continue
         drive_fact = drive_facts.get(candidate.canonical_id)
         if drive_fact is not None:
             facts[ConditionKind.drive_time] = drive_fact  # folded in AFTER the guardrail check
@@ -234,7 +276,7 @@ def plan_from_origin(
                 corpus_confidence=corpus_confidence,
             )
         )
-    return PlannedBatch(trails=planned, notices=notices)
+    return PlannedBatch(trails=planned, notices=notices, set_aside=tuple(set_aside))
 
 
 def rank_plan(
@@ -349,7 +391,15 @@ def plan(
         judge = runtime.judge
     if judge:
         planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
-    return Feed(query=query, cards=[feed_card(p) for p in planned], notices=batch.notices)
+    # AC-5.2/5.3: set-aside trails ride the feed as a disclosed, cause+source list —
+    # kept off `cards` (ranking never sees them; a hazard is a safety gate, not a
+    # taste demotion). Ranking above operates only on the guardrail-passing `planned`.
+    return Feed(
+        query=query,
+        cards=[feed_card(p) for p in planned],
+        notices=batch.notices,
+        set_aside=batch.set_aside,
+    )
 
 
 def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str) -> Runtime:

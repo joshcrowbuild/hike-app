@@ -19,7 +19,23 @@ def test_blocking_weather_alert_blocks() -> None:
         {ConditionKind.weather: _fact({"active_alerts": ["Flash Flood Warning"]})}
     )
     assert v.blocked
-    assert any("Flash Flood" in b for b in v.blocks)
+    assert any("Flash Flood" in b.reason for b in v.blocks)
+
+
+def test_block_is_source_stamped() -> None:
+    # AC-5.1: a hard block carries the blocking fact's source so the set-aside can be
+    # disclosed with its cause AND source, not a bare "unavailable".
+    fact = VerifiedFact(
+        value={"active_alerts": ["Tornado Warning"]},
+        source="NWS api.weather.gov",
+        fetched_at=datetime.now(timezone.utc),
+    )
+    v = evaluate_guardrails({ConditionKind.weather: fact})
+    assert v.blocked
+    (block,) = v.blocks
+    assert block.kind == "weather"
+    assert block.source == "NWS api.weather.gov"
+    assert "Tornado" in block.reason
 
 
 def test_non_blocking_alert_is_a_warning() -> None:

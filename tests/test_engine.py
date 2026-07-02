@@ -96,6 +96,34 @@ def test_plan_filters_guardrail_blocked_trails() -> None:
     assert [p.candidate.canonical_id for p in planned] == ["safe"]  # flooded hard-filtered
     assert planned[0].facts[ConditionKind.weather].value["active_alerts"] == []
     assert ConditionKind.weather in planned[0].confidences  # confidence per surfaced fact
+    # AC-5.1/5.2: the blocked trail is set aside (disclosed), not silently dropped …
+    assert [s.canonical_id for s in batch.set_aside] == ["flooded"]
+    reason = batch.set_aside[0].reasons[0]
+    assert "Flash Flood" in reason.text  # … with its cause …
+    assert reason.source == "t"  # … source-stamped (from the blocking fact) …
+    assert reason.source in reason.text
+    assert reason.kind == "weather"
+
+
+def test_set_aside_surfaces_through_plan_without_penalizing_rank() -> None:
+    # AC-5.2: the set-aside rides the Feed. AC-5.3: it is a safety gate, off the ranked
+    # cards — a hazard never demotes a survivor's position.
+    rows = [
+        _row("safe-a", 38.5, -78.4, 100),
+        _row("hazard", 39.0, -79.0, 150),
+        _row("safe-b", 38.6, -78.3, 200),
+    ]
+
+    def weather(lat: float, lon: float) -> Any:
+        return {"active_alerts": ["Tornado Warning"] if lat == 39.0 else []}
+
+    runtime = Runtime(session=_FakeSession(rows), probes=_weather_probes(weather))  # type: ignore[arg-type]
+    feed = plan("trails near me", (38.5, -78.4), runtime, k=10)
+    card_ids = [c.canonical_id for c in feed.cards]
+    assert "hazard" not in card_ids  # ruled out of the ranked feed
+    assert set(card_ids) == {"safe-a", "safe-b"}
+    assert [s.canonical_id for s in feed.set_aside] == ["hazard"]  # disclosed instead
+    assert "Tornado" in feed.set_aside[0].reasons[0].text
 
 
 class _FakeJudge:
