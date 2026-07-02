@@ -40,6 +40,32 @@ def _reset_rate_limiter() -> Any:
     limiter.reset()
 
 
+@pytest.fixture(autouse=True)
+def _prewarmed_api(monkeypatch: Any) -> Any:
+    """Pre-warm the API's readiness gate for every test (warm-start lane).
+
+    /health answers 503 until the lifespan's warm-up thread has verified /plan's
+    dependency stack against the *real* environment — which a hermetic test never
+    has (no Aura, no keys). So by default: never spawn the real warm-up thread
+    (`_start_warmup` → no-op) and install an already-warm state, keeping every
+    existing TestClient suite hermetic and /health at 200. The warm-up tests
+    (test_api_warmup.py) override both to exercise the gate itself. Import
+    tolerated-if-absent, mirroring `_reset_rate_limiter`: a slice without the api
+    extra has nothing to pre-warm.
+    """
+    try:
+        import api.app as app_mod
+    except ImportError:
+        yield
+        return
+
+    warmed = app_mod._WarmupState()
+    warmed.ok.set()
+    monkeypatch.setattr(app_mod, "_start_warmup", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "_warmup", warmed)
+    yield
+
+
 def _iter_statements(schema_text: str):
     """Yield individual Cypher statements from schema.cypher.
 

@@ -84,7 +84,10 @@ maps don't call a model, but `/plan` synthesis does; without a reachable provide
 3. **Apply.** Render builds the `Dockerfile` and starts the service. First build pulls
    wheels and takes a few minutes; watch the build/deploy logs in the dashboard.
 4. **Wait for green.** The deploy is healthy once Render's health check hits
-   `/health` and gets `200`. Render shows the public URL
+   `/health` and gets `200`. `/health` answers `503` (with the blocking dependency
+   in `detail`) until the instance has warmed the whole `/plan` stack — Neo4j
+   connectivity, provider clients, live adapters — so a green deploy means the
+   first real `/plan` won't eat a cold init. Render shows the public URL
    (`https://adventure-planner-api.onrender.com` or similar).
 
 ---
@@ -92,7 +95,8 @@ maps don't call a model, but `/plan` synthesis does; without a reachable provide
 ## Verify
 
 ```sh
-# Liveness + which probes/region are wired (200 even before Neo4j is reachable):
+# Readiness + which probes/region are wired (503 with a cause until the /plan
+# dependency stack is warm; 200 after):
 curl -s https://<your-service>.onrender.com/health | jq
 
 # Anonymous world browse — no auth header needed:
