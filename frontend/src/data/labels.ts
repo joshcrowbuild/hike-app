@@ -5,6 +5,7 @@ export const originLabels: Record<OriginKey, string> = {
   frontRoyal: 'Front Royal',
   luray: 'Luray',
   charlottesville: 'Charlottesville',
+  richmond: 'Richmond',
   duck: 'Duck',
   nagsHead: 'Nags Head',
   hatteras: 'Hatteras',

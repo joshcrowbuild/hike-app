@@ -8,6 +8,7 @@ const originOptions: OriginKey[] = [
   'frontRoyal',
   'luray',
   'charlottesville',
+  'richmond',
   'duck',
   'nagsHead',
   'hatteras',
