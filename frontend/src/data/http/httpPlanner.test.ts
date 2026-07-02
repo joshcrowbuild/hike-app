@@ -101,6 +101,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
           distance_mi: 3,
           lines: [],
           warnings: [],
+          unavailable: [],
           geometry: { type: 'LineString', coordinates: [[-78.4, 38.5], [-78.39, 38.51]] },
           trailhead: { lat: 38.5, lon: -78.4 },
           geometry_confidence: 'hedged',
@@ -140,6 +141,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
           distance_mi: 0.3,
           lines: [],
           warnings: [],
+          unavailable: [],
           geometry: { type: 'LineString', coordinates: [[-75.75, 36.17], [-75.74, 36.18]] },
           // No surveyed trailhead: the backend disclosed the start as derived.
           trailhead: { lat: 36.17, lon: -75.75, derived: true },
@@ -159,7 +161,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
       query: '',
       card_count: 1,
       notices: [],
-      cards: [{ canonical_id: 'x', name: 'X', distance_mi: null, lines: [], warnings: [] }],
+      cards: [{ canonical_id: 'x', name: 'X', distance_mi: null, lines: [], warnings: [], unavailable: [] }],
     }
     fetchMock.mockReturnValue(ok(feed))
     const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
@@ -202,6 +204,7 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
               kind: 'weather',
             },
           ],
+          unavailable: [],
         },
       ],
     }
@@ -286,7 +289,16 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
       query: '',
       card_count: 1,
       notices: [],
-      cards: [{ canonical_id: 'jockeys-ridge', name: "Jockey's Ridge", distance_mi: 1, lines: [], warnings: [] }],
+      cards: [
+        {
+          canonical_id: 'jockeys-ridge',
+          name: "Jockey's Ridge",
+          distance_mi: 1,
+          lines: [],
+          warnings: [],
+          unavailable: [],
+        },
+      ],
     }
     fetchMock.mockReturnValue(ok(feed))
     const card = await new HttpPlannerClient('http://api').getCard('jockeys-ridge', ANON_SCOPE, nagsHead)

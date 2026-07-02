@@ -1,9 +1,10 @@
 """Engine composition test — Scout -> Verifier -> guardrail filter.
 
 Fake session + fake adapters; no DB, no network. Asserts the verified-vs-unverifiable
-split (2026-07-01): a verified hazard stays a card wearing a prominent warning; an
-unverifiable required condition is set aside with disclosure; the pipeline still
-builds cards.
+split (revised 2026-07-02): a verified hazard stays a card wearing a prominent
+warning; an unverifiable required condition ALSO stays a card, carrying a disclosed
+"conditions unavailable" note (rule #6: an outage must never blank the feed); only a
+verified hard threshold (hazardous AQI) is set aside.
 """
 
 from __future__ import annotations
@@ -67,6 +68,10 @@ def _weather_probes(fn: Callable[[float, float], Any]) -> dict[ConditionKind, li
     return {ConditionKind.weather: [_FakeAdapter("w", ConditionKind.weather, fn)]}
 
 
+def _air_probes(fn: Callable[[float, float], Any]) -> dict[ConditionKind, list[LiveAdapter]]:
+    return {ConditionKind.air: [_FakeAdapter("a", ConditionKind.air, fn)]}
+
+
 def _fact(value: Any) -> VerifiedFact:
     return VerifiedFact(value=value, source="t", fetched_at=datetime.now(timezone.utc))
 
@@ -107,10 +112,11 @@ def test_verified_hazard_stays_a_card_wearing_a_warning() -> None:
     assert batch.trails[0].verdict.warnings == ()  # the clear trail wears nothing
 
 
-def test_failed_weather_probe_sets_trail_aside_not_shown_clean() -> None:
-    # Source-or-silence (rule #1): weather was probed and no source answered → the
-    # alert state is unverifiable, so the trail is held back WITH disclosure — it
-    # must never ride the feed looking checked-clear.
+def test_failed_weather_probe_stays_a_card_with_disclosure() -> None:
+    # The P0 regression (rule #6): weather was probed and no source answered → the
+    # alert state is unverifiable, but an outage must never blank the feed. The
+    # trail STAYS a card carrying a disclosed "conditions unavailable" note — it
+    # must never ride the feed looking checked-clear (rule #1), nor be hidden.
     rows = [_row("verified", 38.5, -78.4, 100), _row("probe-failed", 39.0, -79.0, 200)]
 
     def weather(lat: float, lon: float) -> Any:
@@ -123,17 +129,20 @@ def test_failed_weather_probe_sets_trail_aside_not_shown_clean() -> None:
         _weather_probes(weather),
         k=10,
     )
-    assert [p.candidate.canonical_id for p in batch.trails] == ["verified"]
-    assert [s.canonical_id for s in batch.set_aside] == ["probe-failed"]
-    reason = batch.set_aside[0].reasons[0]
-    assert "couldn't be verified" in reason.text
-    assert reason.kind == "weather"
+    assert {p.candidate.canonical_id for p in batch.trails} == {"verified", "probe-failed"}
+    assert batch.set_aside == ()  # unverifiable is disclosed, never set aside
+    failed = next(p for p in batch.trails if p.candidate.canonical_id == "probe-failed")
+    (note,) = failed.verdict.unavailable
+    assert "couldn't be verified" in note.reason
+    assert note.kind == "weather"
+    verified = next(p for p in batch.trails if p.candidate.canonical_id == "verified")
+    assert verified.verdict.unavailable == ()
 
 
-def test_set_aside_surfaces_through_plan_without_penalizing_rank() -> None:
-    # AC-5.2: the set-aside rides the Feed. AC-5.3: it is a safety gate, off the ranked
-    # cards — a held-back trail never demotes a survivor's position. The set-aside
-    # class here is the unverifiable one (failed alerts sub-call → active_alerts=None).
+def test_unavailable_condition_surfaces_through_plan_without_penalizing_rank() -> None:
+    # rule #6: an unverifiable condition never demotes or hides a trail — it stays a
+    # ranked card carrying its disclosure. The class here is the unverifiable one
+    # (failed alerts sub-call → active_alerts=None).
     rows = [
         _row("safe-a", 38.5, -78.4, 100),
         _row("unverifiable", 39.0, -79.0, 150),
@@ -145,11 +154,59 @@ def test_set_aside_surfaces_through_plan_without_penalizing_rank() -> None:
 
     runtime = Runtime(session=_FakeSession(rows), probes=_weather_probes(weather))  # type: ignore[arg-type]
     feed = plan("trails near me", (38.5, -78.4), runtime, k=10)
-    card_ids = [c.canonical_id for c in feed.cards]
-    assert "unverifiable" not in card_ids  # held out of the ranked feed
-    assert set(card_ids) == {"safe-a", "safe-b"}
-    assert [s.canonical_id for s in feed.set_aside] == ["unverifiable"]  # disclosed instead
-    assert "couldn't be verified" in feed.set_aside[0].reasons[0].text
+    card_ids = {c.canonical_id for c in feed.cards}
+    assert card_ids == {"safe-a", "safe-b", "unverifiable"}  # nothing silently vanishes
+    assert feed.set_aside == ()
+    unverifiable_card = next(c for c in feed.cards if c.canonical_id == "unverifiable")
+    (note,) = unverifiable_card.unavailable
+    assert "couldn't be verified" in note.text
+    assert note.kind == "weather"
+
+
+def test_total_weather_outage_never_blanks_the_feed() -> None:
+    # The exact P0 regression: every weather probe fails (no source responds for
+    # any candidate) — the full set of trails must still ride the feed as cards,
+    # each disclosing "conditions unavailable", with set_aside empty (rule #6).
+    rows = [
+        _row("a", 38.5, -78.4, 100),
+        _row("b", 39.0, -79.0, 150),
+        _row("c", 38.6, -78.3, 200),
+    ]
+
+    def weather(lat: float, lon: float) -> Any:
+        return None  # every probe fails
+
+    runtime = Runtime(session=_FakeSession(rows), probes=_weather_probes(weather))  # type: ignore[arg-type]
+    feed = plan("trails near me", (38.5, -78.4), runtime, k=10)
+    assert {c.canonical_id for c in feed.cards} == {"a", "b", "c"}
+    assert feed.set_aside == ()
+    for card in feed.cards:
+        (note,) = card.unavailable
+        assert "couldn't be verified" in note.text
+        assert note.kind == "weather"
+
+
+def test_verified_hazardous_aqi_still_sets_the_trail_aside() -> None:
+    # Set-aside is now reserved for genuine VERIFIED hard-blocks (rule #6 only
+    # changed the unverifiable-condition policy). Hazardous AQI is a real, verified
+    # threshold — it must keep blocking exactly as before.
+    rows = [_row("clean-air", 38.5, -78.4, 100), _row("hazardous-air", 39.0, -79.0, 200)]
+
+    def aqi(lat: float, lon: float) -> Any:
+        return {"aqi": 250} if lat == 39.0 else {"aqi": 40}
+
+    batch = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),  # type: ignore[arg-type]
+        _air_probes(aqi),
+        k=10,
+    )
+    assert [p.candidate.canonical_id for p in batch.trails] == ["clean-air"]
+    assert [s.canonical_id for s in batch.set_aside] == ["hazardous-air"]
+    reason = batch.set_aside[0].reasons[0]
+    assert "hazardous" in reason.text
+    assert reason.kind == "air"
 
 
 def test_verified_hazard_warning_rides_the_feed_card() -> None:

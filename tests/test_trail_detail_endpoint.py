@@ -334,7 +334,12 @@ def test_feed_card_surfaces_derived_access_point_for_trailless_trail():
     maps_by_cid = app_mod._fetch_maps_by_canonical(session, ["ct:segs"])
     card = app_mod._card_response(
         SimpleNamespace(
-            canonical_id="ct:segs", name="Segment Trail", distance_mi=1.1, lines=[], warnings=[]
+            canonical_id="ct:segs",
+            name="Segment Trail",
+            distance_mi=1.1,
+            lines=[],
+            warnings=[],
+            unavailable=[],
         ),
         maps_by_cid["ct:segs"],
     ).model_dump()
@@ -362,7 +367,12 @@ def test_feed_card_carries_maps_fields():
 
     full = app_mod._card_response(
         SimpleNamespace(
-            canonical_id="ct:has", name="Old Rag Loop", distance_mi=3.2, lines=[], warnings=[]
+            canonical_id="ct:has",
+            name="Old Rag Loop",
+            distance_mi=3.2,
+            lines=[],
+            warnings=[],
+            unavailable=[],
         ),
         maps_by_cid["ct:has"],
     ).model_dump()
@@ -376,7 +386,12 @@ def test_feed_card_carries_maps_fields():
     # A card with no mapped route degrades honestly — geometry/profile null.
     bare = app_mod._card_response(
         SimpleNamespace(
-            canonical_id="ct:bare", name="Unmapped", distance_mi=None, lines=[], warnings=[]
+            canonical_id="ct:bare",
+            name="Unmapped",
+            distance_mi=None,
+            lines=[],
+            warnings=[],
+            unavailable=[],
         ),
         maps_by_cid["ct:bare"],
     ).model_dump()

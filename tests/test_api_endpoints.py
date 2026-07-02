@@ -91,12 +91,20 @@ class _Warning:
 
 
 @dataclass
+class _Unavailable:
+    text: str
+    source: str
+    kind: str
+
+
+@dataclass
 class _Card:
     canonical_id: str
     name: str
     distance_mi: float | None
     lines: list[_Line]
     warnings: list[_Warning] = field(default_factory=list)
+    unavailable: list[_Unavailable] = field(default_factory=list)
 
 
 @dataclass
@@ -127,7 +135,8 @@ class _Runtime:
 
 def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) -> _Feed:
     """Deterministic stand-in for orchestration.engine.plan — a two-line card with a
-    warning and a feed-level notice, enough to assert the whole wire contract."""
+    warning, an unavailable-condition disclosure, and a feed-level notice, enough to
+    assert the whole wire contract."""
     return _Feed(
         query=query,
         cards=[
@@ -147,6 +156,13 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                         kind="weather",
                     )
                 ],
+                unavailable=[
+                    _Unavailable(
+                        text="water level couldn't be verified (no source responded)",
+                        source="no source responded",
+                        kind="water",
+                    )
+                ],
             ),
         ],
         notices=("Drive times unavailable",),
@@ -156,9 +172,9 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                 name="Fire Ridge",
                 reasons=(
                     _SetAsideReason(
-                        text="weather alerts couldn't be verified (NWS api.weather.gov)",
-                        source="NWS api.weather.gov",
-                        kind="weather",
+                        text="air quality hazardous (AQI 250) (AirNow)",
+                        source="AirNow",
+                        kind="air",
                     ),
                 ),
             ),
@@ -269,18 +285,29 @@ def test_plan_happy_path_contract(client: Any) -> None:
     assert card["lines"][0]["text"] == "Stream is flowing"
     assert card["lines"][0]["source"] == "usgs"
 
-    # Set-aside disclosure (Epic 018 S5): an UNVERIFIABLE-condition trail rides the
-    # feed with its cause + source, kept off `cards` (a safety gate, never a ranked
-    # demotion). Verified hazards are NOT here — they stay cards (2026-07-01).
+    # An UNVERIFIABLE condition rides the CARD as a disclosed note (decision of
+    # 2026-07-02, rule #6) — it never causes the trail to be set aside.
+    assert card["unavailable"] == [
+        {
+            "text": "water level couldn't be verified (no source responded)",
+            "source": "no source responded",
+            "kind": "water",
+        }
+    ]
+
+    # Set-aside disclosure (Epic 018 S5): only a VERIFIED hard threshold (hazardous
+    # AQI) rides the feed set aside, with cause + source, kept off `cards` (a safety
+    # gate, never a ranked demotion). Verified hazards are NOT here — they stay
+    # cards (2026-07-01), and neither do unverifiable conditions (2026-07-02).
     assert [c["canonical_id"] for c in payload["cards"]] == ["ct:mellow-loop"]
     assert len(payload["set_aside"]) == 1
     aside = payload["set_aside"][0]
     assert aside["canonical_id"] == "ct:fire-ridge"
     assert aside["name"] == "Fire Ridge"
     reason = aside["reasons"][0]
-    assert reason["kind"] == "weather"
-    assert reason["source"] == "NWS api.weather.gov"
-    assert "couldn't be verified" in reason["text"]
+    assert reason["kind"] == "air"
+    assert reason["source"] == "AirNow"
+    assert "hazardous" in reason["text"]
     assert reason["source"] in reason["text"]  # source-stamped
 
     # Maps/terrain fields degrade to null when absent — never fabricated (Rule #1).

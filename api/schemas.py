@@ -52,6 +52,17 @@ class CardWarningResponse(BaseModel):
     kind: str  # the condition kind, e.g. "weather" | "air" | "fire"
 
 
+class ConditionUnavailableResponse(BaseModel):
+    """One condition that couldn't be verified — the trail stays a normal card
+    carrying this disclosure rather than being set aside (decision of 2026-07-02;
+    rule #6: live conditions are enrichment, never a dependency — an outage must
+    never blank the feed). Mirrors `frontend/src/data/api.ts`."""
+
+    text: str
+    source: str
+    kind: str  # the condition kind, e.g. "weather"
+
+
 # ── Maps & terrain wire DTOs — the Lane A↔B contract ──────────────────────────
 #
 # These are a literal mirror of `frontend/src/data/api.ts` (the published source of
@@ -117,6 +128,9 @@ class FeedCardResponse(BaseModel):
     distance_mi: float | None
     lines: list[FeedLineResponse]
     warnings: list[CardWarningResponse]
+    # Conditions that couldn't be verified, disclosed here rather than causing the
+    # trail to be set aside (decision of 2026-07-02; rule #6).
+    unavailable: list[ConditionUnavailableResponse] = []
     # Maps & terrain (Epic 016 S1 / Epic 017 S4). All optional/nullable: a card with no
     # mapped route omits/nulls them and the client degrades honestly (Rule #1).
     geometry: GeoJsonGeometry | None = None
