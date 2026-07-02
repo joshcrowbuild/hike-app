@@ -25,6 +25,7 @@ files don't — none of it needs the `neo4j` marker.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -82,12 +83,20 @@ class _Line:
 
 
 @dataclass
+class _Warning:
+    text: str
+    source: str
+    observed_at: datetime
+    kind: str
+
+
+@dataclass
 class _Card:
     canonical_id: str
     name: str
     distance_mi: float | None
     lines: list[_Line]
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[_Warning] = field(default_factory=list)
 
 
 @dataclass
@@ -130,7 +139,14 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                     _Line(text="Stream is flowing", source="usgs", presentation="stated"),
                     _Line(text="AQI may be elevated", source="airnow", presentation="hedged"),
                 ],
-                warnings=["Bridge out near mile 2"],
+                warnings=[
+                    _Warning(
+                        text="weather alert: Extreme Heat Warning",
+                        source="NWS api.weather.gov",
+                        observed_at=datetime(2026, 7, 1, 22, 0, tzinfo=timezone.utc),
+                        kind="weather",
+                    )
+                ],
             ),
         ],
         notices=("Drive times unavailable",),
@@ -140,7 +156,7 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                 name="Fire Ridge",
                 reasons=(
                     _SetAsideReason(
-                        text="weather alert: Red Flag Warning (NWS api.weather.gov)",
+                        text="weather alerts couldn't be verified (NWS api.weather.gov)",
                         source="NWS api.weather.gov",
                         kind="weather",
                     ),
@@ -237,15 +253,25 @@ def test_plan_happy_path_contract(client: Any) -> None:
     assert card["canonical_id"] == "ct:mellow-loop"
     assert card["name"] == "Mellow Loop"
     assert card["distance_mi"] == 4.2
-    assert card["warnings"] == ["Bridge out near mile 2"]
+    # A VERIFIED hazard rides the card as a prominent source+timestamp-stamped warning
+    # (decision of 2026-07-01) — never a bare string, never a set-aside.
+    assert card["warnings"] == [
+        {
+            "text": "weather alert: Extreme Heat Warning",
+            "source": "NWS api.weather.gov",
+            "observed_at": "2026-07-01T22:00:00+00:00",
+            "kind": "weather",
+        }
+    ]
 
     # Lines expose the presentation vocabulary as confidence_level (Rule #2).
     assert [line["confidence_level"] for line in card["lines"]] == ["stated", "hedged"]
     assert card["lines"][0]["text"] == "Stream is flowing"
     assert card["lines"][0]["source"] == "usgs"
 
-    # Set-aside disclosure (Epic 018 S5): a hazard-ruled trail rides the feed with its
-    # cause + source, kept off `cards` (a safety gate, never a ranked demotion).
+    # Set-aside disclosure (Epic 018 S5): an UNVERIFIABLE-condition trail rides the
+    # feed with its cause + source, kept off `cards` (a safety gate, never a ranked
+    # demotion). Verified hazards are NOT here — they stay cards (2026-07-01).
     assert [c["canonical_id"] for c in payload["cards"]] == ["ct:mellow-loop"]
     assert len(payload["set_aside"]) == 1
     aside = payload["set_aside"][0]
@@ -254,7 +280,7 @@ def test_plan_happy_path_contract(client: Any) -> None:
     reason = aside["reasons"][0]
     assert reason["kind"] == "weather"
     assert reason["source"] == "NWS api.weather.gov"
-    assert "Red Flag Warning" in reason["text"]
+    assert "couldn't be verified" in reason["text"]
     assert reason["source"] in reason["text"]  # source-stamped
 
     # Maps/terrain fields degrade to null when absent — never fabricated (Rule #1).

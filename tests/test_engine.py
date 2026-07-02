@@ -1,7 +1,9 @@
 """Engine composition test — Scout -> Verifier -> guardrail filter.
 
-Fake session + fake adapters; no DB, no network. Asserts a guardrail-blocked trail
-is filtered out of the plan, and that the pipeline still builds cards.
+Fake session + fake adapters; no DB, no network. Asserts the verified-vs-unverifiable
+split (2026-07-01): a verified hazard stays a card wearing a prominent warning; an
+unverifiable required condition is set aside with disclosure; the pipeline still
+builds cards.
 """
 
 from __future__ import annotations
@@ -79,11 +81,14 @@ def _row(cid: str, lat: float, lon: float, dist: float) -> dict[str, Any]:
     }
 
 
-def test_plan_filters_guardrail_blocked_trails() -> None:
-    rows = [_row("safe", 38.5, -78.4, 100), _row("flooded", 39.0, -79.0, 200)]
+def test_verified_hazard_stays_a_card_wearing_a_warning() -> None:
+    # Decision of 2026-07-01: a VERIFIED active alert shows the trail with a
+    # prominent source-stamped warning — it never hides it (rule #2: a safety flag
+    # is presentation, never a ranking/eligibility penalty).
+    rows = [_row("clear", 38.5, -78.4, 100), _row("alerted", 39.0, -79.0, 200)]
 
     def weather(lat: float, lon: float) -> Any:
-        return {"active_alerts": ["Flash Flood Warning"] if lat == 39.0 else []}
+        return {"active_alerts": ["Extreme Heat Warning"] if lat == 39.0 else []}
 
     batch = plan_from_origin(
         38.5,
@@ -92,38 +97,77 @@ def test_plan_filters_guardrail_blocked_trails() -> None:
         _weather_probes(weather),
         k=10,
     )
-    planned = batch.trails
-    assert [p.candidate.canonical_id for p in planned] == ["safe"]  # flooded hard-filtered
-    assert planned[0].facts[ConditionKind.weather].value["active_alerts"] == []
-    assert ConditionKind.weather in planned[0].confidences  # confidence per surfaced fact
-    # AC-5.1/5.2: the blocked trail is set aside (disclosed), not silently dropped …
-    assert [s.canonical_id for s in batch.set_aside] == ["flooded"]
+    assert [p.candidate.canonical_id for p in batch.trails] == ["clear", "alerted"]
+    assert batch.set_aside == ()  # a verified hazard is never set aside
+    alerted = batch.trails[1]
+    (warning,) = alerted.verdict.warnings
+    assert "Extreme Heat Warning" in warning.text
+    assert warning.source == "t"  # source-stamped from the alerting fact …
+    assert warning.observed_at == alerted.facts[ConditionKind.weather].fetched_at  # … + aged
+    assert batch.trails[0].verdict.warnings == ()  # the clear trail wears nothing
+
+
+def test_failed_weather_probe_sets_trail_aside_not_shown_clean() -> None:
+    # Source-or-silence (rule #1): weather was probed and no source answered → the
+    # alert state is unverifiable, so the trail is held back WITH disclosure — it
+    # must never ride the feed looking checked-clear.
+    rows = [_row("verified", 38.5, -78.4, 100), _row("probe-failed", 39.0, -79.0, 200)]
+
+    def weather(lat: float, lon: float) -> Any:
+        return None if lat == 39.0 else {"active_alerts": []}
+
+    batch = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),  # type: ignore[arg-type]
+        _weather_probes(weather),
+        k=10,
+    )
+    assert [p.candidate.canonical_id for p in batch.trails] == ["verified"]
+    assert [s.canonical_id for s in batch.set_aside] == ["probe-failed"]
     reason = batch.set_aside[0].reasons[0]
-    assert "Flash Flood" in reason.text  # … with its cause …
-    assert reason.source == "t"  # … source-stamped (from the blocking fact) …
-    assert reason.source in reason.text
+    assert "couldn't be verified" in reason.text
     assert reason.kind == "weather"
 
 
 def test_set_aside_surfaces_through_plan_without_penalizing_rank() -> None:
     # AC-5.2: the set-aside rides the Feed. AC-5.3: it is a safety gate, off the ranked
-    # cards — a hazard never demotes a survivor's position.
+    # cards — a held-back trail never demotes a survivor's position. The set-aside
+    # class here is the unverifiable one (failed alerts sub-call → active_alerts=None).
     rows = [
         _row("safe-a", 38.5, -78.4, 100),
-        _row("hazard", 39.0, -79.0, 150),
+        _row("unverifiable", 39.0, -79.0, 150),
         _row("safe-b", 38.6, -78.3, 200),
     ]
 
     def weather(lat: float, lon: float) -> Any:
-        return {"active_alerts": ["Tornado Warning"] if lat == 39.0 else []}
+        return {"active_alerts": None if lat == 39.0 else []}
 
     runtime = Runtime(session=_FakeSession(rows), probes=_weather_probes(weather))  # type: ignore[arg-type]
     feed = plan("trails near me", (38.5, -78.4), runtime, k=10)
     card_ids = [c.canonical_id for c in feed.cards]
-    assert "hazard" not in card_ids  # ruled out of the ranked feed
+    assert "unverifiable" not in card_ids  # held out of the ranked feed
     assert set(card_ids) == {"safe-a", "safe-b"}
-    assert [s.canonical_id for s in feed.set_aside] == ["hazard"]  # disclosed instead
-    assert "Tornado" in feed.set_aside[0].reasons[0].text
+    assert [s.canonical_id for s in feed.set_aside] == ["unverifiable"]  # disclosed instead
+    assert "couldn't be verified" in feed.set_aside[0].reasons[0].text
+
+
+def test_verified_hazard_warning_rides_the_feed_card() -> None:
+    # The end-to-end plan(): a verified alert reaches the FeedCard's warnings[] with
+    # text + source + observed-at (mirroring how lines[] carries source/confidence).
+    rows = [_row("alerted", 38.5, -78.4, 100)]
+
+    def weather(lat: float, lon: float) -> Any:
+        return {"active_alerts": ["Extreme Heat Warning"]}
+
+    runtime = Runtime(session=_FakeSession(rows), probes=_weather_probes(weather))  # type: ignore[arg-type]
+    feed = plan("trails near me", (38.5, -78.4), runtime, k=10)
+    assert [c.canonical_id for c in feed.cards] == ["alerted"]
+    (warning,) = feed.cards[0].warnings
+    assert "Extreme Heat Warning" in warning.text
+    assert warning.source == "t"
+    assert warning.observed_at is not None
+    assert feed.set_aside == ()
 
 
 class _FakeJudge:

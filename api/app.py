@@ -36,6 +36,7 @@ from api.ratelimit import (
     rate_limit_exceeded_handler,
 )
 from api.schemas import (
+    CardWarningResponse,
     ElevationProfile,
     ElevationSample,
     FeedCardResponse,
@@ -163,7 +164,15 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for line in card.lines
         ],
-        warnings=list(card.warnings),
+        warnings=[
+            CardWarningResponse(
+                text=w.text,
+                source=w.source,
+                observed_at=w.observed_at.isoformat(),
+                kind=w.kind,
+            )
+            for w in card.warnings
+        ],
         **maps,  # geometry / trailhead / geometry_confidence / summit / elevation_profile
     )
 

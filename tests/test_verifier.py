@@ -155,14 +155,16 @@ def test_s5_ac3_drive_time_excluded_from_verify() -> None:
     assert dt.probe_calls == 0  # never probed in the per-point loop
 
 
-# ── AC-3.5 — a guardrail-block path still fires through the registry-routed facts ──
+# ── AC-3.5 — a guardrail path still fires through the registry-routed facts ──
 
 
-def test_s3_ac5_guardrail_block_fires_through_registry() -> None:
+def test_s3_ac5_guardrail_warning_fires_through_registry() -> None:
+    # A VERIFIED alert routed through the registry reaches the guardrails as a
+    # prominent card warning — shown, never hidden (decision of 2026-07-01).
     w = _FakeAdapter(
         "nws", ConditionKind.weather, fact=_fact({"active_alerts": ["Red Flag Warning"]})
     )
     facts = verify(_POINT, {ConditionKind.weather: [w]})
-    verdict = evaluate_guardrails(facts)  # ConditionKind-keyed facts → still blocks
-    assert verdict.blocked
-    assert any("Red Flag" in b.reason for b in verdict.blocks)
+    verdict = evaluate_guardrails(facts)  # ConditionKind-keyed facts → warning fires
+    assert not verdict.blocked
+    assert any("Red Flag" in w.text for w in verdict.warnings)
