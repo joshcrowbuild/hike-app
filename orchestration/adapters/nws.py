@@ -100,7 +100,10 @@ class NwsAdapter(LiveAdapter):
 
     name = "nws"
     kind = ConditionKind.weather
-    ttl_seconds = 600  # ~10 min (Stage 4 §4)
+    # Weather updates on the order of hours (NWS regenerates the gridpoint forecast
+    # roughly hourly) — a 1 h window matches true volatility (CDP-08) and, with the
+    # two-call points→forecast latency, is the biggest per-feed call-cut lever (Epic 018 S6).
+    ttl_seconds = 3600  # ~1 h — weather-hours window (CDP-08)
 
     def __init__(self, user_agent: str, *, client: httpx.Client | None = None) -> None:
         self._user_agent = user_agent
