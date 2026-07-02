@@ -140,6 +140,13 @@ button {
   color: var(--text-muted);
 }
 
+/* ---- feed-level alert banner (a region-wide hazard hoisted off every card,
+   report #1) — the same <Signal> treatment as a card warning; only the outer
+   spacing differs since this sits above the stack, not inside a card. */
+.feed-alert-banner {
+  margin: 0 0 0.85rem;
+}
+
 .card-stack {
   display: grid;
   gap: 0.85rem;
