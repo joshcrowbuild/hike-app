@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
+
 from graph.load import (
     clear_trail_segments,
     link_area_contains,
@@ -13,6 +17,24 @@ from graph.load import (
     merge_same_as,
     prune_stale_trails,
 )
+
+
+def _make_prune_runner(n_cur: int, n_prev: int) -> tuple[Any, list[tuple[str, dict]]]:
+    """A fake `Runner` for `prune_stale_trails`: answers its two count queries with
+    canned scalars (the `list[dict]` shape — see `_scalar_count`'s docstring) and
+    records every other (write) call it's given, so a test can assert on exactly what
+    would have hit the database."""
+    write_calls: list[tuple[str, dict]] = []
+
+    def runner(cypher: str, params: dict) -> Any:
+        if "RETURN count(cur)" in cypher:
+            return [{"n": n_cur}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": n_prev}]
+        write_calls.append((cypher, params))
+        return None
+
+    return runner, write_calls
 
 
 def test_load_area_produces_merge():
@@ -166,17 +188,19 @@ def test_load_canonical_trail_omits_route_geom_when_not_passed():
 
 
 def test_prune_stale_trails_query_shape():
-    calls: list[tuple[str, dict]] = []
-    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    # Healthy re-ingest: current count (1400) is well within ratio of the prior
+    # count (1500), so both guards clear and the two delete passes fire.
+    runner, calls = _make_prune_runner(n_cur=1400, n_prev=1500)
 
-    prune_stale_trails(runner, "shenandoah-gwj-v11", region_id="shenandoah-gwj")
+    outcome = prune_stale_trails(runner, "shenandoah-gwj-v11", region_id="shenandoah-gwj")
 
+    assert outcome.pruned is True
     # Two passes: stale trails+segments, then orphaned SourceRecords.
     assert len(calls) == 2
     trail_cypher, params = calls[0]
     sr_cypher, _ = calls[1]
 
-    # Both passes carry the empty-ingest guard.
+    # Both passes carry the (unchanged) empty-ingest guard.
     for cypher in (trail_cypher, sr_cypher):
         assert "count(cur)" in cypher and "n_cur >= $min_current" in cypher
         assert "DETACH DELETE" in cypher
@@ -185,6 +209,9 @@ def test_prune_stale_trails_query_shape():
             "node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix" in cypher
         )
         assert "node.ingest_version <> $iv" in cypher
+        # World-only: never touches an owned/personal label (rule #4).
+        for personal_label in ("Episode", "Belief", "Outcome", "Person", "PhysicalProfile"):
+            assert personal_label not in cypher
 
     # Pass 1 removes the trail + its private segments.
     assert "CanonicalTrail" in trail_cypher and "HAS_SEGMENT" in trail_cypher
@@ -201,18 +228,113 @@ def test_prune_stale_trails_query_shape():
 def test_prune_stale_trails_prefix_is_separator_anchored():
     # The prefix param must end on the '-' boundary so region "shen" can't prune
     # region "shenandoah-gwj" (cross-region wipe guard).
-    calls: list[tuple[str, dict]] = []
-    runner = lambda c, p: calls.append((c, p))  # noqa: E731
-    prune_stale_trails(runner, "shen-v3", region_id="shen")
+    runner, calls = _make_prune_runner(n_cur=100, n_prev=100)
+    outcome = prune_stale_trails(runner, "shen-v3", region_id="shen")
+    assert outcome.pruned is True
     assert calls[0][1]["prefix"] == "shen-"
 
 
 def test_prune_stale_trails_respects_min_current_override():
-    calls: list[tuple[str, dict]] = []
-    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    runner, calls = _make_prune_runner(n_cur=100, n_prev=100)
 
-    prune_stale_trails(runner, "shenandoah-gwj", region_id="shenandoah-gwj", min_current=50)
+    outcome = prune_stale_trails(
+        runner, "shenandoah-gwj", region_id="shenandoah-gwj", min_current=50
+    )
+    assert outcome.pruned is True
     assert calls[0][1]["min_current"] == 50
+
+
+def test_prune_stale_trails_truncated_ingest_aborts_via_ratio_guard():
+    # Finding M1: Overpass times out and the run loads 1 of ~1500 trails. n_cur=1
+    # clears the old min_current=1 belt, so without the ratio guard this would
+    # DETACH DELETE the other 1499 as "stale". The ratio guard must abort instead.
+    runner, calls = _make_prune_runner(n_cur=1, n_prev=1500)
+
+    outcome = prune_stale_trails(runner, "shenandoah-gwj-v12", region_id="shenandoah-gwj")
+
+    assert outcome.pruned is False
+    assert outcome.n_cur == 1 and outcome.n_prev == 1500
+    assert outcome.reason is not None
+    assert "prune skipped: count dropped 1500->1" in outcome.reason
+    # Nothing hit the database — no DETACH DELETE fired at all.
+    assert calls == []
+
+
+def test_prune_stale_trails_healthy_reingest_prunes_normally():
+    # A normal monthly re-run: counts move a little (1500 -> 1490) but stay well
+    # within the default 0.5 ratio. Pruning must proceed exactly as before.
+    runner, calls = _make_prune_runner(n_cur=1490, n_prev=1500)
+
+    outcome = prune_stale_trails(runner, "shenandoah-gwj-v12", region_id="shenandoah-gwj")
+
+    assert outcome.pruned is True
+    assert outcome.n_cur == 1490 and outcome.n_prev == 1500
+    assert outcome.reason is None
+    assert len(calls) == 2
+    assert all("DETACH DELETE" in cypher for cypher, _ in calls)
+
+
+def test_prune_stale_trails_empty_ingest_still_noops():
+    # The original empty-ingest guard (min_current) must still fire — before the
+    # ratio guard is even consulted — and still block prune entirely.
+    runner, calls = _make_prune_runner(n_cur=0, n_prev=1500)
+
+    outcome = prune_stale_trails(runner, "shenandoah-gwj-v12", region_id="shenandoah-gwj")
+
+    assert outcome.pruned is False
+    assert "below min_current" in outcome.reason
+    assert calls == []
+
+
+def test_prune_stale_trails_ratio_guard_skipped_on_first_ever_ingest():
+    # n_prev == 0 means nothing stale exists yet (first ingest of a region) — the
+    # ratio guard has no denominator and must not block a legitimate first prune.
+    runner, calls = _make_prune_runner(n_cur=3, n_prev=0)
+
+    outcome = prune_stale_trails(runner, "new-region-v1", region_id="new-region")
+
+    assert outcome.pruned is True
+    assert len(calls) == 2
+
+
+def test_prune_stale_trails_ratio_is_env_configurable(monkeypatch: pytest.MonkeyPatch):
+    # 200/1500 = 0.133, below the default 0.5 ratio (would abort) but above a
+    # relaxed 0.1 ratio set via ADVENTURE_PRUNE_MIN_RATIO (should prune).
+    runner, calls = _make_prune_runner(n_cur=200, n_prev=1500)
+    default_outcome = prune_stale_trails(runner, "r-v2", region_id="r")
+    assert default_outcome.pruned is False
+
+    runner2, calls2 = _make_prune_runner(n_cur=200, n_prev=1500)
+    monkeypatch.setenv("ADVENTURE_PRUNE_MIN_RATIO", "0.1")
+    relaxed_outcome = prune_stale_trails(runner2, "r-v2", region_id="r")
+    assert relaxed_outcome.pruned is True
+    assert len(calls2) == 2
+    assert calls == []  # the first (default-ratio) call never wrote anything
+
+
+def test_prune_stale_trails_min_ratio_kwarg_overrides_env(monkeypatch: pytest.MonkeyPatch):
+    # An explicit min_ratio= argument wins over the env var.
+    monkeypatch.setenv("ADVENTURE_PRUNE_MIN_RATIO", "0.9")  # would abort at 200/1500
+    runner, calls = _make_prune_runner(n_cur=200, n_prev=1500)
+
+    outcome = prune_stale_trails(runner, "r-v2", region_id="r", min_ratio=0.1)
+
+    assert outcome.pruned is True
+    assert len(calls) == 2
+
+
+def test_prune_stale_trails_bad_env_ratio_falls_back_to_safe_default(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # An unparseable override must fail SAFE (fall back to the blocking-capable
+    # default), never fail open (e.g. to 0, which would disable the guard).
+    monkeypatch.setenv("ADVENTURE_PRUNE_MIN_RATIO", "not-a-number")
+    runner, calls = _make_prune_runner(n_cur=1, n_prev=1500)
+
+    outcome = prune_stale_trails(runner, "r-v2", region_id="r")
+
+    assert outcome.pruned is False
+    assert calls == []
 
 
 def test_idempotency_shape():
