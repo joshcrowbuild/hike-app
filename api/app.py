@@ -680,6 +680,8 @@ def record_outcome(
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Any, exc: Exception) -> JSONResponse:
-    # Last-resort handler for anything not caught in a route — disclose server-side.
+    # Last-resort handler for anything not caught in a route — disclose server-side
+    # only. The raw exception text can carry internals (paths, query fragments,
+    # library internals) that must never reach a client (rule #10).
     logger.exception("unhandled exception")
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    return JSONResponse(status_code=500, content={"detail": "Internal error"})
