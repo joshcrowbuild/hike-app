@@ -113,6 +113,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
             max_grade_pct: 40,
             source: 'USGS 3DEP',
             resolution_m: 10,
+            estimated_duration_min: 26,
           },
         },
       ],

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api.app as app_mod
@@ -173,12 +174,18 @@ def test_full_trail_returns_exact_contract_shape():
         "max_grade_pct",
         "source",
         "resolution_m",
+        "estimated_duration_min",
     }
     assert prof["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
+    # total_gain_m/max_grade_pct are now derived fresh from the samples (not the
+    # stored scalars in _FULL_ROW) — 600→680→900 over a 3m noise threshold both
+    # register as real climb, so this still lands on 300.0.
     assert prof["total_gain_m"] == 300.0
-    assert prof["max_grade_pct"] == 21.5
+    assert prof["max_grade_pct"] == pytest.approx(220 / 150 * 100)
     assert prof["source"] == "usgs-3dep"
     assert prof["resolution_m"] == 20.0
+    # Naismith: (0.25km / 5km/h * 60) + 300m * 0.1min/m = 3.0 + 30.0 = 33.0 min.
+    assert prof["estimated_duration_min"] == pytest.approx(33.0)
 
 
 # ── runtime fallback: assemble geometry from segments when no precomputed route ─
@@ -382,6 +389,7 @@ def test_feed_card_carries_maps_fields():
     assert full["summit"] is None
     assert full["elevation_profile"]["total_gain_m"] == 300.0
     assert full["elevation_profile"]["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
+    assert full["elevation_profile"]["estimated_duration_min"] == pytest.approx(33.0)
 
     # A card with no mapped route degrades honestly — geometry/profile null.
     bare = app_mod._card_response(

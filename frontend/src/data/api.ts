@@ -116,6 +116,8 @@ export interface WireElevationProfile {
   max_grade_pct: number
   source: string
   resolution_m: number
+  /** Naismith's-rule duration ESTIMATE, not a stated fact (Rule #1/#7) — disclose as such. */
+  estimated_duration_min: number
 }
 
 /** One source-stamped cause a trail was set aside by a hard live guardrail (Epic 018 S5). */

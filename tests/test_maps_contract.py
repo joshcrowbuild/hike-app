@@ -42,6 +42,7 @@ EXPECTED: dict[str, set[str]] = {
         "max_grade_pct",
         "source",
         "resolution_m",
+        "estimated_duration_min",
     },
     "FeedCardResponse": {
         "canonical_id",
