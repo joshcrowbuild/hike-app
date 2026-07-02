@@ -329,6 +329,37 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
   })
 })
 
+describe('HttpPlannerClient "Near me" live-coords override', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  function coordsOf(call: unknown): { lat: number; lon: number } {
+    const init = (call as [string, RequestInit])[1]
+    const body = JSON.parse(init.body as string) as { lat: number; lon: number }
+    return { lat: body.lat, lon: body.lon }
+  }
+
+  it('sends the live originCoords fix instead of the named origin lookup when present', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    const nearMe: TuningState = { ...TUNING, originCoords: { lat: 39.123, lon: -77.456 } }
+    await new HttpPlannerClient('http://api').plan({ tuning: nearMe }, ANON_SCOPE)
+    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 39.123, lon: -77.456 })
+  })
+
+  it('falls back to the named origin lookup when originCoords is absent (named origins unchanged)', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 38.918, lon: -78.194 })
+  })
+})
+
 describe('HttpPlannerClient /plan cold-start timeout', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

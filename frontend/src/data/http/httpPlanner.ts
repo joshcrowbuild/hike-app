@@ -141,7 +141,10 @@ export class HttpPlannerClient implements PlannerClient {
   constructor(private readonly baseUrl: string) {}
 
   async plan(input: PlanInput, scope: ScopeContext): Promise<FeedVM> {
-    const { lat, lon } = originCoords[input.tuning.origin]
+    // A live "Near me" fix overrides the named origin's fixed coordinates so
+    // /plan searches from the viewer's actual position; absent that, the named
+    // origin lookup is unchanged.
+    const { lat, lon } = input.tuning.originCoords ?? originCoords[input.tuning.origin]
     const body: PlanRequest = {
       query: buildQuery(input.tuning),
       lat,

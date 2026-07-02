@@ -793,9 +793,18 @@ button {
   border-color: var(--text-primary);
 }
 
-.today-sheet {
+.today-sheet,
+.origin-sheet {
   display: grid;
   gap: 0.85rem;
+}
+
+.near-me-note {
+  margin: 0;
+  padding: 0 0.1rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 /* ---- viewer mode + disclosures (data-source seam) ---- */
