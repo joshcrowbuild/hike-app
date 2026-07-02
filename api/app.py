@@ -626,8 +626,20 @@ def _drain_queue_bg(queue, graph_client) -> None:
     discipline: never block the request path). Drains through the scoped-write
     seam (Epic 011): `scoped_session` is the per-owner factory each task's writes
     are scoped through (rule #4).
+
+    By the time this runs the response is already sent, so a raised exception has
+    nowhere to surface except the log — an unguarded failure here silently drops
+    the user's belief update (AM2). No durable dead-letter queue yet (out of
+    scope); this only stops the loss from being silent. Never logs a raw
+    viewer_id (rule #5): the correlation id is the only identifier recorded.
     """
-    queue.drain(graph_client.scoped_session)
+    try:
+        queue.drain(graph_client.scoped_session)
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "belief queue drain failed cid=%s error_class=%s", correlation_id, type(exc).__name__
+        )
 
 
 @app.post("/episode/{episode_id}/outcome", response_model=OutcomeResponse)
