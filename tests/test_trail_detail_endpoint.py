@@ -264,6 +264,27 @@ def test_viewer_id_too_long_is_422_never_500():
     assert r.status_code == 422
 
 
+# ── canonical_id path param bound (AL2) — hygiene, not injection (parameterized) ─
+
+
+def test_canonical_id_too_long_is_422_never_500():
+    client = _client()
+    try:
+        r = client.get(f"/trail/{'a' * 201}")
+    finally:
+        client.__exit__(None, None, None)
+    assert r.status_code == 422
+
+
+def test_canonical_id_with_control_char_is_422_never_500():
+    client = _client()
+    try:
+        r = client.get("/trail/ct:has%00evil")
+    finally:
+        client.__exit__(None, None, None)
+    assert r.status_code == 422
+
+
 # ── 404 for an unknown trail ──────────────────────────────────────────────────
 
 

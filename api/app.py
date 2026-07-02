@@ -19,7 +19,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -40,6 +40,7 @@ from api.ratelimit import (
     rate_limit_exceeded_handler,
 )
 from api.schemas import (
+    CANONICAL_ID_PATTERN,
     VIEWER_ID_PATTERN,
     CardWarningResponse,
     ElevationProfile,
@@ -593,7 +594,7 @@ def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailR
 @limiter.limit(detail_limit)
 def trail_detail(
     request: Request,  # required by slowapi for per-IP keying
-    canonical_id: str,
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
     viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> TripDetailResponse:

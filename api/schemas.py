@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field
 # at the query/data layer, rule #4) or a log line (rule #5).
 VIEWER_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,64}$"
 
+# Shape of a canonical_id path param (AL2): the query is already parameterized (no
+# injection risk), so this is length/hygiene only — reject control characters and cap
+# length well above any real id (e.g. "ct:osm:old-rag-loop").
+CANONICAL_ID_PATTERN = r"^[^\x00-\x1F\x7F]{1,200}$"
+
 
 class PlanRequest(BaseModel):
     query: str = Field(
