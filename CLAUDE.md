@@ -17,6 +17,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - `docs/workplan.md` — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
 - `docs/process/plan-analysis.md` — **readiness audit**: what's well-defined vs. underdefined, build order.
 - `docs/process/development-process.md` — **how we work**: epics → stories → ACs → tests → code → targeted review.
+- `docs/process/agent-operating-model.md` — **the claude fleet**: personas (PO · Visionary · Steward · Builders), grounding rules, handoffs. Interactive sessions in this repo default to the Product Owner persona; launched lanes are told their persona in their kickoff prompt.
 - `docs/epics/` (index: `docs/epics/README.md`) — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
 - `docs/research/` (index: `docs/research/README.md`) — **research/design outputs** per stage, indexed with status badges.
 - **Current position:** Phase-1 build complete — backend personalization (Epics 001–005, 010–015) plus the personal-intelligence app UX are shipped on `main`. **Live status, baseline & next work → `docs/process/roadmap.md`** (the status SSOT, so this line can't rot).
