@@ -72,13 +72,22 @@ def test_firms_probe_does_not_leak_map_key(caplog) -> None:
     assert "***" in joined
 
 
-# ── build_client never auto-follows redirects (AH1/AL1, SSRF) ─────────────────
+# ── build_client follows redirects by default; opt out for config-driven URLs ──
 
 
-def test_build_client_does_not_follow_redirects() -> None:
-    # A config-driven URL (e.g. Valhalla's self-hosted base_url) that 302s to an
-    # internal address must surface as a 3xx, never be silently followed.
+def test_build_client_follows_redirects_by_default() -> None:
+    # Fixed-host government adapters (NWS, AirNow, FIRMS, RIDB, USGS) are hardcoded
+    # constant URLs, not an SSRF vector, and NWS relies on redirects to reach the
+    # canonical forecast URL — so the shared default follows them.
     client = _http.build_client()
+    assert client.follow_redirects is True
+
+
+def test_build_client_can_disable_redirects() -> None:
+    # A config-driven URL (e.g. Valhalla's self-hosted base_url) that 302s to an
+    # internal address must surface as a 3xx, never be silently followed — the
+    # Valhalla adapter opts out explicitly.
+    client = _http.build_client(follow_redirects=False)
     assert client.follow_redirects is False
 
 

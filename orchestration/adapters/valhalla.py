@@ -39,7 +39,9 @@ def fetch(
     client: httpx.Client | None = None,
     now: datetime | None = None,
 ) -> VerifiedFact | None:
-    c = client or _http.build_client(headers={"Content-Type": "application/json"})
+    c = client or _http.build_client(
+        headers={"Content-Type": "application/json"}, follow_redirects=False
+    )
     body = {
         "sources": [{"lat": origin[0], "lon": origin[1]}],
         "targets": [{"lat": trailhead[0], "lon": trailhead[1]}],
@@ -86,7 +88,9 @@ def fetch_matrix(
     cost one HTTP round-trip, not K (Epic 005 AC-4.1)."""
     if not targets:
         return []
-    c = client or _http.build_client(headers={"Content-Type": "application/json"})
+    c = client or _http.build_client(
+        headers={"Content-Type": "application/json"}, follow_redirects=False
+    )
     body = {
         "sources": [{"lat": origin[0], "lon": origin[1]}],
         "targets": [{"lat": t[0], "lon": t[1]} for t in targets],
@@ -114,7 +118,9 @@ def fetch_isochrone(
     """One `/isochrone` call → the polygon (list of (lat, lon)) reachable within the
     time budget. Candidates are tested point-in-polygon in Python (no per-candidate
     round-trip). Source-or-silence: failure → None (Epic 005 AC-4.2)."""
-    c = client or _http.build_client(headers={"Content-Type": "application/json"})
+    c = client or _http.build_client(
+        headers={"Content-Type": "application/json"}, follow_redirects=False
+    )
     minutes = max(1.0, time_budget_s / 60.0)
     body = {
         "locations": [{"lat": origin[0], "lon": origin[1]}],
@@ -186,7 +192,7 @@ class ValhallaAdapter(LiveAdapter):
         return fetch_isochrone(origin, time_budget_s, self._base_url, client=self._client)
 
     def health(self) -> AdapterHealth:
-        client = self._client or _http.build_client()
+        client = self._client or _http.build_client(follow_redirects=False)
         return health_from_status(
             _http.probe_status(client, self._base_url.rstrip("/") + "/status")
         )

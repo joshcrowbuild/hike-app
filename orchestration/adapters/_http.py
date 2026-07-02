@@ -39,15 +39,21 @@ def _safe_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, safe_path, "", ""))
 
 
-def build_client(headers: dict[str, str] | None = None) -> httpx.Client:
-    # AH1/AL1: never auto-follow redirects. Every fixed-host adapter (NWS, AirNow,
-    # FIRMS, RIDB, USGS) answers 200 directly with no redirect hop; the one
-    # config-driven URL (Valhalla's self-hosted base_url) is the SSRF risk this
-    # closes — a misconfigured or compromised upstream could otherwise 302 a
-    # request to an internal address. A response that returns a 3xx now degrades
-    # to None via the normal non-200 path (source-or-silence, rule #1) instead of
-    # being followed blindly.
-    return httpx.Client(timeout=DEFAULT_TIMEOUT, headers=headers or {}, follow_redirects=False)
+def build_client(
+    headers: dict[str, str] | None = None, *, follow_redirects: bool = True
+) -> httpx.Client:
+    # AH1/AL1: fixed-host government adapters (NWS, AirNow, FIRMS, RIDB, USGS) are
+    # hardcoded constant URLs, not an SSRF vector, and NWS in particular relies on
+    # redirects (api.weather.gov 301/302s to the canonical forecast URL) — so the
+    # shared default is to follow them. The actual SSRF risk is the one
+    # config-driven URL (Valhalla's self-hosted base_url): a misconfigured or
+    # compromised upstream could 302 a request to an internal address, so the
+    # Valhalla adapter passes follow_redirects=False explicitly to keep that path
+    # closed. A response that returns a 3xx there still degrades to None via the
+    # normal non-200 path (source-or-silence, rule #1) instead of being followed.
+    return httpx.Client(
+        timeout=DEFAULT_TIMEOUT, headers=headers or {}, follow_redirects=follow_redirects
+    )
 
 
 def get_json(client: httpx.Client, url: str, params: dict[str, Any] | None = None) -> Any:
