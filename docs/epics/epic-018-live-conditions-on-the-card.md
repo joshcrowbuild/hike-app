@@ -72,11 +72,13 @@ The primary `/plan` surface currently returns cards with `lines: []` — trails 
 - **AC-4.4** Wire contract unchanged where possible; if a new field is needed to distinguish silence states (e.g. checked-clear vs never-fetched), it is added to `FeedLineResponse`/`FeedCardResponse` with a frozen contract test (mirror `tests/test_maps_contract.py`).
 
 ### S5 — Guardrail interplay with live conditions *(backend lane — safety)*
+> **Superseded in part (2026-07-01, decision-log §41):** a **VERIFIED** hazard (an alert with source + timestamp) now stays a card wearing a prominent `warnings[]` entry — it is never set aside. Set-aside is reserved for the **unverifiable** class (failed probe / failed alerts sub-call) and hard non-weather thresholds. AC-5.2/5.3 hold unchanged for that class.
+
 **Given** conditions are not decoration — a real hazard must gate the trail,
 **When** `evaluate_guardrails` sees a hazardous live fact,
 **Then** the trail is set-aside with its **binding reason** surfaced, never silently dropped or shown as fine.
 
-- **AC-5.1** A blocking live condition (e.g. active FIRMS fire nearby, an NWS hazard alert, or a flood-level streamflow if a threshold exists) sets the trail aside with the source-stamped reason.
+- **AC-5.1** A blocking live condition (e.g. active FIRMS fire nearby, an NWS hazard alert, or a flood-level streamflow if a threshold exists) sets the trail aside with the source-stamped reason. *(Superseded for verified alerts — see the §41 note above.)*
 - **AC-5.2** A set-aside trail is disclosed (ruled-out with its cause + source), consistent with source-or-silence — not removed with no trace.
 - **AC-5.3** Confidence still never penalizes ranking (Rule #2): a hazard is a *safety* gate, not a taste demotion.
 
