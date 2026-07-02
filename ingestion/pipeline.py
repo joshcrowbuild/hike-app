@@ -521,10 +521,17 @@ def run_pipeline(
             # ── Prune stale trails: a tighter filter (e.g. dropping a TIGER-misimported
             # state route) only STOPS refreshing the old MERGE'd node — it never deletes
             # it — so without this a re-ingest leaves the non-hike serving forever. Gated
-            # on a non-empty load (belt) plus an in-query current-version guard (braces)
-            # so a failed/empty ingest can't wipe the graph.
+            # on a non-empty load (belt) plus prune_stale_trails' own in-query
+            # current-version guard AND ratio guard (finding M1 — a truncated ingest that
+            # loaded a nonzero-but-tiny count must not read as "healthy" and wipe the rest
+            # of the region) so neither a failed/empty NOR a truncated ingest can wipe the
+            # graph.
+            counts["pruned"] = 0
             if load_counts["loaded"] > 0:
-                prune_stale_trails(runner, iv, region_id=region.region_id)
+                prune_outcome = prune_stale_trails(runner, iv, region_id=region.region_id)
+                counts["pruned"] = int(prune_outcome.pruned)
+                if not prune_outcome.pruned:
+                    log.warning(prune_outcome.reason)
     finally:
         gc.close()
 
