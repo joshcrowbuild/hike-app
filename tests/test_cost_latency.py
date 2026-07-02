@@ -15,6 +15,7 @@ No network: adapters are call-counting fakes driven through the real cache + ver
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 
 from api.observability import PlanMetrics
@@ -129,6 +130,68 @@ def test_ac61_stats_count_calls_and_time_per_kind() -> None:
     assert cache.stats.calls_by_kind == {"weather": 1, "water": 1}
     assert cache.stats.wall_ms_by_kind["weather"] > 0
     assert cache.stats.wall_ms_by_kind["water"] > 0
+
+
+def test_am1_probe_store_and_stats_are_guarded_by_a_lock() -> None:
+    """AM1: FastAPI's sync routes run in a threadpool, so concurrent /plan requests can
+    hit the process-wide TTLCache at once — `self.stats.misses += 1` and
+    `self._store[key] = ...` are read-modify-write races without a lock. A real timing
+    race is unreliable to force under the GIL, so this proves mutual exclusion directly:
+    while `_lock` is held (simulating another thread mid-critical-section), a concurrent
+    `peek()` — which runs the same locked store-read path `probe()` does — must block
+    until the lock is released."""
+    cache = registry.TTLCache()
+    adapter = _CountingAdapter("held")
+    cache.probe(adapter, Point(1.0, 2.0))  # populate one fresh entry via the locked path
+
+    started = threading.Event()
+    proceeded = threading.Event()
+
+    def _reader() -> None:
+        started.set()
+        cache.peek(adapter, Point(1.0, 2.0))
+        proceeded.set()
+
+    with cache._lock:  # hold the lock as if another thread were mid-update
+        t = threading.Thread(target=_reader)
+        t.start()
+        assert started.wait(timeout=1.0)
+        # The reader must NOT be able to acquire the lock while we hold it.
+        assert not proceeded.wait(timeout=0.2)
+
+    # Released — the blocked reader now proceeds.
+    t.join(timeout=1.0)
+    assert proceeded.is_set()
+
+
+def test_am1_slow_underlying_probe_does_not_serialize_other_requests() -> None:
+    """The lock must NOT wrap the network call itself — only the store/stats access —
+    or concurrent /plan requests would queue behind one slow live-adapter call instead
+    of fanning out in parallel."""
+    cache = registry.TTLCache()
+    release = threading.Event()
+    entered = threading.Event()
+    slow = _CountingAdapter("slow")
+
+    def _blocking_probe(point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        entered.set()
+        release.wait(timeout=2.0)
+        return VerifiedFact(value={"n": 1}, source="slow", fetched_at=_NOW)
+
+    slow.probe = _blocking_probe  # type: ignore[method-assign]
+
+    t = threading.Thread(target=lambda: cache.probe(slow, Point(1.0, 2.0)))
+    t.start()
+    assert entered.wait(timeout=1.0)  # the slow probe is now running, unlocked
+
+    # A second, unrelated probe must complete immediately — not wait on the first.
+    fast = _CountingAdapter("fast")
+    fact = cache.probe(fast, Point(9.0, 9.0))
+    assert fact is not None
+    assert fast.calls == 1
+
+    release.set()
+    t.join(timeout=2.0)
 
 
 def test_ac61_snapshot_is_detached() -> None:
