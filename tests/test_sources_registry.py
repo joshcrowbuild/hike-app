@@ -25,7 +25,7 @@ from orchestration.config import Settings
 
 def test_ac2_4_default_when_absent():
     s = Settings.from_env({})
-    assert s.corpus_sources == ("osm", "nps", "usfs")
+    assert s.corpus_sources == ("osm", "nps", "usfs", "usgs-3dep")
 
 
 def test_ac2_4_parses_comma_separated():
@@ -52,9 +52,11 @@ def test_ac2_1_resolves_in_config_order():
     assert all(isinstance(x, CorpusSource) for x in srcs)
 
 
-def test_ac2_1_default_resolves_three_sources():
+def test_ac2_1_default_resolves_four_sources():
+    # No ADVENTURE_3DEP_DEM configured — usgs-3dep still resolves (it degrades to
+    # a no-op sampler in from_config rather than raising; see test_usgs_3dep.py).
     srcs = enabled_sources(Settings.from_env({}))
-    assert [x.name for x in srcs] == ["osm", "nps", "usfs"]
+    assert [x.name for x in srcs] == ["osm", "nps", "usfs", "usgs-3dep"]
 
 
 def test_ac2_1_names_override_for_cli_source_flag():

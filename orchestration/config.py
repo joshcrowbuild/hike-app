@@ -87,17 +87,24 @@ class Settings:
     coros_client_secret: str | None = field(repr=False, default=None)
 
     # CorpusSource seam (Epic 012). Comma-separated source names from
-    # ADVENTURE_CORPUS_SOURCES; defaults to the three Stage-3 sources so today's
-    # behavior is preserved when the env var is absent. The registry resolves each
-    # name to an adapter via its `from_config` (ingestion/sources/registry.py).
-    # `usfs_geojson_path` is the one source-specific path a corpus adapter reads
-    # from config (rule #10); None = the USFS transport's own default path.
-    corpus_sources: tuple[str, ...] = ("osm", "nps", "usfs")
+    # ADVENTURE_CORPUS_SOURCES; defaults to four sources so a re-ingest always
+    # re-applies elevation enrichment (finding: elevation was silently wiped when
+    # a re-ingest ran without `usgs-3dep` in the list — the enrichment source must
+    # be a default member, not opt-in, so no re-ingest can "forget" it). The
+    # registry resolves each name to an adapter via its `from_config`
+    # (ingestion/sources/registry.py). `usfs_geojson_path` is the one source-
+    # specific path a corpus adapter reads from config (rule #10); None = the
+    # USFS transport's own default path.
+    corpus_sources: tuple[str, ...] = ("osm", "nps", "usfs", "usgs-3dep")
     usfs_geojson_path: str | None = None
     # USGS-3DEP elevation enrichment (Epic 017). `dem_path` is the local 3DEP DEM
-    # raster the adapter samples (rule #10: from config, never the repo); absent →
-    # the `usgs-3dep` source fails loud in `from_config` (a misconfiguration, per
-    # the corpus seam). `elev_resolution_m` is the along-route sampling spacing.
+    # raster the adapter samples (rule #10: from config, never the repo). A DEM is
+    # per-region (only `shenandoah-gwj` has one downloaded as of this writing —
+    # Richmond/OBX need theirs before either will ever carry elevation); absent →
+    # `usgs-3dep.from_config` degrades to a no-op source (log + skip) rather than
+    # failing loud, since it's now a default corpus source and must be safe to
+    # enable in every region (rule #6). `elev_resolution_m` is the along-route
+    # sampling spacing.
     dem_path: str | None = None
     elev_resolution_m: float = 20.0
 
@@ -125,9 +132,9 @@ class Settings:
 
         live_raw = e.get("ADVENTURE_LIVE_ADAPTERS", "")
         live_adapters = tuple(s.strip() for s in live_raw.split(",") if s.strip())
-        # Default to the three Stage-3 sources when the env var is absent; reuse
-        # the ADVENTURE_WATCH_ADAPTERS comma-split idiom (AC-2.4).
-        corpus_raw = e.get("ADVENTURE_CORPUS_SOURCES", "osm,nps,usfs")
+        # Default includes usgs-3dep (elevation enrichment) so a re-ingest never
+        # forgets it; reuse the ADVENTURE_WATCH_ADAPTERS comma-split idiom (AC-2.4).
+        corpus_raw = e.get("ADVENTURE_CORPUS_SOURCES", "osm,nps,usfs,usgs-3dep")
         corpus_sources = tuple(s.strip() for s in corpus_raw.split(",") if s.strip())
 
         cors_raw = e.get("ADVENTURE_CORS_ALLOW_ORIGINS", "")

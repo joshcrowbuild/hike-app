@@ -13,7 +13,8 @@ from typing import Any
 
 import pytest
 
-from graph.load import load_canonical_trail, prune_stale_trails
+from graph.load import load_canonical_trail, load_enrichment_facts, prune_stale_trails
+from ingestion.sources.base import EnrichmentFact
 
 
 def _runner(sess: Any) -> Any:
@@ -153,3 +154,49 @@ def test_personal_nodes_survive_prune(clean_graph):
         )
     )
     assert len(survivors) == 3  # PhysicalProfile + Person + Episode all untouched
+
+
+# ── Elevation survives a re-ingest (root-cause fix: usgs-3dep default + degrade) ─
+#
+# The bug: a region re-ingest that ran without `usgs-3dep` in ADVENTURE_CORPUS_SOURCES
+# silently wiped every trail's elevation. `load_canonical_trail`'s MERGE+SET only ever
+# touches the properties it's given (never `elev_source`/`total_gain_m`/etc.), and
+# `load_enrichment_facts` is purely additive — so a re-ingest that simply doesn't run
+# 3DEP this time must never clear elevation a prior run wrote. This proves that against
+# a real Neo4j.
+
+
+@pytest.mark.neo4j
+def test_reingest_without_enrichment_preserves_existing_elevation(clean_graph):
+    sess = clean_graph.scoped_session("ingest")
+    runner = _runner(sess)
+    cid = "ct:osm:test-trail"
+
+    load_canonical_trail(runner, cid, "Test Trail", region="shenandoah-gwj", ingest_version="v1")
+    load_enrichment_facts(
+        runner,
+        [
+            EnrichmentFact(
+                source="usgs-3dep", attribute="elev_source", value="usgs-3dep", canonical_id=cid
+            ),
+            EnrichmentFact(
+                source="usgs-3dep", attribute="total_gain_m", value=123.4, canonical_id=cid
+            ),
+        ],
+    )
+
+    # A later re-ingest of the same node refreshes it under a new ingest_version but
+    # runs with no enrichment source this time (e.g. a DEM-less region) — it must not
+    # touch elevation it didn't recompute.
+    load_canonical_trail(runner, cid, "Test Trail", region="shenandoah-gwj", ingest_version="v2")
+
+    rows = sess.run(
+        (
+            "MATCH (t:CanonicalTrail {canonical_id: $cid}) "
+            "RETURN t.elev_source AS es, t.total_gain_m AS gain, t.ingest_version AS iv",
+            {"cid": cid},
+        )
+    )
+    assert rows[0]["es"] == "usgs-3dep"
+    assert rows[0]["gain"] == 123.4
+    assert rows[0]["iv"] == "v2"  # the node did refresh — just not its elevation
