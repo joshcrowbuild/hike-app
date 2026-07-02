@@ -5,9 +5,10 @@
  * envelope from day one — so loading / empty / error / not-found states exist
  * before the network ever lands (no second rewrite when HTTP goes live).
  */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { MutableRefObject } from 'react'
 
-import type { OriginKey } from '../types'
+import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
 import { HttpPlannerClient } from './http/httpPlanner'
 import { MockPlannerClient } from './mock/mockPlanner'
@@ -17,9 +18,22 @@ import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
 const useMockDefault = import.meta.env.VITE_USE_MOCK !== 'false'
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
+/** The most recent successfully-resolved feed + the tuning that produced it,
+ *  scoped to the viewer that fetched it. `useCard` reads this so Detail opens
+ *  from the SAME set the user is looking at — instant, and immune to a
+ *  rebuilt-default refetch missing the tapped card (the "not in your current
+ *  set" bug). A ref, not state: writes happen inside `useFeed`'s effect and
+ *  must never itself trigger a re-render. */
+interface FeedSnapshot {
+  scopeKey: string
+  tuning: TuningState
+  feed: FeedVM
+}
+
 interface PlannerContextValue {
   client: PlannerClient
   scope: ScopeContext
+  feedSnapshot: MutableRefObject<FeedSnapshot | null>
 }
 
 const PlannerContext = createContext<PlannerContextValue | null>(null)
@@ -32,10 +46,12 @@ export interface PlannerProviderProps {
 }
 
 export function PlannerProvider({ scope, client, children }: PlannerProviderProps) {
+  const feedSnapshot = useRef<FeedSnapshot | null>(null)
   const value = useMemo<PlannerContextValue>(
     () => ({
       client: client ?? (useMockDefault ? new MockPlannerClient() : new HttpPlannerClient(baseUrl)),
       scope,
+      feedSnapshot,
     }),
     [client, scope],
   )
@@ -138,7 +154,7 @@ export interface FeedState {
 }
 
 export function useFeed(input: PlanInput): FeedState {
-  const { client, scope } = usePlanner()
+  const { client, scope, feedSnapshot } = usePlanner()
   const [state, setState] = useState<{ status: FeedStatus; feed?: FeedVM; error?: FeedError }>({
     status: 'loading',
   })
@@ -159,8 +175,14 @@ export function useFeed(input: PlanInput): FeedState {
       .then((feed) => {
         if (!live) return
         if (feed.error) setState({ status: 'error', feed, error: feed.error })
-        else if (feed.cards.length === 0) setState({ status: 'empty', feed })
-        else setState({ status: 'ready', feed })
+        else {
+          // Record the frame that produced this feed so `useCard` can resolve a
+          // tapped card in-memory, and — failing that — refetch with THIS
+          // tuning rather than a rebuilt default.
+          feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
+          if (feed.cards.length === 0) setState({ status: 'empty', feed })
+          else setState({ status: 'ready', feed })
+        }
       })
       .catch((err: unknown) => {
         if (!live) return
@@ -189,8 +211,8 @@ export interface CardState {
   reload: () => void
 }
 
-export function useCard(id: string | null, origin?: OriginKey): CardState {
-  const { client, scope } = usePlanner()
+export function useCard(id: string | null): CardState {
+  const { client, scope, feedSnapshot } = usePlanner()
   const [state, setState] = useState<{ status: CardStatus; card?: CardVM }>({ status: 'loading' })
   const [nonce, setNonce] = useState(0)
   const scopeKey = scopeKeyOf(scope)
@@ -202,8 +224,26 @@ export function useCard(id: string | null, origin?: OriginKey): CardState {
     }
     let live = true
     setState({ status: 'loading' })
+
+    // The card the user tapped almost always lives in the feed they tapped it
+    // from — resolve it there first: instant, and immune to a refetch running
+    // under a different (often thinner) frame than the one that produced the
+    // visible set (the "not in your current set" bug). Only a scope match is
+    // trusted; a stale snapshot from a different viewer is never reused.
+    const snapshot = feedSnapshot.current
+    const inMemory =
+      snapshot && snapshot.scopeKey === scopeKey ? snapshot.feed.cards.find((c) => c.id === id) : undefined
+    if (inMemory) {
+      setState({ status: 'ready', card: inMemory })
+      return
+    }
+
+    // A true deep-link / an id outside the current set: refetch with the
+    // CURRENT tuning (the snapshot's, if one exists for this scope) — never a
+    // rebuilt default that resets facets the user actually has dialed in.
+    const tuning = snapshot && snapshot.scopeKey === scopeKey ? snapshot.tuning : undefined
     client
-      .getCard(id, scope, origin)
+      .getCard(id, scope, tuning)
       .then((card) => {
         if (!live) return
         setState(card ? { status: 'ready', card } : { status: 'notfound' })
@@ -216,7 +256,7 @@ export function useCard(id: string | null, origin?: OriginKey): CardState {
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, origin, scopeKey, nonce])
+  }, [id, scopeKey, nonce])
 
   return { ...state, reload: () => setNonce((n) => n + 1) }
 }

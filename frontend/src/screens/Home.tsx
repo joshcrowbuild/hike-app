@@ -1,13 +1,15 @@
-import { originLabels, partyLabels, whenLabels } from '../data/labels'
+import { originLabels, partyLabels, regionLabels, whenLabels } from '../data/labels'
 import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { widenFrame } from '../data/widen'
 import type { FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { RecommendationCard } from './RecommendationCard'
 
-/** The calm frame setter and primary tuning entry (v0.3 §2/C5). */
+/** The calm frame setter and primary tuning entry (v0.3 §2/C5). Anonymous still
+ *  picks an origin (R7 world-browse), so the region tag must track it too — never
+ *  the Shenandoah pilot region regardless of what's actually selected. */
 function contextSentence(tuning: TuningState, anonymous: boolean): string {
-  if (anonymous) return `${whenLabels[tuning.when]} · Shenandoah`
+  if (anonymous) return `${whenLabels[tuning.when]} · ${regionLabels[tuning.origin]}`
   return `${whenLabels[tuning.when]} · from ${originLabels[tuning.origin]} · ${partyLabels[tuning.party]}`
 }
 
@@ -92,7 +94,8 @@ export function Home({
         <section className="stack">
           {feed.cards.length > 0 ? (
             <p className="stack-meta">
-              {feed.cards.length === 1 ? '1 option' : `${feed.cards.length} options`} · Shenandoah
+              {feed.cards.length === 1 ? '1 option' : `${feed.cards.length} options`} ·{' '}
+              {regionLabels[tuning.origin]}
             </p>
           ) : null}
 

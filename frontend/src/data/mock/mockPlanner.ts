@@ -103,13 +103,14 @@ export class MockPlannerClient implements PlannerClient {
     }
   }
 
-  async getCard(id: string, scope: ScopeContext, origin?: OriginKey): Promise<CardVM | null> {
+  async getCard(id: string, scope: ScopeContext, tuning?: TuningState): Promise<CardVM | null> {
     const trail = trails.find((t) => t.id === id)
     if (!trail) return null
     const anon = isAnonymous(scope)
+    const origin = tuning?.origin
     // Frame-agnostic: drive is computed only when an origin is supplied; a cold
     // deep-link / anonymous viewer sees distance-only (R7).
-    return toCardVM(trail, neutralize({ ...defaultFrame, origin: origin ?? 'frontRoyal' }), origin, anon)
+    return toCardVM(trail, neutralize(tuning ?? defaultFrame), origin, anon)
   }
 
   async recentEpisodes(scope: ScopeContext): Promise<EpisodeVM[]> {

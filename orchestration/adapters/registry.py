@@ -15,6 +15,7 @@ reading is never persisted as a graph node (rule #3).
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -124,11 +125,19 @@ class TTLCache:
     when). A repeat within the adapter's `ttl_seconds` returns the cached fact without
     a second underlying call. In-process only — never a graph node (rule #3). Expired
     entries are evicted on read and the store is size-capped, so the shared singleton
-    cannot grow unbounded in a long-running server."""
+    cannot grow unbounded in a long-running server.
+
+    FastAPI's sync routes run in a threadpool, so concurrent `/plan` requests can call
+    `probe()` on this one process-wide instance at once (AM1); `_lock` guards every
+    read/write of `_store` and `stats`. The underlying `adapter.probe()` network call
+    itself runs OUTSIDE the lock — it's the slow part, and serializing it would turn
+    the live fan-out into a queue.
+    """
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._store: dict[tuple, tuple[VerifiedFact, float]] = {}
         self._clock = clock
+        self._lock = threading.Lock()
         # Cost/latency counters (Epic 018 S6 AC-6.1). `clock` doubles as the wall-clock
         # timer for underlying probes: it is `time.monotonic` in production and a fake in
         # tests, so timing is deterministic under test and real in the deploy.
@@ -145,39 +154,44 @@ class TTLCache:
         liveness `health()` call on a cache hit. None if absent or expired (an expired
         entry is evicted on read)."""
         key = self._key(adapter, point, when)
-        hit = self._store.get(key)
-        if hit is None:
-            return None
-        if hit[1] <= self._clock():
-            self._store.pop(key, None)  # evict on expired read
-            return None
-        self.stats.hits += 1  # served from cache — no third-party call spent
-        return hit[0]
+        with self._lock:
+            hit = self._store.get(key)
+            if hit is None:
+                return None
+            if hit[1] <= self._clock():
+                self._store.pop(key, None)  # evict on expired read
+                return None
+            self.stats.hits += 1  # served from cache — no third-party call spent
+            return hit[0]
 
     def probe(
         self, adapter: LiveAdapter, point: Point, when: datetime | None = None
     ) -> VerifiedFact | None:
         key = self._key(adapter, point, when)
-        now = self._clock()
-        hit = self._store.get(key)
-        if hit is not None:
-            if hit[1] > now:
-                self.stats.hits += 1  # fresh cache hit — no third-party call spent
-                return hit[0]
-            self._store.pop(key, None)  # expired → drop before re-probing
-        # Cache miss → a real underlying probe. Count it and time it per kind so the
-        # live-API call count and per-kind wall-clock are observable off one /plan (AC-6.1).
+        with self._lock:
+            now = self._clock()
+            hit = self._store.get(key)
+            if hit is not None:
+                if hit[1] > now:
+                    self.stats.hits += 1  # fresh cache hit — no third-party call spent
+                    return hit[0]
+                self._store.pop(key, None)  # expired → drop before re-probing
+        # Cache miss → a real underlying probe, run OUTSIDE the lock so concurrent
+        # requests fan out in parallel rather than queue behind one slow adapter call.
         kind = adapter.kind.value
         started = self._clock()
         fact = adapter.probe(point, when)
         elapsed_ms = max(0.0, (self._clock() - started) * 1000)
-        self.stats.misses += 1
-        self.stats.calls_by_kind[kind] = self.stats.calls_by_kind.get(kind, 0) + 1
-        self.stats.wall_ms_by_kind[kind] = self.stats.wall_ms_by_kind.get(kind, 0.0) + elapsed_ms
-        if fact is not None:
-            if len(self._store) >= MAX_CACHE_ENTRIES:
-                self._store.pop(next(iter(self._store)), None)  # FIFO evict oldest
-            self._store[key] = (fact, now + adapter.ttl_seconds)
+        with self._lock:
+            self.stats.misses += 1
+            self.stats.calls_by_kind[kind] = self.stats.calls_by_kind.get(kind, 0) + 1
+            self.stats.wall_ms_by_kind[kind] = (
+                self.stats.wall_ms_by_kind.get(kind, 0.0) + elapsed_ms
+            )
+            if fact is not None:
+                if len(self._store) >= MAX_CACHE_ENTRIES:
+                    self._store.pop(next(iter(self._store)), None)  # FIFO evict oldest
+                self._store[key] = (fact, now + adapter.ttl_seconds)
         return fact
 
 

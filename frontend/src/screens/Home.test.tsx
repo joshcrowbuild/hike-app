@@ -145,3 +145,32 @@ describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)'
     expect(screen.queryByText(/held back/)).not.toBeInTheDocument()
   })
 })
+
+describe('Home region tag tracks the selected origin (fixes the stuck "Shenandoah" label)', () => {
+  it('shows the Outer Banks region once the origin is Nags Head, not the Shenandoah default', async () => {
+    const nagsHeadTuning: TuningState = { ...TUNING, origin: 'nagsHead' }
+    render(
+      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feedWith({}))}>
+        <Home
+          tuning={nagsHeadTuning}
+          anonymous
+          onOpenTuning={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+
+    // Both the context sentence and the stack-meta count carry the region tag —
+    // both must track the selected origin, not the Shenandoah default.
+    expect(screen.getAllByText(/Outer Banks/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Shenandoah/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the Shenandoah tag for a Shenandoah origin like Front Royal', async () => {
+    await renderHomeWith(feedWith({}))
+    expect(screen.getAllByText(/Shenandoah/).length).toBeGreaterThan(0)
+  })
+})

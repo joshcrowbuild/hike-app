@@ -33,6 +33,14 @@ def test_candidate_query_shape() -> None:
     assert params["prefetch"] == 25  # k*5
 
 
+def test_candidate_query_returns_trailhead_point_distinct_from_trail_point() -> None:
+    # H3: the drive-time prefilter must route from the trailhead's own point, not the
+    # trail centroid — the query has to project both under distinct aliases.
+    cypher, _params = queries.candidate_trails_near(38.5, -78.4, 40_000, 5)
+    assert "h.point AS trailhead_point" in cypher
+    assert "t.point AS point" in cypher
+
+
 def test_personal_query_is_owner_scoped() -> None:
     # The access-control-at-query-layer invariant (#4): owned reads carry the scope.
     cypher, params = queries.episodes_on_trail("ct:old-rag-loop")

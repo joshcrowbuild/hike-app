@@ -7,6 +7,7 @@ preserved (Rule #1) AND that the cause is logged server-side, not swallowed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi.testclient import TestClient
@@ -67,3 +68,24 @@ def test_plan_logs_cause_and_returns_generic_500(monkeypatch, caplog) -> None:
     assert "cid=" in message
     correlation_id = resp.headers.get("X-Correlation-Id")
     assert correlation_id and correlation_id in message
+
+
+def test_generic_exception_handler_never_leaks_exception_text(caplog) -> None:
+    # H2: the last-resort handler must return a constant body — never str(exc), which
+    # can carry internals (paths, query fragments, library internals, rule #10).
+    async def _raise_and_handle() -> object:
+        try:
+            raise RuntimeError("password=hunter2 at /internal/db/host:5432")
+        except RuntimeError as exc:
+            return await app_mod.generic_exception_handler(None, exc)
+
+    with caplog.at_level(logging.ERROR, logger="api.app"):
+        response = asyncio.run(_raise_and_handle())
+
+    assert response.status_code == 500
+    body = response.body.decode("utf-8")
+    assert body == '{"detail":"Internal error"}'
+    assert "hunter2" not in body
+    # ...but the real cause is still logged server-side with a traceback.
+    records = [r for r in caplog.records if r.levelname == "ERROR" and r.exc_info]
+    assert records, "expected an ERROR log with a traceback"

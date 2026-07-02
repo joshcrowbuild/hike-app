@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 import httpx
+import pytest
 from shapely.geometry import LineString
 
 from ingestion import pipeline
@@ -122,6 +123,25 @@ def test_load_region_parses_bbox(tmp_path, monkeypatch):
     assert isinstance(region, Region)
     assert region.bbox == (38.0, -79.0, 39.0, -78.0)  # (south, west, north, east)
     assert region.region_id == "my-region"
+
+
+@pytest.mark.parametrize(
+    "region_id",
+    [
+        "../secrets",
+        "..%2Fsecrets",  # literal chars, not URL-decoded — still contains ".."
+        "sub/dir",
+        "sub\\dir",
+        "..",
+    ],
+)
+def test_load_region_rejects_path_traversal(tmp_path, monkeypatch, region_id):
+    """AM4: --region flows straight into Path(f"regions/{region_id}.geojson"); a value
+    escaping regions/ must exit loudly, never resolve outside the region directory."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "regions").mkdir()
+    with pytest.raises(SystemExit):
+        load_region(region_id)
 
 
 # ── Pipeline counts: per-source keys derive from source.name (no literals) ────
