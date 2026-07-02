@@ -40,7 +40,14 @@ def _safe_url(url: str) -> str:
 
 
 def build_client(headers: dict[str, str] | None = None) -> httpx.Client:
-    return httpx.Client(timeout=DEFAULT_TIMEOUT, headers=headers or {}, follow_redirects=True)
+    # AH1/AL1: never auto-follow redirects. Every fixed-host adapter (NWS, AirNow,
+    # FIRMS, RIDB, USGS) answers 200 directly with no redirect hop; the one
+    # config-driven URL (Valhalla's self-hosted base_url) is the SSRF risk this
+    # closes — a misconfigured or compromised upstream could otherwise 302 a
+    # request to an internal address. A response that returns a 3xx now degrades
+    # to None via the normal non-200 path (source-or-silence, rule #1) instead of
+    # being followed blindly.
+    return httpx.Client(timeout=DEFAULT_TIMEOUT, headers=headers or {}, follow_redirects=False)
 
 
 def get_json(client: httpx.Client, url: str, params: dict[str, Any] | None = None) -> Any:

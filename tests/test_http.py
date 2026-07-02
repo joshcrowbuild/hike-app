@@ -70,3 +70,23 @@ def test_firms_probe_does_not_leak_map_key(caplog) -> None:
     joined = " ".join(r.getMessage() for r in caplog.records)
     assert _KEY not in joined
     assert "***" in joined
+
+
+# ── build_client never auto-follows redirects (AH1/AL1, SSRF) ─────────────────
+
+
+def test_build_client_does_not_follow_redirects() -> None:
+    # A config-driven URL (e.g. Valhalla's self-hosted base_url) that 302s to an
+    # internal address must surface as a 3xx, never be silently followed.
+    client = _http.build_client()
+    assert client.follow_redirects is False
+
+
+def test_get_json_degrades_to_none_on_redirect() -> None:
+    # source-or-silence (rule #1): an unfollowed 3xx is a non-200, so get_json returns
+    # None rather than raising or fabricating a body.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"Location": "http://internal.invalid/"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
+    assert _http.get_json(client, "https://example.invalid/") is None
