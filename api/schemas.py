@@ -23,6 +23,18 @@ class FeedLineResponse(BaseModel):
     confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
 
 
+class CardWarningResponse(BaseModel):
+    """One prominent, source-stamped hazard warning a card wears (decision of
+    2026-07-01): a VERIFIED hazard shows on the trail's card, never hides it.
+    Mirrors `FeedLineResponse`'s source-carrying shape; `observed_at` is the ISO-8601
+    timestamp the hazard fact was fetched. Mirrors `frontend/src/data/api.ts`."""
+
+    text: str
+    source: str
+    observed_at: str  # ISO-8601 fetch timestamp of the hazard fact
+    kind: str  # the condition kind, e.g. "weather" | "air" | "fire"
+
+
 # ── Maps & terrain wire DTOs — the Lane A↔B contract ──────────────────────────
 #
 # These are a literal mirror of `frontend/src/data/api.ts` (the published source of
@@ -79,7 +91,7 @@ class FeedCardResponse(BaseModel):
     name: str
     distance_mi: float | None
     lines: list[FeedLineResponse]
-    warnings: list[str]
+    warnings: list[CardWarningResponse]
     # Maps & terrain (Epic 016 S1 / Epic 017 S4). All optional/nullable: a card with no
     # mapped route omits/nulls them and the client degrades honestly (Rule #1).
     geometry: GeoJsonGeometry | None = None
@@ -102,9 +114,11 @@ class SetAsideReasonResponse(BaseModel):
 
 
 class SetAsideResponse(BaseModel):
-    """A trail a hazardous live condition ruled out — disclosed with its cause + source
-    (Epic 018 S5 AC-5.2), never dropped without a trace. A safety gate, not a ranking
-    signal (Rule #2). Mirrors `frontend/src/data/api.ts`."""
+    """A trail a hard live guardrail ruled out — an unverifiable required condition or
+    a hard threshold — disclosed with its cause + source (Epic 018 S5 AC-5.2), never
+    dropped without a trace. A verified hazard is NOT set aside; it stays a card with a
+    `warnings` entry (decision of 2026-07-01). A safety gate, not a ranking signal
+    (Rule #2). Mirrors `frontend/src/data/api.ts`."""
 
     canonical_id: str
     name: str

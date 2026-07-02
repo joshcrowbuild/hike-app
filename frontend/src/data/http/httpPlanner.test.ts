@@ -140,6 +140,102 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
   })
 })
 
+describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-01T22:00:00Z'))
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  it('maps a verified hazard onto the card as a source-stamped, aged warning — the trail shows', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'compton-peak',
+          name: 'Compton Peak',
+          distance_mi: 2.1,
+          lines: [],
+          warnings: [
+            {
+              text: 'weather alert: Extreme Heat Warning',
+              source: 'NWS api.weather.gov',
+              observed_at: '2026-07-01T20:00:00Z',
+              kind: 'weather',
+            },
+          ],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards).toHaveLength(1) // shown, never hidden
+    expect(result.cards[0].warnings).toEqual([
+      {
+        text: 'weather alert: Extreme Heat Warning',
+        source: 'NWS api.weather.gov',
+        observedAgo: '2h ago', // humanised — never a raw datetime (§7.2)
+        kind: 'weather',
+        provenance: 'live',
+      },
+    ])
+  })
+
+  it('maps set_aside (the unverifiable class) onto heldBack so nothing silently vanishes', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 0,
+      notices: [],
+      cards: [],
+      set_aside: [
+        {
+          canonical_id: 'foggy-hollow',
+          name: 'Foggy Hollow',
+          reasons: [
+            {
+              text: "weather alerts couldn't be verified (NWS api.weather.gov)",
+              source: 'NWS api.weather.gov',
+              kind: 'weather',
+            },
+          ],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.heldBack).toEqual([
+      {
+        id: 'foggy-hollow',
+        name: 'Foggy Hollow',
+        reasons: [
+          {
+            text: "weather alerts couldn't be verified (NWS api.weather.gov)",
+            source: 'NWS api.weather.gov',
+            kind: 'weather',
+          },
+        ],
+      },
+    ])
+  })
+
+  it('degrades an absent set_aside to an honest empty heldBack', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.heldBack).toEqual([])
+  })
+})
+
 describe('HttpPlannerClient /plan cold-start timeout', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

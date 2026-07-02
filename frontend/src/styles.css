@@ -203,6 +203,18 @@ button {
   color: var(--text-muted);
 }
 
+/* ---- verified hazard warnings (shown, never hidden — 2026-07-01) ----
+   The hue + weight come from the owned <Signal> primitive; here only the stack
+   spacing and the source/age meta treatment live. */
+.card-warnings {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.card-warning-meta {
+  font-size: 0.74rem;
+}
+
 /* ---- terrain glyph (at rest) ---- */
 .glyph {
   width: 100%;

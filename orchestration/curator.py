@@ -1,10 +1,17 @@
 """Curator — the deterministic guardrail half (Stage 4 §6).
 
-Constraints are hard filters, not soft scores: a guardrail block removes a trail
-from the feed regardless of how good it otherwise is. This is distinct from
-confidence, which never penalizes ranking (rule #2) — guardrails are about safety
-and legality, not uncertainty. The taste / novelty / party ranking (the
-judgment-tier LLM half) is separate and lands later.
+The split (decided by Josh, 2026-07-01, after the Extreme Heat Warning dogfood):
+
+  * A VERIFIED hazard — an alert carried by a live fact with source + timestamp —
+    SHOWS on the card as a prominent, source-stamped warning. It never hides the
+    trail: a safety flag is presentation, and it never feeds ranking (rule #2).
+  * An UNVERIFIABLE required condition — a weather probe that failed, or an alerts
+    sub-call that failed — holds the trail back (set aside) WITH disclosure
+    (source-or-silence, rule #1: a failed probe is unknown, never "no alerts").
+  * Non-weather hard thresholds (hazardous AQI) keep their block semantics.
+
+Blocks are hard filters, not soft scores; confidence never penalizes ranking
+(rule #2) — guardrails are about safety and legality, not uncertainty.
 
 Thresholds are module constants so they're easy to tune against real conditions.
 """
@@ -12,14 +19,13 @@ Thresholds are module constants so they're easy to tune against real conditions.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
 from orchestration.providers.base import LLMRequest, ModelProvider
 
-# Active-alert events that hard-block (substring match, case-insensitive).
-BLOCKING_ALERT_KEYWORDS = ("flash flood", "red flag", "tornado", "extreme", "evacuation")
 AQI_BLOCK = 201  # "Very Unhealthy" and above
 AQI_WARN = 101  # "Unhealthy for Sensitive Groups" and above
 
@@ -38,21 +44,40 @@ class BlockReason:
 
 
 @dataclass(frozen=True)
+class CardWarning:
+    """One prominent, source-stamped warning a card wears (decision of 2026-07-01):
+    a VERIFIED hazard shows on the trail's card, never hides it. Mirrors how a feed
+    line carries source/confidence — `text` is the cause, `source` the live fact's
+    provenance, `observed_at` the fact's fetch timestamp. Presentation only: a
+    warning never feeds ranking or confidence (Rule #2)."""
+
+    kind: str  # ConditionKind.value the warning came from, e.g. "weather"
+    text: str  # the cause alone, e.g. "weather alert: Extreme Heat Warning"
+    source: str  # the fact's provenance, e.g. "NWS api.weather.gov"
+    observed_at: datetime  # when the fact was fetched (the alert's observation time)
+
+
+@dataclass(frozen=True)
 class GuardrailVerdict:
     blocked: bool
     blocks: tuple[BlockReason, ...] = ()
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[CardWarning, ...] = ()
 
 
-def _alerts(fact: VerifiedFact) -> list[str]:
+def _alerts(fact: VerifiedFact) -> list[str] | None:
+    """Active-alert events on a weather fact — or None when the alert state is
+    UNKNOWN. The NWS adapter writes `active_alerts: None` when the alerts sub-call
+    failed while the forecast succeeded; None means "couldn't verify", never "no
+    alerts" (rule #1) — the caller must hold the trail back, not pass it clean.
+    A fact that doesn't carry the key at all is silent on alerts (an adapter that
+    doesn't probe them) and contributes no alert signal either way."""
     value = fact.value
-    if isinstance(value, dict):
-        # active_alerts is None when the NWS alerts sub-call fails (alerts endpoint
-        # failure while forecast succeeded). None means "unknown", not "empty list".
-        # We must not iterate over None — treat it the same as an absent key.
-        alerts = value.get("active_alerts") or []
-        return [a for a in alerts if isinstance(a, str)]
-    return []
+    if not isinstance(value, dict) or "active_alerts" not in value:
+        return []
+    alerts = value["active_alerts"]
+    if alerts is None:
+        return None  # unknown — the alerts sub-call failed
+    return [a for a in alerts if isinstance(a, str)]
 
 
 def _aqi(fact: VerifiedFact) -> int | None:
@@ -70,17 +95,47 @@ def _hotspots(fact: VerifiedFact) -> int:
     return count if isinstance(count, int) else 0
 
 
-def evaluate_guardrails(facts: Mapping[ConditionKind, VerifiedFact]) -> GuardrailVerdict:
+def evaluate_guardrails(
+    facts: Mapping[ConditionKind, VerifiedFact],
+    *,
+    probed_kinds: Collection[ConditionKind] = (),
+) -> GuardrailVerdict:
+    """The verified-vs-unverifiable split (2026-07-01). `probed_kinds` names the
+    kinds the Verifier actually attempted, so a weather probe that failed outright
+    (probed, no fact) is distinguishable from weather simply not being probed in
+    this deployment — only the former is an unverifiable required condition."""
     blocks: list[BlockReason] = []
-    warnings: list[str] = []
+    warnings: list[CardWarning] = []
 
     weather = facts.get(ConditionKind.weather)
-    if weather is not None:
-        for event in _alerts(weather):
-            if any(kw in event.lower() for kw in BLOCKING_ALERT_KEYWORDS):
-                blocks.append(BlockReason("weather", f"weather alert: {event}", weather.source))
-            else:
-                warnings.append(f"weather alert: {event}")
+    if weather is None:
+        if ConditionKind.weather in probed_kinds:
+            # Weather was probed and no source answered: the alert state is
+            # unverifiable, and an unverifiable required condition holds the trail
+            # back with disclosure — a failed probe never reads as clear (rule #1).
+            blocks.append(
+                BlockReason("weather", "weather couldn't be verified", "no source responded")
+            )
+    else:
+        alerts = _alerts(weather)
+        if alerts is None:
+            # Forecast answered but the alerts sub-call failed → unknown, not clear.
+            blocks.append(
+                BlockReason("weather", "weather alerts couldn't be verified", weather.source)
+            )
+        else:
+            # NWS returns overlapping issuances of the same event as separate
+            # features (seen live 2026-07-02: the Extreme Heat Warning twice per
+            # point) — dedupe so a card never wears the same warning twice.
+            for event in dict.fromkeys(alerts):
+                # A VERIFIED active alert shows ON the card, prominently — it never
+                # hides the trail (decision of 2026-07-01; safety is presentation,
+                # never a ranking penalty — rule #2).
+                warnings.append(
+                    CardWarning(
+                        "weather", f"weather alert: {event}", weather.source, weather.fetched_at
+                    )
+                )
 
     air = facts.get(ConditionKind.air)
     if air is not None:
@@ -88,13 +143,22 @@ def evaluate_guardrails(facts: Mapping[ConditionKind, VerifiedFact]) -> Guardrai
         if aqi is not None and aqi >= AQI_BLOCK:
             blocks.append(BlockReason("air", f"air quality hazardous (AQI {aqi})", air.source))
         elif aqi is not None and aqi >= AQI_WARN:
-            warnings.append(f"air quality elevated (AQI {aqi})")
+            warnings.append(
+                CardWarning("air", f"air quality elevated (AQI {aqi})", air.source, air.fetched_at)
+            )
 
     fire = facts.get(ConditionKind.fire)
     if fire is not None:
         count = _hotspots(fire)
         if count:
-            warnings.append(f"{count} active-fire detection(s) nearby (thermal anomalies)")
+            warnings.append(
+                CardWarning(
+                    "fire",
+                    f"{count} active-fire detection(s) nearby (thermal anomalies)",
+                    fire.source,
+                    fire.fetched_at,
+                )
+            )
 
     return GuardrailVerdict(blocked=bool(blocks), blocks=tuple(blocks), warnings=tuple(warnings))
 

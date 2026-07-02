@@ -1,6 +1,6 @@
 # Adventure Planner — Design & Decision Log
 
-*Working title. Living document — last updated June 26, 2026.*
+*Working title. Living document — last updated July 2, 2026.*
 
 **Last verified:** 2026-06-26 · **Owner:** project (decisions of record)
 
@@ -352,3 +352,9 @@ Fine-tuning open UI-gen models + verifiable design-system reward (frontier produ
 - **C5 — Corpus sources hardcoded; the `ingestion/sources/*` seam never built** → **CLOSED: Epic 012** (CorpusSource contract + registry; OSM-as-spine a declared source property).
 - **C6 — Live-data adapters hardcoded; no LiveAdapter contract** → **CLOSED: Epic 013** (`LiveAdapter` ABC + kind-keyed primary/fallback registry, TTL cache, `ValhallaAdapter` drive-time folding in Epic 005).
 - **Process miss that hid C1:** the epic index tracked epics but no cross-cutting threads → **CLOSED: thread-tracker rows added to `epics/README.md`** (every T-thread now has an owner + status), so a build-now thread can't fall behind the code unwatched.
+
+## 41. Verified hazards: show with warning, never hide ✅ *(July 1, 2026 — decided by Josh after the Extreme Heat Warning dogfood; code: `orchestration/curator.py`, `orchestration/engine.py`, `api/schemas.py`, `frontend/src/screens/cardParts.tsx`)*
+- **The decision:** a trail under a **VERIFIED active hazard** (an alert carried by a live fact with source + timestamp — e.g. the NWS Extreme Heat Warning) **stays in the feed as a card wearing a prominent, source-stamped warning** (`warnings[]`: text + source + observed-at, mirroring how `lines[]` carries source/confidence). It is never hidden. Ranking is untouched — a safety flag is presentation, never a penalty (Rule #2).
+- **Set-aside is reserved for the UNVERIFIABLE class** (source-or-silence, Rule #1): a failed weather probe or a failed alerts sub-call means the alert state is *unknown*, and unknown never reads as "clear" — the trail is held back **with disclosure** (cause + source), surfaced as a quiet feed-level note. Non-weather hard thresholds (hazardous AQI ≥ 201) keep their block semantics.
+- **The dogfood that forced it:** `/plan` near Front Royal during the 2026-07-01 Extreme Heat Warning returned 1 card and set aside 9 trails, and the frontend rendered neither the set-aside disclosures nor card warnings — the user saw one lonely hike with no explanation. Hiding a verified hazard threw away exactly the live-synthesis value the product exists for; showing it *with the warning* is the honest behavior.
+- **The Compton Gap Road anomaly, resolved:** the one surviving trail was *legitimately* clear — its probe point sits in NWS forecast zone VAZ507 ("Northern Virginia Blue Ridge"), which the warning's zone list (VAZ027–031 + WV zones, the valley floors) deliberately excludes. A verified per-point "no alert," not a false-clear. The investigation did surface a latent Rule-#1 violation, now fixed: the old guardrail collapsed `active_alerts: None` (alerts sub-call failed) into "no alerts", and a fully-failed weather probe passed a trail clean with no disclosure — both now set the trail aside as unverifiable.

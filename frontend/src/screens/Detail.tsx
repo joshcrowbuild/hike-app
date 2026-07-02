@@ -2,7 +2,7 @@ import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
 import type { OriginKey } from '../types'
-import { DecisionItem, formatDrive } from './cardParts'
+import { DecisionItem, formatDrive, WarningBlock } from './cardParts'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -68,6 +68,8 @@ function DetailBody({ card }: { card: CardVM }) {
         {e?.area || e?.routeShape ? (
           <p className="detail-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
         ) : null}
+
+        <WarningBlock warnings={card.warnings} />
 
         <div className="detail-facts">
           {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}

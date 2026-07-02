@@ -1,6 +1,6 @@
 import { Confidence, Signal, Staleness } from '../components'
 import type { CardVM, ConditionSilence as ConditionSilenceVM, SilenceState } from '../data/vm'
-import { DecisionItem, formatDrive, formatTrail } from './cardParts'
+import { DecisionItem, formatDrive, formatTrail, WarningBlock } from './cardParts'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
@@ -24,6 +24,8 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
             <p className="card-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
           ) : null}
         </div>
+
+        <WarningBlock warnings={card.warnings} />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
 

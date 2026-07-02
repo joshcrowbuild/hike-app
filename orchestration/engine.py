@@ -38,7 +38,7 @@ from orchestration.adapters.registry import (
 )
 from orchestration.confidence import Confidence, compute, for_fact
 from orchestration.config import Settings
-from orchestration.curator import GuardrailVerdict, evaluate_guardrails, rank_ids
+from orchestration.curator import CardWarning, GuardrailVerdict, evaluate_guardrails, rank_ids
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, summarize_fact
@@ -84,7 +84,9 @@ class FeedCard:
     name: str
     distance_mi: float | None
     lines: list[FeedLine]
-    warnings: tuple[str, ...]
+    # Prominent source-stamped hazard warnings the card wears (a VERIFIED hazard
+    # shows, never hides — decision of 2026-07-01). Presentation only (Rule #2).
+    warnings: tuple[CardWarning, ...]
 
 
 @dataclass(frozen=True)
@@ -100,9 +102,13 @@ class SetAsideReason:
 
 @dataclass(frozen=True)
 class SetAsideTrail:
-    """A candidate a hard live guardrail ruled out. Disclosed, never silently dropped
+    """A candidate a hard live guardrail ruled out — an UNVERIFIABLE required
+    condition (a failed weather probe: rule #1, a failed probe is never "clear") or a
+    hard non-weather threshold (hazardous AQI). Disclosed, never silently dropped
     (Epic 018 S5 AC-5.2): it carries its cause + source so the surface can show *why*
-    it's set aside. A safety gate only — it never feeds ranking/confidence (Rule #2)."""
+    it's set aside. A VERIFIED hazard is not set aside — it stays a card wearing a
+    prominent warning (decision of 2026-07-01). A safety gate only — it never feeds
+    ranking/confidence (Rule #2)."""
 
     canonical_id: str
     name: str
@@ -242,6 +248,15 @@ def plan_from_origin(
     # CDP-01: distinct-origin corroboration per candidate from the SAME_AS corpus layer.
     corr_by_id, sources_by_id = _corpus_corroboration(candidates, session)
 
+    # Which point kinds the Verifier will actually attempt — lets the guardrails tell
+    # "weather probed but no source answered" (unverifiable → set aside, rule #1) apart
+    # from "weather not probed in this deployment" (no signal either way).
+    probed_kinds = frozenset(
+        kind
+        for kind, adapters in probes.items()
+        if adapters and kind is not ConditionKind.drive_time
+    )
+
     planned: list[PlannedTrail] = []
     set_aside: list[SetAsideTrail] = []
     for candidate in candidates:
@@ -252,10 +267,12 @@ def plan_from_origin(
         else:
             probe_point = Point(*coord)
         facts = verify(probe_point, probes, cache=cache)  # point kinds only (drive_time skipped)
-        verdict = evaluate_guardrails(facts)
+        verdict = evaluate_guardrails(facts, probed_kinds=probed_kinds)
         if verdict.blocked:
-            # Hard filter (Stage 4 §6) — but a real hazard is *set aside with its
-            # source-stamped reason*, never silently dropped (Epic 018 S5 AC-5.1/5.2).
+            # Hard filter (Stage 4 §6) — the unverifiable/hard-threshold classes are
+            # *set aside with a source-stamped reason*, never silently dropped (Epic
+            # 018 S5 AC-5.1/5.2). A VERIFIED hazard is NOT in this path: it stays a
+            # card and wears a prominent warning (decision of 2026-07-01).
             set_aside.append(_set_aside(candidate, verdict))
             continue
         drive_fact = drive_facts.get(candidate.canonical_id)

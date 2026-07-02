@@ -62,3 +62,86 @@ describe('Home cold-start loading copy', () => {
     expect(screen.queryByText('Reading conditions…')).not.toBeInTheDocument()
   })
 })
+
+/** A client whose plan() resolves immediately with the given feed. */
+function readyClient(feed: FeedVM): PlannerClient {
+  return {
+    plan: () => Promise.resolve(feed),
+    recentEpisodes: () => Promise.resolve([]),
+  } as unknown as PlannerClient
+}
+
+function feedWith(overrides: Partial<FeedVM>): FeedVM {
+  return {
+    query: '',
+    cards: [
+      { id: 'compton-peak', name: 'Compton Peak', distanceMi: 2.1, conditionLines: [], warnings: [] },
+    ],
+    notices: [],
+    setAside: [],
+    heldBack: [],
+    readiness: { on: false, state: 'off' },
+    dataSource: 'live',
+    ...overrides,
+  }
+}
+
+async function renderHomeWith(feed: FeedVM) {
+  render(
+    <PlannerProvider scope={ANON_SCOPE} client={readyClient(feed)}>
+      <Home
+        tuning={TUNING}
+        anonymous
+        onOpenTuning={noop}
+        onOpenTrail={noop}
+        onOpenOutcome={noop}
+        onApplyTuning={noop}
+      />
+    </PlannerProvider>,
+  )
+  await act(async () => {}) // let the resolved plan() commit
+}
+
+describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)', () => {
+  it('renders a quiet feed-level note naming the count and the causes', async () => {
+    await renderHomeWith(
+      feedWith({
+        heldBack: [
+          {
+            id: 'a',
+            name: 'Foggy Hollow',
+            reasons: [
+              {
+                text: "weather alerts couldn't be verified (NWS api.weather.gov)",
+                source: 'NWS api.weather.gov',
+                kind: 'weather',
+              },
+            ],
+          },
+          {
+            id: 'b',
+            name: 'Mist Ridge',
+            reasons: [
+              {
+                text: "weather alerts couldn't be verified (NWS api.weather.gov)",
+                source: 'NWS api.weather.gov',
+                kind: 'weather',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    const note = screen.getByText(/2 trails held back/)
+    expect(note).toBeInTheDocument()
+    // Duplicate causes collapse to one honest clause, still source-stamped.
+    expect(note.textContent).toBe(
+      "2 trails held back — weather alerts couldn't be verified (NWS api.weather.gov)",
+    )
+  })
+
+  it('renders no note when nothing was held back', async () => {
+    await renderHomeWith(feedWith({}))
+    expect(screen.queryByText(/held back/)).not.toBeInTheDocument()
+  })
+})
