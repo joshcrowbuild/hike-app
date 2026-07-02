@@ -73,6 +73,10 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
 
   const unmapped = !isDrawableRoute(geo.geometry)
   const approximate = geo.quality === 'approximate' && !unmapped
+  // Source-or-silence (Rule #1 / D7): the start marker is a derived, approximate access
+  // point when the trail has no surveyed trailhead — disclose it, never pass it off as
+  // a real trailhead.
+  const derivedStart = geo.trailhead.derived === true
   const layerCredit = layerByKey(layer).attribution
 
   return (
@@ -118,10 +122,18 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
         directionsUrl={trailheadDirectionsUrl(geo.trailhead)}
       />
 
-      {(unmapped || approximate || tileError || (!interactive && !unmapped) || locateNote) && (
+      {(unmapped ||
+        approximate ||
+        derivedStart ||
+        tileError ||
+        (!interactive && !unmapped) ||
+        locateNote) && (
         <div className="map-notes" role="status">
           {unmapped ? <p className="map-note">Route not mapped — trailhead only.</p> : null}
           {approximate ? <p className="map-note">Approximate route — low source agreement.</p> : null}
+          {derivedStart ? (
+            <p className="map-note">Approximate start — nearest access point, no surveyed trailhead.</p>
+          ) : null}
           {tileError ? (
             <p className="map-note">Map imagery is having trouble — showing the route over a neutral map.</p>
           ) : null}

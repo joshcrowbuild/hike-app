@@ -519,10 +519,24 @@ def _geometry_and_confidence(
 
 
 def _trailhead(row: dict[str, Any]) -> GeoPoint | None:
-    """The start marker: the accessing trailhead's point, or the trail's own point as
-    a fallback. `None` when neither exists."""
-    latlon = _point_latlon(row.get("trailhead_point")) or _point_latlon(row.get("trail_point"))
-    return GeoPoint(lat=latlon[0], lon=latlon[1]) if latlon else None
+    """The start marker: the accessing trailhead's surveyed point, or — when the trail
+    has no tagged `:Trailhead` — a point derived from the trail's own geometry as a
+    fallback (D7: coverage isn't gated on trailhead tagging). `None` when neither
+    exists.
+
+    Barrier islands and urban corpora under-tag trailheads, so most real trails reach
+    the feed only via the geometry fallback; that point is a derived *approximate*
+    access point (the trail's stored centroid), not a surveyed trailhead, so it is
+    disclosed as `derived=True` rather than posing as one (Rule #1 / source-or-silence).
+    A surveyed trailhead wins when present and is `derived=False` — regions that DO tag
+    trailheads (e.g. Shenandoah) are unchanged."""
+    surveyed = _point_latlon(row.get("trailhead_point"))
+    if surveyed is not None:
+        return GeoPoint(lat=surveyed[0], lon=surveyed[1], derived=False)
+    derived = _point_latlon(row.get("trail_point"))
+    if derived is not None:
+        return GeoPoint(lat=derived[0], lon=derived[1], derived=True)
+    return None
 
 
 def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:

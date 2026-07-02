@@ -32,7 +32,7 @@ _API_TS = Path(__file__).resolve().parent.parent / "frontend" / "src" / "data" /
 
 # Canonical wire field names, transcribed from frontend/src/data/api.ts (source of truth).
 EXPECTED: dict[str, set[str]] = {
-    "WirePoint": {"lat", "lon"},
+    "WirePoint": {"lat", "lon", "derived"},
     "WireGeometry": {"type", "coordinates"},
     "WireElevationSample": {"distance_m", "elevation_m"},
     "WireElevationProfile": {

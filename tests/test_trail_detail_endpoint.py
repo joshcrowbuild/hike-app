@@ -161,7 +161,8 @@ def test_full_trail_returns_exact_contract_shape():
     assert body["geometry"]["type"] == "LineString"
     assert body["geometry"]["coordinates"][0] == [-78.30, 38.55]  # (lon, lat) order
     assert body["geometry_confidence"] == "stated"  # clean single LineString
-    assert body["trailhead"] == {"lat": 38.5707, "lon": -78.2861}
+    # A surveyed trailhead → derived=False (a real trailhead is never marked approximate).
+    assert body["trailhead"] == {"lat": 38.5707, "lon": -78.2861, "derived": False}
     assert body["summit"] is None  # no high-point concept yet → null (source-or-silence)
 
     prof = body["elevation_profile"]
@@ -193,8 +194,9 @@ def test_segments_only_assembles_geometry_and_nulls_profile():
     # Two contiguous segments assemble into one LineString.
     assert body["geometry"]["type"] == "LineString"
     assert body["geometry"]["coordinates"] == [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]
-    # No trailhead point → falls back to the trail point.
-    assert body["trailhead"] == {"lat": 1.0, "lon": 1.0}
+    # No surveyed trailhead → falls back to the trail's geometry point, disclosed as a
+    # derived/approximate access point (D7 / Rule #1) rather than posing as a trailhead.
+    assert body["trailhead"] == {"lat": 1.0, "lon": 1.0, "derived": True}
     assert body["elevation_profile"] is None  # no profile stored → null, not faked
 
 
@@ -239,11 +241,62 @@ def test_no_geometry_returns_null_geometry_with_trailhead():
         client.__exit__(None, None, None)
 
     assert body["geometry"] is None  # route not mapped — never fabricated
-    assert body["trailhead"] == {"lat": 40.0, "lon": -105.0}
+    # Trailhead-only trail: the marker is the surveyed trailhead → derived=False.
+    assert body["trailhead"] == {"lat": 40.0, "lon": -105.0, "derived": False}
     assert body["elevation_profile"] is None
 
 
 # ── 404 for an unknown trail ──────────────────────────────────────────────────
+
+
+# ── D7: the start marker is honest about surveyed vs derived access points ────
+
+
+def test_trailhead_marks_surveyed_vs_derived_vs_absent():
+    # A surveyed trailhead wins and is NOT flagged derived (regions that tag
+    # trailheads — e.g. Shenandoah — are unchanged).
+    surveyed = app_mod._trailhead(
+        {"trailhead_point": {"latitude": 38.57, "longitude": -78.29}, "trail_point": None}
+    )
+    assert surveyed is not None
+    assert (surveyed.lat, surveyed.lon, surveyed.derived) == (38.57, -78.29, False)
+
+    # No surveyed trailhead → fall back to the trail's geometry point, disclosed as a
+    # derived/approximate access point (D7 / Rule #1) — the barrier-island / urban case.
+    derived = app_mod._trailhead(
+        {"trailhead_point": None, "trail_point": {"latitude": 36.17, "longitude": -75.75}}
+    )
+    assert derived is not None
+    assert (derived.lat, derived.lon, derived.derived) == (36.17, -75.75, True)
+
+    # A surveyed trailhead is preferred even when a trail point also exists.
+    both = app_mod._trailhead(
+        {
+            "trailhead_point": {"latitude": 1.0, "longitude": 2.0},
+            "trail_point": {"latitude": 9.0, "longitude": 9.0},
+        }
+    )
+    assert both is not None
+    assert (both.lat, both.lon, both.derived) == (1.0, 2.0, False)
+
+    # Neither point → no start marker (never fabricated).
+    assert app_mod._trailhead({"trailhead_point": None, "trail_point": None}) is None
+
+
+def test_feed_card_surfaces_derived_access_point_for_trailless_trail():
+    # The D7 end-to-end shape on the feed path: a trail with geometry but no surveyed
+    # trailhead still yields a card whose start marker is a disclosed derived point.
+    from types import SimpleNamespace
+
+    session = _FakeSession("anonymous")
+    maps_by_cid = app_mod._fetch_maps_by_canonical(session, ["ct:segs"])
+    card = app_mod._card_response(
+        SimpleNamespace(
+            canonical_id="ct:segs", name="Segment Trail", distance_mi=1.1, lines=[], warnings=[]
+        ),
+        maps_by_cid["ct:segs"],
+    ).model_dump()
+    assert card["trailhead"] == {"lat": 1.0, "lon": 1.0, "derived": True}
 
 
 def test_unknown_trail_returns_404():
@@ -273,7 +326,7 @@ def test_feed_card_carries_maps_fields():
     ).model_dump()
     assert full["geometry"]["type"] == "LineString"
     assert full["geometry_confidence"] == "stated"
-    assert full["trailhead"] == {"lat": 38.5707, "lon": -78.2861}
+    assert full["trailhead"] == {"lat": 38.5707, "lon": -78.2861, "derived": False}
     assert full["summit"] is None
     assert full["elevation_profile"]["total_gain_m"] == 300.0
     assert full["elevation_profile"]["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
@@ -288,4 +341,5 @@ def test_feed_card_carries_maps_fields():
     assert bare["geometry"] is None
     assert bare["geometry_confidence"] is None
     assert bare["elevation_profile"] is None
-    assert bare["trailhead"] == {"lat": 40.0, "lon": -105.0}  # trailhead still served
+    # trailhead still served; a surveyed trailhead → derived=False.
+    assert bare["trailhead"] == {"lat": 40.0, "lon": -105.0, "derived": False}
