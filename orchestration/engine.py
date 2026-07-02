@@ -52,6 +52,12 @@ log = logging.getLogger(__name__)
 DEFAULT_RADIUS_M = 40_000.0
 _M_PER_MILE = 1609.344
 
+# Disclosed once per feed when personal context could not be applied (Rules #6/#7:
+# enrichment degrades-and-discloses, never breaks the feed).
+PERSONAL_CONTEXT_UNAVAILABLE_NOTICE = (
+    "Personal context unavailable — showing general recommendations."
+)
+
 
 @dataclass(frozen=True)
 class PlannedTrail:
@@ -366,11 +372,20 @@ def plan(
 
     # AC-5.3: context assembled AFTER guardrail filtering (planned is already filtered)
     # AC-5.4: assembled once, passed to single rank_ids call
+    # Personal context is enrichment, never a dependency (Rules #6/#7): any failure in
+    # assembly degrades to the anonymous-quality feed with a disclosed notice — a 500
+    # here would make the private overlay a hard dependency of the world feed.
     candidate_ids = [p.candidate.canonical_id for p in planned]
-    beliefs = fetch_beliefs(viewer_id, runtime.session.run)
-    profile = fetch_profile(viewer_id, runtime.session.run)
-    episodes = fetch_relevant_episodes(viewer_id, candidate_ids, runtime.session.run)
-    personal_context = assemble_context(beliefs, profile, episodes)
+    personal_context = ""
+    context_degraded = False
+    try:
+        beliefs = fetch_beliefs(viewer_id, runtime.session.run)
+        profile = fetch_profile(viewer_id, runtime.session.run)
+        episodes = fetch_relevant_episodes(viewer_id, candidate_ids, runtime.session.run)
+        personal_context = assemble_context(beliefs, profile, episodes)
+    except Exception:
+        log.exception("personal-context assembly failed; serving the anonymous-quality feed")
+        context_degraded = True
 
     # Merge intent profile with personal context (intent.profile wins if both set)
     combined_profile = intent.profile or (personal_context or None)
@@ -385,19 +400,34 @@ def plan(
     # strictly more conservative than AC-1.4's overlay-only trigger, never less safe.
     # The plain cloud-allowed judge runs only the anonymous, no-overlay path, where
     # combined_profile is at most user free-text (intent.profile), never overlay.
-    if viewer_id != "anonymous" or personal_context:
-        judge = runtime.personalized_judge
-    else:
-        judge = runtime.judge
+    use_personal_judge = viewer_id != "anonymous" or bool(personal_context)
+    judge = runtime.personalized_judge if use_personal_judge else runtime.judge
     if judge:
-        planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
+        try:
+            planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
+        except Exception:
+            if not use_personal_judge:
+                raise  # anonymous path: a judge failure is not a personal-context failure
+            # The local-forced personalized judge is unavailable (e.g. a hosted deploy
+            # with no on-device model). Personal context is enrichment (Rule #6): rank
+            # with the plain judge exactly as the anonymous path would — the overlay is
+            # STRIPPED from the fallback profile so it still never egresses (Rule #5).
+            log.exception("personalized ranking failed; serving the anonymous-quality feed")
+            context_degraded = True
+            if runtime.judge:
+                planned = rank_plan(
+                    planned, runtime.judge[0], runtime.judge[1], profile=intent.profile or None
+                )
+    notices = batch.notices
+    if context_degraded:
+        notices = notices + (PERSONAL_CONTEXT_UNAVAILABLE_NOTICE,)
     # AC-5.2/5.3: set-aside trails ride the feed as a disclosed, cause+source list —
     # kept off `cards` (ranking never sees them; a hazard is a safety gate, not a
     # taste demotion). Ranking above operates only on the guardrail-passing `planned`.
     return Feed(
         query=query,
         cards=[feed_card(p) for p in planned],
-        notices=batch.notices,
+        notices=notices,
         set_aside=batch.set_aside,
     )
 
