@@ -12,10 +12,13 @@ viewer_id never appears in the clear (Rule #5).
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 import api.app as app_mod
 from orchestration.config import Settings
@@ -73,14 +76,14 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
     )
 
 
-@pytest.fixture
-def client(monkeypatch) -> TestClient:
-    """A TestClient with settings, a stub graph, and the engine/maps mocked so /plan
-    returns a 200 without any live call."""
+@contextmanager
+def _stubbed_client(monkeypatch, asgi_app) -> Iterator[TestClient]:
+    """A TestClient over `asgi_app` with settings, a stub graph, and the engine/maps
+    mocked so /plan returns a 200 without any live call."""
     monkeypatch.setattr(app_mod, "build_runtime", lambda *a, **k: _Runtime())
     monkeypatch.setattr("orchestration.engine.plan", _canned_feed)
     monkeypatch.setattr(app_mod, "_fetch_maps_by_canonical", lambda session, ids: {})
-    c = TestClient(app_mod.app)
+    c = TestClient(asgi_app)
     c.__enter__()
     # Override the lifespan-wired singletons with test doubles (no live Aura).
     monkeypatch.setattr(app_mod, "_settings", Settings.from_env({}))
@@ -89,6 +92,22 @@ def client(monkeypatch) -> TestClient:
         yield c
     finally:
         c.__exit__(None, None, None)
+
+
+@pytest.fixture
+def client(monkeypatch) -> Iterator[TestClient]:
+    with _stubbed_client(monkeypatch, app_mod.app) as c:
+        yield c
+
+
+@pytest.fixture
+def proxied_client(monkeypatch) -> Iterator[TestClient]:
+    """The app behind uvicorn's real ProxyHeadersMiddleware with the same trust setting
+    as the production serve command (`--proxy-headers --forwarded-allow-ips='*'`, see the
+    Dockerfile CMD): request.client is rewritten to the first X-Forwarded-For entry before
+    slowapi keys on it, exactly as behind Render's proxy."""
+    with _stubbed_client(monkeypatch, ProxyHeadersMiddleware(app_mod.app, trusted_hosts="*")) as c:
+        yield c
 
 
 _PLAN_BODY = {"query": "something mellow", "lat": 38.5, "lon": -78.4}
@@ -119,6 +138,24 @@ def test_plan_rate_limited_returns_clean_429(client, monkeypatch) -> None:
     assert "rate limit" in limited.json()["detail"].lower()
     # The advertised back-off contract: a 429 carries Retry-After so a client backs off.
     assert "retry-after" in {k.lower() for k in limited.headers}
+
+
+def test_plan_buckets_are_keyed_per_forwarded_client_ip(proxied_client, monkeypatch) -> None:
+    # Behind Render's proxy the TCP peer is the proxy for every request; without the
+    # proxy-header rewrite all clients share ONE bucket and the second client below would
+    # get a 429 off the first client's traffic. With the production middleware + trust
+    # setting, exhausting client A's bucket must leave client B's untouched.
+    monkeypatch.setenv("ADVENTURE_RATELIMIT_PLAN", "1/hour")
+
+    xff_a = {"X-Forwarded-For": "203.0.113.10"}
+    xff_b = {"X-Forwarded-For": "203.0.113.20"}
+    a_ok = proxied_client.post("/plan", json=_PLAN_BODY, headers=xff_a)
+    a_limited = proxied_client.post("/plan", json=_PLAN_BODY, headers=xff_a)
+    b_ok = proxied_client.post("/plan", json=_PLAN_BODY, headers=xff_b)
+
+    assert a_ok.status_code == 200
+    assert a_limited.status_code == 429  # client A exhausted its own bucket...
+    assert b_ok.status_code == 200  # ...without spending from client B's
 
 
 def test_health_rate_limited_returns_429(client, monkeypatch) -> None:
