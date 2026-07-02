@@ -5,6 +5,10 @@ export const originLabels: Record<OriginKey, string> = {
   frontRoyal: 'Front Royal',
   luray: 'Luray',
   charlottesville: 'Charlottesville',
+  duck: 'Duck',
+  nagsHead: 'Nags Head',
+  hatteras: 'Hatteras',
+  ocracoke: 'Ocracoke',
 }
 
 export const whenLabels: Record<WhenKey, string> = {

@@ -8,6 +8,12 @@ polygon and re-run.
 (NPS boundary) and **George Washington & Jefferson National Forests** (PAD-US /
 USFS boundary), buffered ~2 km so trails crossing the edge aren't truncated.
 
+**Region (`outer-banks`):** the NC barrier islands — Corolla/Currituck north
+through Duck, Kitty Hawk, Nags Head and Jockey's Ridge, south down Cape Hatteras
+National Seashore (Pea Island NWR, Buxton Woods, Hatteras village) to Ocracoke.
+Coastal nature/dune/maritime-forest trails and beach-access walking paths; terrain
+is near sea level, so elevation profiles are correctly flat (not a bug).
+
 The boundary `*.geojson` is produced/committed when the Stage-3 pipeline is built
 (small enough to track here; bulk corpus extracts stay under the git-ignored
 `data/`). See `docs/research/stage-3-corpus-pipeline.md` §2.
