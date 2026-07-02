@@ -12,6 +12,19 @@ export const originLabels: Record<OriginKey, string> = {
   ocracoke: 'Ocracoke',
 }
 
+/** Which region an origin anchors — drives the region tag on Home so it tracks
+ *  the selected origin instead of assuming the Shenandoah pilot region. */
+export const regionLabels: Record<OriginKey, string> = {
+  frontRoyal: 'Shenandoah',
+  luray: 'Shenandoah',
+  charlottesville: 'Shenandoah',
+  richmond: 'Richmond',
+  duck: 'Outer Banks',
+  nagsHead: 'Outer Banks',
+  hatteras: 'Outer Banks',
+  ocracoke: 'Outer Banks',
+}
+
 export const whenLabels: Record<WhenKey, string> = {
   tomorrowMorning: 'Tomorrow morning',
   weekendMorning: 'Weekend morning',

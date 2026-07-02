@@ -1,21 +1,23 @@
 import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
-import type { OriginKey } from '../types'
 import { DecisionItem, formatDrive, WarningBlock } from './cardParts'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
   id: string
-  /** Current frame origin for drive time; omit on a cold deep-link (R7). */
-  origin?: OriginKey
   onBack: () => void
   onReplan: () => void
 }
 
-/** Viability-first trail detail (v0.3 §9): "can I actually do this today?" */
-export function Detail({ id, origin, onBack, onReplan }: DetailProps) {
-  const { status, card, reload } = useCard(id, origin)
+/**
+ * Viability-first trail detail (v0.3 §9): "can I actually do this today?"
+ * `useCard` resolves the tapped card from the feed already in context — no
+ * origin/tuning threading needed here; a cold deep-link falls back to
+ * whatever frame `useCard` last saw (R7).
+ */
+export function Detail({ id, onBack, onReplan }: DetailProps) {
+  const { status, card, reload } = useCard(id)
 
   return (
     <div className="app-shell">

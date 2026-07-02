@@ -30,12 +30,7 @@ function App() {
   return (
     <>
       {route.name === 'trail' ? (
-        <Detail
-          id={route.id}
-          origin={anonymous ? undefined : tuning.origin}
-          onBack={back}
-          onReplan={() => navigate({ name: 'home' })}
-        />
+        <Detail id={route.id} onBack={back} onReplan={() => navigate({ name: 'home' })} />
       ) : route.name === 'outcome' ? (
         <Outcome episodeId={route.episodeId} onDone={() => navigate({ name: 'home' })} />
       ) : (
