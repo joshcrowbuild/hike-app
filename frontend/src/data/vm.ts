@@ -125,6 +125,12 @@ export interface CardVM {
 export interface GeoPosition {
   lat: number
   lon: number
+  /**
+   * `true` when this is a derived, approximate access point (the trail has no surveyed
+   * trailhead, so the start was synthesised from its geometry — D7). Drives the honest
+   * "approximate start" disclosure; never a ranking signal (Rule #1 / #2).
+   */
+  derived?: boolean
 }
 
 /**

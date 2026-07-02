@@ -40,6 +40,12 @@ const mapped: TrailGeo = {
 
 const approximate: TrailGeo = { ...mapped, quality: 'approximate' }
 
+// A trail with no surveyed trailhead: the start is a derived, approximate access point.
+const derivedStart: TrailGeo = {
+  ...mapped,
+  trailhead: { lat: 38.5, lon: -78.4, derived: true },
+}
+
 const unmapped: TrailGeo = {
   geometry: null,
   trailhead: { lat: 38.556, lon: -78.387 },
@@ -75,6 +81,18 @@ describe('TerrainMap — attribution + honest states (S2/S3)', () => {
     const { container } = render(<TerrainMap geo={approximate} trailName="Dark Hollow Falls" />)
     expect(screen.getByText(/approximate route — low source agreement/i)).toBeInTheDocument()
     expect(container.querySelector('.map-static-route--dashed')).toBeInTheDocument()
+  })
+
+  it('discloses a derived, approximate start when there is no surveyed trailhead (D7)', () => {
+    render(<TerrainMap geo={derivedStart} trailName="Duck Boardwalk" />)
+    expect(
+      screen.getByText(/approximate start — nearest access point, no surveyed trailhead/i),
+    ).toBeInTheDocument()
+  })
+
+  it('does not disclose an approximate start for a surveyed trailhead (Shenandoah unchanged)', () => {
+    render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
+    expect(screen.queryByText(/approximate start/i)).not.toBeInTheDocument()
   })
 
   it('degrades the elevation strip honestly when there is no profile (AC-5.2)', () => {

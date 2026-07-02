@@ -77,6 +77,13 @@ export interface FeedCardResponse {
 export interface WirePoint {
   lat: number
   lon: number
+  /**
+   * Source-or-silence disclosure for a start marker (Rule #1): `true` when the point
+   * is a derived, approximate access point (synthesised from the trail's geometry
+   * because the trail has no surveyed trailhead — D7), `false`/absent for a real
+   * surveyed trailhead. Presentation-only; never affects ranking (Rule #2).
+   */
+  derived?: boolean
 }
 
 /** GeoJSON route geometry (`[lon, lat]` coordinate order per the spec). */

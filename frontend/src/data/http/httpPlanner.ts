@@ -115,7 +115,7 @@ function mapGeo(c: FeedCardResponse): TrailGeo | undefined {
   // trailhead-only state, never an empty line that crashes the map math.
   return {
     geometry: isDrawableRoute(c.geometry ?? null) ? (c.geometry ?? null) : null,
-    trailhead: { lat: c.trailhead.lat, lon: c.trailhead.lon },
+    trailhead: { lat: c.trailhead.lat, lon: c.trailhead.lon, derived: c.trailhead.derived ?? false },
     quality,
     summit: c.summit ? { lat: c.summit.lat, lon: c.summit.lon } : undefined,
     elevationProfile: mapElevationProfile(c.elevation_profile),

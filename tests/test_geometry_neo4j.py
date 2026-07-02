@@ -102,7 +102,10 @@ def test_ingest_enrich_then_trail_detail_serves_contract(clean_graph):
     assert resp.geometry_confidence in ("stated", "hedged")
     assert resp.elevation_profile is not None
     assert resp.elevation_profile.total_gain_m > 0
-    assert resp.trailhead is not None  # trail point fallback (no Trailhead node here)
+    # No Trailhead node here → the start is the trail-point fallback, disclosed as a
+    # derived/approximate access point through the real DB round-trip (D7 / Rule #1).
+    assert resp.trailhead is not None
+    assert resp.trailhead.derived is True
 
 
 @pytest.mark.neo4j

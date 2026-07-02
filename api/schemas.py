@@ -76,10 +76,18 @@ class GeoJsonGeometry(BaseModel):
 
 class GeoPoint(BaseModel):
     """`WirePoint`: a WGS84 point `{lat, lon}` — used for the trailhead start marker
-    and the summit/high-point."""
+    and the summit/high-point.
+
+    `derived` is the source-or-silence disclosure for the start marker (Rule #1): when
+    a trail has no surveyed `:Trailhead`, the start falls back to a point synthesised
+    from the trail's own geometry, and `derived=True` says so — an approximate access
+    point, never presented as a surveyed trailhead (D7). `False` for a real trailhead
+    and for the summit (a summit is never a fallback). Presentation-only; it never
+    enters ranking (Rule #2)."""
 
     lat: float
     lon: float
+    derived: bool = False
 
 
 class ElevationSample(BaseModel):

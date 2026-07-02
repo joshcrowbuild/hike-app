@@ -120,11 +120,38 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
     const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
     const geo = result.cards[0].geo
     expect(geo?.geometry?.type).toBe('LineString')
-    expect(geo?.trailhead).toEqual({ lat: 38.5, lon: -78.4 })
+    // A surveyed trailhead (no `derived` on the wire) → derived:false, never approximate.
+    expect(geo?.trailhead).toEqual({ lat: 38.5, lon: -78.4, derived: false })
     // hedged confidence → drawn as the dashed "approximate" route (D5).
     expect(geo?.quality).toBe('approximate')
     expect(geo?.elevationProfile?.totalGainMeters).toBe(200)
     expect(geo?.elevationProfile?.samples[1]).toEqual({ distanceMeters: 500, elevationMeters: 1200 })
+  })
+
+  it('threads a derived (approximate) access point onto the VM start marker (D7)', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'duck-boardwalk',
+          name: 'Duck Boardwalk',
+          distance_mi: 0.3,
+          lines: [],
+          warnings: [],
+          geometry: { type: 'LineString', coordinates: [[-75.75, 36.17], [-75.74, 36.18]] },
+          // No surveyed trailhead: the backend disclosed the start as derived.
+          trailhead: { lat: 36.17, lon: -75.75, derived: true },
+          geometry_confidence: 'stated',
+          summit: null,
+          elevation_profile: null,
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].geo?.trailhead).toEqual({ lat: 36.17, lon: -75.75, derived: true })
   })
 
   it('yields no geo when the card carries no trailhead (degrade, not fabricate)', async () => {
