@@ -144,6 +144,24 @@ function useHarness(input: PlanInput, cardId: string | null) {
   return { feed, card }
 }
 
+describe('useFeed error state (NNG: calm, actionable, never the raw exception)', () => {
+  it('surfaces a fixed calm message when plan() rejects, not the raw error string', async () => {
+    const client = {
+      plan: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.status).toBe('error')
+    expect(result.current.error?.message).toBe('Couldn’t reach the planner. Try again.')
+    expect(result.current.error?.message).not.toContain('TypeError')
+  })
+})
+
 describe('useCard resolves the tapped card from the in-memory feed (OBX "not in your current set" fix)', () => {
   it('finds a card already in the just-resolved feed with no network call', async () => {
     const feed = feedWithCard('stony-man')

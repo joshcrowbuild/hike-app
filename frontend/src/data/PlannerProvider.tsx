@@ -184,9 +184,16 @@ export function useFeed(input: PlanInput): FeedState {
           else setState({ status: 'ready', feed })
         }
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (!live) return
-        setState({ status: 'error', error: { kind: 'offline', message: String(err) } })
+        // A calm, fixed message rather than the raw exception — a stack trace
+        // or "TypeError: Failed to fetch" reads as alarming and tells the user
+        // nothing actionable (NNG error-message guidance: say what happened,
+        // never the implementation detail).
+        setState({
+          status: 'error',
+          error: { kind: 'offline', message: 'Couldn’t reach the planner. Try again.' },
+        })
       })
       .finally(() => {
         if (live) setSlow(false)

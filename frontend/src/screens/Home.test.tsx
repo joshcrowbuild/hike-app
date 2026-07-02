@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Home } from './Home'
@@ -172,5 +173,64 @@ describe('Home region tag tracks the selected origin (fixes the stuck "Shenandoa
   it('keeps the Shenandoah tag for a Shenandoah origin like Front Royal', async () => {
     await renderHomeWith(feedWith({}))
     expect(screen.getAllByText(/Shenandoah/).length).toBeGreaterThan(0)
+  })
+})
+
+describe('Home loading state (skeleton placeholders, NNG structured wait)', () => {
+  it('renders card-shaped skeletons immediately instead of a bare loading line', () => {
+    const { container } = renderHome()
+    expect(container.querySelectorAll('.skeleton-card').length).toBe(3)
+  })
+
+  it('keeps the skeletons visible once the "waking the server" copy appears', () => {
+    vi.useFakeTimers()
+    const { container } = renderHome()
+    act(() => {
+      vi.advanceTimersByTime(8_000)
+    })
+    expect(screen.getByText(/Waking the server/)).toBeInTheDocument()
+    expect(container.querySelectorAll('.skeleton-card').length).toBe(3)
+    vi.useRealTimers()
+  })
+})
+
+describe('Home empty state (NNG: say what happened + what to do)', () => {
+  it('names the empty frame and offers the one-tap widen', async () => {
+    await renderHomeWith(feedWith({ cards: [] }))
+    expect(screen.getByText('Nothing holds under this frame right now.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Include a bigger day' })).toBeInTheDocument()
+  })
+
+  it('falls back to "Adjust search" once the frame is already at its widest (never a dead end)', async () => {
+    const widestTuning: TuningState = { ...TUNING, effort: 'bigDay' }
+    const onOpenTuning = vi.fn()
+    render(
+      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feedWith({ cards: [] }))}>
+        <Home
+          tuning={widestTuning}
+          anonymous
+          onOpenTuning={onOpenTuning}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+    await userEvent.click(screen.getByRole('button', { name: 'Adjust search' }))
+    expect(onOpenTuning).toHaveBeenCalled()
+  })
+})
+
+describe('Home error state (NNG: calm, actionable, retryable)', () => {
+  it('shows a calm error message and a retry action', async () => {
+    await renderHomeWith(
+      feedWith({
+        cards: [],
+        error: { kind: 'offline', message: 'Couldn’t reach the planner. Try again.' },
+      }),
+    )
+    expect(screen.getByText('Couldn’t reach the planner. Try again.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 })

@@ -868,6 +868,72 @@ button {
   color: var(--text-secondary);
 }
 
+/* ---- skeleton loading state (feed placeholders while /plan resolves) ----
+   Same silhouette as .card/.card-tap so the swap to real cards never jumps.
+   Shimmer is opt-in per element (`.skeleton-shimmer`, applied in JS via
+   matchMedia) — SkeletonCard omits it entirely under prefers-reduced-motion. */
+.skeleton-card .card-tap {
+  cursor: default;
+}
+
+.skeleton-line,
+.skeleton-glyph {
+  border-radius: var(--radius-sm);
+  background: var(--surface-press);
+}
+
+.skeleton-line {
+  height: 0.8em;
+}
+
+.skeleton-line--place {
+  width: 60%;
+  height: 1.1em;
+}
+
+.skeleton-line--name {
+  width: 42%;
+}
+
+.skeleton-line--area {
+  width: 26%;
+  height: 0.65em;
+}
+
+.skeleton-glyph {
+  width: 100%;
+  height: 44px;
+}
+
+.skeleton-line--decision {
+  width: 65%;
+  height: 1.2em;
+}
+
+.skeleton-line--condition {
+  width: 45%;
+}
+
+.skeleton-line--foot {
+  width: 30%;
+  height: 0.65em;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(100deg, var(--surface-press) 35%, var(--color-neutral-100) 50%, var(--surface-press) 65%);
+  background-size: 250% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
 /* A quiet text button for recovery + reversible actions (retry / widen /
    show anyway). Never the accent hue — that stays reserved for the signal. */
 .text-action {

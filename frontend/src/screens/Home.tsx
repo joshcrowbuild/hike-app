@@ -4,6 +4,12 @@ import { widenFrame } from '../data/widen'
 import type { FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { RecommendationCard } from './RecommendationCard'
+import { SkeletonCard } from './SkeletonCard'
+
+/** Home shows peers, not a full page of results (v0.3 §2: "≤3 peers") — the
+ *  skeleton mirrors that count so the placeholder shape matches what actually
+ *  lands. */
+const SKELETON_COUNT = 3
 
 /** The calm frame setter and primary tuning entry (v0.3 §2/C5). Anonymous still
  *  picks an origin (R7 world-browse), so the region tag must track it too — never
@@ -72,25 +78,38 @@ export function Home({
       {feed ? <ReadinessLine feed={feed} /> : null}
 
       {status === 'loading' ? (
-        // A slow request is almost always the free-tier API cold-starting; say so
-        // (calmly, same primitive) rather than leaving the user on a stalled
-        // "Reading conditions…" that looks like a failure. role="status" makes the
-        // dynamic swap reach screen readers too (WCAG 4.1.3, as elsewhere here).
-        <p className="state-note" role="status">
-          {slow ? 'Waking the server — this can take up to a minute…' : 'Reading conditions…'}
-        </p>
+        <>
+          {/* A skeleton card silhouette renders instantly (NNG: structured wait
+              beats a bare "loading" line). A slow request is almost always the
+              free-tier API cold-starting; that gets a visible, calmer note
+              layered on top rather than replacing the structure. Either way
+              role="status" reaches screen readers too (WCAG 4.1.3). Below the
+              slow mark the same copy stays, sr-only — assistive tech still
+              hears that a request is in flight even though sighted users get
+              the skeleton instead. */}
+          <p className={slow ? 'state-note' : 'sr-only'} role="status">
+            {slow ? 'Waking the server — this can take up to a minute…' : 'Reading conditions…'}
+          </p>
+          <div className="card-stack" aria-hidden="true">
+            {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        </>
       ) : null}
 
       {status === 'error' ? (
         <div className="state-block">
-          <p className="state-note">{error?.message ?? 'Something went wrong.'}</p>
+          <p className="state-note">{error?.message ?? 'Couldn’t load trails right now.'}</p>
           <button className="text-action" type="button" onClick={reload}>
             Try again
           </button>
         </div>
       ) : null}
 
-      {status === 'empty' ? <EmptyState tuning={tuning} onApplyTuning={onApplyTuning} /> : null}
+      {status === 'empty' ? (
+        <EmptyState tuning={tuning} onApplyTuning={onApplyTuning} onOpenTuning={onOpenTuning} />
+      ) : null}
 
       {(status === 'ready' || status === 'empty') && feed ? (
         <section className="stack">
@@ -153,17 +172,32 @@ function WidenAction({
   )
 }
 
+/** Honest + never a dead end (NNG error guidance: say what happened, and what
+ *  to do about it). `widenFrame` is the preferred one-tap fix; once the frame
+ *  is already at its widest, "Adjust search" reopens Tuning instead of leaving
+ *  the note with no action at all. */
 function EmptyState({
   tuning,
   onApplyTuning,
+  onOpenTuning,
 }: {
   tuning: TuningState
   onApplyTuning: (next: TuningState) => void
+  onOpenTuning: () => void
 }) {
+  const widen = widenFrame(tuning)
   return (
     <div className="state-block">
       <p className="state-note">Nothing holds under this frame right now.</p>
-      <WidenAction tuning={tuning} onApplyTuning={onApplyTuning} />
+      {widen ? (
+        <button className="text-action" type="button" onClick={() => onApplyTuning(widen.next)}>
+          {widen.label}
+        </button>
+      ) : (
+        <button className="text-action" type="button" onClick={onOpenTuning}>
+          Adjust search
+        </button>
+      )}
     </div>
   )
 }
