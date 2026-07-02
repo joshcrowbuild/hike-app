@@ -165,4 +165,4 @@ def test_s3_ac5_guardrail_block_fires_through_registry() -> None:
     facts = verify(_POINT, {ConditionKind.weather: [w]})
     verdict = evaluate_guardrails(facts)  # ConditionKind-keyed facts → still blocks
     assert verdict.blocked
-    assert any("Red Flag" in b for b in verdict.blocks)
+    assert any("Red Flag" in b.reason for b in verdict.blocks)
