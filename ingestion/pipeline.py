@@ -46,6 +46,11 @@ log = logging.getLogger(__name__)
 
 
 def load_region(region_id: str) -> Region:
+    # AM4: region_id comes straight from --region (CLI arg); reject anything that could
+    # escape regions/ before it's ever used to build a path (e.g. "../secrets").
+    if "/" in region_id or "\\" in region_id or ".." in region_id:
+        log.error("Invalid region id %r: must not contain '/', '\\\\', or '..'", region_id)
+        sys.exit(1)
     path = Path(f"regions/{region_id}.geojson")
     if not path.exists():
         log.error("Region file not found: %s", path)
