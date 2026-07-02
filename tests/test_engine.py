@@ -264,6 +264,49 @@ def test_s4_ac4_pruned_candidate_incurs_no_probe() -> None:
     assert ConditionKind.drive_time in batch.trails[0].facts
 
 
+class _TrailheadAwareComputer:
+    """Reports "near" for the known trailhead coordinate and "far" for everything
+    else, so a test can prove which coordinate the prefilter actually routed from."""
+
+    def isochrone(self, origin: Any, time_budget_s: float) -> Any:
+        return None  # force the matrix-only path
+
+    def matrix(self, origin: Any, targets: list[Any]) -> list[VerifiedFact | None]:
+        out = []
+        for lat, lon in targets:
+            near_trailhead = abs(lat - 38.6) < 0.01 and abs(lon - (-78.5)) < 0.01
+            out.append(_fact({"drive_seconds": 600 if near_trailhead else 5000}))
+        return out
+
+    def health(self) -> Any:
+        return None
+
+
+def test_h3_drive_prefilter_routes_from_trailhead_not_trail_centroid() -> None:
+    # Regression: a trail's own point (centroid) can sit far from its actual access
+    # point. The prefilter must measure from the trailhead, not the centroid, or a
+    # perfectly reachable trail gets wrongly pruned.
+    row = {
+        "canonical_id": "reachable",
+        "name": "reachable",
+        "trailhead_id": "th",
+        "distance_m": 100,
+        "point": {"latitude": 40.0, "longitude": -80.0},  # centroid: far, would be pruned
+        "trailhead_point": {"latitude": 38.6, "longitude": -78.5},  # trailhead: near
+    }
+    batch = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession([row]),  # type: ignore[arg-type]
+        {},
+        k=10,
+        drive_time=_TrailheadAwareComputer(),  # type: ignore[arg-type]
+        budget_s=1000.0,
+    )
+    kept = [p.candidate.canonical_id for p in batch.trails]
+    assert kept == ["reachable"]  # survives because the trailhead, not the centroid, is near
+
+
 def _planned_drive(cid: str, drive_secs: float) -> PlannedTrail:
     fact = _fact({"drive_seconds": drive_secs})
     return PlannedTrail(

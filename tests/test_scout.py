@@ -58,6 +58,17 @@ def test_scout_passes_origin_param() -> None:
     assert params["origin"] == {"latitude": 38.5, "longitude": -78.4}
 
 
+def test_scout_carries_trailhead_point_separate_from_trail_point() -> None:
+    # H3: the drive-time prefilter needs the trailhead's own point, distinct from the
+    # trail's centroid (`point`) — both must survive the row -> Candidate mapping.
+    row = _row("a", 100)
+    row["point"] = {"latitude": 40.0, "longitude": -80.0}
+    row["trailhead_point"] = {"latitude": 38.6, "longitude": -78.5}
+    out = scout(38.5, -78.4, _FakeSession([row]))  # type: ignore[arg-type]
+    assert out[0].point == {"latitude": 40.0, "longitude": -80.0}
+    assert out[0].trailhead_point == {"latitude": 38.6, "longitude": -78.5}
+
+
 def test_scout_tops_up_from_direct_when_trailheads_sparse() -> None:
     # An urban region: one trailhead-accessed trail (far), many point-bearing trails
     # (near) with no trailhead. The top-up must surface the near trails, nearest-first,

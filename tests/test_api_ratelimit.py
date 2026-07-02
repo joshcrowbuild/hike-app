@@ -183,7 +183,7 @@ def test_plan_observability_scrubs_viewer_id(client, monkeypatch, caplog) -> Non
     monkeypatch.setattr(
         app_mod, "_settings", Settings.from_env({"ADVENTURE_DEV_VIEWER_SECRET": "s3cret"})
     )
-    secret_viewer = "josh@example.com"
+    secret_viewer = "mem:josh-example"  # must fit VIEWER_ID_PATTERN (AH4)
 
     with caplog.at_level(logging.INFO, logger="api.observability"):
         resp = client.post(

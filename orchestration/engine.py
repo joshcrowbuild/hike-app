@@ -239,7 +239,11 @@ def plan_from_origin(
     notices: tuple[str, ...] = ()
     if drive_time is not None and budget_s is not None:
         res = prefilter(
-            (lat, lon), candidates, drive_time, budget_s, coord_of=lambda c: _latlon(c.point)
+            (lat, lon),
+            candidates,
+            drive_time,
+            budget_s,
+            coord_of=lambda c: _latlon(c.trailhead_point) or _latlon(c.point),
         )
         candidates = res.kept
         drive_facts = res.facts_by_id

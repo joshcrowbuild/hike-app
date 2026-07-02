@@ -19,7 +19,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -40,6 +40,8 @@ from api.ratelimit import (
     rate_limit_exceeded_handler,
 )
 from api.schemas import (
+    CANONICAL_ID_PATTERN,
+    VIEWER_ID_PATTERN,
     CardWarningResponse,
     ElevationProfile,
     ElevationSample,
@@ -592,8 +594,8 @@ def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailR
 @limiter.limit(detail_limit)
 def trail_detail(
     request: Request,  # required by slowapi for per-IP keying
-    canonical_id: str,
-    viewer_id: str = "anonymous",
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> TripDetailResponse:
     """Trip/detail: the assembled route geometry + trailhead + elevation profile for
@@ -624,8 +626,20 @@ def _drain_queue_bg(queue, graph_client) -> None:
     discipline: never block the request path). Drains through the scoped-write
     seam (Epic 011): `scoped_session` is the per-owner factory each task's writes
     are scoped through (rule #4).
+
+    By the time this runs the response is already sent, so a raised exception has
+    nowhere to surface except the log — an unguarded failure here silently drops
+    the user's belief update (AM2). No durable dead-letter queue yet (out of
+    scope); this only stops the loss from being silent. Never logs a raw
+    viewer_id (rule #5): the correlation id is the only identifier recorded.
     """
-    queue.drain(graph_client.scoped_session)
+    try:
+        queue.drain(graph_client.scoped_session)
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "belief queue drain failed cid=%s error_class=%s", correlation_id, type(exc).__name__
+        )
 
 
 @app.post("/episode/{episode_id}/outcome", response_model=OutcomeResponse)
@@ -635,7 +649,8 @@ def record_outcome(
     episode_id: str,
     body: OutcomeBody,
     background_tasks: BackgroundTasks,
-    viewer_id: str = "anonymous",  # Phase 1: query param; Stage 8 replaces with auth header
+    # Phase 1: query param; Stage 8 replaces with auth header.
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> OutcomeResponse:
     """Record a post-hike outcome (rating + optional reflection).
@@ -680,6 +695,8 @@ def record_outcome(
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Any, exc: Exception) -> JSONResponse:
-    # Last-resort handler for anything not caught in a route — disclose server-side.
+    # Last-resort handler for anything not caught in a route — disclose server-side
+    # only. The raw exception text can carry internals (paths, query fragments,
+    # library internals) that must never reach a client (rule #10).
     logger.exception("unhandled exception")
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    return JSONResponse(status_code=500, content={"detail": "Internal error"})

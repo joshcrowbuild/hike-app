@@ -11,6 +11,8 @@ on an Outcome/Belief builder turns these tests red, not just the seam tests.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from graph.queries import assert_scoped_write
@@ -324,3 +326,15 @@ def test_s3_ac3_skipped_then_non_skipped_replaces():
     assert "ON MATCH SET" in last_cypher
     assert last_params.get("skipped") is False
     assert last_params.get("overall") == 3
+
+
+def test_ah4_episode_not_found_log_never_carries_raw_viewer_id(caplog):
+    """AH4 follow-up: the 404 rejection log must scrub viewer_id (rule #5) — a real
+    identity must never appear in the clear, only the same digest /plan uses."""
+    req = OutcomeRequest(overall=2, skipped=False)
+    scoped = _FakeScoped("josh-real-identity", existing_episode=False)
+    with caplog.at_level(logging.WARNING, logger="orchestration.outcome"):
+        write_outcome("ep:other:1", "josh-real-identity", req, scoped)
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages, "expected the rejection warning to be logged"
+    assert not any("josh-real-identity" in m for m in messages)

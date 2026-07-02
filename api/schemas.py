@@ -6,6 +6,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# Shape of a viewer identity (AH4): the anonymous default, or an alphanumeric/underscore/
+# hyphen/colon token (":" separates the household-member prefix, e.g. "mem:josh"),
+# length-bounded so a malformed value 422s before it ever reaches Cypher (access control
+# at the query/data layer, rule #4) or a log line (rule #5).
+VIEWER_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,64}$"
+
+# Shape of a canonical_id path param (AL2): the query is already parameterized (no
+# injection risk), so this is length/hygiene only — reject control characters and cap
+# length well above any real id (e.g. "ct:osm:old-rag-loop").
+CANONICAL_ID_PATTERN = r"^[^\x00-\x1F\x7F]{1,200}$"
+
 
 class PlanRequest(BaseModel):
     query: str = Field(
@@ -13,8 +24,14 @@ class PlanRequest(BaseModel):
     )
     lat: float = Field(..., ge=-90, le=90, description="Origin latitude (WGS84)")
     lon: float = Field(..., ge=-180, le=180, description="Origin longitude (WGS84)")
-    k: int = Field(default=10, ge=1, le=50, description="Max results")
-    viewer_id: str = Field(default="anonymous", description="Viewer identity for graph scoping")
+    # 10 is the product norm; 20 is ample headroom. Each candidate fans out to several
+    # live probes (AH3), so the public max is capped well below the old le=50.
+    k: int = Field(default=10, ge=1, le=20, description="Max results")
+    viewer_id: str = Field(
+        default="anonymous",
+        pattern=VIEWER_ID_PATTERN,
+        description="Viewer identity for graph scoping",
+    )
 
 
 class FeedLineResponse(BaseModel):
@@ -148,7 +165,12 @@ class OutcomeBody(BaseModel):
         description="1 (😞) | 2 (😐) | 3 (🙂); null when skipped",
     )
     delta_question: str | None = None
-    delta_answer: str | None = Field(default=None, description="User's free-text reflect-back")
+    # AL3: this free-text answer is stored verbatim as a `stated` Belief (never decays,
+    # confidence 1.0 — orchestration/outcome.py), so an unbounded body is unbounded
+    # substrate. 2000 chars is ample for a reflect-back answer.
+    delta_answer: str | None = Field(
+        default=None, max_length=2000, description="User's free-text reflect-back"
+    )
     skipped: bool = False
 
 

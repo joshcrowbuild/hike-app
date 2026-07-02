@@ -92,7 +92,15 @@ def write_outcome(
         )
     )
     if not rows:
-        log.warning("Outcome rejected: episode %s not found for viewer %s", episode_id, viewer_id)
+        # viewer_id is never logged in the clear (rule #5) — reuse the same digest the
+        # API layer uses for /plan so a session's log lines stay correlatable.
+        from api.observability import scrub_viewer
+
+        log.warning(
+            "Outcome rejected: episode %s not found for viewer %s",
+            episode_id,
+            scrub_viewer(viewer_id),
+        )
         return None
 
     outcome_id_key = f"outcome:{viewer_id}:{episode_id}"
