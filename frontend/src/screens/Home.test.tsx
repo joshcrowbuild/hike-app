@@ -87,11 +87,11 @@ function feedWith(overrides: Partial<FeedVM>): FeedVM {
   }
 }
 
-async function renderHomeWith(feed: FeedVM) {
-  render(
+async function renderHomeWith(feed: FeedVM, tuning: TuningState = TUNING) {
+  const result = render(
     <PlannerProvider scope={ANON_SCOPE} client={readyClient(feed)}>
       <Home
-        tuning={TUNING}
+        tuning={tuning}
         anonymous
         onOpenTuning={noop}
         onOpenTrail={noop}
@@ -101,6 +101,7 @@ async function renderHomeWith(feed: FeedVM) {
     </PlannerProvider>,
   )
   await act(async () => {}) // let the resolved plan() commit
+  return result
 }
 
 describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)', () => {
@@ -147,32 +148,96 @@ describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)'
   })
 })
 
-describe('Home region tag tracks the selected origin (fixes the stuck "Shenandoah" label)', () => {
-  it('shows the Outer Banks region once the origin is Nags Head, not the Shenandoah default', async () => {
+describe('Home region label reflects the actually served trails, never the picker\'s assumption (report #3)', () => {
+  const cardAt = (id: string, lat: number, lon: number) => ({
+    id,
+    name: id,
+    distanceMi: 2.1,
+    conditionLines: [],
+    warnings: [],
+    geo: { geometry: null, trailhead: { lat, lon }, quality: 'confident' as const, elevationProfile: null },
+  })
+
+  it('shows Shenandoah when the origin is Nags Head but the served trail is actually there (never lets the picker override the results)', async () => {
     const nagsHeadTuning: TuningState = { ...TUNING, origin: 'nagsHead' }
-    render(
-      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feedWith({}))}>
-        <Home
-          tuning={nagsHeadTuning}
-          anonymous
-          onOpenTuning={noop}
-          onOpenTrail={noop}
-          onOpenOutcome={noop}
-          onApplyTuning={noop}
-        />
-      </PlannerProvider>,
-    )
-    await act(async () => {})
+    // Front Royal / Shenandoah coordinates, despite the Outer Banks origin picked.
+    await renderHomeWith(feedWith({ cards: [cardAt('compton-peak', 38.918, -78.194)] }), nagsHeadTuning)
 
     // Both the context sentence and the stack-meta count carry the region tag —
-    // both must track the selected origin, not the Shenandoah default.
+    // both must track the SERVED trails, not the selected origin.
+    expect(screen.getAllByText(/Shenandoah/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Outer Banks/)).not.toBeInTheDocument()
+  })
+
+  it('shows Outer Banks when the served trailhead is actually there, regardless of the picked origin', async () => {
+    // TUNING.origin is frontRoyal (Shenandoah); the served trail sits in Duck.
+    await renderHomeWith(feedWith({ cards: [cardAt('jockeys-ridge', 36.166, -75.75)] }))
+
     expect(screen.getAllByText(/Outer Banks/).length).toBeGreaterThan(0)
     expect(screen.queryByText(/Shenandoah/)).not.toBeInTheDocument()
   })
 
-  it('keeps the Shenandoah tag for a Shenandoah origin like Front Royal', async () => {
-    await renderHomeWith(feedWith({}))
+  it('falls back to the picked origin\'s region when the served cards carry no coordinate at all', async () => {
+    await renderHomeWith(feedWith({})) // the default fixture card has no `geo`
     expect(screen.getAllByText(/Shenandoah/).length).toBeGreaterThan(0)
+  })
+
+  it('names the active origin in the anonymous context sentence, not just the region', async () => {
+    await renderHomeWith(feedWith({}))
+    expect(screen.getByText(/from Front Royal/)).toBeInTheDocument()
+  })
+})
+
+describe('Home hoists a region-wide alert to one feed banner instead of a per-card wall (report #1)', () => {
+  const heat = (text: string) => ({
+    text,
+    source: 'NWS api.weather.gov',
+    observedAgo: '2h ago',
+    kind: 'weather',
+    provenance: 'live' as const,
+  })
+  const cardWith = (id: string, warnings: ReturnType<typeof heat>[]) => ({
+    id,
+    name: id,
+    distanceMi: 2,
+    conditionLines: [],
+    warnings,
+  })
+
+  it('shows a region-wide alert once at feed level and clears it off every card', async () => {
+    const shared = heat('weather alert: Extreme Heat Warning — NWS')
+    const cards = [cardWith('a', [shared]), cardWith('b', [shared]), cardWith('c', [shared])]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+
+    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
+    expect(container.querySelector('.feed-alert-banner')).toBeInTheDocument()
+    expect(container.querySelectorAll('.card .card-warnings').length).toBe(0)
+  })
+
+  it('keeps a trail-specific warning on its own card alongside the hoisted region-wide one', async () => {
+    const shared = heat('weather alert: Extreme Heat Warning — NWS')
+    const specific = heat('flash flood warning — creek crossing')
+    const cards = [cardWith('a', [shared, specific]), cardWith('b', [shared]), cardWith('c', [shared])]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+
+    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
+    expect(screen.getByText(/flash flood warning/)).toBeInTheDocument()
+    expect(container.querySelectorAll('.card .card-warnings').length).toBe(1)
+  })
+
+  it('never stacks a lower-severity near-duplicate once a higher-severity one has been hoisted', async () => {
+    const strong = heat('weather alert: Extreme Heat Warning — NWS')
+    const weak = heat('weather alert: Heat Advisory — NWS')
+    const cards = [cardWith('a', [strong, weak]), cardWith('b', [strong, weak])]
+    await renderHomeWith(feedWith({ cards }))
+
+    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
+    expect(screen.queryByText(/Heat Advisory/)).not.toBeInTheDocument()
+  })
+
+  it('renders no banner when no warning is shared across the feed', async () => {
+    const { container } = await renderHomeWith(feedWith({}))
+    expect(container.querySelector('.feed-alert-banner')).not.toBeInTheDocument()
   })
 })
 

@@ -88,6 +88,52 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
   })
 })
 
+describe('RecommendationCard accessible name carries the warning state (report #4/#7)', () => {
+  const warning = {
+    text: 'weather alert: Extreme Heat Warning',
+    source: 'NWS api.weather.gov',
+    observedAgo: '2h ago',
+    kind: 'weather',
+    provenance: 'live' as const,
+  }
+
+  it('names just the trail when there is nothing to warn about', () => {
+    render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Open Stony Man Loop' })).toBeInTheDocument()
+  })
+
+  it('folds the warning into the accessible name so it is never swallowed by aria-label', () => {
+    render(<RecommendationCard card={card({ warnings: [warning] })} onOpen={vi.fn()} />)
+    // A plain `aria-label="Open {name}"` would hide this from assistive tech
+    // entirely, even though the warning renders visibly inside the button.
+    expect(
+      screen.getByRole('button', { name: /open stony man loop.*extreme heat warning/i }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('RecommendationCard ascent renders from the live elevation profile when enrichment has none (report #2)', () => {
+  it('shows an Ascent figure from the geo profile total gain, null-safe when absent', () => {
+    render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          distanceMi: 3.2,
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    // The fixture's profile climbs from 1000m to 1200m — 200m ≈ 656 ft.
+    expect(screen.getByText('656 ft')).toBeInTheDocument()
+    expect(screen.getByText('Ascent')).toBeInTheDocument()
+  })
+
+  it('renders no Ascent figure when there is no elevation profile at all', () => {
+    render(<RecommendationCard card={card({ enrichment: undefined, geo: undefined })} onOpen={vi.fn()} />)
+    expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
+  })
+})
+
 describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
   const silence = (over: Partial<CardVM> = {}) =>
     render(<RecommendationCard card={card({ conditionLines: [], enrichment: undefined, ...over })} onOpen={vi.fn()} />)

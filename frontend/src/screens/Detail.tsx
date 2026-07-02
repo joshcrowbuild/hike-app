@@ -1,7 +1,7 @@
 import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
-import { DecisionItem, formatDrive, WarningBlock } from './cardParts'
+import { DecisionItem, formatDrive, geoAscentFeet, WarningBlock } from './cardParts'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -56,6 +56,10 @@ export function Detail({ id, onBack, onReplan }: DetailProps) {
 function DetailBody({ card }: { card: CardVM }) {
   const e = card.enrichment
   const sampled = e?.provenance && e.provenance !== 'live'
+  // Mock enrichment carries its own ascentFeet; a live card has none yet, so it
+  // falls back to the real elevation profile rather than a false "coming soon"
+  // pointer to a figure that never shows up (report #2).
+  const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
   return (
     <section className="detail">
       {sampled ? (
@@ -80,8 +84,8 @@ function DetailBody({ card }: { card: CardVM }) {
           ) : card.distanceMi != null ? (
             <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} />
           ) : null}
-          {e?.ascentFeet != null ? (
-            <DecisionItem label="Ascent" value={`${e.ascentFeet.toLocaleString()} ft`} />
+          {ascentFeet != null ? (
+            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} />
           ) : null}
           {e?.durationHours ? <DecisionItem label="Duration" value={e.durationHours} /> : null}
         </div>

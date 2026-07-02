@@ -36,8 +36,19 @@ export function Confidence({ level, provenance, children, className }: Confidenc
   // tag discloses (R1, §4.3 — colour/visual is never the only cue).
   const announced = live ? leadIn[level] : level === 'flagged' ? leadIn.flagged : 'Sample, not verified'
   const cls = className ? `${styles.tier[tierKey]} ${className}` : styles.tier[tierKey]
+  // "Verified" is the app's strongest trust cue, but it lived only in the
+  // sr-only lead-in — invisible to sighted users (report #4/#7). A live,
+  // stated fact gets a plain visible mark instead; every other tier keeps the
+  // sr-only lead-in (their copy already hedges visibly: "seems to", "verify
+  // before you go").
+  const verified = live && level === 'stated'
   return (
     <span className={cls}>
+      {verified ? (
+        <span className={styles.verifiedMark} aria-hidden="true">
+          ✓{' '}
+        </span>
+      ) : null}
       <span className={srOnly}>{announced}: </span>
       {children}
       {!live ? (

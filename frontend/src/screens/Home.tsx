@@ -1,8 +1,13 @@
-import { originLabels, partyLabels, regionLabels, whenLabels } from '../data/labels'
+import { useMemo } from 'react'
+
+import { originLabels, partyLabels, whenLabels } from '../data/labels'
+import { splitFeedWarnings } from '../data/feedWarnings'
 import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
+import { resolveRegionLabel } from '../data/resolveRegion'
 import { widenFrame } from '../data/widen'
-import type { FeedVM, HeldBackVM, SetAside } from '../data/vm'
+import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
+import { WarningBlock } from './cardParts'
 import { RecommendationCard } from './RecommendationCard'
 import { SkeletonCard } from './SkeletonCard'
 
@@ -11,13 +16,19 @@ import { SkeletonCard } from './SkeletonCard'
  *  lands. */
 const SKELETON_COUNT = 3
 
+/** A stable empty array so `useMemo` below doesn't recompute every render
+ *  while there's no feed yet (a fresh `[]` literal would never memoize). */
+const EMPTY_CARDS: CardVM[] = []
+
 /** The calm frame setter and primary tuning entry (v0.3 §2/C5). Anonymous still
- *  picks an origin (R7 world-browse), so the region tag must track it too — never
- *  the Shenandoah pilot region regardless of what's actually selected. */
-function contextSentence(tuning: TuningState, anonymous: boolean): string {
-  const region = tuning.originCoords ? 'Near you' : regionLabels[tuning.origin]
+ *  picks an origin (R7 world-browse) — the sentence names it plainly rather
+ *  than leaving the region tag below to speak for it alone (report #3). The
+ *  region itself is derived from the SERVED cards, never the picker's
+ *  assumption — see `resolveRegionLabel`. */
+function contextSentence(tuning: TuningState, anonymous: boolean, cards: CardVM[]): string {
+  const region = resolveRegionLabel(cards, tuning)
   const origin = tuning.originCoords ? 'your location' : originLabels[tuning.origin]
-  if (anonymous) return `${whenLabels[tuning.when]} · ${region}`
+  if (anonymous) return `${whenLabels[tuning.when]} · ${region} · from ${origin}`
   return `${whenLabels[tuning.when]} · from ${origin} · ${partyLabels[tuning.party]}`
 }
 
@@ -43,6 +54,11 @@ export function Home({
   // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
   // Trips tab to navigate to. Quiet, dismissible by simply not tapping it.
   const pending = episodes.find((e) => !e.outcome)
+  const cards = feed?.cards ?? EMPTY_CARDS
+  // Hoist any region-wide alert duplicated across most cards to one feed-level
+  // banner (report #1) — the red wall was pushing distance off-screen on every
+  // card. `perCard` carries only each trail's own delta.
+  const { banner, perCard } = useMemo(() => splitFeedWarnings(cards), [cards])
 
   return (
     <div className="app-shell">
@@ -64,7 +80,7 @@ export function Home({
 
       <section className="frame">
         <button className="context" type="button" onClick={onOpenTuning}>
-          <span className="context-text">{contextSentence(tuning, anonymous)}</span>
+          <span className="context-text">{contextSentence(tuning, anonymous, cards)}</span>
           <span className="context-adjust">Adjust</span>
         </button>
       </section>
@@ -81,13 +97,13 @@ export function Home({
         <>
           {/* A skeleton card silhouette renders instantly (NNG: structured wait
               beats a bare "loading" line). A slow request is almost always the
-              free-tier API cold-starting; that gets a visible, calmer note
-              layered on top rather than replacing the structure. Either way
-              role="status" reaches screen readers too (WCAG 4.1.3). Below the
-              slow mark the same copy stays, sr-only — assistive tech still
-              hears that a request is in flight even though sighted users get
-              the skeleton instead. */}
-          <p className={slow ? 'state-note' : 'sr-only'} role="status">
+              free-tier API cold-starting; that gets a calmer note layered on
+              top rather than replacing the structure. The status line is
+              always rendered visibly, not just to assistive tech (role=status
+              also reaches AT, WCAG 4.1.3) — a cold start that silently sits on
+              a bare skeleton for 30-60s reads as broken, not honest (report
+              #4). */}
+          <p className="state-note" role="status">
             {slow ? 'Waking the server — this can take up to a minute…' : 'Reading conditions…'}
           </p>
           <div className="card-stack" aria-hidden="true">
@@ -116,14 +132,22 @@ export function Home({
           {feed.cards.length > 0 ? (
             <p className="stack-meta">
               {feed.cards.length === 1 ? '1 option' : `${feed.cards.length} options`} ·{' '}
-              {tuning.originCoords ? 'Near you' : regionLabels[tuning.origin]}
+              {resolveRegionLabel(cards, tuning)}
             </p>
           ) : null}
 
+          {banner.length > 0 ? (
+            <div className="feed-alert-banner">
+              <WarningBlock warnings={banner} label="Regional alert" />
+            </div>
+          ) : null}
+
           <div className="card-stack">
-            {feed.cards.map((card) => (
-              <RecommendationCard key={card.id} card={card} onOpen={() => onOpenTrail(card.id)} />
-            ))}
+            {feed.cards.map((card) => {
+              const cardWarnings = perCard.get(card.id) ?? card.warnings
+              const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
+              return <RecommendationCard key={card.id} card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+            })}
           </div>
 
           {feed.cards.length === 1 ? (

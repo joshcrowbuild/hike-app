@@ -24,6 +24,16 @@ export const tier = styleVariants({
   sample: { ...base, color: vars.text.muted },
 })
 
+/**
+ * The visible "Verified" mark (report #4/#7): a plain checkmark glyph, same
+ * ink as the value it precedes — no new colour, no pill/border chrome, in the
+ * same restrained spirit as the honest silence-state glyphs elsewhere. Meaning
+ * still isn't colour-only; this is typographic, not a stoplight badge.
+ */
+export const verifiedMark = style({
+  color: 'inherit',
+})
+
 /** A small, unmistakable marker that a value is not live-verified (R1). */
 export const sampleTag = style({
   marginInlineStart: vars.space[2],

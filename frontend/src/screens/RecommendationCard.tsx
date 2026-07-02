@@ -1,6 +1,6 @@
 import { Confidence, Signal, Staleness } from '../components'
 import type { CardVM, ConditionSilence as ConditionSilenceVM, SilenceState } from '../data/vm'
-import { DecisionItem, formatDrive, formatTrail, WarningBlock } from './cardParts'
+import { cardAccessibleName, DecisionItem, formatDrive, formatTrail, geoAscentFeet, WarningBlock } from './cardParts'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
@@ -13,9 +13,12 @@ import { ElevationGlyph } from './map/ElevationGlyph'
  */
 export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () => void }) {
   const e = card.enrichment
+  // Mock enrichment carries its own ascentFeet; a live card has none yet, so it
+  // falls back to the real elevation profile rather than showing nothing (#2).
+  const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
   return (
     <article className="card">
-      <button className="card-tap" type="button" onClick={onOpen} aria-label={`Open ${card.name}`}>
+      <button className="card-tap" type="button" onClick={onOpen} aria-label={cardAccessibleName(card.name, card.warnings)}>
         {e?.placeCue ? <p className="card-place">{e.placeCue}</p> : null}
 
         <div className="card-id">
@@ -33,10 +36,13 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
           {e?.driveMinutes != null ? (
             <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} />
           ) : null}
-          {e?.distanceMiles != null && e?.ascentFeet != null ? (
-            <DecisionItem label="Trail" value={formatTrail(e.distanceMiles, e.ascentFeet)} />
+          {e?.distanceMiles != null && ascentFeet != null ? (
+            <DecisionItem label="Trail" value={formatTrail(e.distanceMiles, ascentFeet)} />
           ) : card.distanceMi != null ? (
             <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} />
+          ) : null}
+          {e?.distanceMiles == null && ascentFeet != null ? (
+            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} />
           ) : null}
         </div>
 

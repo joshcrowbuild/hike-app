@@ -147,9 +147,7 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
       {geo.elevationProfile ? (
         <ElevationProfile profile={geo.elevationProfile} cursorFraction={cursor} onScrub={setCursor} />
       ) : (
-        <p className="elev-soon">
-          Detailed elevation profile coming soon for {trailName}. Total ascent is in the summary above.
-        </p>
+        <p className="elev-soon">Detailed elevation profile coming soon for {trailName}.</p>
       )}
     </section>
   )
