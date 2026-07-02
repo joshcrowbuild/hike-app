@@ -4,7 +4,15 @@ import type { EffortKey, OriginKey, PartyKey, TodayKey, TuningState, WhenKey } f
 
 export type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
 
-const originOptions: OriginKey[] = ['frontRoyal', 'luray', 'charlottesville']
+const originOptions: OriginKey[] = [
+  'frontRoyal',
+  'luray',
+  'charlottesville',
+  'duck',
+  'nagsHead',
+  'hatteras',
+  'ocracoke',
+]
 const whenOptions: WhenKey[] = ['tomorrowMorning', 'weekendMorning', 'weekendAfternoon', 'fullDay']
 const effortOptions: EffortKey[] = ['easy', 'moderate', 'bigDay']
 const partyOptions: PartyKey[] = ['solo', 'ruby', 'friends']

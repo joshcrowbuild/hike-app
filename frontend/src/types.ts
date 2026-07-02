@@ -1,6 +1,13 @@
 import type { TrailGeo } from './data/vm'
 
-export type OriginKey = 'frontRoyal' | 'luray' | 'charlottesville'
+export type OriginKey =
+  | 'frontRoyal'
+  | 'luray'
+  | 'charlottesville'
+  | 'duck'
+  | 'nagsHead'
+  | 'hatteras'
+  | 'ocracoke'
 export type WhenKey = 'tomorrowMorning' | 'weekendMorning' | 'weekendAfternoon' | 'fullDay'
 export type EffortKey = 'easy' | 'moderate' | 'bigDay'
 export type PartyKey = 'solo' | 'ruby' | 'friends'

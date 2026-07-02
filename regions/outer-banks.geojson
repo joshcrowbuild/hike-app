@@ -1,0 +1,24 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "outer-banks",
+    "name": "Outer Banks (NC Barrier Islands)",
+    "description": "North Carolina's Outer Banks barrier islands: Corolla/Currituck in the north, through Duck, Kitty Hawk, Nags Head and Jockey's Ridge, south down Cape Hatteras National Seashore (Pea Island NWR, Buxton Woods, Hatteras village) to Ocracoke. Coastal nature trails, dune paths, maritime-forest loops and beach-access walking paths — terrain is near sea level, so elevation profiles are correctly flat.",
+    "bbox": [-76.05, 35.05, -75.4, 36.45],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": ["OSM", "USGS"],
+    "area_ids": ["nps:caha", "fws:pea-island"]
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-76.05, 35.05],
+        [-75.4, 35.05],
+        [-75.4, 36.45],
+        [-76.05, 36.45],
+        [-76.05, 35.05]
+      ]
+    ]
+  }
+}

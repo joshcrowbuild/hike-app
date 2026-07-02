@@ -46,6 +46,20 @@ _PUBLIC_ROUTE_REF = re.compile(r"\b(SR|CR|VA|US|State Route|County Route)[\s-]*(
 # Route") even when `ref` is absent — a second, name-base signal for the same class.
 _TIGER_ROUTE_BASE = re.compile(r"\b(State|County) Route\b", re.I)
 
+# Residential street-name suffixes. On barrier-island / coastal TIGER grids, sand
+# residential streets are tagged `highway=track|footway` (not `residential`), so they
+# clear the highway gate and pose as trails ("Barracuda Street", "Malbon Drive",
+# "Seagull Lane" in the Outer Banks). A name ending in an unambiguous street suffix is a
+# residential road, never a hikeable trail. Deliberately EXCLUDES "Road": real fire / dike
+# roads end in "Road" ("Salt Pond Road", "LORAN Road" — both NPS-corroborated OBX trails),
+# matching the existing "keep fire roads" stance (`highway=track`). Anchored to the end of
+# the name and matched as whole words (OSM spells suffixes out) so it can't fire mid-name
+# (a "Drive"-containing trail name) nor inside a compound ("Greenway"/"Broadway" — no word
+# boundary before the "way", so they don't match).
+_RESIDENTIAL_STREET_SUFFIX = re.compile(
+    r"\b(street|avenue|boulevard|court|drive|lane|way)\s*$", re.I
+)
+
 # Unambiguous non-trail name signals. Kept tight so it never matches a real trail
 # (e.g. "Hull School Trail", "Meadows School Trail" are real) or a fire road — it
 # targets the utilitarian-connector / urban-infra class only.
@@ -88,9 +102,12 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
         return False
 
     # Numbered public route (TIGER-misimported as highway=track) → a road, not a trail.
-    # Keyed on the route number in `ref` (or the route class in `tiger:name_base_1`),
-    # NOT on tiger:cfcc=A41 — real fire roads share A41 but carry no numbered ref.
-    if _PUBLIC_ROUTE_REF.search(tags.get("ref", "")):
+    # Keyed on the route number in `ref` OR in the `name` itself (OBX carried a bare
+    # "State Route 1108" whose route number lived only in the name, not `ref`), or the
+    # route class in `tiger:name_base_1`. NOT on tiger:cfcc=A41 — real fire roads share
+    # A41 but carry no numbered ref. A digit is always required after the route token, so
+    # a real name ("US Life-Saving Station Trail") can't false-positive.
+    if _PUBLIC_ROUTE_REF.search(tags.get("ref", "")) or _PUBLIC_ROUTE_REF.search(name):
         return False
     if _TIGER_ROUTE_BASE.search(tags.get("tiger:name_base_1", "")):
         return False
@@ -101,6 +118,10 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
 
     # Conservative name denylist for utilitarian connectors / urban infra.
     if _NAME_DENY.search(name):
+        return False
+
+    # Residential street posing as a track/footway (coastal sand-street grids).
+    if _RESIDENTIAL_STREET_SUFFIX.search(name):
         return False
 
     # A named footway with exactly two vertices is almost always a driveway / connector

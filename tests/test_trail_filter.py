@@ -133,6 +133,38 @@ def test_drops_institutional_wellness_footway():
     )
 
 
+def test_drops_residential_street_suffix_track():
+    # Outer Banks sand residential streets are tagged highway=track|footway (not
+    # `residential`), clearing the highway gate. A name ending in an unambiguous street
+    # suffix (Street/Avenue/Boulevard/Court/Drive/Lane) is a residential road, not a hike.
+    for name in ("Barracuda Street", "Amadas Avenue", "Malbon Drive", "Seagull Lane"):
+        assert not is_trail_worthy(_w(name=name, highway="track"), _MANY), name
+    assert not is_trail_worthy(_w(name="Tasman Drive", highway="footway"), _MANY)
+    assert not is_trail_worthy(_w(name="Brother's Way", highway="track"), _MANY)
+
+
+def test_keeps_compound_way_suffix_trail():
+    # "Way" only drops as a whole trailing word: a compound ending in "way"
+    # ("Greenway"/"Broadway") has no word boundary before it and must survive.
+    assert is_trail_worthy(_w(name="Riverside Greenway", highway="path"), _MANY)
+
+
+def test_drops_numbered_state_route_by_name():
+    # "State Route 1108" (OBX): the route number lived in the NAME, not `ref` — the
+    # ref-only check missed it, so the numbered-route gate now also reads the name.
+    assert not is_trail_worthy(_w(name="State Route 1108", highway="track"), _MANY)
+
+
+def test_keeps_walkable_road_suffix_and_trail_names():
+    # "Road" and "Way" are deliberately NOT residential-street suffixes: real fire / dike
+    # roads end in "Road" (NPS-corroborated OBX trails). And a suffix word appearing
+    # mid-name must not fire (end-anchored) — a real trail is kept.
+    assert is_trail_worthy(_w(name="Salt Pond Road", highway="footway", surface="unpaved"), _MANY)
+    assert is_trail_worthy(_w(name="LORAN Road", highway="track"), _MANY)
+    assert is_trail_worthy(_w(name="Open Ponds Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="Drive-In Overlook Trail", highway="path"), _MANY)
+
+
 def test_drops_two_point_footway_stub():
     assert not is_trail_worthy(_w(name="Connector", highway="footway"), _TWO)
 

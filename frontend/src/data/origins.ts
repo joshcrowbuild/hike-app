@@ -14,9 +14,18 @@ export interface Coords {
   lon: number
 }
 
-/** Approximate town centers for the three seed origins (WGS84). */
+/**
+ * Approximate town centers per origin (WGS84). The `frontRoyal`/`luray`/
+ * `charlottesville` seed set anchors the Shenandoah pilot region; the four
+ * Outer Banks origins (`duck`/`nagsHead`/`hatteras`/`ocracoke`) anchor the NC
+ * barrier-islands region.
+ */
 export const originCoords: Record<OriginKey, Coords> = {
   frontRoyal: { lat: 38.918, lon: -78.194 },
   luray: { lat: 38.665, lon: -78.459 },
   charlottesville: { lat: 38.029, lon: -78.477 },
+  duck: { lat: 36.166, lon: -75.75 },
+  nagsHead: { lat: 35.957, lon: -75.624 },
+  hatteras: { lat: 35.22, lon: -75.69 },
+  ocracoke: { lat: 35.115, lon: -75.98 },
 }
