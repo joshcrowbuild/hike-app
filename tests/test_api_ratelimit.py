@@ -38,6 +38,7 @@ class _Card:
     distance_mi: float | None
     lines: list[_Line]
     warnings: list[str] = field(default_factory=list)
+    unavailable: list[str] = field(default_factory=list)
 
 
 @dataclass

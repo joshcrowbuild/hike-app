@@ -54,12 +54,25 @@ export interface CardWarningResponse {
   kind: string
 }
 
+/**
+ * One condition that couldn't be verified — the trail stays a normal card carrying
+ * this disclosure rather than being set aside (decision of 2026-07-02): live
+ * conditions are enrichment, never a dependency, so an outage must never blank the
+ * feed.
+ */
+export interface ConditionUnavailableResponse {
+  text: string
+  source: string
+  kind: string
+}
+
 export interface FeedCardResponse {
   canonical_id: string
   name: string
   distance_mi: number | null
   lines: FeedLineResponse[]
   warnings: CardWarningResponse[]
+  unavailable: ConditionUnavailableResponse[]
   /**
    * Maps & terrain (Epic 016 S1). Optional: the current `/plan` omits them, so
    * the adapter degrades; once the geometry/detail endpoint lands these arrive

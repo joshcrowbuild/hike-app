@@ -38,7 +38,13 @@ from orchestration.adapters.registry import (
 )
 from orchestration.confidence import Confidence, compute, for_fact
 from orchestration.config import Settings
-from orchestration.curator import CardWarning, GuardrailVerdict, evaluate_guardrails, rank_ids
+from orchestration.curator import (
+    CardWarning,
+    ConditionUnavailable,
+    GuardrailVerdict,
+    evaluate_guardrails,
+    rank_ids,
+)
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, summarize_fact
@@ -79,6 +85,18 @@ class PlannedTrail:
 
 
 @dataclass(frozen=True)
+class UnavailableCondition:
+    """One condition that couldn't be verified — disclosed on the card as a calm,
+    source-honest note rather than causing the trail to be set aside (decision of
+    2026-07-02; rule #6: live conditions are enrichment, never a dependency). `text`
+    is ready-to-show ("cause (source)"), mirroring `SetAsideReason` below."""
+
+    text: str
+    source: str
+    kind: str  # ConditionKind.value the gap came from, e.g. "weather"
+
+
+@dataclass(frozen=True)
 class FeedCard:
     canonical_id: str
     name: str
@@ -87,6 +105,9 @@ class FeedCard:
     # Prominent source-stamped hazard warnings the card wears (a VERIFIED hazard
     # shows, never hides — decision of 2026-07-01). Presentation only (Rule #2).
     warnings: tuple[CardWarning, ...]
+    # Conditions that couldn't be verified — disclosed here, never a reason the
+    # trail was held back (decision of 2026-07-02; rule #6). Presentation only.
+    unavailable: tuple[UnavailableCondition, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,12 +123,15 @@ class SetAsideReason:
 
 @dataclass(frozen=True)
 class SetAsideTrail:
-    """A candidate a hard live guardrail ruled out — an UNVERIFIABLE required
-    condition (a failed weather probe: rule #1, a failed probe is never "clear") or a
-    hard non-weather threshold (hazardous AQI). Disclosed, never silently dropped
-    (Epic 018 S5 AC-5.2): it carries its cause + source so the surface can show *why*
-    it's set aside. A VERIFIED hazard is not set aside — it stays a card wearing a
-    prominent warning (decision of 2026-07-01). A safety gate only — it never feeds
+    """A candidate a *verified* hard guardrail ruled out — a hard non-weather
+    threshold (hazardous AQI). Disclosed, never silently dropped (Epic 018 S5
+    AC-5.2): it carries its cause + source so the surface can show *why* it's set
+    aside. An UNVERIFIABLE condition (a failed weather probe, a failed alerts
+    sub-call) is NOT set aside as of 2026-07-02 — rule #1 still holds (a failed
+    probe is never "clear"), but rule #6 means an outage must never blank the feed,
+    so the trail stays a card carrying an `UnavailableCondition` disclosure instead.
+    A VERIFIED hazard is not set aside either — it stays a card wearing a prominent
+    warning (decision of 2026-07-01). A safety gate only — it never feeds
     ranking/confidence (Rule #2)."""
 
     canonical_id: str
@@ -253,8 +277,9 @@ def plan_from_origin(
     corr_by_id, sources_by_id = _corpus_corroboration(candidates, session)
 
     # Which point kinds the Verifier will actually attempt — lets the guardrails tell
-    # "weather probed but no source answered" (unverifiable → set aside, rule #1) apart
-    # from "weather not probed in this deployment" (no signal either way).
+    # "weather probed but no source answered" (unverifiable → disclosed on the card,
+    # rule #1 + #6) apart from "weather not probed in this deployment" (no signal
+    # either way).
     probed_kinds = frozenset(
         kind
         for kind, adapters in probes.items()
@@ -273,10 +298,11 @@ def plan_from_origin(
         facts = verify(probe_point, probes, cache=cache)  # point kinds only (drive_time skipped)
         verdict = evaluate_guardrails(facts, probed_kinds=probed_kinds)
         if verdict.blocked:
-            # Hard filter (Stage 4 §6) — the unverifiable/hard-threshold classes are
-            # *set aside with a source-stamped reason*, never silently dropped (Epic
-            # 018 S5 AC-5.1/5.2). A VERIFIED hazard is NOT in this path: it stays a
-            # card and wears a prominent warning (decision of 2026-07-01).
+            # Hard filter (Stage 4 §6) — a *verified* hard-threshold block is set
+            # aside with a source-stamped reason, never silently dropped (Epic 018 S5
+            # AC-5.1/5.2). Neither an unverifiable condition (rule #6, 2026-07-02) nor
+            # a VERIFIED hazard (decision of 2026-07-01) takes this path — both stay
+            # cards, carrying their disclosure/warning respectively.
             set_aside.append(_set_aside(candidate, verdict))
             continue
         drive_fact = drive_facts.get(candidate.canonical_id)
@@ -335,6 +361,12 @@ def rank_plan(
     return [by_id[cid] for cid in order if cid in by_id]
 
 
+def _unavailable_condition(u: ConditionUnavailable) -> UnavailableCondition:
+    """Build the disclosed unavailable-condition record (mirrors `_set_aside`'s
+    cause-then-source-in-parens shape)."""
+    return UnavailableCondition(text=f"{u.reason} ({u.source})", source=u.source, kind=u.kind)
+
+
 def feed_card(planned: PlannedTrail) -> FeedCard:
     lines = [
         summarize_fact(kind.value, fact, planned.confidences.get(kind) or compute())
@@ -347,6 +379,7 @@ def feed_card(planned: PlannedTrail) -> FeedCard:
         distance_mi=round(dist / _M_PER_MILE, 1) if dist is not None else None,
         lines=lines,
         warnings=planned.verdict.warnings,
+        unavailable=tuple(_unavailable_condition(u) for u in planned.verdict.unavailable),
     )
 
 
