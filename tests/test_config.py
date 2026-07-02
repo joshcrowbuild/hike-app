@@ -126,3 +126,10 @@ def test_settings_cors_origins_parsed_from_env() -> None:
     )
     # Comma-split, trimmed, blanks dropped — same idiom as the adapter lists.
     assert s.cors_allow_origins == ("https://hike-app.vercel.app", "https://staging.test")
+
+
+def test_settings_live_probe_max_workers_default_and_override() -> None:
+    # Default caps the live-fan-out concurrency (verify_batch) even when unset.
+    assert Settings.from_env({}).live_probe_max_workers == 8
+    s = Settings.from_env({"ADVENTURE_LIVE_PROBE_MAX_WORKERS": "4"})
+    assert s.live_probe_max_workers == 4

@@ -51,7 +51,7 @@ from orchestration.present import FeedLine, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
 from orchestration.scout import Candidate, scout
-from orchestration.verifier import verify
+from orchestration.verifier import DEFAULT_MAX_WORKERS, verify_batch
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +166,10 @@ class Runtime:
     cache: TTLCache | None = None
     drive_time: DriveTimeComputer | None = None
     drive_speed_kmh: float = 60.0  # radius->time-budget assumption (Decision 1.5)
+    # Concurrency cap on the Verifier's live-probe fan-out (latency follow-up to Epic
+    # 018 S6) — bounds how hard one /plan can hit a rate-limited third-party source
+    # regardless of k. Config-driven via Settings.live_probe_max_workers.
+    probe_max_workers: int = DEFAULT_MAX_WORKERS
 
 
 @dataclass(frozen=True)
@@ -252,11 +256,15 @@ def plan_from_origin(
     cache: TTLCache | None = None,
     drive_time: DriveTimeComputer | None = None,
     budget_s: float | None = None,
+    probe_max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> PlannedBatch:
     """Scout near (lat, lon); optionally prune to drive-time reachability; verify each
     survivor's conditions; drop any that trip a hard guardrail. Drive-time facts are
     folded in at construction (after the guardrail check — they never reach
-    `evaluate_guardrails`, AC-5.3)."""
+    `evaluate_guardrails`, AC-5.3). Live-condition verification runs as one batched,
+    concurrent fan-out (`verify_batch`) across every candidate rather than probing
+    them one at a time — the dominant cost of `/plan` (latency follow-up to Epic 018
+    S6); `probe_max_workers` bounds total in-flight probes."""
     candidates = scout(lat, lon, session, radius_m=radius_m, k=k)
 
     drive_facts: dict[str, VerifiedFact] = {}
@@ -286,16 +294,25 @@ def plan_from_origin(
         if adapters and kind is not ConditionKind.drive_time
     )
 
-    planned: list[PlannedTrail] = []
-    set_aside: list[SetAsideTrail] = []
+    probe_points: list[Point] = []
     for candidate in candidates:
         coord = _latlon(candidate.point)
         if coord is None:
             log.debug("candidate %s has no point; probing at query origin", candidate.canonical_id)
-            probe_point = Point(lat, lon)
+            probe_points.append(Point(lat, lon))
         else:
-            probe_point = Point(*coord)
-        facts = verify(probe_point, probes, cache=cache)  # point kinds only (drive_time skipped)
+            probe_points.append(Point(*coord))
+    # The live-condition fan-out: every candidate's (point, kind) probes run
+    # concurrently across a bounded pool, aligned back to `candidates` by index —
+    # byte-for-byte the same facts a sequential `verify()` per candidate would
+    # produce (point kinds only; drive_time is skipped, folded in below instead).
+    facts_by_candidate = verify_batch(
+        probe_points, probes, cache=cache, max_workers=probe_max_workers
+    )
+
+    planned: list[PlannedTrail] = []
+    set_aside: list[SetAsideTrail] = []
+    for candidate, facts in zip(candidates, facts_by_candidate, strict=True):
         verdict = evaluate_guardrails(facts, probed_kinds=probed_kinds)
         if verdict.blocked:
             # Hard filter (Stage 4 §6) — a *verified* hard-threshold block is set
@@ -421,6 +438,7 @@ def plan(
         cache=runtime.cache,
         drive_time=runtime.drive_time,
         budget_s=budget_s,
+        probe_max_workers=runtime.probe_max_workers,
     )
     planned = batch.trails
 
@@ -523,4 +541,5 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
         cache=default_cache(),
         drive_time=drive,
         drive_speed_kmh=settings.drive_speed_kmh,
+        probe_max_workers=settings.live_probe_max_workers,
     )

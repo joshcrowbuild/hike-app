@@ -72,6 +72,11 @@ class Settings:
     # missing-key probe pattern). drive_speed_kmh sizes the radius→time-budget default.
     valhalla_base_url: str | None = None
     drive_speed_kmh: float = 60.0
+    # Cap on concurrent (point, kind) probes in the Verifier's live fan-out
+    # (`verify_batch` — latency follow-up to Epic 018 S6). Bounds how hard a single
+    # `/plan` can hit a rate-limited third-party source regardless of k; tune down if
+    # a source starts rate-limiting, up if the fan-out is still latency-bound.
+    live_probe_max_workers: int = 8
     # Commons fork (Epic 010). Secret salt for the one-way writer_hash (HMAC) that
     # makes a contributor's observations findable for revocation without a back-
     # edge to them (Stage 9 §2.3). Never in the repo (#10); absent → fork skipped.
@@ -151,6 +156,7 @@ class Settings:
             live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
             valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,
             drive_speed_kmh=float(e.get("DRIVE_SPEED_KMH", "60.0")),
+            live_probe_max_workers=int(e.get("ADVENTURE_LIVE_PROBE_MAX_WORKERS", "8")),
             commons_writer_salt=e.get("ADVENTURE_COMMONS_WRITER_SALT") or None,
             watch_adapters=watch_adapters,
             garmin_email=e.get("GARMIN_EMAIL") or None,
