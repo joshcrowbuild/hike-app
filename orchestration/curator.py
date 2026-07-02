@@ -1,14 +1,18 @@
 """Curator — the deterministic guardrail half (Stage 4 §6).
 
-The split (decided by Josh, 2026-07-01, after the Extreme Heat Warning dogfood):
+The split (revised 2026-07-02, after a weather-probe outage blanked the feed
+everywhere — rule #6: live conditions are enrichment, never a dependency):
 
   * A VERIFIED hazard — an alert carried by a live fact with source + timestamp —
     SHOWS on the card as a prominent, source-stamped warning. It never hides the
     trail: a safety flag is presentation, and it never feeds ranking (rule #2).
   * An UNVERIFIABLE required condition — a weather probe that failed, or an alerts
-    sub-call that failed — holds the trail back (set aside) WITH disclosure
-    (source-or-silence, rule #1: a failed probe is unknown, never "no alerts").
-  * Non-weather hard thresholds (hazardous AQI) keep their block semantics.
+    sub-call that failed — STAYS a normal card, carrying a disclosed, source-honest
+    "conditions unavailable" note (source-or-silence, rule #1: a failed probe is
+    unknown, never "no alerts" — but unknown is disclosed, not hidden; rule #6: an
+    outage must never blank the feed).
+  * Non-weather hard thresholds (hazardous AQI) keep their block semantics — the
+    one class of *verified* hard-block left. Set-aside is reserved for those.
 
 Blocks are hard filters, not soft scores; confidence never penalizes ranking
 (rule #2) — guardrails are about safety and legality, not uncertainty.
@@ -44,6 +48,21 @@ class BlockReason:
 
 
 @dataclass(frozen=True)
+class ConditionUnavailable:
+    """One condition that could not be verified — the trail STAYS in the feed as a
+    normal card carrying this disclosure (decision of 2026-07-02, rule #6: live
+    conditions are enrichment, never a dependency; an outage must never blank the
+    feed). `reason` is the cause alone ("weather couldn't be verified"); `source` is
+    the honest provenance for the gap ("no source responded", or the fact's own
+    source when only its alerts sub-call failed). Never reads as "clear" (rule #1) —
+    it discloses unknown. Presentation only: never feeds ranking (Rule #2)."""
+
+    kind: str  # ConditionKind.value the gap came from, e.g. "weather"
+    reason: str  # the cause alone, e.g. "weather couldn't be verified"
+    source: str  # honest provenance for the gap, e.g. "no source responded"
+
+
+@dataclass(frozen=True)
 class CardWarning:
     """One prominent, source-stamped warning a card wears (decision of 2026-07-01):
     a VERIFIED hazard shows on the trail's card, never hides it. Mirrors how a feed
@@ -62,6 +81,9 @@ class GuardrailVerdict:
     blocked: bool
     blocks: tuple[BlockReason, ...] = ()
     warnings: tuple[CardWarning, ...] = ()
+    # Conditions that couldn't be verified — disclosed on the card, never a reason to
+    # set the trail aside (decision of 2026-07-02; rule #6).
+    unavailable: tuple[ConditionUnavailable, ...] = ()
 
 
 def _alerts(fact: VerifiedFact) -> list[str] | None:
@@ -100,28 +122,37 @@ def evaluate_guardrails(
     *,
     probed_kinds: Collection[ConditionKind] = (),
 ) -> GuardrailVerdict:
-    """The verified-vs-unverifiable split (2026-07-01). `probed_kinds` names the
-    kinds the Verifier actually attempted, so a weather probe that failed outright
-    (probed, no fact) is distinguishable from weather simply not being probed in
-    this deployment — only the former is an unverifiable required condition."""
+    """The verified-vs-unverifiable split (revised 2026-07-02). `probed_kinds` names
+    the kinds the Verifier actually attempted, so a weather probe that failed
+    outright (probed, no fact) is distinguishable from weather simply not being
+    probed in this deployment — only the former is an unverifiable required
+    condition, and it now STAYS a card with disclosure rather than blocking
+    (rule #6: enrichment, never a dependency — an outage must never blank the
+    feed)."""
     blocks: list[BlockReason] = []
     warnings: list[CardWarning] = []
+    unavailable: list[ConditionUnavailable] = []
 
     weather = facts.get(ConditionKind.weather)
     if weather is None:
         if ConditionKind.weather in probed_kinds:
             # Weather was probed and no source answered: the alert state is
-            # unverifiable, and an unverifiable required condition holds the trail
-            # back with disclosure — a failed probe never reads as clear (rule #1).
-            blocks.append(
-                BlockReason("weather", "weather couldn't be verified", "no source responded")
+            # unverifiable. Disclosed on the card, never set aside — a failed probe
+            # never reads as clear (rule #1), but unknown is not a hard block (#6).
+            unavailable.append(
+                ConditionUnavailable(
+                    "weather", "weather couldn't be verified", "no source responded"
+                )
             )
     else:
         alerts = _alerts(weather)
         if alerts is None:
-            # Forecast answered but the alerts sub-call failed → unknown, not clear.
-            blocks.append(
-                BlockReason("weather", "weather alerts couldn't be verified", weather.source)
+            # Forecast answered but the alerts sub-call failed → unknown, not clear —
+            # disclosed, not blocked (same rationale as the failed-probe case above).
+            unavailable.append(
+                ConditionUnavailable(
+                    "weather", "weather alerts couldn't be verified", weather.source
+                )
             )
         else:
             # NWS returns overlapping issuances of the same event as separate
@@ -160,7 +191,12 @@ def evaluate_guardrails(
                 )
             )
 
-    return GuardrailVerdict(blocked=bool(blocks), blocks=tuple(blocks), warnings=tuple(warnings))
+    return GuardrailVerdict(
+        blocked=bool(blocks),
+        blocks=tuple(blocks),
+        warnings=tuple(warnings),
+        unavailable=tuple(unavailable),
+    )
 
 
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────

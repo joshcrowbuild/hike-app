@@ -1,9 +1,10 @@
-"""Curator guardrail tests — the verified-vs-unverifiable split (2026-07-01).
+"""Curator guardrail tests — the verified-vs-unverifiable split (revised 2026-07-02).
 
 A VERIFIED hazard (an alert with source + timestamp) becomes a prominent card
 warning, never a block; an UNVERIFIABLE required condition (failed weather probe
-or failed alerts sub-call) blocks (set aside with disclosure, rule #1); hard
-non-weather thresholds (hazardous AQI) keep their block semantics.
+or failed alerts sub-call) STAYS a card carrying a disclosed "conditions
+unavailable" note, never a block (rule #6: an outage must never blank the feed);
+hard non-weather thresholds (hazardous AQI) keep their block semantics.
 """
 
 from __future__ import annotations
@@ -67,29 +68,35 @@ def test_duplicate_alert_features_collapse_to_one_warning() -> None:
     assert [w.text for w in v.warnings] == ["weather alert: Extreme Heat Warning"]
 
 
-def test_failed_alerts_subcall_blocks_as_unverifiable() -> None:
+def test_failed_alerts_subcall_discloses_unavailable_not_blocked() -> None:
     # active_alerts=None means the NWS alerts sub-call failed: the alert state is
-    # UNKNOWN, and unknown never reads as "no alerts" (rule #1). Held back, source-stamped.
+    # UNKNOWN, and unknown never reads as "no alerts" (rule #1) — but as of
+    # 2026-07-02 unknown STAYS a card with a disclosure, never a block (rule #6: an
+    # outage must never blank the feed).
     fact = VerifiedFact(
         value={"short_forecast": "Sunny", "active_alerts": None},
         source="NWS api.weather.gov",
         fetched_at=_NOW,
     )
     v = evaluate_guardrails({ConditionKind.weather: fact})
-    assert v.blocked
-    (block,) = v.blocks
-    assert block.kind == "weather"
-    assert "couldn't be verified" in block.reason
-    assert block.source == "NWS api.weather.gov"
+    assert not v.blocked
+    assert not v.blocks
+    (note,) = v.unavailable
+    assert note.kind == "weather"
+    assert "couldn't be verified" in note.reason
+    assert note.source == "NWS api.weather.gov"
 
 
-def test_failed_weather_probe_blocks_when_weather_was_probed() -> None:
-    # Weather probed, no source answered → unverifiable required condition → block.
+def test_failed_weather_probe_discloses_unavailable_when_weather_was_probed() -> None:
+    # Weather probed, no source answered → unverifiable required condition → the
+    # trail stays in the feed carrying a disclosed "conditions unavailable" note.
     v = evaluate_guardrails({}, probed_kinds={ConditionKind.weather})
-    assert v.blocked
-    (block,) = v.blocks
-    assert block.kind == "weather"
-    assert "couldn't be verified" in block.reason
+    assert not v.blocked
+    assert not v.blocks
+    (note,) = v.unavailable
+    assert note.kind == "weather"
+    assert "couldn't be verified" in note.reason
+    assert note.source == "no source responded"
 
 
 def test_absent_weather_passes_when_weather_not_probed() -> None:
@@ -97,6 +104,7 @@ def test_absent_weather_passes_when_weather_not_probed() -> None:
     v = evaluate_guardrails({})
     assert not v.blocked
     assert not v.warnings
+    assert not v.unavailable
 
 
 def test_hazardous_aqi_blocks_elevated_warns() -> None:
@@ -118,6 +126,17 @@ def test_clean_conditions_pass() -> None:
     assert not v.blocked
     assert not v.blocks
     assert not v.warnings
+    assert not v.unavailable
+
+
+def test_weather_outage_never_blocks_even_with_other_kinds_probed() -> None:
+    # The P0 regression: every weather probe failing must never blank the feed
+    # (rule #6). Air/fire simply weren't probed either — no signal, no block.
+    v = evaluate_guardrails({}, probed_kinds={ConditionKind.weather})
+    assert not v.blocked
+    assert v.blocks == ()
+    assert len(v.unavailable) == 1
+    assert v.unavailable[0].kind == "weather"
 
 
 class _FakeJudge:
