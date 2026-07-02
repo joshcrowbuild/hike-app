@@ -15,12 +15,70 @@ nodes (Episode, Belief, etc.) are a Phase-1 concern (Stage 5).
 
 from __future__ import annotations
 
+import logging
+import os
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+log = logging.getLogger(__name__)
+
 Runner = Callable[[str, dict[str, Any]], Any]
+
+# Fraction of the region's PRIOR-version CanonicalTrail count that the current run
+# must at least reach before a prune is allowed to fire (finding M1). A truncated
+# ingest (Overpass timeout returning 1 of ~1500 trails) would otherwise sail past the
+# empty-ingest guard (n_cur=1 >= min_current=1) and DETACH-DELETE the other ~1499.
+# Env-overridable via ADVENTURE_PRUNE_MIN_RATIO; a missing/unparseable value falls back
+# to this default rather than disabling the guard — prefer blocking a legitimate prune
+# over silently wiping the corpus.
+_DEFAULT_PRUNE_MIN_RATIO = 0.5
+
+
+def _prune_min_ratio() -> float:
+    raw = os.environ.get("ADVENTURE_PRUNE_MIN_RATIO")
+    if not raw:
+        return _DEFAULT_PRUNE_MIN_RATIO
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning(
+            "ADVENTURE_PRUNE_MIN_RATIO=%r is not a float — falling back to default %.2f",
+            raw,
+            _DEFAULT_PRUNE_MIN_RATIO,
+        )
+        return _DEFAULT_PRUNE_MIN_RATIO
+
+
+def _scalar_count(rows_or_result: Any, key: str = "n") -> int:
+    """Extract a `RETURN count(...) AS n` scalar from whatever shape `runner` returns.
+
+    Production (`ingestion/pipeline.py`) wires `runner = make_runner(session)`, a raw
+    `neo4j.Session.run` whose return supports `.single()`. Tests (and the
+    `ScopedSession.run` path some integration tests route through) instead pass an
+    already-materialized `list[dict]`. Both are handled so this module stays agnostic
+    about which Runner flavor it's given, matching every other function here."""
+    single = getattr(rows_or_result, "single", None)
+    if callable(single):
+        record = single()
+        return int(record[key]) if record is not None else 0
+    if isinstance(rows_or_result, list):
+        return int(rows_or_result[0][key]) if rows_or_result else 0
+    raise TypeError(f"Unexpected count-query result shape: {type(rows_or_result)!r}")
+
+
+@dataclass(frozen=True)
+class PruneOutcome:
+    """What `prune_stale_trails` decided. `pruned=False` means every node was left
+    intact — either guard can fire this; `reason` says which and names the counts."""
+
+    pruned: bool
+    n_cur: int
+    n_prev: int
+    reason: str | None = None
+
 
 # Distinguishes "caller omitted this optional property" from "caller explicitly passed
 # None to CLEAR it". Used by load_canonical_trail so a re-ingest that loses geometry
@@ -220,7 +278,8 @@ def prune_stale_trails(
     *,
     region_id: str,
     min_current: int = 1,
-) -> None:
+    min_ratio: float | None = None,
+) -> PruneOutcome:
     """Delete CanonicalTrails (+ their Segments and SourceRecords) left behind by a
     PRIOR ingest of this region — the nodes a now-tighter filter stopped refreshing.
 
@@ -231,12 +290,26 @@ def prune_stale_trails(
     same-region trail whose `ingest_version` is not the current run's, closing that gap
     so a tighter filter actually self-heals on re-ingest.
 
-    Guard — a failed or empty ingest must NEVER wipe the graph (the whole point of the
-    prune is to delete *non-current* nodes, which is everything if the current run wrote
-    nothing). The delete fires only when at least `min_current` trails carry the current
-    `ingest_version`: an ingest that loaded nothing (Overpass down, region misconfigured)
-    leaves `n_cur = 0 < min_current`, the WHERE drops the only row, and the downstream
-    MATCH/DELETE never runs. Callers should additionally gate on a successful load count.
+    Guard 1 (empty-ingest) — a failed or empty ingest must NEVER wipe the graph (the
+    whole point of the prune is to delete *non-current* nodes, which is everything if
+    the current run wrote nothing). The delete fires only when at least `min_current`
+    trails carry the current `ingest_version`: an ingest that loaded nothing (Overpass
+    down, region misconfigured) leaves `n_cur = 0 < min_current`, the in-query WHERE
+    drops the only row, and the downstream MATCH/DELETE never runs.
+
+    Guard 2 (ratio, finding M1) — a *truncated* ingest is a different failure mode: it
+    loads a nonzero-but-tiny count (e.g. Overpass times out mid-fetch and returns 1 of
+    ~1500 trails), which sails past guard 1 (n_cur=1 >= min_current=1) and would then
+    prune the other ~1499 as "stale" — a silent corpus wipe, not a loud failure. Before
+    either DELETE pass runs, this counts `n_cur` (current-version trails) and `n_prev`
+    (same-region prior-version trails — the prune's candidate set) and aborts the WHOLE
+    prune in Python — no query even fires — if `n_cur` has collapsed below
+    `min_ratio * n_prev` (default 0.5, env `ADVENTURE_PRUNE_MIN_RATIO`). A healthy
+    re-ingest (comparable counts) is unaffected; `n_prev == 0` (first-ever ingest of a
+    region, nothing stale to compare against) always passes. This is purely additive —
+    it can only ABORT a prune guard 1 would have allowed, never permit one guard 1 would
+    have blocked, and every existing protection (guard 1's in-query WHERE, the caller's
+    `loaded > 0` belt) still runs unchanged.
 
     Region-scoped: only nodes whose `ingest_version` IS this region's id or starts with
     `"{region_id}-"` are candidates (`ingest_version` is `"{region_id}"` or
@@ -270,6 +343,39 @@ def prune_stale_trails(
         "prefix": prefix,
         "min_current": min_current,
     }
+
+    n_cur = _scalar_count(
+        runner(
+            "MATCH (cur:CanonicalTrail {ingest_version: $iv})\nRETURN count(cur) AS n",
+            {"iv": ingest_version},
+        )
+    )
+    n_prev = _scalar_count(
+        runner(
+            f"MATCH (node:CanonicalTrail)\nWHERE {region_pred}\nRETURN count(node) AS n",
+            dict(params),
+        )
+    )
+
+    if n_cur < min_current:
+        reason = (
+            f"prune skipped: region {region_id!r} current-version count {n_cur} "
+            f"below min_current {min_current} (leaving all {n_prev} stale-candidate "
+            "trail(s) intact)"
+        )
+        log.warning(reason)
+        return PruneOutcome(pruned=False, n_cur=n_cur, n_prev=n_prev, reason=reason)
+
+    ratio = _prune_min_ratio() if min_ratio is None else min_ratio
+    if n_prev > 0 and n_cur < ratio * n_prev:
+        reason = (
+            f"prune skipped: count dropped {n_prev}->{n_cur} for region {region_id!r} "
+            f"(ratio {n_cur / n_prev:.3f} below min_ratio {ratio:.3f}) — looks like a "
+            "truncated ingest; leaving all nodes intact"
+        )
+        log.warning(reason)
+        return PruneOutcome(pruned=False, n_cur=n_cur, n_prev=n_prev, reason=reason)
+
     # Pass 1 — stale trails + their private segments.
     runner(
         guard
@@ -288,6 +394,7 @@ def prune_stale_trails(
         + "DETACH DELETE node",
         params,
     )
+    return PruneOutcome(pruned=True, n_cur=n_cur, n_prev=n_prev)
 
 
 def load_source_record(
