@@ -45,3 +45,13 @@ class ModelProvider(ABC):
     def complete(self, request: LLMRequest) -> LLMResponse:
         """Run a single completion. Implemented in Stage 4."""
         raise NotImplementedError
+
+    def warm(self) -> None:
+        """Construct any lazily-built SDK client — no network call, no token spend.
+
+        The API warm-up (api.app lifespan) calls this before /health reports ready,
+        so a misconfigured client (missing key, bad import) fails at boot and is
+        disclosed there instead of surfacing as the first /plan's 500. Adapters with
+        a lazy client override this to force construction; they must never issue a
+        completion from it (warm-up is free by contract). Default: nothing to build.
+        """

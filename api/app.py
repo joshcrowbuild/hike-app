@@ -1,7 +1,10 @@
 """Adventure Planner FastAPI application.
 
-Exposes engine.plan() over HTTP. Startup wires the graph client and live probes
-from settings; the Runtime is built per-request so viewer_id can vary.
+Exposes engine.plan() over HTTP. Startup wires the graph client from settings and
+warms the whole /plan dependency stack off-thread; /health gates readiness on that
+warm-up (Render's healthCheckPath), so traffic only cuts over to an instance whose
+first /plan won't eat a cold init. The Runtime is built per-request so viewer_id
+can vary.
 
 Run dev server: uvicorn api.app:app --reload --port 8000
 """
@@ -11,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -61,6 +65,7 @@ from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
+from orchestration.providers.registry import resolve
 
 logger = logging.getLogger(__name__)
 
@@ -69,23 +74,99 @@ _VERSION = "0.0.0"
 # Module-level singletons populated at startup
 _settings: Settings | None = None
 _graph_client: GraphClient | None = None
-_probe_keys: list[str] = []
+
+
+class _WarmupState:
+    """Warm-up status shared between the warm-up thread and /health (one per boot)."""
+
+    def __init__(self) -> None:
+        self.ok = threading.Event()  # set once a round over the /plan stack succeeded
+        self.stop = threading.Event()  # set at shutdown so the thread exits promptly
+        self.error: str | None = None  # last failed round's cause, disclosed by /health
+        self.probe_keys: list[str] = []  # /health's probes_available, set on success
+
+
+_warmup = _WarmupState()  # replaced by _start_warmup at lifespan startup
+
+# Pause between failed warm-up rounds: long enough not to hammer a struggling
+# dependency, short enough that /health flips to 200 promptly once it recovers.
+_WARMUP_RETRY_PAUSE_S = 2.0
+
+
+def _warm_plan_path(state: _WarmupState, settings: Settings, graph_client: GraphClient) -> None:
+    """One round over /plan's dependency stack; raises on whatever is down.
+
+    Everything /plan builds lazily per-request is forced eager here, so the failure
+    a cold instance would serve as its first /plan's 500 surfaces in /health instead
+    (Render then never cuts traffic over to it). No step spends money: the graph
+    check is the driver's own connectivity probe, provider warm-up constructs SDK
+    clients without requesting a completion, and the adapter registry only
+    instantiates adapters — live probes still run JIT per request (rule #3).
+    """
+    deadline = time.monotonic() + settings.warmup_deadline_s
+    # Graph: driver pool + TLS + auth. Retried while the round's budget lasts — Aura
+    # can be slow to admit the first connection right after a deploy — then raised,
+    # so a genuinely-down graph is reported (503 with a cause) rather than hung on.
+    while True:
+        try:
+            graph_client.verify_connectivity()
+            break
+        except Exception:
+            if state.stop.is_set() or time.monotonic() >= deadline:
+                raise
+            state.stop.wait(min(1.0, max(0.1, deadline - time.monotonic())))
+    # Providers: the same three resolutions build_runtime performs per-request.
+    # warm() forces SDK-client construction (import + key validation) but never a
+    # completion — warm-up must not spend tokens; the first paid call stays /plan's.
+    for role, private in (("extract", False), ("curate", False), ("curate", True)):
+        resolve(role, settings, touches_private_overlay=private).provider.warm()
+    # Live-adapter stack: instantiate the full registry, so an unknown adapter name
+    # or bad adapter config fails here, not mid-fan-out on the first request.
+    state.probe_keys = [k.value for k in registry.probes_for(settings.live_region, settings)]
+
+
+def _warmup_loop(state: _WarmupState, settings: Settings, graph_client: GraphClient) -> None:
+    """Retry warm-up rounds until one succeeds (then /health flips to 200) or
+    shutdown. Retrying forever is deliberate: a dependency that was down at boot and
+    recovers later should make the instance healthy without a redeploy — /health
+    keeps disclosing the latest failure in the meantime."""
+    while not state.stop.is_set():
+        try:
+            _warm_plan_path(state, settings, graph_client)
+        except Exception as exc:
+            state.error = f"{type(exc).__name__}: {exc}"
+            logger.warning("warm-up round failed (%s); retrying", state.error)
+            state.stop.wait(_WARMUP_RETRY_PAUSE_S)
+            continue
+        state.error = None
+        state.ok.set()
+        logger.info("warm-up complete; /health now reports ready")
+        return
+
+
+def _start_warmup(settings: Settings, graph_client: GraphClient) -> None:
+    """Spawn the warm-up thread. Off-thread so the port binds immediately and a slow
+    dependency delays readiness (/health 503) rather than boot. Hermetic tests stub
+    this and install a pre-warmed `_warmup` instead (tests/conftest.py)."""
+    global _warmup
+    state = _WarmupState()
+    _warmup = state
+    threading.Thread(
+        target=_warmup_loop,
+        args=(state, settings, graph_client),
+        daemon=True,
+        name="plan-warmup",
+    ).start()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
-    global _settings, _graph_client, _probe_keys
+    global _settings, _graph_client
     _settings = Settings.from_env()
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
-    # Best-effort: warm the connection pool and surface a dead/misconfigured graph at boot
-    # rather than on a user's first /plan. Never fatal — a transient blip at startup must not
-    # take the service down; the lazy driver + managed-transaction retry recover on first use.
-    try:
-        _graph_client.verify_connectivity()
-    except Exception:
-        logger.warning("graph connectivity check failed at startup; will connect lazily")
-    _probe_keys = [k.value for k in registry.probes_for(_settings.live_region, _settings)]
+    _start_warmup(_settings, _graph_client)
     yield
+    _warmup.stop.set()
     if _graph_client:
         _graph_client.close()
 
@@ -278,11 +359,23 @@ def _graph_freshness() -> tuple[str | None, str | None]:
 def health(request: Request) -> HealthResponse:
     if _settings is None:
         raise HTTPException(status_code=503, detail="Settings not loaded")
+    if not _warmup.ok.is_set():
+        # Render gates deploy cutover on this path (render.yaml healthCheckPath):
+        # stay 503 until one warm-up round over /plan's whole dependency stack has
+        # succeeded, so traffic never lands on an instance whose first /plan would
+        # eat a cold init as a 500. A failing dependency is disclosed, not hidden
+        # (Rule #1) — the previous instance keeps serving while this one reports.
+        detail = (
+            f"warming up: {_warmup.error}"
+            if _warmup.error
+            else "warming up: /plan dependency stack not yet verified"
+        )
+        raise HTTPException(status_code=503, detail=detail)
     return HealthResponse(
         status="ok",
         version=_VERSION,
         region=_settings.region,
-        probes_available=_probe_keys,
+        probes_available=_warmup.probe_keys,
         graph=_graph_stats(),
     )
 

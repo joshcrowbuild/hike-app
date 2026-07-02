@@ -14,9 +14,13 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # Render polls this path; the API answers 200 once settings load, even before
-    # Neo4j is reachable (graph stats degrade to null) — so the service is healthy
-    # the moment it boots.
+    # Render gates deploy cutover on this path. /health answers 503 until the API
+    # has warmed the whole /plan dependency stack (Neo4j driver connectivity,
+    # provider SDK clients, the live-adapter registry — no tokens spent) and 200
+    # after, so traffic never cuts over to an instance whose first /plan would eat
+    # a cold init as a 500. A genuinely-down dependency keeps this 503 with its
+    # cause in the detail (warm-up budget: ADVENTURE_WARMUP_DEADLINE_S, 30s) while
+    # the previous instance keeps serving.
     healthCheckPath: /health
     # Deploy on every commit to the linked branch (current spec; replaces the
     # deprecated `autoDeploy: true`). Use `checksPass` to gate on CI, `off` to disable.

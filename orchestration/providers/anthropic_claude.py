@@ -33,6 +33,11 @@ class AnthropicProvider(ModelProvider):
             self._client = anthropic.Anthropic(api_key=self._api_key, max_retries=0)
         return self._client
 
+    def warm(self) -> None:
+        """Force client construction (import + key validation) — the SDK never dials
+        out or spends a token until `messages.create`, so warm-up stays free."""
+        self._ensure_client()
+
     def complete(self, request: LLMRequest) -> LLMResponse:
         client = self._ensure_client()
         # A transient blip (429 / 5xx / 529 overloaded / connection reset) is retried with

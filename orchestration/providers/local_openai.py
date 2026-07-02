@@ -32,6 +32,11 @@ class LocalOpenAIProvider(ModelProvider):
             )
         return self._client
 
+    def warm(self) -> None:
+        """Force client construction — no request leaves the box until
+        `chat.completions.create`, so warm-up stays free."""
+        self._ensure_client()
+
     def complete(self, request: LLMRequest) -> LLMResponse:
         client = self._ensure_client()
         messages = [{"role": "system", "content": request.system}, *request.messages]
