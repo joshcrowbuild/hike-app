@@ -437,8 +437,6 @@ def plan(
     # see latency + how much third-party quota the call spent. Never logs viewer_id in the
     # clear (Rule #5).
     started = time.perf_counter()
-    cache_before = 0
-    stats_before = probe_stats_snapshot(None)  # zeroed until the runtime cache exists
     try:
         runtime = build_runtime(_settings, _graph_client, body.viewer_id)
         from orchestration.engine import plan as engine_plan
