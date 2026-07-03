@@ -122,6 +122,13 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
         directionsUrl={trailheadDirectionsUrl(geo.trailhead)}
       />
 
+      {/* The GL map's cooperative-gestures guard (scroll alone pans the page,
+          not the map) only shows its own hint AFTER a failed scroll attempt —
+          too late for a user who gives up first. Say it upfront instead. */}
+      {interactive && !unmapped ? (
+        <p className="map-note">Use ⌘ + scroll (Ctrl + scroll on Windows) to zoom the map.</p>
+      ) : null}
+
       {(unmapped ||
         approximate ||
         derivedStart ||
