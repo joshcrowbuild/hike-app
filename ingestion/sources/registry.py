@@ -24,8 +24,9 @@ from .usgs_3dep import UsgsThreeDEPSource
 
 # name -> CorpusSource subclass. Add a source here to register it (step 3 of the
 # §6 checklist). `echo` is the throwaway drop-in proof (S6). `usgs-3dep` is the
-# first ENRICHMENT source (Epic 017) — off by default (it needs a DEM path); add
-# it to ADVENTURE_CORPUS_SOURCES to run elevation enrichment.
+# first ENRICHMENT source (Epic 017) — a default member of ADVENTURE_CORPUS_SOURCES
+# so a re-ingest always re-applies elevation; regions without a DEM configured
+# (ADVENTURE_3DEP_DEM) degrade to a no-op via `from_config` rather than failing.
 SOURCE_REGISTRY: dict[str, type[CorpusSource]] = {
     "osm": OsmSource,
     "nps": NpsSource,

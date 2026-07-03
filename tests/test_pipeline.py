@@ -378,6 +378,68 @@ def test_ac5_3_enrichment_invoked_post_conflation_not_in_matcher(monkeypatch):
     assert "enrich_stub" not in captured  # never a conflation argument
 
 
+# ── Elevation survives a re-ingest (root-cause fix) ────────────────────────────
+#
+# usgs-3dep is now a default corpus source (Settings.corpus_sources), so every
+# re-ingest re-runs it through the real config-driven registry — the exact path
+# that silently dropped elevation before (Shenandoah, twice) because usgs-3dep
+# wasn't in the default list. These exercise the real `UsgsThreeDEPSource` (not a
+# stub) through `enabled_sources`, proving both halves of the guarantee: it
+# re-enriches when a DEM is configured, and it degrades to a harmless no-op
+# (never an error, never a wipe) when the region has none.
+
+
+def test_reingest_with_dem_reenriches(monkeypatch, tmp_path):
+    from ingestion.sources.usgs_3dep import UsgsThreeDEPSource
+
+    class _Ramp:
+        """A monotonic climb keyed on longitude — mirrors test_usgs_3dep.py."""
+
+        def sample(self, lon, lat):
+            return (lon + 78.30) * 10_000.0
+
+    spine = _StubSource(
+        "osm",
+        role=ConflationRole.spine,
+        features=[
+            Feature(
+                name="Old Rag Loop",
+                geom=LineString([[-78.30, 38.50], [-78.20, 38.50]]),
+                source="OSM",
+                ref="osm/old-rag-loop",
+            )
+        ],
+    )
+    dem = UsgsThreeDEPSource(sampler=_Ramp(), resolution_m=200.0)
+    _inject(monkeypatch, [spine, dem])
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+    # 8 facts (profile_distances_m, profile_elevations_m, total_gain_m, total_loss_m,
+    # max_grade_pct, elev_source, elev_resolution_m, elev_version) for the one trail.
+    assert counts["enrichment_facts"] == 8
+
+
+def test_reingest_without_dem_does_not_error_or_wipe(monkeypatch):
+    # No ADVENTURE_3DEP_DEM configured for this region — the real registry resolves
+    # usgs-3dep via `from_config`, which must degrade to a no-op sampler rather than
+    # raising (finding: a re-ingest of a DEM-less region must complete cleanly).
+    settings = Settings.from_env({})
+    assert settings.dem_path is None
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("X", "OSM")])
+    real_sources = pipeline.registry.enabled_sources(settings, names=["osm", "usgs-3dep"])
+    _inject(monkeypatch, [spine] + [s for s in real_sources if s.name == "usgs-3dep"])
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=settings)
+
+    assert counts["osm"] == 1
+    assert counts["enrichment_facts"] == 0  # degraded to no-op, not an error
+
+
+def test_default_corpus_sources_include_usgs_3dep():
+    assert "usgs-3dep" in Settings.from_env({}).corpus_sources
+
+
 # ── AC-6.3 — echo drop-in: zero source-naming code in run_pipeline ────────────
 
 

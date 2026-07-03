@@ -227,6 +227,103 @@ def test_verified_hazard_warning_rides_the_feed_card() -> None:
     assert feed.set_aside == ()
 
 
+class _FixedTimeAdapter(LiveAdapter):
+    """Like `_FakeAdapter`, but stamps a fixed `fetched_at` instead of
+    `datetime.now()` — so two independent `plan_from_origin` calls made moments
+    apart in the same test produce byte-for-byte identical `VerifiedFact`s, and a
+    real equality check isn't hiding behind two different wall-clock timestamps."""
+
+    def __init__(self, name: str, kind: ConditionKind, fn: Callable[[float, float], Any]) -> None:
+        self.name = name
+        self.kind = kind
+        self._fn = fn
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(True, False, True)
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        value = self._fn(point.lat, point.lon)
+        if value is None:
+            return None
+        return VerifiedFact(value=value, source="t", fetched_at=_FIXED_NOW)
+
+    def health(self) -> AdapterHealth:
+        return AdapterHealth.OK
+
+    @classmethod
+    def from_config(cls, settings: Any) -> "LiveAdapter | None":
+        return None
+
+
+_FIXED_NOW = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)
+
+
+def test_plan_from_origin_is_identical_regardless_of_fan_out_concurrency() -> None:
+    """The live-probe fan-out (Verifier) now runs every candidate's probes
+    concurrently via `verify_batch` instead of walking candidates one at a time —
+    a latency change only (Epic 018 S6 follow-up). This pins that invariant end to
+    end: cards, set-aside, warnings, and unavailable-condition disclosures must be
+    byte-for-byte identical whether the fan-out is forced fully serial
+    (`probe_max_workers=1`) or run at a realistic concurrency, across one batch
+    mixing a clear trail, a verified hazard warning, an unverifiable condition, and a
+    verified hard set-aside — the same trails, same conditions, same set-aside/
+    warning behavior the sequential loop produced."""
+    rows = [
+        _row("clear", 38.5, -78.4, 100),
+        _row("hazard-warning", 39.0, -79.0, 150),  # verified alert -> stays, warns
+        _row("unverifiable", 39.5, -79.5, 200),  # failed probe -> stays, discloses
+        _row("hazardous-aqi", 40.0, -80.0, 250),  # verified hard block -> set aside
+    ]
+
+    def weather(lat: float, lon: float) -> Any:
+        if lat == 39.0:
+            return {"active_alerts": ["Red Flag Warning"]}
+        if lat == 39.5:
+            return None  # the P0 case: probed, no source answered
+        return {"active_alerts": []}
+
+    def aqi(lat: float, lon: float) -> Any:
+        return {"aqi": 300} if lat == 40.0 else {"aqi": 20}
+
+    probes: dict[ConditionKind, list[LiveAdapter]] = {
+        ConditionKind.weather: [_FixedTimeAdapter("w", ConditionKind.weather, weather)],
+        ConditionKind.air: [_FixedTimeAdapter("a", ConditionKind.air, aqi)],
+    }
+
+    serial = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),
+        probes,
+        k=10,
+        probe_max_workers=1,  # type: ignore[arg-type]
+    )
+    concurrent = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),
+        probes,
+        k=10,
+        probe_max_workers=8,  # type: ignore[arg-type]
+    )
+
+    assert serial == concurrent
+    assert [p.candidate.canonical_id for p in concurrent.trails] == [
+        "clear",
+        "hazard-warning",
+        "unverifiable",
+    ]
+    assert [s.canonical_id for s in concurrent.set_aside] == ["hazardous-aqi"]
+    (warning,) = next(
+        p for p in concurrent.trails if p.candidate.canonical_id == "hazard-warning"
+    ).verdict.warnings
+    assert "Red Flag" in warning.text
+    (note,) = next(
+        p for p in concurrent.trails if p.candidate.canonical_id == "unverifiable"
+    ).verdict.unavailable
+    assert note.kind == "weather"
+
+
 class _FakeJudge:
     name = "fake"
 
