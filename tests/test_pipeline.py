@@ -657,3 +657,270 @@ def test_unmatched_spine_way_type_flows_to_load():
     _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
     canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
     assert canonical and canonical[0].get("way_type") == "track"
+
+
+# ── Per-source fetch sanity (task 3): a truncated/partial fetch aborts pre-load ──
+
+
+def _region_with_floors(**floors: int) -> Region:
+    return Region(
+        region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25), props={"min_fetch_counts": floors}
+    )
+
+
+def test_fetch_sanity_aborts_on_truncated_spine_via_region_floor(monkeypatch):
+    # The region declares OSM must fetch ≥5; the (truncated) run fetched 1 → abort BEFORE
+    # any load/prune, so a partial fetch can't later read as healthy and self-wipe.
+    region = _region_with_floors(osm=5)
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("A", "OSM")])
+    _inject(monkeypatch, [spine])
+    with pytest.raises(pipeline.FetchSanityError):
+        run_pipeline(region, dry_run=True, settings=_SETTINGS)
+
+
+def test_fetch_sanity_aborts_on_truncated_conflate_source(monkeypatch):
+    # Truncation in a NON-spine source is caught too (it wouldn't shrink the canonical
+    # count, so the collapse gate alone would miss it).
+    region = _region_with_floors(nps=3)
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("A", "OSM")])
+    nps = _StubSource("nps", features=[_feat("B", "NPS")])  # 1 < 3
+    _inject(monkeypatch, [spine, nps])
+    with pytest.raises(pipeline.FetchSanityError):
+        run_pipeline(region, dry_run=True, settings=_SETTINGS)
+
+
+def test_fetch_sanity_env_floor_overrides_region(monkeypatch):
+    monkeypatch.setenv("ADVENTURE_FETCH_MIN_OSM", "3")
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("A", "OSM")])
+    _inject(monkeypatch, [spine])
+    with pytest.raises(pipeline.FetchSanityError):
+        run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+
+def test_fetch_sanity_noop_when_unconfigured(monkeypatch):
+    # No floor configured → no check; a small fetch is allowed to proceed.
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("A", "OSM")])
+    _inject(monkeypatch, [spine])
+    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    assert counts["osm"] == 1
+
+
+def test_fetch_sanity_passes_when_at_or_above_floor(monkeypatch):
+    region = _region_with_floors(osm=2)
+    spine = _StubSource(
+        "osm",
+        role=ConflationRole.spine,
+        features=[_feat("A", "OSM"), _feat("B", "OSM", lon=-78.30)],
+    )
+    _inject(monkeypatch, [spine])
+    counts = run_pipeline(region, dry_run=True, settings=_SETTINGS)
+    assert counts["osm"] == 2
+
+
+# ── verify_before_prune (task 2): the gate that must pass before the prune ────────
+
+
+def _verify_runner(n_cur: int, n_prev: int):
+    """A fake Runner answering `count_region_versions`' two count queries."""
+
+    def runner(cypher: str, params: dict):
+        if "RETURN count(cur)" in cypher:
+            return [{"n": n_cur}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": n_prev}]
+        return None
+
+    return runner
+
+
+def test_verify_before_prune_aborts_on_collapse():
+    # Current-version count collapsed to 100 of a prior 1500 (< 50%) → loud abort.
+    runner = _verify_runner(n_cur=100, n_prev=1500)
+    with pytest.raises(pipeline.IngestVerificationError, match="collapsed"):
+        pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+
+
+def test_verify_before_prune_passes_on_healthy_reingest():
+    runner = _verify_runner(n_cur=1490, n_prev=1500)
+    n_cur, n_prev = pipeline.verify_before_prune(
+        _REGION, {}, runner, iv="test-r", elevation_expected=False
+    )
+    assert (n_cur, n_prev) == (1490, 1500)
+
+
+def test_verify_before_prune_passes_first_ever_ingest():
+    # n_prev == 0 → no denominator → collapse check can't fire.
+    runner = _verify_runner(n_cur=3, n_prev=0)
+    pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+
+
+def test_verify_before_prune_shrink_env_configurable(monkeypatch):
+    # 200/1500 = 0.133: aborts at the default 0.5 shrink, passes at a relaxed 0.9 shrink
+    # (threshold drops to 0.1 of prior).
+    runner = _verify_runner(n_cur=200, n_prev=1500)
+    with pytest.raises(pipeline.IngestVerificationError):
+        pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+    monkeypatch.setenv("ADVENTURE_PRUNE_SHRINK", "0.9")
+    pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+
+
+def test_verify_before_prune_aborts_on_zero_elevation_when_expected():
+    # Elevation expected (3DEP active + DEM resolved) but 0/100 covered → abort (this is
+    # the "silent 0% warning" promoted to a loud failure).
+    runner = _verify_runner(n_cur=100, n_prev=100)
+    counts = {"elev_nodes": 100, "elev_covered": 0}
+    with pytest.raises(pipeline.IngestVerificationError, match="elevation coverage"):
+        pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+
+
+def test_verify_before_prune_passes_with_adequate_elevation():
+    runner = _verify_runner(n_cur=100, n_prev=100)
+    counts = {"elev_nodes": 100, "elev_covered": 90}
+    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+
+
+def test_verify_before_prune_ignores_elevation_when_not_expected():
+    # Same 0% coverage, but elevation NOT expected (DEM-less region degrades by design)
+    # → must NOT abort.
+    runner = _verify_runner(n_cur=100, n_prev=100)
+    counts = {"elev_nodes": 100, "elev_covered": 0}
+    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=False)
+
+
+def test_verify_before_prune_elev_coverage_env_configurable(monkeypatch):
+    runner = _verify_runner(n_cur=100, n_prev=100)
+    counts = {"elev_nodes": 100, "elev_covered": 70}  # 70% < default 80%
+    with pytest.raises(pipeline.IngestVerificationError):
+        pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+    monkeypatch.setenv("ADVENTURE_ELEV_MIN_COVERAGE", "0.6")  # relax to 60% → passes
+    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+
+
+# ── Source-construction seam (task 4): the ingest region drives DEM/source resolve ─
+
+
+def test_for_region_resolves_target_region_dem_not_ambient(monkeypatch, tmp_path):
+    # The Richmond-got-0-elevation bug: `from_env` resolved the DEM against the ambient
+    # region. `for_region` must re-resolve against the region being ingested — region A
+    # has a DEM on disk, region B does not.
+    from orchestration import config as cfg
+
+    monkeypatch.setattr(cfg, "DEM_DIR", str(tmp_path))
+    (tmp_path / "region-a.tif").write_bytes(b"")  # A has a DEM; B does not
+    base = Settings.from_env({})
+    a = base.for_region("region-a", env={})
+    b = base.for_region("region-b", env={})
+    assert a.region == "region-a" and a.dem_path == str(tmp_path / "region-a.tif")
+    assert b.region == "region-b" and b.dem_path is None
+
+
+def test_region_with_dem_enables_3dep_and_dem_less_does_not(monkeypatch, tmp_path):
+    from ingestion.pipeline import _elevation_expected
+    from orchestration import config as cfg
+
+    monkeypatch.setattr(cfg, "DEM_DIR", str(tmp_path))
+    (tmp_path / "region-a.tif").write_bytes(b"")  # DEM present for A only
+
+    settings_a = Settings.from_env({}).for_region("region-a", env={})
+    sources_a = pipeline.registry.enabled_sources(settings_a, names=["usgs-3dep"])
+    # A region that expects elevation actually enables usgs-3dep with a resolved DEM.
+    assert _elevation_expected(sources_a, settings_a) is True
+
+    settings_b = Settings.from_env({}).for_region("region-b", env={})
+    sources_b = pipeline.registry.enabled_sources(settings_b, names=["usgs-3dep"])
+    # B (no DEM) degrades silently — elevation is NOT expected, so it won't trip the gate.
+    assert _elevation_expected(sources_b, settings_b) is False
+
+
+# ── Golden-region regression (task 5): quality regressions must fail CI ───────────
+
+
+def _write_golden_dem(path) -> None:
+    """A tiny north-up 3DEP-like ramp covering the OSM fixture geometry (lon
+    -78.30…-78.20, lat 38.50…38.60), elevation rising west→east so a real profile builds."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    width = height = 10
+    res = 0.01
+    transform = from_origin(-78.30, 38.60, res, res)
+    data = np.zeros((height, width), dtype="float32")
+    for col in range(width):
+        data[:, col] = col * 10.0
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=transform,
+    ) as dataset:
+        dataset.write(data, 1)
+
+
+def _e2e_osm_client_with_junk() -> httpx.Client:
+    """OSM mock: one real trail + one TIGER-misimported numbered state route ("Snake
+    Road", ref=SR 650) — the known junk `is_trail_worthy` must drop."""
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        body = json.dumps(
+            {
+                "elements": [
+                    {
+                        "type": "way",
+                        "id": 1,
+                        "tags": {"name": "Old Rag Loop", "highway": "path"},
+                        "geometry": [{"lon": -78.28, "lat": 38.55}, {"lon": -78.27, "lat": 38.56}],
+                    },
+                    {
+                        "type": "way",
+                        "id": 2,
+                        "tags": {"name": "Snake Road", "highway": "track", "ref": "SR 650"},
+                        "geometry": [{"lon": -78.26, "lat": 38.55}, {"lon": -78.25, "lat": 38.56}],
+                    },
+                ]
+            }
+        ).encode()
+        return httpx.Response(200, content=body, headers={"content-type": "application/json"})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_golden_region_regression(monkeypatch, tmp_path):
+    """The one behavioral golden: real OSM/NPS/USFS adapters (transports mocked) + a real
+    3DEP source over a cropped DEM fixture. Asserts the expected corpus SHAPE so a quality
+    regression fails CI — the known real trail PRESENT and conflated, the known junk state
+    route ABSENT (filtered), and elevation PRESENT for the DEM'd region."""
+    pytest.importorskip("rasterio")
+    pytest.importorskip("numpy")
+    from ingestion.sources.usgs_3dep import RasterioDEMSampler, UsgsThreeDEPSource
+
+    dem = tmp_path / "golden.tif"
+    _write_golden_dem(dem)
+    usfs_path = _e2e_usfs_file()
+    try:
+        real_sources = [
+            OsmSource(client=_e2e_osm_client_with_junk()),
+            NpsSource(client=_e2e_nps_client()),
+            UsfsSource(geojson_path=usfs_path),
+            UsgsThreeDEPSource(sampler=RasterioDEMSampler(str(dem)), resolution_m=50.0),
+        ]
+        _inject(monkeypatch, real_sources)
+
+        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+
+        # Trail count + junk ABSENT: only the real trail survives; "Snake Road" (SR 650)
+        # is dropped by the trail_filter. If a regression lets the junk through this is 2.
+        assert counts["osm"] == 1
+        assert counts["osm_consolidated"] == 1
+        # A known real trail PRESENT and conflated with its NPS record.
+        assert counts["auto_accept"] == 1
+        assert counts["review"] == 0
+        # Elevation PRESENT for the DEM'd region: 8 profile facts for the one trail.
+        assert counts["enrichment_facts"] == 8
+    finally:
+        usfs_path.unlink(missing_ok=True)
