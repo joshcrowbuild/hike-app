@@ -8,7 +8,6 @@ import pytest
 
 from graph.load import (
     clear_trail_segments,
-    link_area_contains,
     load_area,
     load_canonical_trail,
     load_segment,
@@ -127,18 +126,6 @@ def test_load_trailhead_with_links():
 
     cypher_third = calls[2][0]
     assert "LOCATED_IN" in cypher_third
-
-
-def test_link_area_contains():
-    calls: list[tuple[str, dict]] = []
-    runner = lambda c, p: calls.append((c, p))  # noqa: E731
-
-    link_area_contains(runner, "nps:shen", "ct:old-rag-loop")
-    assert len(calls) == 1
-    cypher, params = calls[0]
-    assert "CONTAINS" in cypher
-    assert params["area_id"] == "nps:shen"
-    assert params["cid"] == "ct:old-rag-loop"
 
 
 def test_load_segment_merges_node_and_link():

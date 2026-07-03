@@ -27,7 +27,6 @@ MERGE (m:Meta {id: "schema"})
 CREATE CONSTRAINT area_id          IF NOT EXISTS FOR (a:Area)           REQUIRE a.area_id        IS UNIQUE;
 CREATE CONSTRAINT canonical_id     IF NOT EXISTS FOR (t:CanonicalTrail) REQUIRE t.canonical_id   IS UNIQUE;
 CREATE CONSTRAINT segment_id       IF NOT EXISTS FOR (s:Segment)        REQUIRE s.segment_id     IS UNIQUE;
-CREATE CONSTRAINT junction_id      IF NOT EXISTS FOR (j:Junction)       REQUIRE j.junction_id    IS UNIQUE;
 CREATE CONSTRAINT trailhead_id     IF NOT EXISTS FOR (h:Trailhead)      REQUIRE h.trailhead_id   IS UNIQUE;
 CREATE CONSTRAINT source_record_id IF NOT EXISTS FOR (r:SourceRecord)   REQUIRE r.sr_uid         IS UNIQUE;
 CREATE CONSTRAINT source_id        IF NOT EXISTS FOR (src:Source)       REQUIRE src.name         IS UNIQUE;
@@ -40,7 +39,6 @@ CREATE CONSTRAINT outcome_id       IF NOT EXISTS FOR (o:Outcome)        REQUIRE 
 // ── 2. Indexes ───────────────────────────────────────────────────────────
 // Spatial "near my origin" lookups (Decision Log §5: origin as runtime param)
 CREATE POINT INDEX trailhead_point IF NOT EXISTS FOR (h:Trailhead) ON (h.point);
-CREATE POINT INDEX junction_point  IF NOT EXISTS FOR (j:Junction)  ON (j.point);
 CREATE POINT INDEX area_point      IF NOT EXISTS FOR (a:Area)      ON (a.point);
 // Spatial lookup on trail centroids (fallback when no Trailhead nodes exist)
 CREATE POINT INDEX canonical_trail_point IF NOT EXISTS FOR (t:CanonicalTrail) ON (t.point);
@@ -49,11 +47,6 @@ CREATE TEXT INDEX trail_name       IF NOT EXISTS FOR (t:CanonicalTrail) ON (t.na
 CREATE TEXT INDEX area_name        IF NOT EXISTS FOR (a:Area)           ON (a.name);
 // Re-sync key for idempotent monthly refresh (source, source_id) + version
 CREATE INDEX sr_source_version     IF NOT EXISTS FOR (r:SourceRecord) ON (r.source, r.ingest_version);
-// Hybrid GraphRAG vector index (reserved — embeddings populated later, §6).
-// Requires Neo4j 5.x. Comment out if your dev version predates vector indexes.
-CREATE VECTOR INDEX trail_embedding IF NOT EXISTS
-  FOR (t:CanonicalTrail) ON (t.embedding)
-  OPTIONS { indexConfig: { `vector.dimensions`: 1536, `vector.similarity_function`: 'cosine' } };
 
 // ── 3. Source registry (authority-tier lookup; feeds confidence on read) ──
 // authority is per (source, data_kind); stored as a JSON string. See Stage 1 §4.
@@ -72,10 +65,10 @@ MERGE (ntd:Source {name: "USGS_NTD"})
 
 // ── 4. Seeded example — Old Rag Loop, Shenandoah NP ──────────────────────
 // A realistic minimal slice: one Area, one CanonicalTrail with OSM + NPS
-// SourceRecords joined by SAME_AS, two Segments, a Junction, and a Trailhead.
+// SourceRecords joined by SAME_AS, two Segments, and a Trailhead.
 // Geometry: a representative Point for spatial lookup + the line as geom_wkt
-// on each Segment (computed at ingest; default #2). The two Segments share the
-// junction vertex so they assemble into one route; `route_geom_wkt` on the trail
+// on each Segment (computed at ingest; default #2). The two Segments share an
+// endpoint vertex so they assemble into one route; `route_geom_wkt` on the trail
 // is that precomputed assembled route (Epic 016 S1), served as GeoJSON by
 // GET /trail/{id}. The elevation profile (Epic 017: route_geom_wkt is sampled into
 // profile_distances_m / profile_elevations_m + total_gain_m / total_loss_m /
@@ -129,7 +122,7 @@ MERGE (oldrag)<-[sn:SAME_AS {source: "NPS"}]-(sr_nps)
       sn.matched_on = ["TRLNAME"], sn.match_score = 0.95,
       sn.reviewed_by = "josh", sn.reviewed_at = date(), sn.ingest_version = "2026-06";
 
-// Segments (conflation unit) + a Junction + the Trailhead
+// Segments (conflation unit) + the Trailhead
 MERGE (seg1:Segment {segment_id: "seg:old-rag-ridge"})
   SET seg1.geom_wkt = "LINESTRING(-78.2898 38.5546, -78.2870 38.5530, -78.2845 38.5512)", seg1.length_mi = 2.9,
       seg1.source_seg_ids = ["OSM:way/111","NPS:OBJECTID=4021a"],
@@ -140,11 +133,6 @@ MERGE (seg2:Segment {segment_id: "seg:saddle-fire-road"})
       seg2.point = point({latitude: 38.5490, longitude: -78.2820});
 MERGE (oldrag)-[:HAS_SEGMENT]->(seg1);
 MERGE (oldrag)-[:HAS_SEGMENT]->(seg2);
-
-MERGE (jx:Junction {junction_id: "jx:byrds-nest-saddle"})
-  SET jx.point = point({latitude: 38.5512, longitude: -78.2845});
-MERGE (seg1)-[:ENDS_AT]->(jx);
-MERGE (seg2)-[:STARTS_AT]->(jx);
 
 MERGE (th:Trailhead {trailhead_id: "th:old-rag-lot"})
   SET th.name = "Old Rag Parking / Fee Station",
@@ -171,7 +159,6 @@ MERGE (th)-[:LOCATED_IN]->(shen);
 // duplicate node can be created on idempotent re-runs.
 // Community Edition safe: single-property uniqueness constraints only.
 CREATE CONSTRAINT episode_id      IF NOT EXISTS FOR (e:Episode)         REQUIRE e.episode_id   IS UNIQUE;
-CREATE CONSTRAINT outcome_id      IF NOT EXISTS FOR (o:Outcome)         REQUIRE o.outcome_id   IS UNIQUE;
 CREATE CONSTRAINT belief_id       IF NOT EXISTS FOR (b:Belief)          REQUIRE b.belief_id    IS UNIQUE;
 CREATE CONSTRAINT phys_profile_id IF NOT EXISTS FOR (pp:PhysicalProfile) REQUIRE pp.profile_id IS UNIQUE;
 // pp_profile_id name avoids clash with phys_profile_id above
