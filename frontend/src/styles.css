@@ -220,6 +220,12 @@ button {
 
 .card-warning-meta {
   font-size: 0.74rem;
+  /* The <Staleness> child reads its color from --text-muted; on the signal's
+     terracotta-tinted field that resolves to ~4.1:1, below WCAG AA (4.5:1) for
+     small text. Re-point the custom property to the higher-contrast secondary
+     tier for this subtree only — Staleness elsewhere sits on plain surfaces,
+     where muted already clears AA. */
+  --text-muted: var(--text-secondary);
 }
 
 /* ---- terrain glyph (at rest) ---- */
@@ -258,7 +264,11 @@ button {
   min-width: 0;
 }
 
-.decision-label,
+.decision-label {
+  font-size: var(--size-label);
+  color: var(--text-muted);
+}
+
 .condition-label {
   font-size: 0.62rem;
   color: var(--text-muted);
@@ -266,7 +276,7 @@ button {
 
 .decision-value {
   font-family: var(--font-family-mono);
-  font-size: 0.9rem;
+  font-size: var(--size-emphasis);
   color: var(--text-primary);
 }
 
