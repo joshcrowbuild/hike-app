@@ -32,11 +32,9 @@ DENYLIST = [
 
 # Excluded from the DENYLIST scan only (NOT the link check):
 #   epics/epic-*.md       DONE-epic AC bodies legitimately quote the pre-remediation state
-#   *runbook*.md          closed/transient PM briefs that quote banned strings as work-items
 #   roadmap.md/workplan.md  PM-owned SSOT; they reference the retired trunk correctly
 DENY_EXCLUDE = re.compile(
     r"(docs/epics/epic-[^/]*\.md"
-    r"|[^/]*runbook[^/]*\.md"
     r"|docs/process/roadmap\.md"
     r"|docs/workplan\.md)$"
 )

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from orchestration.providers.base import LLMRequest, ModelProvider
+from orchestration.providers.base import LLMRequest, ModelProvider, _strip_fences
 
 PARSE_SYSTEM = (
     "Extract a hiking query into a JSON object with optional keys: "
@@ -28,15 +28,6 @@ class Intent:
     time_budget_s: int | None = None
     filters: dict[str, object] = field(default_factory=dict)
     profile: str | None = None
-
-
-def _strip_fences(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if len(lines) >= 2 and lines[-1].strip() == "```":
-            text = "\n".join(lines[1:-1])
-    return text.strip()
 
 
 def _parse(text: str) -> Intent:

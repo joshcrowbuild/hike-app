@@ -44,12 +44,14 @@ class _FakeAdapter(LiveAdapter):
         self._fact = fact
         self.probe_calls = 0
         self.health_calls = 0
+        self.probe_points: list[Point] = []
 
     def capabilities(self) -> LiveCapabilities:
         return LiveCapabilities(True, False, True)
 
     def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
         self.probe_calls += 1
+        self.probe_points.append(point)
         return self._fact
 
     def health(self) -> AdapterHealth:
@@ -62,6 +64,16 @@ class _FakeAdapter(LiveAdapter):
 
 
 # ── AC-3.2 / AC-3.3 / AC-3.4 — keep only what returned, keyed by ConditionKind ──
+
+
+def test_verify_empty_probe_map_returns_empty() -> None:
+    assert verify(_POINT, {}) == {}
+
+
+def test_verify_passes_point_identity_to_probe() -> None:
+    w = _FakeAdapter("w", ConditionKind.weather, fact=_fact({"ok": True}))
+    verify(_POINT, {ConditionKind.weather: [w]})
+    assert w.probe_points == [_POINT]
 
 
 def test_s3_ac2_returns_kind_keyed_facts() -> None:

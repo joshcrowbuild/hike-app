@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
-from orchestration.providers.base import LLMRequest, ModelProvider
+from orchestration.providers.base import LLMRequest, ModelProvider, _strip_fences
 
 AQI_BLOCK = 201  # "Very Unhealthy" and above
 AQI_WARN = 101  # "Unhealthy for Sensitive Groups" and above
@@ -267,16 +267,6 @@ RANK_SYSTEM = (
     "array of their canonical_id strings, ordered best-first for this hiker. "
     "No prose, no markdown — just the JSON array."
 )
-
-
-def _strip_fences(text: str) -> str:
-    """Remove markdown code fences that models sometimes add despite instructions."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if len(lines) >= 2 and lines[-1].strip() == "```":
-            text = "\n".join(lines[1:-1])
-    return text.strip()
 
 
 def _parse_ids(text: str, known: list[str]) -> list[str]:
