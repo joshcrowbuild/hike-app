@@ -49,8 +49,10 @@ describe('RecommendationCard feed glyph (S4)', () => {
   it('degrades to the ascent figure with no glyph when there is no profile (AC-4.2)', () => {
     const { container } = render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
-    // The ascent figure still reads the shape of the day in text.
-    expect(screen.getByText(/1,050 ft/)).toBeInTheDocument()
+    // The ascent figure still reads the shape of the day in the decision row.
+    // (The derived summary also names the climb in prose, hence scope to the stat.)
+    const stats = [...container.querySelectorAll('.decision-value')].map((el) => el.textContent ?? '')
+    expect(stats.some((t) => /1,050 ft/.test(t))).toBe(true)
   })
 
   it('opens Detail on tap, with no in-card map (AC-4.3)', async () => {
@@ -59,6 +61,23 @@ describe('RecommendationCard feed glyph (S4)', () => {
     render(<RecommendationCard card={card()} onOpen={onOpen} />)
     await user.click(screen.getByRole('button', { name: /open stony man loop/i }))
     expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
+  it('renders the derived one-line character in the card', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    // Derived from the card's own figures: 3.7 mi, 1,050 ft, open geometry.
+    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/3\.7-mile out-and-back, climbing 1,050 ft\./)
+  })
+
+  it('renders the difficulty estimate, tagged as an estimate (never a rank)', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const badge = container.querySelector('.difficulty')
+    expect(badge?.textContent).toMatch(/Moderate/)
+    expect(badge?.textContent).toMatch(/est\./)
+    // Sample data wears the sample tag, mirroring <Confidence>.
+    expect(container.querySelector('.difficulty--sample')).toBeInTheDocument()
   })
 })
 
