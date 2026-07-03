@@ -12,10 +12,86 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
 _SCHEMA = Path(__file__).resolve().parent.parent / "graph" / "schema.cypher"
+
+
+# ---------------------------------------------------------------------------
+# Neo4j test safety guard — DO NOT WEAKEN THIS.
+#
+# On 2026-07-01 a build lane's `@pytest.mark.neo4j` tests ran with a copied
+# `.env` whose NEO4J_URI pointed at the LIVE Aura production database
+# (`neo4j+s://...`). `clean_graph` (below) runs `MATCH (n) DETACH DELETE n`
+# before every test — against production that wiped the entire corpus.
+#
+# `neo4j_client` is the ONLY place a test opens a real driver (AC-2.3, see its
+# docstring), so this guard runs first thing inside it, before `GraphClient`
+# is even constructed. Only a loopback bolt/neo4j URI is allowed; every other
+# host, and every Aura-only TLS scheme, is refused outright.
+# ---------------------------------------------------------------------------
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Aura is ALWAYS reached over one of these — a local/docker database never is.
+# Refuse them unconditionally, even if the host happens to look loopback-ish.
+_REMOTE_ONLY_SCHEMES = {"neo4j+s", "neo4j+ssc", "bolt+s", "bolt+ssc"}
+# The one deliberately-ugly escape hatch. Anything else (unset, "true", "1",
+# "yes") does NOT bypass the guard — only this exact value does.
+_ALLOW_REMOTE_ENV = "ALLOW_NEO4J_TESTS_ON_REMOTE"
+_ALLOW_REMOTE_VALUE = "yes-i-accept-data-loss"
+
+
+def _assert_local_neo4j_uri(uri: str) -> None:
+    """Refuse (`pytest.fail`) unless `uri` is unambiguously a local database.
+
+    Passes only for a bolt/neo4j URI whose host resolves to a loopback address
+    (`localhost` / `127.0.0.1` / `::1`) — which is exactly how CI's service
+    container and `make db-up`'s local docker Neo4j are reached (both publish
+    bolt on `127.0.0.1:7687` only; see `docker-compose.yml`). Everything else
+    is refused, including `neo4j+s://`/`neo4j+ssc://`/`bolt+s://`/`bolt+ssc://`
+    (Aura-only, always remote) regardless of hostname, and any scheme pointed
+    at a non-loopback host. Fails closed: an unparseable or empty URI refuses,
+    it does not pass.
+    """
+    if os.environ.get(_ALLOW_REMOTE_ENV) == _ALLOW_REMOTE_VALUE:
+        return
+
+    parsed = urlsplit(uri)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+
+    if scheme in _REMOTE_ONLY_SCHEMES or host not in _LOOPBACK_HOSTS:
+        pytest.fail(
+            "\n"
+            "########################################################################\n"
+            "# REFUSING TO RUN @pytest.mark.neo4j TESTS: NEO4J_URI is not local.   #\n"
+            "########################################################################\n"
+            f"  NEO4J_URI = {uri!r}\n"
+            "\n"
+            "These tests DETACH DELETE the ENTIRE graph before every test\n"
+            "(`clean_graph`). On 2026-07-01 a copied `.env` pointed NEO4J_URI at a\n"
+            "live Aura database and this exact test suite wiped the production\n"
+            "corpus. This guard exists so that can never happen again.\n"
+            "\n"
+            "Only a loopback bolt/neo4j URI is allowed, e.g.:\n"
+            "    bolt://localhost:7687\n"
+            "    bolt://127.0.0.1:7687\n"
+            "    neo4j://localhost:7687\n"
+            "`neo4j+s://`, `neo4j+ssc://`, `bolt+s://`, `bolt+ssc://`, and any\n"
+            "non-loopback host are ALWAYS refused, no matter what.\n"
+            "\n"
+            "Fix: unset NEO4J_URI, or point it at a local database\n"
+            "(`make db-up` starts one via docker compose).\n"
+            "\n"
+            "If — and only if — you are certain this URI is a disposable,\n"
+            "non-production database and you accept it may be irrecoverably wiped,\n"
+            "you may bypass this guard with the explicit, deliberately ugly opt-in:\n"
+            f"    {_ALLOW_REMOTE_ENV}={_ALLOW_REMOTE_VALUE}\n"
+            "There is no other way to bypass this check.\n",
+            pytrace=False,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -88,10 +164,13 @@ def neo4j_client() -> Any:
     opens a live connection (AC-2.3). It fails loudly with a readable driver error if no
     database is reachable — a missing service is a red build, never a silent no-op (AC-1.3).
     """
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    _assert_local_neo4j_uri(uri)  # never construct a driver before this passes
+
     from graph.client import GraphClient
 
     client = GraphClient(
-        os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+        uri,
         os.environ.get("NEO4J_USER", "neo4j"),
         os.environ.get("NEO4J_PASSWORD", "testpassword"),
     )
