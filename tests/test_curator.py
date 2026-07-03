@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
-from orchestration.curator import evaluate_guardrails, rank_ids
+from orchestration.curator import evaluate_guardrails, is_roadlike_demoted, rank_ids
 from orchestration.providers.base import LLMResponse
 
 _NOW = datetime.now(timezone.utc)
@@ -158,3 +158,48 @@ def test_rank_ids_appends_dropped_and_survives_garbage() -> None:
     items = [("a", "A"), ("b", "B")]
     assert rank_ids(items, _FakeJudge('["b"]'), "m") == ["b", "a"]  # dropped 'a' appended
     assert rank_ids(items, _FakeJudge("not json"), "m") == ["a", "b"]  # fallback to input order
+
+
+# ── Way-type de-rank (roadlike/access ways sink; fire roads kept) ───────────
+
+
+def test_is_roadlike_demoted_access_track_demoted() -> None:
+    # A `track` named like a service/access road → demoted.
+    assert is_roadlike_demoted("track", "Reservoir Access Road") is False  # ends in Road → kept
+    assert is_roadlike_demoted("track", "Utility Access") is True
+    assert is_roadlike_demoted("service", "Maintenance Drive") is True
+    assert is_roadlike_demoted("track", "Powerline Cut") is True
+
+
+def test_is_roadlike_demoted_keeps_fire_and_dike_roads() -> None:
+    # Same care as #56/#75: legit fire/dike/forest roads stay in normal position even
+    # though they're `track`s.
+    for name in ("Compton Gap Road", "Mathews Arm Fire Road", "Salt Pond Road", "Big Meadows Dike"):
+        assert is_roadlike_demoted("track", name) is False
+
+
+def test_is_roadlike_demoted_never_touches_footpaths() -> None:
+    # A genuine foot-trail type is never demoted on this signal, whatever the name.
+    assert is_roadlike_demoted("path", "Utility Access Trail") is False
+    assert is_roadlike_demoted("footway", "Service Loop") is False
+    assert is_roadlike_demoted("bridleway", "Maintenance Spur") is False
+    assert is_roadlike_demoted(None, "Access Road Trail") is False
+
+
+def test_is_roadlike_demoted_plain_track_not_demoted_without_access_signal() -> None:
+    # Precision over recall: a bare-named track (no access signal) is NOT demoted — a
+    # false demote is worse than leaving an ambiguous track in place.
+    assert is_roadlike_demoted("track", "Whiteoak Canyon") is False
+
+
+def test_rank_ids_demotes_roadlike_below_real_trails() -> None:
+    # The judge orders the roadlike way first; demotion still sinks it below the trails,
+    # keeping the trails' relative taste order. Never dropped (still in the result).
+    items = [("svc", "Utility Access"), ("t1", "Old Rag"), ("t2", "Whiteoak Canyon")]
+    order = rank_ids(items, _FakeJudge('["svc","t1","t2"]'), "m", demote_ids={"svc"})
+    assert order == ["t1", "t2", "svc"]
+
+
+def test_rank_ids_no_demotion_when_empty() -> None:
+    items = [("a", "A"), ("b", "B")]
+    assert rank_ids(items, _FakeJudge('["b","a"]'), "m", demote_ids=set()) == ["b", "a"]

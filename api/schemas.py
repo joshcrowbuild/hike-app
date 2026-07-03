@@ -180,6 +180,11 @@ class FeedResponse(BaseModel):
 
 class GraphStats(BaseModel):
     canonical_trails: int
+    # Elevation-presence gauge (Epic 017 durability): how many CanonicalTrails carry a
+    # 3DEP-derived profile, and that as a % of all trails (null when there are no
+    # trails). Makes a corpus-wide elevation lag/wipe visible instead of silent.
+    trails_with_elevation: int = 0
+    elevation_coverage_pct: float | None = None
     source_records: int
     trailheads: int
     same_as_edges: int

@@ -29,6 +29,7 @@ class Candidate:
     area_id: str | None = None
     is_loop: bool | None = None
     length_mi: float | None = None
+    way_type: str | None = None
     point: Any = None
     trailhead_point: Any = None
 
@@ -46,6 +47,7 @@ def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
         area_id=row.get("area_id"),
         is_loop=row.get("is_loop"),
         length_mi=row.get("length_mi"),
+        way_type=row.get("way_type"),
         point=row.get("point"),
         trailhead_point=row.get("trailhead_point"),
     )

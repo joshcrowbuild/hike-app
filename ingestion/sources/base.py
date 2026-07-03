@@ -93,6 +93,9 @@ class CanonicalNode:
     lat: float | None = None
     lon: float | None = None
     geom_wkt: str | None = None
+    # The spine feature's OSM way-type (path|footway|track|…), carried so it can be
+    # persisted on the CanonicalTrail. `None` for non-OSM-origin nodes.
+    way_type: str | None = None
 
 
 @dataclass(frozen=True)

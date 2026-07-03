@@ -459,6 +459,54 @@ def test_ac6_3_echo_flows_through_unchanged_pipeline(monkeypatch):
     assert counts["echo"] == 2  # EchoSource returns two fixed features
 
 
+# ── elevation-coverage visibility (Epic 017 durability) ──────────────────────
+
+
+class _NamedSource:
+    """Minimal stand-in for `_log_elevation_coverage`'s `.name` duck-type."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def test_log_elevation_coverage_warns_when_3dep_active_but_zero(caplog):
+    import logging
+
+    from ingestion.pipeline import _log_elevation_coverage
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _log_elevation_coverage([_NamedSource("usgs-3dep")], [], n_nodes=100)
+    assert any("0/100" in r.message for r in caplog.records)
+
+
+def test_log_elevation_coverage_reports_partial(caplog):
+    import logging
+
+    from ingestion.pipeline import _log_elevation_coverage
+
+    facts = [
+        EnrichmentFact(
+            source="usgs-3dep", attribute="total_gain_m", value=1.0, canonical_id="ct:a"
+        ),
+        EnrichmentFact(
+            source="usgs-3dep", attribute="total_gain_m", value=2.0, canonical_id="ct:b"
+        ),
+    ]
+    with caplog.at_level(logging.INFO, logger="ingestion.pipeline"):
+        _log_elevation_coverage([_NamedSource("usgs-3dep")], facts, n_nodes=4)
+    assert any("2/4" in r.message for r in caplog.records)
+
+
+def test_log_elevation_coverage_noop_without_3dep(caplog):
+    import logging
+
+    from ingestion.pipeline import _log_elevation_coverage
+
+    with caplog.at_level(logging.INFO, logger="ingestion.pipeline"):
+        _log_elevation_coverage([_NamedSource("nps")], [], n_nodes=100)
+    assert not any("3DEP profile" in r.message for r in caplog.records)
+
+
 # ── consolidate_osm_segments (connectivity-aware — Lead 2) ────────────────────
 
 
@@ -544,3 +592,68 @@ def test_consolidate_merge_preserves_real_source():
     assert len(result) == 1
     assert result[0].source == "NPS"  # real provenance preserved on merge
     assert result[0].ref == "way/100"  # stable min-member ref
+
+
+# ── way_type persistence (feed-quality de-rank input) ─────────────────────────
+
+
+def _typed_seg(name: str, lon_start: float, way_type: str, ref: str) -> Feature:
+    return Feature(
+        name=name,
+        geom=LineString([[lon_start, 38.55], [lon_start + 0.01, 38.56]]),
+        source="OSM",
+        ref=ref,
+        way_type=way_type,
+    )
+
+
+def test_consolidate_single_preserves_way_type():
+    seg = _typed_seg("Fire Road", -78.28, "track", "way/1")
+    result = consolidate_osm_segments([seg])
+    assert result[0].way_type == "track"
+
+
+def test_consolidate_merge_takes_dominant_way_type():
+    # Three end-to-end-connected "Old Rag" ways (a `_chain`-style contiguous trail); the
+    # dominant (majority) way_type wins on merge.
+    segs = _chain("Old Rag", 3)
+    types = ["path", "path", "track"]
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, way_type=t)
+        for s, t in zip(segs, types)
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].way_type == "path"  # 2×path beats 1×track
+
+
+def test_way_type_flows_to_canonical_trail_load():
+    from ingestion.conflate.match import Agreement, Match
+
+    spine = _feat("Compton Gap Road", "OSM")
+    spine = Feature(name=spine.name, geom=spine.geom, source="OSM", ref=spine.ref, way_type="track")
+    agency = _feat("Compton Gap Road", "USFS")
+    m = Match(spine, agency, 96, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical and canonical[0].get("way_type") == "track"
+
+
+def test_unmatched_spine_way_type_flows_to_load():
+    # An unmatched spine feature also carries its way_type onto the node.
+    spine = Feature(
+        name="Service Access",
+        geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+        source="OSM",
+        ref="way/9",
+        way_type="track",
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical and canonical[0].get("way_type") == "track"

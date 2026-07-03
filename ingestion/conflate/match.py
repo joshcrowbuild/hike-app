@@ -26,6 +26,11 @@ class Feature:
     geom: BaseGeometry
     source: str = ""
     ref: str | None = None
+    # The OSM `highway` value (path|footway|track|bridleway|steps|…) for a spine
+    # feature, carried through conflation so it can be persisted on the node and used
+    # by the Curator to de-rank roadlike/access ways (feed-quality follow-up). None for
+    # non-OSM sources or when the tag was absent.
+    way_type: str | None = None
 
 
 @dataclass(frozen=True)
