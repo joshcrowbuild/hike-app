@@ -299,6 +299,12 @@ def _graph_stats() -> GraphStats | None:
                 "MATCH (m:Meta {id: 'schema'}) "
                 "RETURN m.schema_version AS sv, "
                 "       COUNT { (t:CanonicalTrail) } AS trails, "
+                # Elevation-presence gauge (Epic 017 durability): trails carrying a
+                # 3DEP-derived profile (total_gain_m is the always-written scalar). Makes
+                # the "elevation lagged / went null" failure VISIBLE in /health + /status
+                # instead of silent. MATCH…WHERE inside COUNT{} is valid Cypher 5 and 25.
+                "       COUNT { MATCH (te:CanonicalTrail) "
+                "               WHERE te.total_gain_m IS NOT NULL } AS with_elev, "
                 "       COUNT { (r:SourceRecord) } AS srs, "
                 "       COUNT { (h:Trailhead) } AS ths, "
                 "       COUNT { ()-[:SAME_AS]->() } AS edges",
@@ -308,8 +314,13 @@ def _graph_stats() -> GraphStats | None:
         if not rows:
             return None
         r = rows[0]
+        trails = int(r.get("trails") or 0)
+        with_elev = int(r.get("with_elev") or 0)
+        pct = round(with_elev / trails * 100, 1) if trails else None
         return GraphStats(
-            canonical_trails=int(r.get("trails") or 0),
+            canonical_trails=trails,
+            trails_with_elevation=with_elev,
+            elevation_coverage_pct=pct,
             source_records=int(r.get("srs") or 0),
             trailheads=int(r.get("ths") or 0),
             same_as_edges=int(r.get("edges") or 0),

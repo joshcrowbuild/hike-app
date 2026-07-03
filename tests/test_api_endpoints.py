@@ -44,6 +44,7 @@ from orchestration.config import Settings
 _HEALTH_ROW = {
     "sv": "epic008-test",
     "trails": 42,
+    "with_elev": 30,
     "srs": 100,
     "ths": 7,
     "edges": 12,
@@ -228,6 +229,9 @@ def test_health_returns_ok_with_typed_graph_stats(client: Any) -> None:
     assert graph["trailheads"] == 7
     assert graph["same_as_edges"] == 12
     assert graph["schema_version"] == "epic008-test"
+    # Elevation-presence gauge (Epic 017 durability): count + derived coverage %.
+    assert graph["trails_with_elevation"] == 30
+    assert graph["elevation_coverage_pct"] == round(30 / 42 * 100, 1)
 
 
 def test_health_query_uses_count_subquery_not_pattern_comprehension(monkeypatch: Any) -> None:

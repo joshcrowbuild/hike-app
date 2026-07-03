@@ -9,7 +9,23 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Mapping
+
+# Conventional per-region DEM location (Epic 017 durability). `scripts/fetch_dem.py`
+# writes the fetched/merged raster here, and — when ADVENTURE_3DEP_DEM is unset — this
+# is where `Settings.from_env` looks, so a standard ingest ALWAYS re-applies 3DEP once
+# the region's DEM has been fetched, without needing the env var set. Under gitignored
+# `data/`, so the raster is never committed (rule: never commit data/).
+DEM_DIR = "data/dem"
+
+
+def default_dem_path(region: str) -> str | None:
+    """The conventional DEM path for `region` (`data/dem/{region}.tif`) if it exists on
+    disk, else None. Lets a fetched DEM be picked up automatically (no env var) while a
+    missing one degrades to no-op elevation enrichment rather than an error (rule #6)."""
+    path = Path(DEM_DIR) / f"{region}.tif"
+    return str(path) if path.is_file() else None
 
 
 @dataclass(frozen=True)
@@ -145,6 +161,10 @@ class Settings:
         cors_raw = e.get("ADVENTURE_CORS_ALLOW_ORIGINS", "")
         cors_allow_origins = tuple(o.strip() for o in cors_raw.split(",") if o.strip())
 
+        # Resolved once so the DEM fallback below can key off the same value the
+        # Settings carries.
+        region = e.get("ADVENTURE_REGION", "shenandoah-gwj")
+
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),
             neo4j_user=e.get("NEO4J_USER", "neo4j"),
@@ -152,7 +172,7 @@ class Settings:
             local_openai_base_url=e.get("LOCAL_OPENAI_BASE_URL", "http://localhost:11434/v1"),
             anthropic_api_key=e.get("ANTHROPIC_API_KEY") or None,
             tiers={"mechanical": tier("mechanical"), "judgment": tier("judgment")},
-            region=e.get("ADVENTURE_REGION", "shenandoah-gwj"),
+            region=region,
             dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
             cors_allow_origins=cors_allow_origins,
             nws_user_agent=e.get("NWS_USER_AGENT") or None,
@@ -175,7 +195,11 @@ class Settings:
             # UsfsSource.from_config so it can fail loud (AC-3.2); unset → None →
             # the USFS transport's default path.
             usfs_geojson_path=e.get("ADVENTURE_USFS_GEOJSON"),
-            dem_path=e.get("ADVENTURE_3DEP_DEM") or None,
+            # Explicit env override wins; otherwise fall back to the conventional
+            # per-region path so a fetched DEM is applied automatically (durability
+            # fix — the DEM no longer has to live in a hand-set env var that gets
+            # lost). Absent both → None → 3DEP degrades to a no-op (rule #6).
+            dem_path=e.get("ADVENTURE_3DEP_DEM") or default_dem_path(region),
             elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
             warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
         )

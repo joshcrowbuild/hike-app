@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from orchestration.config import Settings, TierConfig
+from pathlib import Path
+from typing import Any
+
+from orchestration.config import Settings, TierConfig, default_dem_path
 
 
 def test_settings_env_defaults() -> None:
@@ -113,6 +116,47 @@ def test_settings_env_var_is_not_mutated() -> None:
     env = {"NEO4J_URI": "bolt://x:7687"}
     Settings.from_env(env)
     assert env == {"NEO4J_URI": "bolt://x:7687"}
+
+
+# ── DEM path resolution (elevation durability) ──────────────────────────────
+
+
+def test_default_dem_path_missing_is_none() -> None:
+    # No fetched DEM → None (3DEP degrades to a no-op, never an error — rule #6).
+    assert default_dem_path("no-such-region-xyz") is None
+
+
+def test_default_dem_path_present_when_file_exists(tmp_path: Any, monkeypatch: Any) -> None:
+    monkeypatch.chdir(tmp_path)
+    dem = Path("data/dem/olympic.tif")
+    dem.parent.mkdir(parents=True)
+    dem.write_bytes(b"raster")
+    assert default_dem_path("olympic") == "data/dem/olympic.tif"
+
+
+def test_settings_dem_path_env_override_wins(tmp_path: Any, monkeypatch: Any) -> None:
+    # An explicit ADVENTURE_3DEP_DEM overrides the conventional path.
+    monkeypatch.chdir(tmp_path)
+    Path("data/dem").mkdir(parents=True)
+    Path("data/dem/olympic.tif").write_bytes(b"raster")
+    s = Settings.from_env({"ADVENTURE_REGION": "olympic", "ADVENTURE_3DEP_DEM": "/elsewhere/x.tif"})
+    assert s.dem_path == "/elsewhere/x.tif"
+
+
+def test_settings_dem_path_falls_back_to_convention(tmp_path: Any, monkeypatch: Any) -> None:
+    # Unset env + a fetched DEM at the conventional path → picked up automatically, so a
+    # standard ingest re-applies 3DEP without any env var (the durability fix).
+    monkeypatch.chdir(tmp_path)
+    Path("data/dem").mkdir(parents=True)
+    Path("data/dem/olympic.tif").write_bytes(b"raster")
+    s = Settings.from_env({"ADVENTURE_REGION": "olympic"})
+    assert s.dem_path == "data/dem/olympic.tif"
+
+
+def test_settings_dem_path_none_when_neither_present(tmp_path: Any, monkeypatch: Any) -> None:
+    monkeypatch.chdir(tmp_path)  # no data/dem here
+    s = Settings.from_env({"ADVENTURE_REGION": "olympic"})
+    assert s.dem_path is None
 
 
 def test_settings_cors_origins_default_deny() -> None:
