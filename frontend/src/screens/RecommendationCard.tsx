@@ -1,6 +1,16 @@
 import { Confidence, Signal, Staleness } from '../components'
 import type { CardVM, ConditionSilence as ConditionSilenceVM, SilenceState } from '../data/vm'
-import { cardAccessibleName, DecisionItem, formatDrive, formatTrail, geoAscentFeet, Verdict, WarningBlock } from './cardParts'
+import {
+  cardAccessibleName,
+  DecisionItem,
+  DirectionsLink,
+  formatDrive,
+  formatTrail,
+  geoAscentFeet,
+  SaveButton,
+  Verdict,
+  WarningBlock,
+} from './cardParts'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
@@ -59,6 +69,15 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
           <span className="open-detail">Open detail</span>
         </div>
       </button>
+
+      {/* Outside the tap button on purpose: the card's whole-tap target never
+          nests another interactive element, so Save/Directions live as
+          sibling controls in their own row (report: Directions existed but
+          was buried three taps deep in Detail; Save is new). */}
+      <div className="card-actions">
+        <SaveButton id={card.id} name={card.name} />
+        {card.geo ? <DirectionsLink trailhead={card.geo.trailhead} name={card.name} /> : null}
+      </div>
     </article>
   )
 }

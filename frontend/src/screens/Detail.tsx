@@ -1,7 +1,7 @@
 import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
-import { DecisionItem, formatDrive, geoAscentFeet, Verdict, WarningBlock } from './cardParts'
+import { DecisionItem, DirectionsLink, formatDrive, geoAscentFeet, SaveButton, Verdict, WarningBlock } from './cardParts'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -78,6 +78,11 @@ function DetailBody({ card }: { card: CardVM }) {
         <Verdict card={card} className="verdict--detail" />
 
         <WarningBlock warnings={card.warnings} collapsed />
+
+        <div className="detail-actions">
+          <SaveButton id={card.id} name={card.name} />
+          {card.geo ? <DirectionsLink trailhead={card.geo.trailhead} name={card.name} /> : null}
+        </div>
 
         <div className="detail-facts">
           {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}

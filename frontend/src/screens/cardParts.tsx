@@ -1,8 +1,11 @@
 /** Small presentational pieces shared by the card and the detail screen. Each
  *  is typed against the view-model, not the legacy Trail. */
+import { ToggleButton } from 'react-aria-components'
+
 import { Signal, Staleness } from '../components'
-import { metersToFeet } from '../data/geo'
-import type { CardVM, TrailGeo, WarningVM } from '../data/vm'
+import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
+import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
+import type { CardVM, GeoPosition, TrailGeo, WarningVM } from '../data/vm'
 import { deriveVerdict } from '../data/verdict'
 
 /**
@@ -127,3 +130,81 @@ export function DecisionItem({ label, value }: { label: string; value: string })
 export const formatDrive = (minutes: number): string => `${minutes} min`
 export const formatTrail = (miles: number, ascentFeet: number): string =>
   `${miles.toFixed(1)} mi · ${ascentFeet.toLocaleString()} ft`
+
+/**
+ * A driving-directions deep link to the trailhead — the same
+ * `trailheadDirectionsUrl` (S6 AC-6.4) that already powered Detail's map
+ * controls, now surfaced as a first-class action on both the feed card and
+ * Detail instead of being reachable only after opening the map block. Rendered
+ * only by callers that hold a `TrailGeo` (Rule #1 — never a dead link to a
+ * point we don't have).
+ */
+export function DirectionsLink({ trailhead, name, className }: { trailhead: GeoPosition; name: string; className?: string }) {
+  return (
+    <a
+      className={className ? `action-chip ${className}` : 'action-chip'}
+      href={trailheadDirectionsUrl(trailhead)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Directions to the ${name} trailhead (opens Google Maps in a new tab)`}
+    >
+      <DirectionsIcon />
+      Directions
+    </a>
+  )
+}
+
+/**
+ * A client-side bookmark toggle — `localStorage` only, no backend or auth, so
+ * it works the same for the anonymous world-browse posture as for a signed-in
+ * viewer. The on/off state reaches assistive tech through React Aria's
+ * `aria-pressed` on `ToggleButton`; the visible label and the glyph's fill
+ * both flip too, so "saved" is never colour-only (§4.3).
+ */
+export function SaveButton({ id, name, className }: { id: string; name: string; className?: string }) {
+  const saved = useIsTrailSaved(id)
+  return (
+    <ToggleButton
+      className={className ? `action-chip ${className}` : 'action-chip'}
+      isSelected={saved}
+      onChange={() => toggleTrailSaved(id)}
+      aria-label={saved ? `Remove ${name} from saved trails` : `Save ${name}`}
+    >
+      <BookmarkIcon filled={saved} />
+      {saved ? 'Saved' : 'Save'}
+    </ToggleButton>
+  )
+}
+
+function DirectionsIcon() {
+  return (
+    <svg
+      className="action-chip-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+    >
+      <path d="M8 1.5 13.5 14 8 11 2.5 14 8 1.5Z" />
+    </svg>
+  )
+}
+
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      className="action-chip-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    >
+      <path d="M4 2.75a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 .75.75v10.6l-4-2.35-4 2.35V2.75Z" />
+    </svg>
+  )
+}
