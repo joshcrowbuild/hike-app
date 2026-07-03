@@ -54,19 +54,53 @@ def outcome_limit() -> str:
     return os.environ.get("ADVENTURE_RATELIMIT_OUTCOME", DEFAULT_OUTCOME_LIMIT)
 
 
+def real_client_ip(request: Request) -> str:
+    """Rate-limit key: the true client IP, immune to a client-injected X-Forwarded-For.
+
+    VERIFIED FINDING (2026-07-02, closes AH2): production runs uvicorn (>=0.30; installed
+    0.49.0 at verification time) with `--proxy-headers --forwarded-allow-ips='*'`
+    (Dockerfile CMD) so `request.client.host` isn't the proxy's IP for every request.
+    Reading uvicorn's `ProxyHeadersMiddleware`/`_TrustedHosts.get_trusted_client_address`
+    source showed the trust-all ('*') branch unconditionally takes the FIRST (leftmost)
+    X-Forwarded-For entry with **no hop-count check at all** — it does not verify the
+    header actually came from N trusted proxies; it just reads index 0. That branch is
+    only as safe as "the leftmost entry is always proxy-asserted," which turned out to be
+    an unverified, second-hand claim (a single 2021 Render-staff forum comment, not
+    reproduced in Render's current docs) — and empirically the deployed edge in front of
+    Render's own origin (confirmed via DNS/BGP to be Render's own AS397273, not a
+    separate bypassable CDN hop) could not be proven, within a live black-box test budget,
+    to always overwrite rather than append to a client-supplied X-Forwarded-For. A live
+    /health probe (fixed spoofed XFF / none / rotating spoofed XFF, interleaved) was
+    inconclusive at safe request volumes — the 60/min window can't be boundary-tested
+    without hammering production — so per the safe-default policy this closes the gap in
+    code instead of trusting network topology alone.
+
+    Fix: never trust `request.client.host` (which uvicorn's middleware may have already
+    rewritten to an attacker-chosen leftmost value) for the rate-limit key. Instead read
+    the raw X-Forwarded-For header directly and take the LAST (rightmost) entry. Render's
+    own docs confirm the container port "is not directly reachable via the public
+    internet" — every request's actual TCP peer is Render's edge, exactly one hop away —
+    so the rightmost entry is always the one that hop appended/set, no matter how many
+    bogus entries a client prepends before it. This is correct whether Render overwrites
+    the header (single entry; rightmost == only entry) or appends to it (rightmost ==
+    Render's own observed IP, client prefix ignored) — safe under either hypothesis,
+    which is exactly the ambiguity the live test couldn't resolve.
+
+    Falls back to `get_remote_address` (the raw ASGI `request.client.host`) when no
+    X-Forwarded-For is present — local/dev/direct connections.
+    """
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        candidate = forwarded_for.split(",")[-1].strip()
+        if candidate:
+            return candidate
+    return get_remote_address(request)
+
+
 # Module-level singleton: counts must accumulate across requests within a worker.
-#
-# DEPLOY NOTE (per-IP keying behind a proxy): get_remote_address keys on
-# request.client.host. Behind Render's proxy the raw TCP peer is the proxy for every
-# request, so production runs uvicorn with `--proxy-headers --forwarded-allow-ips='*'`
-# (Dockerfile CMD): uvicorn's ProxyHeadersMiddleware rewrites request.client to the first
-# X-Forwarded-For entry before slowapi ever sees it, restoring true per-IP buckets.
-# Trust-all is safe on Render specifically — Render rewrites X-Forwarded-For so its first
-# entry is the real client IP, and the origin is unreachable except through that proxy,
-# so end clients cannot spoof their key. If this ever moves to a host where the origin is
-# directly reachable or the proxy merely APPENDS to X-Forwarded-For, '*' becomes a
-# trivial limiter bypass — narrow --forwarded-allow-ips to the proxy's hop instead.
-limiter = Limiter(key_func=get_remote_address)
+# Keyed by `real_client_ip`, not slowapi's default `get_remote_address` — see its
+# docstring for the verified reasoning (AH2).
+limiter = Limiter(key_func=real_client_ip)
 
 
 def _retry_after_seconds(exc: Exception) -> int | None:
