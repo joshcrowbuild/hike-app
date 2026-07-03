@@ -28,12 +28,25 @@ class FeedLine:
 
 
 def _age(fetched_at: datetime, now: datetime) -> str:
+    """Freshness in plain words. Sub-minute reads as "just now" rather than the
+    machine-flavored "0m ago" — the line is copy a person reads at a glance."""
     secs = max(0, int((now - fetched_at).total_seconds()))
+    if secs < 60:
+        return "just now"
     if secs < 3600:
         return f"{secs // 60}m ago"
     if secs < 86_400:
         return f"{secs // 3600}h ago"
     return f"{secs // 86_400}d ago"
+
+
+def _provider_short(source: str) -> str:
+    """The recognizable short name for the feed line — the leading token of the
+    adapter's own source label ("NWS api.weather.gov" → "NWS", "USGS Water Data
+    (…)" → "USGS"). Derived from the real source, never fabricated; the full label
+    and origin ids live in `FeedLine.source` (the detail Sources section)."""
+    parts = source.split()
+    return parts[0] if parts else source
 
 
 def _body(kind: str, value: Any) -> str:
@@ -43,7 +56,7 @@ def _body(kind: str, value: Any) -> str:
         temp = value.get("temperature")
         unit = value.get("temperature_unit") or ""
         forecast = value.get("short_forecast") or "forecast"
-        return f"{forecast}, {temp}°{unit}" if temp is not None else str(forecast)
+        return f"{forecast} {temp}°{unit}" if temp is not None else str(forecast)
     if kind == "air":
         return f"AQI {value.get('aqi')} ({value.get('category')})"
     if kind == "fire":
@@ -109,8 +122,11 @@ def summarize_fact(
     now = now or datetime.now(timezone.utc)
     hedge = _HEDGE.get(confidence.presentation, "")
     body = _body(kind, fact.value)
-    text = (
-        f"{hedge}{body} ({fact.source}, {_age(fact.fetched_at, now)}) "
-        f"· {_source_note(kind, fact.value)}"
-    )
-    return FeedLine(kind=kind, text=text, source=fact.source, presentation=confidence.presentation)
+    # The calm line keeps only what a person reads at a glance — the value, a
+    # recognizable source name, and its freshness ("Sunny 96°F · NWS, just now").
+    # The raw grid/station codes and the single-source honesty descriptor move to
+    # `source` (rendered in the detail Sources section), so the feed line stays
+    # legible without dropping any provenance (source-or-silence, just relocated).
+    text = f"{hedge}{body} · {_provider_short(fact.source)}, {_age(fact.fetched_at, now)}"
+    source = f"{fact.source} · {_source_note(kind, fact.value)}"
+    return FeedLine(kind=kind, text=text, source=source, presentation=confidence.presentation)
