@@ -183,7 +183,6 @@ export const trails: Trail[] = BASE_TRAILS.map((trail) => ({
 export interface Scored {
   trail: Trail
   score: number
-  promptMiss: boolean
 }
 
 const promptBoost = (trail: Trail, prompt: string): number => {
@@ -217,11 +216,6 @@ const driveScore = (trail: Trail, state: TuningState): number => {
   if (drive <= 50) return 2
   if (drive <= 70) return 0
   return -2
-}
-
-const promptFallback = (trail: Trail, state: TuningState): boolean => {
-  if (!state.prompt.trim()) return false
-  return promptBoost(trail, state.prompt) === 0
 }
 
 /**
@@ -279,8 +273,6 @@ export interface FeedComputation {
   kept: Scored[]
   /** Excluded by the Ruby party gate, disclosed and restorable. */
   partySetAside: Array<Scored & { reason: string }>
-  /** Excluded by a fresh readiness reading (none tonight — see MockPlannerClient). */
-  readinessHidden: Scored[]
 }
 
 /**
@@ -291,14 +283,10 @@ export interface FeedComputation {
  * set* — i.e. trails that would have appeared but for Ruby (R6). A low-ranked
  * dog-incompatible trail that wouldn't have shown anyway is not surfaced as
  * "set aside" (that would be noise, not disclosure).
- *
- * Readiness is intentionally NOT applied here — there is no reading in the mock,
- * so MockPlannerClient fails the filter open and discloses it (R2). The hook is
- * left (`readinessHidden`) for when a real reading exists.
  */
 export function runFeed(state: TuningState): FeedComputation {
   const ranked: Scored[] = trails
-    .map((trail) => ({ trail, score: scoreTrail(trail, state), promptMiss: promptFallback(trail, state) }))
+    .map((trail) => ({ trail, score: scoreTrail(trail, state) }))
     .sort((a, b) => b.score - a.score)
 
   const viable = ranked.filter(({ score }) => score > SCORE_FLOOR)
@@ -317,5 +305,5 @@ export function runFeed(state: TuningState): FeedComputation {
     .filter((x): x is { s: Scored; reason: string } => x.reason !== null)
     .map(({ s, reason }) => ({ ...s, reason }))
 
-  return { kept, partySetAside, readinessHidden: [] }
+  return { kept, partySetAside }
 }
