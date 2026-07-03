@@ -69,7 +69,7 @@ function DetailBody({ card }: { card: CardVM }) {
       ) : null}
 
       <section className="detail-head">
-        <p className="kicker">Should you go?</p>
+        <p className="kicker">Conditions</p>
         <h1 className="detail-name">{card.name}</h1>
         {e?.area || e?.routeShape ? (
           <p className="detail-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
@@ -77,7 +77,7 @@ function DetailBody({ card }: { card: CardVM }) {
 
         <Verdict card={card} className="verdict--detail" />
 
-        <WarningBlock warnings={card.warnings} />
+        <WarningBlock warnings={card.warnings} collapsed />
 
         <div className="detail-facts">
           {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}

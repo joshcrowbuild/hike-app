@@ -59,16 +59,29 @@ export function Verdict({ card, className }: { card: CardVM; className?: string 
  * (the accent caution primitive) and wears its source + relative age via
  * <Staleness>, mirroring how condition lines carry source/confidence — a hazard
  * claim is a fact and dresses like one (R1).
+ *
+ * `collapsed` drops the repeated hazard sentence when a <Verdict> headline
+ * directly above has already spoken it (a caution verdict is always derived
+ * from these same warnings) — source + age still show, so source-or-silence
+ * holds, but the sentence itself is never said twice on one card.
  */
-export function WarningBlock({ warnings, label = 'Warning' }: { warnings: WarningVM[]; label?: string }) {
+export function WarningBlock({
+  warnings,
+  label = 'Warning',
+  collapsed = false,
+}: {
+  warnings: WarningVM[]
+  label?: string
+  collapsed?: boolean
+}) {
   if (warnings.length === 0) return null
   return (
     <div className="card-warnings">
       {warnings.map((w, i) => (
         <Signal key={i} label={label} className="card-warning">
-          {w.text}
+          {collapsed ? null : w.text}
           <span className="card-warning-meta">
-            {' — '}
+            {collapsed ? null : ' — '}
             {w.source} · <Staleness>{w.observedAgo}</Staleness>
           </span>
         </Signal>

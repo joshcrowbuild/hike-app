@@ -30,7 +30,7 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
           ) : null}
         </div>
 
-        <WarningBlock warnings={card.warnings} />
+        <WarningBlock warnings={card.warnings} collapsed />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
 
