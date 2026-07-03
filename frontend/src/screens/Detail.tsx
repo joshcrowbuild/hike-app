@@ -1,7 +1,7 @@
 import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
-import { DecisionItem, formatDrive, geoAscentFeet, WarningBlock } from './cardParts'
+import { DecisionItem, formatDrive, geoAscentFeet, Verdict, WarningBlock } from './cardParts'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -11,7 +11,7 @@ export interface DetailProps {
 }
 
 /**
- * Viability-first trail detail (v0.3 §9): "can I actually do this today?"
+ * Decision-first trail detail (v0.3 §9): "should you go — can I actually do this today?"
  * `useCard` resolves the tapped card from the feed already in context — no
  * origin/tuning threading needed here; a cold deep-link falls back to
  * whatever frame `useCard` last saw (R7).
@@ -69,11 +69,13 @@ function DetailBody({ card }: { card: CardVM }) {
       ) : null}
 
       <section className="detail-head">
-        <p className="kicker">Viability</p>
+        <p className="kicker">Should you go?</p>
         <h1 className="detail-name">{card.name}</h1>
         {e?.area || e?.routeShape ? (
           <p className="detail-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
         ) : null}
+
+        <Verdict card={card} className="verdict--detail" />
 
         <WarningBlock warnings={card.warnings} />
 

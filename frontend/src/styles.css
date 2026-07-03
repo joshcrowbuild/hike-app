@@ -222,6 +222,63 @@ button {
   font-size: 0.74rem;
 }
 
+/* ---- go/no-go verdict (the glanceable headline — product voice 2026-07-03) ----
+   A summary of the same signals shown below; presentation only, never a ranking
+   cue (Rule #2). Caution's hue comes from the owned <Signal> primitive (the sole
+   carrier of the accent) — here only spacing + the plain go/heads-up treatments.
+   Meaning is copy + weight, never colour alone (§4.3): no success-green, no
+   stoplight — the calm-utility palette holds. */
+.verdict {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.verdict--card {
+  margin-bottom: 0.6rem;
+}
+
+.verdict--detail {
+  margin: 0.9rem 0 0;
+}
+
+.verdict-lead {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.verdict-detail {
+  color: var(--text-secondary);
+}
+
+/* Heads-up (unverified) reads as a quiet nudge, not an alarm — muted, no accent. */
+.verdict--unverified .verdict-lead {
+  color: var(--text-secondary);
+}
+
+.verdict--unverified .verdict-detail {
+  color: var(--text-muted);
+}
+
+/* A non-live verdict wears the same "sample" tag as <Confidence> — never posing
+   as verified. The caution Signal keeps its accent even when sampled. */
+.verdict--sample .verdict-lead {
+  color: var(--text-muted);
+}
+
+.verdict-sample {
+  margin-inline-start: 0.4rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding-inline: 0.28rem;
+  white-space: nowrap;
+}
+
 /* ---- terrain glyph (at rest) ---- */
 .glyph {
   width: 100%;

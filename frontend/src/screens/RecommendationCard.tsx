@@ -1,6 +1,6 @@
 import { Confidence, Signal, Staleness } from '../components'
 import type { CardVM, ConditionSilence as ConditionSilenceVM, SilenceState } from '../data/vm'
-import { cardAccessibleName, DecisionItem, formatDrive, formatTrail, geoAscentFeet, WarningBlock } from './cardParts'
+import { cardAccessibleName, DecisionItem, formatDrive, formatTrail, geoAscentFeet, Verdict, WarningBlock } from './cardParts'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
@@ -19,6 +19,8 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
   return (
     <article className="card">
       <button className="card-tap" type="button" onClick={onOpen} aria-label={cardAccessibleName(card.name, card.warnings)}>
+        <Verdict card={card} className="verdict--card" />
+
         {e?.placeCue ? <p className="card-place">{e.placeCue}</p> : null}
 
         <div className="card-id">

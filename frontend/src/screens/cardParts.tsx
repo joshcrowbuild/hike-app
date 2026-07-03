@@ -2,7 +2,55 @@
  *  is typed against the view-model, not the legacy Trail. */
 import { Signal, Staleness } from '../components'
 import { metersToFeet } from '../data/geo'
-import type { TrailGeo, WarningVM } from '../data/vm'
+import type { CardVM, TrailGeo, WarningVM } from '../data/vm'
+import { deriveVerdict } from '../data/verdict'
+
+/**
+ * The go/no-go headline worn at the top of a card and Detail (product voice,
+ * 2026-07-03). It reads the card's own verified signals and renders a hedged
+ * verdict — a *summary* of the warnings + conditions shown below, never a new
+ * fact and never a guarantee (source-or-silence, R1). Presentation only: it
+ * touches nothing about ranking (Rule #2).
+ *
+ * Caution routes through the owned <Signal> primitive — the sole carrier of the
+ * accent hue — so a live hazard reads as caution in colour AND copy. "Good to go"
+ * and "Heads up" are plain ink, told apart by their words and treatment, never by
+ * colour alone (§4.3). A non-live verdict carries a visible "sample" tag and a
+ * demoted treatment, mirroring <Confidence> — a sampled verdict never poses as a
+ * verified one.
+ */
+export function Verdict({ card, className }: { card: CardVM; className?: string }) {
+  const v = deriveVerdict(card)
+  const live = v.provenance === 'live'
+  const body = (
+    <>
+      <span className="verdict-lead">{v.lead}</span>
+      {v.detail ? <span className="verdict-detail"> — {v.detail}</span> : null}
+      {live ? null : (
+        <span className="verdict-sample" aria-hidden="true">
+          {' '}
+          sample
+        </span>
+      )}
+    </>
+  )
+  const place = className ? ` ${className}` : ''
+  if (v.tone === 'caution') {
+    // A hazard keeps its accent even when sampled (mirrors <Confidence>).
+    return (
+      <Signal className={`verdict verdict--caution${place}`} label="Should you go? Caution">
+        {body}
+      </Signal>
+    )
+  }
+  const announce = v.tone === 'go' ? 'Should you go? Looks good to go' : 'Should you go? Heads up, not verified'
+  return (
+    <p className={`verdict verdict--${v.tone}${live ? '' : ' verdict--sample'}${place}`}>
+      <span className="sr-only">{announce}: </span>
+      {body}
+    </p>
+  )
+}
 
 /**
  * Verified hazard warnings, worn prominently on both the feed card and Detail

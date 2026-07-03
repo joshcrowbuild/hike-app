@@ -221,7 +221,10 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
     const { container } = await renderHomeWith(feedWith({ cards }))
 
     expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
-    expect(screen.getByText(/flash flood warning/)).toBeInTheDocument()
+    // The trail-specific warning stays on its own card: as the top-line verdict
+    // headline AND, below it, in the sourced warning block (summary → provenance).
+    expect(container.textContent).toMatch(/flash flood warning/)
+    expect(container.querySelector('.card .card-warnings')?.textContent).toMatch(/flash flood warning/)
     expect(container.querySelectorAll('.card .card-warnings').length).toBe(1)
   })
 
