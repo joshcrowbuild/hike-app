@@ -197,18 +197,6 @@ def trail_source_corroboration(canonical_ids: list[str]) -> tuple[str, dict[str,
     return cypher, {"cids": list(canonical_ids)}
 
 
-def episodes_on_trail(canonical_id: str) -> tuple[str, dict[str, Any]]:
-    """Personal-overlay read (reserved for Stage 5) — demonstrates the seam: any
-    query touching owned :Episode nodes is owner-scoped."""
-    cypher = (
-        "MATCH (p:Person)-[:DID]->(e:Episode)-[:ON]->"
-        "(t:CanonicalTrail {canonical_id: $canonical_id})\n"
-        f"WHERE {owner_scope('e')}\n"
-        "RETURN e"
-    )
-    return cypher, {"canonical_id": canonical_id}
-
-
 # ── Owned-node read builders (owner-scoped; run through ScopedSession.run) ──────
 
 

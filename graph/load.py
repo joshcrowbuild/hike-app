@@ -588,17 +588,6 @@ def merge_same_as(
     )
 
 
-def link_area_contains(runner: Runner, area_id: str, canonical_id: str) -> None:
-    runner(
-        """
-        MATCH (a:Area {area_id: $area_id})
-        MATCH (t:CanonicalTrail {canonical_id: $cid})
-        MERGE (a)-[:CONTAINS]->(t)
-        """,
-        {"area_id": area_id, "cid": canonical_id},
-    )
-
-
 def load_trailhead(
     runner: Runner,
     trailhead_id: str,
