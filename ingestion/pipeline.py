@@ -348,7 +348,6 @@ class IngestVerificationError(RuntimeError):
     never a silent half-wipe)."""
 
 
-_DEFAULT_PRUNE_SHRINK = 0.5
 _DEFAULT_MIN_ELEV_COVERAGE = 0.8
 
 
@@ -414,6 +413,7 @@ def verify_before_prune(
     *,
     iv: str,
     elevation_expected: bool,
+    pre_load_count: int,
 ) -> tuple[int, int]:
     """The gate that MUST pass before `prune_stale_trails` runs — positioned between the
     load and the prune (post-run is too late: prune already committed). Raises
@@ -421,28 +421,35 @@ def verify_before_prune(
     last-good corpus intact) and the run surfaces loudly. Returns `(n_cur, n_prev)`.
 
     (a) COLLAPSE — relative and scale-safe: the region's current-version trail count
-        must be at least `(1 - shrink)` of its prior-version count (default shrink 0.5,
-        env `ADVENTURE_PRUNE_SHRINK`). This supersedes any absolute band — it scales with
-        the region — and turns a truncated re-ingest into a loud abort instead of a
-        silent half-wipe. `n_prev == 0` (first-ever ingest) has no denominator and passes.
+        must be at least `min_ratio` of its PRIOR CORPUS TOTAL (`pre_load_count`, the
+        snapshot taken BEFORE this run's load — default ratio 0.5, the single knob
+        `ADVENTURE_PRUNE_MIN_RATIO`). The denominator is the pre-load total, NOT the
+        post-load `n_prev`: the loaders MERGE by a version-independent id, so a re-ingest
+        flips each recovered trail old→new and `n_prev` is only the run's MISSED trails —
+        `n_cur`/`n_prev` are complementary halves of one total, and a 50% partial
+        (n_cur == n_prev) would wrongly pass an `n_prev`-based check while pruning the
+        stragglers (a silent half-wipe). Comparing against `pre_load_count` is
+        scale-correct and turns a truncated re-ingest into a loud abort. `pre_load_count
+        == 0` (first-ever ingest) has no denominator and passes.
     (b) ELEVATION — only when `elevation_expected`: coverage (nodes that got a 3DEP
-        profile / all canonical nodes) must be ≥ threshold (default 0.8, env
-        `ADVENTURE_ELEV_MIN_COVERAGE`). This promotes today's silent "0% elevation"
-        warning — the exact lost/empty-DEM failure — into an abort.
+        profile / the geometry-bearing canonical nodes that are ELIGIBLE for one) must be
+        ≥ threshold (default 0.8, env `ADVENTURE_ELEV_MIN_COVERAGE`). This promotes today's
+        silent "0% elevation" warning — the exact lost/empty-DEM failure — into an abort.
     """
-    from graph.load import count_region_versions
+    from graph.load import count_region_versions, prune_min_ratio
 
     n_cur, n_prev = count_region_versions(runner, iv, region_id=region.region_id)
     counts["verify_n_cur"] = n_cur
     counts["verify_n_prev"] = n_prev
+    counts["verify_pre_load"] = pre_load_count
 
-    shrink = _env_float("ADVENTURE_PRUNE_SHRINK", _DEFAULT_PRUNE_SHRINK)
-    if n_prev > 0 and n_cur < n_prev * (1.0 - shrink):
+    ratio = prune_min_ratio()
+    if pre_load_count > 0 and n_cur < pre_load_count * ratio:
         raise IngestVerificationError(
             f"ingest verify FAILED for region {region.region_id!r}: current-version trail "
-            f"count {n_cur} collapsed below {(1.0 - shrink):.0%} of the prior {n_prev} "
-            f"(shrink > {shrink:.2f}). Skipping prune to protect the last-good corpus — the "
-            "new nodes coexist additively. Fix the ingest, or raise ADVENTURE_PRUNE_SHRINK "
+            f"count {n_cur} collapsed below {ratio:.0%} of the prior corpus total "
+            f"{pre_load_count}. Skipping prune to protect the last-good corpus — the new "
+            "nodes coexist additively. Fix the ingest, or lower ADVENTURE_PRUNE_MIN_RATIO "
             "if the shrink is intentional."
         )
 
@@ -692,7 +699,12 @@ def run_pipeline(
 
     try:
         from graph.client import GraphClient
-        from graph.load import load_enrichment_facts, make_runner, prune_stale_trails
+        from graph.load import (
+            count_region_trails,
+            load_enrichment_facts,
+            make_runner,
+            prune_stale_trails,
+        )
     except ImportError as exc:
         log.error("Neo4j not available: %s — run 'pip install -e .[graph]'", exc)
         return counts
@@ -704,6 +716,12 @@ def run_pipeline(
             version_suffix = region.props.get("ingest_version", "")
             iv = f"{region.region_id}-{version_suffix}" if version_suffix else region.region_id
             tier_by_name = {s.name: s.authority_tier for s in geometry_sources}
+            # Snapshot the region's prior corpus total BEFORE the load — the collapse
+            # gate's correct denominator (post-load counts can't recover it: a MERGE by
+            # version-independent id makes n_prev the run's MISSED trails, not the prior
+            # total). First-ever ingest → 0 → the gate's no-denominator (passes) path.
+            pre_load_count = count_region_trails(runner, region_id=region.region_id)
+            counts["pre_load_count"] = pre_load_count
             load_counts = _load_matches(
                 runner, auto_accept, spine_features, tier_by_name=tier_by_name, iv=iv
             )
@@ -715,8 +733,11 @@ def run_pipeline(
             facts = _run_enrichment(enrichment_sources, canonical_nodes)
             counts["enrichment_facts"] = load_enrichment_facts(runner, facts)
             # Elevation coverage for the verify gate: nodes that actually got a 3DEP
-            # profile this run vs. all canonical nodes (distinct from the raw fact count).
-            counts["elev_nodes"] = len(canonical_nodes)
+            # profile this run vs. the canonical nodes ELIGIBLE for one — i.e. those with
+            # geometry (a point-only trail can never receive a 3DEP profile, so counting it
+            # in the denominator would falsely drag coverage below the gate and skip a prune
+            # for a perfectly healthy region). Distinct from the raw fact count.
+            counts["elev_nodes"] = sum(1 for n in canonical_nodes if n.geom_wkt)
             counts["elev_covered"] = len(
                 {f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR}
             )
@@ -736,8 +757,11 @@ def run_pipeline(
                 runner,
                 iv=iv,
                 elevation_expected=_elevation_expected(enrichment_sources, settings),
+                pre_load_count=pre_load_count,
             )
-            prune_outcome = prune_stale_trails(runner, iv, region_id=region.region_id)
+            prune_outcome = prune_stale_trails(
+                runner, iv, region_id=region.region_id, pre_load_count=pre_load_count
+            )
             counts["pruned"] = int(prune_outcome.pruned)
             counts["prune_protected"] = int(prune_outcome.protected)
             if not prune_outcome.pruned:

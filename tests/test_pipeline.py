@@ -734,34 +734,54 @@ def _verify_runner(n_cur: int, n_prev: int):
 
 
 def test_verify_before_prune_aborts_on_collapse():
-    # Current-version count collapsed to 100 of a prior 1500 (< 50%) → loud abort.
-    runner = _verify_runner(n_cur=100, n_prev=1500)
+    # Current-version count collapsed to 100 of a prior corpus total 1500 (< 50%) → abort.
+    runner = _verify_runner(n_cur=100, n_prev=1400)
     with pytest.raises(pipeline.IngestVerificationError, match="collapsed"):
-        pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+        pipeline.verify_before_prune(
+            _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=1500
+        )
+
+
+def test_verify_before_prune_aborts_on_half_partial_reingest():
+    # The collapse-gate correction: a 50% partial makes n_cur == n_prev (complementary
+    # halves of one total). Comparing against the post-load n_prev (700) would PASS
+    # (700 !< 350) and let the prune wipe the stragglers; comparing against the pre-load
+    # total (1500) aborts (700 < 750). This is the exact silent-half-wipe the fix closes.
+    runner = _verify_runner(n_cur=700, n_prev=700)
+    with pytest.raises(pipeline.IngestVerificationError, match="collapsed"):
+        pipeline.verify_before_prune(
+            _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=1500
+        )
 
 
 def test_verify_before_prune_passes_on_healthy_reingest():
-    runner = _verify_runner(n_cur=1490, n_prev=1500)
+    # Full re-ingest: 1490 of a prior 1500 refresh (10 missed) — well above 50%.
+    runner = _verify_runner(n_cur=1490, n_prev=10)
     n_cur, n_prev = pipeline.verify_before_prune(
-        _REGION, {}, runner, iv="test-r", elevation_expected=False
+        _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=1500
     )
-    assert (n_cur, n_prev) == (1490, 1500)
+    assert (n_cur, n_prev) == (1490, 10)
 
 
 def test_verify_before_prune_passes_first_ever_ingest():
-    # n_prev == 0 → no denominator → collapse check can't fire.
+    # pre_load_count == 0 → no denominator → collapse check can't fire.
     runner = _verify_runner(n_cur=3, n_prev=0)
-    pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+    pipeline.verify_before_prune(
+        _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=0
+    )
 
 
-def test_verify_before_prune_shrink_env_configurable(monkeypatch):
-    # 200/1500 = 0.133: aborts at the default 0.5 shrink, passes at a relaxed 0.9 shrink
-    # (threshold drops to 0.1 of prior).
-    runner = _verify_runner(n_cur=200, n_prev=1500)
+def test_verify_before_prune_ratio_env_configurable(monkeypatch):
+    # 200/1500 = 0.133: aborts at the default 0.5 ratio, passes at a relaxed 0.1 ratio.
+    runner = _verify_runner(n_cur=200, n_prev=1300)
     with pytest.raises(pipeline.IngestVerificationError):
-        pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
-    monkeypatch.setenv("ADVENTURE_PRUNE_SHRINK", "0.9")
-    pipeline.verify_before_prune(_REGION, {}, runner, iv="test-r", elevation_expected=False)
+        pipeline.verify_before_prune(
+            _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=1500
+        )
+    monkeypatch.setenv("ADVENTURE_PRUNE_MIN_RATIO", "0.1")
+    pipeline.verify_before_prune(
+        _REGION, {}, runner, iv="test-r", elevation_expected=False, pre_load_count=1500
+    )
 
 
 def test_verify_before_prune_aborts_on_zero_elevation_when_expected():
@@ -770,13 +790,17 @@ def test_verify_before_prune_aborts_on_zero_elevation_when_expected():
     runner = _verify_runner(n_cur=100, n_prev=100)
     counts = {"elev_nodes": 100, "elev_covered": 0}
     with pytest.raises(pipeline.IngestVerificationError, match="elevation coverage"):
-        pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+        pipeline.verify_before_prune(
+            _REGION, counts, runner, iv="test-r", elevation_expected=True, pre_load_count=100
+        )
 
 
 def test_verify_before_prune_passes_with_adequate_elevation():
     runner = _verify_runner(n_cur=100, n_prev=100)
     counts = {"elev_nodes": 100, "elev_covered": 90}
-    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+    pipeline.verify_before_prune(
+        _REGION, counts, runner, iv="test-r", elevation_expected=True, pre_load_count=100
+    )
 
 
 def test_verify_before_prune_ignores_elevation_when_not_expected():
@@ -784,16 +808,22 @@ def test_verify_before_prune_ignores_elevation_when_not_expected():
     # → must NOT abort.
     runner = _verify_runner(n_cur=100, n_prev=100)
     counts = {"elev_nodes": 100, "elev_covered": 0}
-    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=False)
+    pipeline.verify_before_prune(
+        _REGION, counts, runner, iv="test-r", elevation_expected=False, pre_load_count=100
+    )
 
 
 def test_verify_before_prune_elev_coverage_env_configurable(monkeypatch):
     runner = _verify_runner(n_cur=100, n_prev=100)
     counts = {"elev_nodes": 100, "elev_covered": 70}  # 70% < default 80%
     with pytest.raises(pipeline.IngestVerificationError):
-        pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+        pipeline.verify_before_prune(
+            _REGION, counts, runner, iv="test-r", elevation_expected=True, pre_load_count=100
+        )
     monkeypatch.setenv("ADVENTURE_ELEV_MIN_COVERAGE", "0.6")  # relax to 60% → passes
-    pipeline.verify_before_prune(_REGION, counts, runner, iv="test-r", elevation_expected=True)
+    pipeline.verify_before_prune(
+        _REGION, counts, runner, iv="test-r", elevation_expected=True, pre_load_count=100
+    )
 
 
 # ── Source-construction seam (task 4): the ingest region drives DEM/source resolve ─

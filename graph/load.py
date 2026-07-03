@@ -27,17 +27,32 @@ log = logging.getLogger(__name__)
 
 Runner = Callable[[str, dict[str, Any]], Any]
 
-# Fraction of the region's PRIOR-version CanonicalTrail count that the current run
-# must at least reach before a prune is allowed to fire (finding M1). A truncated
-# ingest (Overpass timeout returning 1 of ~1500 trails) would otherwise sail past the
-# empty-ingest guard (n_cur=1 >= min_current=1) and DETACH-DELETE the other ~1499.
-# Env-overridable via ADVENTURE_PRUNE_MIN_RATIO; a missing/unparseable value falls back
-# to this default rather than disabling the guard — prefer blocking a legitimate prune
-# over silently wiping the corpus.
+# Fraction of the region's PRIOR CORPUS TOTAL (the CanonicalTrail count snapshotted
+# BEFORE the load) that the current run must at least reach before a prune is allowed
+# to fire (findings M1 + the collapse-gate correction). A truncated ingest (Overpass
+# timeout returning 1 of ~1500 trails) would otherwise sail past the empty-ingest guard
+# (n_cur=1 >= min_current=1) and DETACH-DELETE the other ~1499.
+#
+# The denominator is the PRE-LOAD total, NOT the post-load `n_prev`: because
+# `load_canonical_trail` MERGEs by a version-INDEPENDENT canonical_id, a re-ingest flips
+# each recovered trail's ingest_version old→new, so after the load `n_prev` is only the
+# trails the run MISSED and `n_cur`/`n_prev` are complementary halves of one total. A 50%
+# partial (n_cur=750, n_prev=750) would compute `750 < 0.5*750` → False and wrongly PASS,
+# then prune the 750 stragglers — a silent half-wipe. Comparing against the pre-load total
+# (`750 < 0.5*1500` → 750 < 750) makes the gate scale-correct.
+#
+# This is the SINGLE shrink knob (finding: the old `ADVENTURE_PRUNE_SHRINK` gated the same
+# decision from the other side, `1 - ratio`). Env-overridable via ADVENTURE_PRUNE_MIN_RATIO;
+# a missing/unparseable value falls back to this default rather than disabling the guard —
+# prefer blocking a legitimate prune over silently wiping the corpus.
 _DEFAULT_PRUNE_MIN_RATIO = 0.5
 
 
-def _prune_min_ratio() -> float:
+def prune_min_ratio() -> float:
+    """The minimum fraction of the prior corpus total the current-version count must
+    reach for a prune to be allowed (the single shrink knob, finding M4). Read from
+    `ADVENTURE_PRUNE_MIN_RATIO`, falling back SAFE (to the blocking-capable default) on
+    unset/garbage — a bad knob must never silently disable this data-safety gate."""
     raw = os.environ.get("ADVENTURE_PRUNE_MIN_RATIO")
     if not raw:
         return _DEFAULT_PRUNE_MIN_RATIO
@@ -282,20 +297,31 @@ def clear_trail_segments(runner: Runner, canonical_id: str) -> None:
     )
 
 
-# Same-region, not-current candidate predicate (separator-anchored prefix). Shared
-# by `count_region_versions` and `prune_stale_trails` so the candidate set the guards
-# count is EXACTLY the set the delete passes act on (the anchor stops region "shen"
-# from pruning region "shenandoah-gwj" — a silent cross-region wipe).
-_REGION_VERSION_PRED = (
-    "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)\n"
-    "  AND node.ingest_version <> $iv"
-)
+# Same-region membership predicate (separator-anchored prefix). A node belongs to
+# region `$region_id` when its `ingest_version` IS the bare region id or starts with
+# `"{region_id}-"`. The anchor matters — a bare `STARTS WITH region_id` would let region
+# "shen" match region "shenandoah-gwj" (a silent cross-region wipe) — so the prefix must
+# end on the `-` boundary. Used version-independently by `count_region_trails` (the
+# pre-load corpus snapshot) …
+_REGION_PRED = "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)"
+
+# … and, with the current-version exclusion, as the stale-candidate predicate shared by
+# `count_region_versions` and `prune_stale_trails` so the candidate set the guards count
+# is EXACTLY the set the delete passes act on.
+_REGION_VERSION_PRED = f"{_REGION_PRED}\n  AND node.ingest_version <> $iv"
 
 # A stale world CanonicalTrail with a LIVE incoming owned edge — a personal
 # `(:Episode)-[:ON]->(t)` reference — must NEVER be DETACH-DELETEd: severing it is
 # the personal→world dangling-ref that produced the viewer-path 500. Prune skips such
 # nodes (and logs the count). Episode-[:ON] is the only owned→world edge into a
 # CanonicalTrail in the schema; if another is ever added, widen this predicate.
+#
+# `_OWNED_TRAIL_REF_RELS` is the authoritative manifest of (owned-label, rel-type) pairs
+# that `_OWNED_REF_PRED` protects. A schema-drift guard test (test_load.py) fails if a
+# query builder ever creates an owned→CanonicalTrail edge NOT in this set — so a future
+# saved/bookmarked-trail feature (e.g. Belief-[:ABOUT]->CanonicalTrail) can't silently
+# reopen the viewer-500 class without also widening the predicate here.
+_OWNED_TRAIL_REF_RELS: frozenset[tuple[str, str]] = frozenset({("Episode", "ON")})
 _OWNED_REF_PRED = "(node)<-[:ON]-(:Episode)"
 
 
@@ -333,6 +359,20 @@ def count_region_versions(
     return n_cur, n_prev
 
 
+def count_region_trails(runner: Runner, *, region_id: str) -> int:
+    """This region's TOTAL CanonicalTrail count across ALL ingest versions — the
+    version-independent corpus size. Called BEFORE a re-ingest's load to snapshot the
+    prior corpus total (`pre_load_count`), the correct denominator for the collapse gate
+    (the post-load `n_prev` is only the run's MISSED trails — see `prune_min_ratio`).
+    Read-only; issues no writes."""
+    return _scalar_count(
+        runner(
+            f"MATCH (node:CanonicalTrail)\nWHERE {_REGION_PRED}\nRETURN count(node) AS n",
+            {"region_id": region_id, "prefix": f"{region_id}-"},
+        )
+    )
+
+
 def prune_stale_trails(
     runner: Runner,
     ingest_version: str,
@@ -340,6 +380,7 @@ def prune_stale_trails(
     region_id: str,
     min_current: int = 1,
     min_ratio: float | None = None,
+    pre_load_count: int | None = None,
 ) -> PruneOutcome:
     """Delete CanonicalTrails (+ their Segments and SourceRecords) left behind by a
     PRIOR ingest of this region — the nodes a now-tighter filter stopped refreshing.
@@ -358,19 +399,25 @@ def prune_stale_trails(
     down, region misconfigured) leaves `n_cur = 0 < min_current`, the in-query WHERE
     drops the only row, and the downstream MATCH/DELETE never runs.
 
-    Guard 2 (ratio, finding M1) — a *truncated* ingest is a different failure mode: it
-    loads a nonzero-but-tiny count (e.g. Overpass times out mid-fetch and returns 1 of
-    ~1500 trails), which sails past guard 1 (n_cur=1 >= min_current=1) and would then
-    prune the other ~1499 as "stale" — a silent corpus wipe, not a loud failure. Before
-    either DELETE pass runs, this counts `n_cur` (current-version trails) and `n_prev`
-    (same-region prior-version trails — the prune's candidate set) and aborts the WHOLE
-    prune in Python — no query even fires — if `n_cur` has collapsed below
-    `min_ratio * n_prev` (default 0.5, env `ADVENTURE_PRUNE_MIN_RATIO`). A healthy
-    re-ingest (comparable counts) is unaffected; `n_prev == 0` (first-ever ingest of a
-    region, nothing stale to compare against) always passes. This is purely additive —
-    it can only ABORT a prune guard 1 would have allowed, never permit one guard 1 would
-    have blocked, and every existing protection (guard 1's in-query WHERE, the caller's
-    `loaded > 0` belt) still runs unchanged.
+    Guard 2 (ratio, finding M1 + collapse-gate correction) — a *truncated* ingest is a
+    different failure mode: it loads a nonzero-but-tiny count (e.g. Overpass times out
+    mid-fetch and returns 750 of ~1500 trails), which sails past guard 1 (n_cur=750 >=
+    min_current=1) and would then prune the ~750 stragglers as "stale" — a silent corpus
+    wipe, not a loud failure. Before either DELETE pass runs, this aborts the WHOLE prune
+    in Python — no query even fires — if `n_cur` (current-version trails) has collapsed
+    below `min_ratio * pre_load_count` (default ratio 0.5, env `ADVENTURE_PRUNE_MIN_RATIO`).
+
+    The denominator is `pre_load_count` — the caller's PRE-load snapshot of the region's
+    total CanonicalTrail count (`count_region_trails`) — NOT the post-load `n_prev`. Because
+    the loaders MERGE by a version-INDEPENDENT canonical_id, a re-ingest flips each recovered
+    trail old→new, so `n_prev` is only the run's MISSED trails and `n_cur`/`n_prev` are
+    complementary halves of one total; comparing against `n_prev` lets a 50% partial pass
+    (see `prune_min_ratio`). This guard is a belt to the pipeline's primary `verify_before_prune`
+    gate; when `pre_load_count` is None (not supplied) it is skipped and only guard 1 + the
+    verify gate protect. A healthy re-ingest (comparable counts) is unaffected; `pre_load_count
+    == 0` (first-ever ingest of a region) has no denominator and always passes. This is purely
+    additive — it can only ABORT a prune guard 1 would have allowed, never permit one guard 1
+    would have blocked, and every existing protection still runs unchanged.
 
     Region-scoped: only nodes whose `ingest_version` IS this region's id or starts with
     `"{region_id}-"` are candidates (`ingest_version` is `"{region_id}"` or
@@ -411,12 +458,13 @@ def prune_stale_trails(
         log.warning(reason)
         return PruneOutcome(pruned=False, n_cur=n_cur, n_prev=n_prev, reason=reason)
 
-    ratio = _prune_min_ratio() if min_ratio is None else min_ratio
-    if n_prev > 0 and n_cur < ratio * n_prev:
+    ratio = prune_min_ratio() if min_ratio is None else min_ratio
+    if pre_load_count is not None and pre_load_count > 0 and n_cur < ratio * pre_load_count:
         reason = (
-            f"prune skipped: count dropped {n_prev}->{n_cur} for region {region_id!r} "
-            f"(ratio {n_cur / n_prev:.3f} below min_ratio {ratio:.3f}) — looks like a "
-            "truncated ingest; leaving all nodes intact"
+            f"prune skipped: region {region_id!r} current-version count {n_cur} is below "
+            f"{ratio:.0%} of the prior corpus total {pre_load_count} "
+            f"(ratio {n_cur / pre_load_count:.3f} below min_ratio {ratio:.3f}) — looks like "
+            "a truncated ingest; leaving all nodes intact"
         )
         log.warning(reason)
         return PruneOutcome(pruned=False, n_cur=n_cur, n_prev=n_prev, reason=reason)
