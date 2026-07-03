@@ -33,3 +33,21 @@ Read it together with `CLAUDE.md`:
 - Never commit secrets, generated credentials, or `.env` contents.
 - Do not invent APIs, data sources, or product behavior that the repo/docs do not support.
 - Do not delete or rewrite process docs unless the replacement is strictly better and aligned with current practice.
+
+## Test / DB safety
+- `@pytest.mark.neo4j` tests (`tests/*_neo4j.py`) are destructive: `clean_graph` runs
+  `MATCH (n) DETACH DELETE n` before every test. `tests/conftest.py`'s `neo4j_client`
+  fixture is the ONLY place a test opens a real driver, and it hard-refuses
+  (`pytest.fail`) unless `NEO4J_URI` resolves to a loopback host (`localhost` /
+  `127.0.0.1` / `::1`) on a plain `bolt://`/`neo4j://` scheme — `neo4j+s://`,
+  `neo4j+ssc://`, `bolt+s://`, `bolt+ssc://`, and any non-loopback host are always
+  refused, no exceptions. This exists because on 2026-07-01 a copied `.env` pointed
+  `NEO4J_URI` at live Aura and this exact suite wiped the production corpus.
+- There is exactly one bypass, and it is deliberately ugly:
+  `ALLOW_NEO4J_TESTS_ON_REMOTE=yes-i-accept-data-loss`. Never set this against a
+  database that holds anything you cannot afford to lose. No other env value (`true`,
+  `1`, `yes`) bypasses the guard.
+- Never point `NEO4J_URI` at Aura (or copy a `.env` that does) while running
+  `pytest -m neo4j` / `make check`. Local dev DB: `make db-up` (docker compose,
+  bolt on `127.0.0.1:7687` only). CI's `integration (neo4j)` job uses the same
+  loopback pattern via a service container — see `.github/workflows/ci.yml`.
