@@ -6,8 +6,6 @@ LM Studio) as the default, and the Anthropic SDK (Claude) as a hot-swappable
 yardstick. Provider-specific optimizations (Claude prompt caching / adaptive
 thinking; local quantization) live *inside* the adapters, never in this
 interface — no lowest-common-denominator flattening (Stage 4 §2).
-
-Stage 0 ships the contract only; adapters raise NotImplementedError until Stage 4.
 """
 
 from __future__ import annotations
@@ -33,6 +31,16 @@ class LLMResponse:
     model: str
     provider: str
     usage: dict[str, int] = field(default_factory=dict)
+
+
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences that models sometimes add despite instructions."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 2 and lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
+    return text.strip()
 
 
 class ModelProvider(ABC):
