@@ -68,13 +68,16 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
     provenance: 'live' as const,
   }
 
-  it('wears a prominent warning with its text, source and age', () => {
+  it('wears a prominent warning with its source and age, collapsed under the verdict headline that already speaks it', () => {
     const { container } = render(
       <RecommendationCard card={card({ warnings: [warning] })} onOpen={vi.fn()} />,
     )
+    // The verdict headline above already says the hazard sentence — the block
+    // below collapses to source + age so it isn't repeated verbatim twice.
+    expect(container.textContent).toContain('weather alert: Extreme Heat Warning')
     const block = container.querySelector('.card-warnings')
     expect(block).toBeInTheDocument()
-    expect(block?.textContent).toContain('weather alert: Extreme Heat Warning')
+    expect(block?.textContent).not.toContain('weather alert: Extreme Heat Warning')
     expect(block?.textContent).toContain('NWS api.weather.gov') // source-stamped …
     expect(block?.textContent).toContain('2h ago') // … and aged (§7.2)
     // Assistive tech gets the same "Warning" framing sighted users read from the

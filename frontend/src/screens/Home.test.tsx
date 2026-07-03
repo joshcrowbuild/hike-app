@@ -221,7 +221,13 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
     const { container } = await renderHomeWith(feedWith({ cards }))
 
     expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
-    expect(screen.getByText(/flash flood warning/)).toBeInTheDocument()
+    // The trail-specific warning stays on its own card: spoken once, as the
+    // top-line verdict headline. The sourced warning block below it collapses
+    // to just source + age — it doesn't repeat the hazard sentence verbatim.
+    expect(container.textContent).toMatch(/flash flood warning/)
+    const specificBlock = container.querySelector('.card .card-warnings')
+    expect(specificBlock?.textContent).not.toMatch(/flash flood warning/)
+    expect(specificBlock?.textContent).toMatch(/NWS api\.weather\.gov/)
     expect(container.querySelectorAll('.card .card-warnings').length).toBe(1)
   })
 

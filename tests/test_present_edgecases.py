@@ -39,6 +39,7 @@ def test_age_exactly_one_day_rounds_to_day() -> None:
 def test_now_defaults_to_utc_datetime() -> None:
     line = summarize_fact("water", _fact({"site_id": "123"}), _high())
     assert isinstance(line, FeedLine)
+    # Defaulting `now` to real UTC still stamps a freshness on the line.
     assert "ago" in line.text
 
 
@@ -67,7 +68,7 @@ def test_weather_body_without_forecast_uses_raw_value() -> None:
 def test_air_body_with_missing_keys_renders_none_labels() -> None:
     line = summarize_fact("air", _fact({}), _high(), now=NOW)
     assert "AQI None" in line.text
-    assert "(SRC, 0m ago)" in line.text
+    assert "· SRC, just now" in line.text
 
 
 def test_fire_body_defaults_to_zero_hotspots() -> None:
@@ -99,7 +100,9 @@ def test_unrecognized_presentation_defaults_to_empty_hedge() -> None:
 
 def test_source_appears_in_line_text() -> None:
     line = summarize_fact("weather", _fact({"short_forecast": "Sunny"}), _high(), now=NOW)
-    assert "(SRC, " in line.text
+    # The short source rides the line; the full label lives in `source`.
+    assert "· SRC, " in line.text
+    assert line.source.startswith("SRC ")
 
 
 def _high() -> Confidence:
