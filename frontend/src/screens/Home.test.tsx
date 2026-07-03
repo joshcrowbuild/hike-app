@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Home } from './Home'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { ANON_SCOPE } from '../data/api'
+import { resetSavedTrailsForTests, toggleTrailSaved } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
 import type { FeedVM } from '../data/vm'
 import type { TuningState } from '../types'
+
+afterEach(() => resetSavedTrailsForTests())
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -303,5 +306,64 @@ describe('Home error state (NNG: calm, actionable, retryable)', () => {
     )
     expect(screen.getByText('Couldn’t reach the planner. Try again.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+})
+
+describe('Home Saved filter (client-side, localStorage, no backend/auth)', () => {
+  const cardNamed = (id: string, name: string) => ({
+    id,
+    name,
+    distanceMi: 2.1,
+    conditionLines: [],
+    warnings: [],
+  })
+
+  it('renders no Saved toggle when nothing is served and nothing is saved', async () => {
+    await renderHomeWith(feedWith({ cards: [] }))
+    expect(screen.queryByRole('button', { name: /^saved/i })).not.toBeInTheDocument()
+  })
+
+  it('filters the stack to only saved trails when toggled on', async () => {
+    toggleTrailSaved('compton-peak')
+    const cards = [cardNamed('compton-peak', 'Compton Peak'), cardNamed('old-rag', 'Old Rag')]
+    await renderHomeWith(feedWith({ cards }))
+
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /saved \(1\)/i }))
+
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Old Rag' })).not.toBeInTheDocument()
+  })
+
+  it('shows the honest "No saved trails yet" empty state when nothing has ever been saved', async () => {
+    const cards = [cardNamed('compton-peak', 'Compton Peak')]
+    await renderHomeWith(feedWith({ cards }))
+    // No saved ids at all: the toggle only appears once something is saved or
+    // served, and here it's served — the count-less "Saved" label starts it.
+    await userEvent.click(screen.getByRole('button', { name: /^saved$/i }))
+    expect(screen.getByText('No saved trails yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /open compton peak/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a distinct honest note when saved trails exist but none match this frame', async () => {
+    toggleTrailSaved('elsewhere-trail')
+    const cards = [cardNamed('compton-peak', 'Compton Peak')]
+    await renderHomeWith(feedWith({ cards }))
+    await userEvent.click(screen.getByRole('button', { name: /saved \(1\)/i }))
+    expect(screen.getByText('None of your saved trails are in this frame.')).toBeInTheDocument()
+  })
+
+  it('toggles back to showing all trails via "Show all"', async () => {
+    toggleTrailSaved('compton-peak')
+    const cards = [cardNamed('compton-peak', 'Compton Peak'), cardNamed('old-rag', 'Old Rag')]
+    await renderHomeWith(feedWith({ cards }))
+
+    await userEvent.click(screen.getByRole('button', { name: /saved \(1\)/i }))
+    expect(screen.queryByRole('button', { name: 'Open Old Rag' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /show all/i }))
+    expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
   })
 })

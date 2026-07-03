@@ -134,6 +134,12 @@ button {
 }
 
 /* ---- stack ---- */
+.stack-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 0.6rem;
+}
+
 .stack-meta {
   margin: 0 0 0.7rem;
   font-size: 0.68rem;
@@ -386,6 +392,65 @@ button {
 
 .open-detail::after {
   content: " \2192";
+}
+
+/* ---- quick actions: Save + Directions ----
+   Deliberately OUTSIDE the card's whole-tap button (RecommendationCard's tap
+   target never nests another interactive element) — a sibling row so both
+   controls stay real, independently-focusable buttons/links. Shares the
+   map-chip pill language so Save/Directions read as one family with the map
+   controls that already used this shape for Directions. */
+.card-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.7rem 1.05rem 1.05rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.9rem 0 0;
+}
+
+.action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-family-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  padding: 0.42rem 0.8rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms var(--easing-standard), border-color 120ms var(--easing-standard);
+}
+
+.action-chip[data-hovered],
+.action-chip:hover {
+  background: var(--surface-press);
+}
+
+.action-chip[data-selected] {
+  border-color: var(--text-primary);
+  background: var(--surface-press);
+}
+
+.action-chip[data-focus-visible],
+.action-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.action-chip-icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
 }
 
 /* ---- detail ---- */

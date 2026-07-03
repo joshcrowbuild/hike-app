@@ -1,9 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { ToggleButton } from 'react-aria-components'
 
 import { originLabels, partyLabels, whenLabels } from '../data/labels'
 import { splitFeedWarnings } from '../data/feedWarnings'
 import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { resolveRegionLabel } from '../data/resolveRegion'
+import { useSavedTrailIds } from '../data/savedTrails'
 import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
@@ -59,6 +61,14 @@ export function Home({
   // banner (report #1) — the red wall was pushing distance off-screen on every
   // card. `perCard` carries only each trail's own delta.
   const { banner, perCard } = useMemo(() => splitFeedWarnings(cards), [cards])
+
+  // Client-side bookmark list (localStorage, no backend/auth) — a view filter
+  // over THIS frame's served cards, never a second data source. Feed-level
+  // disclosures (banner/notices/setAside/heldBack) stay about the frame as a
+  // whole and keep showing regardless of the filter.
+  const savedIds = useSavedTrailIds()
+  const [savedOnly, setSavedOnly] = useState(false)
+  const shown = savedOnly ? cards.filter((c) => savedIds.has(c.id)) : cards
 
   return (
     <div className="app-shell">
@@ -129,10 +139,24 @@ export function Home({
 
       {(status === 'ready' || status === 'empty') && feed ? (
         <section className="stack">
-          {feed.cards.length > 0 ? (
+          {feed.cards.length > 0 || savedIds.size > 0 ? (
+            <div className="stack-controls">
+              <ToggleButton className="action-chip" isSelected={savedOnly} onChange={setSavedOnly}>
+                {savedOnly ? 'Show all' : savedIds.size > 0 ? `Saved (${savedIds.size})` : 'Saved'}
+              </ToggleButton>
+            </div>
+          ) : null}
+
+          {shown.length > 0 ? (
             <p className="stack-meta">
-              {feed.cards.length === 1 ? '1 option' : `${feed.cards.length} options`} ·{' '}
-              {resolveRegionLabel(cards, tuning)}
+              {savedOnly
+                ? shown.length === 1
+                  ? '1 saved'
+                  : `${shown.length} saved`
+                : feed.cards.length === 1
+                  ? '1 option'
+                  : `${feed.cards.length} options`}{' '}
+              · {resolveRegionLabel(cards, tuning)}
             </p>
           ) : null}
 
@@ -142,15 +166,19 @@ export function Home({
             </div>
           ) : null}
 
-          <div className="card-stack">
-            {feed.cards.map((card) => {
-              const cardWarnings = perCard.get(card.id) ?? card.warnings
-              const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
-              return <RecommendationCard key={card.id} card={displayCard} onOpen={() => onOpenTrail(card.id)} />
-            })}
-          </div>
+          {shown.length > 0 ? (
+            <div className="card-stack">
+              {shown.map((card) => {
+                const cardWarnings = perCard.get(card.id) ?? card.warnings
+                const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
+                return <RecommendationCard key={card.id} card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+              })}
+            </div>
+          ) : savedOnly ? (
+            <SavedEmptyState anySaved={savedIds.size > 0} />
+          ) : null}
 
-          {feed.cards.length === 1 ? (
+          {!savedOnly && feed.cards.length === 1 ? (
             <SparseNote tuning={tuning} onApplyTuning={onApplyTuning} />
           ) : null}
 
@@ -167,6 +195,22 @@ export function Home({
           ))}
         </section>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Honest empty state for the Saved filter (never a bare blank, mirroring
+ * `EmptyState`/`SavedEmptyState`'s siblings below): distinguishes "you've
+ * never saved anything" from "you have saved trails, just none in this
+ * frame" — the two read very differently and the copy says which is true.
+ */
+function SavedEmptyState({ anySaved }: { anySaved: boolean }) {
+  return (
+    <div className="state-block">
+      <p className="state-note">
+        {anySaved ? 'None of your saved trails are in this frame.' : 'No saved trails yet.'}
+      </p>
     </div>
   )
 }

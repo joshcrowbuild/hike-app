@@ -1,10 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { summarizeProfile } from '../data/geo'
+import { resetSavedTrailsForTests } from '../data/savedTrails'
 import type { CardVM } from '../data/vm'
 import { RecommendationCard } from './RecommendationCard'
+
+afterEach(() => resetSavedTrailsForTests())
 
 function card(overrides: Partial<CardVM> = {}): CardVM {
   return {
@@ -188,5 +191,75 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
     expect(note).toBeInTheDocument()
     expect(note?.textContent).toMatch(/other conditions/i)
     expect(note?.textContent).toMatch(/streamflow, air/)
+  })
+})
+
+describe('RecommendationCard Directions (surfaced prominently, outside the tap target)', () => {
+  it('renders a Directions link to the trailhead when the card has geo', () => {
+    render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const link = screen.getByRole('link', { name: /directions/i })
+    expect(link).toHaveAttribute('href', expect.stringContaining('google.com/maps/dir/'))
+    expect(link).toHaveAttribute('href', expect.stringContaining('travelmode=driving'))
+    expect(link.getAttribute('href')).toContain(encodeURIComponent('38.5,-78.4'))
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('renders no Directions link when the card has no geo/trailhead', () => {
+    render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
+    expect(screen.queryByRole('link', { name: /directions/i })).not.toBeInTheDocument()
+  })
+
+  it('lives outside the card-tap button so it never doubles as the open-detail target', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const button = container.querySelector('.card-tap')
+    const link = screen.getByRole('link', { name: /directions/i })
+    expect(button?.contains(link)).toBe(false)
+  })
+})
+
+describe('RecommendationCard Save (client-side, localStorage, anonymous-friendly)', () => {
+  it('starts unsaved and toggles to Saved on tap, without opening the card', async () => {
+    const onOpen = vi.fn()
+    const user = userEvent.setup()
+    render(<RecommendationCard card={card()} onOpen={onOpen} />)
+    const save = screen.getByRole('button', { name: /save stony man loop/i })
+    expect(save).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(save)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /remove stony man loop from saved/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByText('Saved')).toBeInTheDocument()
+  })
+
+  it('toggles back to unsaved on a second tap', async () => {
+    const user = userEvent.setup()
+    render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const save = screen.getByRole('button', { name: /save stony man loop/i })
+    await user.click(save)
+    await user.click(screen.getByRole('button', { name: /remove stony man loop from saved/i }))
+    expect(screen.getByRole('button', { name: /^save stony man loop$/i })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('persists the saved state across a remount (localStorage, not component state)', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /save stony man loop/i }))
+    unmount()
+
+    render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /remove stony man loop from saved/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('lives outside the card-tap button so Save never opens Detail', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const button = container.querySelector('.card-tap')
+    const save = screen.getByRole('button', { name: /save stony man loop/i })
+    expect(button?.contains(save)).toBe(false)
   })
 })
