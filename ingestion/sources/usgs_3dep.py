@@ -121,12 +121,20 @@ class UsgsThreeDEPSource(CorpusSource):
 
     @classmethod
     def from_config(cls, settings: Settings) -> UsgsThreeDEPSource:
-        # A missing DEM path is a misconfiguration — fail loud here (corpus seam,
-        # SS-10), never a silent self-drop.
+        # usgs-3dep is a default corpus source (so a re-ingest always re-applies
+        # elevation), but a DEM raster is per-region and most regions don't have
+        # one downloaded yet. A missing ADVENTURE_3DEP_DEM is therefore NOT a
+        # misconfiguration to fail loud over — it degrades to a no-sampler
+        # instance, whose `enrich` already returns `[]` (source-or-silence, rule
+        # #6): the re-ingest completes normally and leaves elevation untouched
+        # rather than erroring or wiping it.
         if not settings.dem_path:
-            raise ValueError(
-                "usgs-3dep source requires ADVENTURE_3DEP_DEM (path to a local 3DEP DEM raster)"
+            log.warning(
+                "usgs-3dep: no ADVENTURE_3DEP_DEM configured for region %r — skipping "
+                "elevation enrichment (existing elevation, if any, is left untouched)",
+                settings.region,
             )
+            return cls(sampler=None, resolution_m=settings.elev_resolution_m)
         return cls(
             sampler=RasterioDEMSampler(settings.dem_path),
             resolution_m=settings.elev_resolution_m,

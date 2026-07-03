@@ -118,7 +118,7 @@ def test_enrich_swallows_sampler_errors():
     assert src.enrich(CanonicalNode("ct:1", "X", geom_wkt=_WKT)) == []
 
 
-# ── from_config: DEM path required (misconfig fails loud — corpus seam) ────────
+# ── from_config: DEM path is per-region; absent → graceful no-op, never a wipe ─
 
 
 def test_nonpositive_resolution_fails_loud():
@@ -128,9 +128,21 @@ def test_nonpositive_resolution_fails_loud():
         UsgsThreeDEPSource(sampler=_Ramp(), resolution_m=0.0)
 
 
-def test_from_config_requires_dem_path():
-    with pytest.raises(ValueError, match="ADVENTURE_3DEP_DEM"):
+def test_from_config_without_dem_path_degrades_to_noop(caplog):
+    # usgs-3dep is a default corpus source (so a re-ingest never forgets it), but
+    # most regions have no DEM downloaded yet. from_config must not raise — a
+    # region-scoped re-ingest without a DEM must complete normally and leave any
+    # existing elevation untouched, never error or wipe it.
+    src = UsgsThreeDEPSource.from_config(Settings.from_env({}))
+    assert isinstance(src, UsgsThreeDEPSource)
+    assert src._sampler is None
+    assert src.enrich(CanonicalNode("ct:1", "X", geom_wkt=_WKT)) == []
+
+
+def test_from_config_without_dem_path_logs_a_warning(caplog):
+    with caplog.at_level("WARNING"):
         UsgsThreeDEPSource.from_config(Settings.from_env({}))
+    assert any("ADVENTURE_3DEP_DEM" in r.message for r in caplog.records)
 
 
 def test_from_config_builds_with_dem_path(tmp_path):
