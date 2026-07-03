@@ -13,6 +13,12 @@ const base = {
   fontFamily: vars.font.family.mono,
   fontSize: vars.size.label,
   letterSpacing: '0.04em',
+  // Every other meta/kicker label in the app (decision labels, condition
+  // labels, "Open detail", kickers) renders uppercase mono — Staleness had
+  // fallen out of step, reading as sentence-case prose beside its uppercase
+  // siblings in the same row (e.g. card foot: "Conditions 2h old." next to
+  // "OPEN DETAIL").
+  textTransform: 'uppercase',
 } as const
 
 export const fresh = style({ ...base, color: vars.text.muted })
