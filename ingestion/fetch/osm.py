@@ -77,7 +77,17 @@ def fetch(
             continue
         osm_id = f"{el.get('type', 'way')}/{el['id']}"
         features.append(
-            Feature(name=tags["name"], geom=LineString(coords), source="OSM", ref=osm_id)
+            Feature(
+                name=tags["name"],
+                geom=LineString(coords),
+                source="OSM",
+                ref=osm_id,
+                # Persist the way-type (Overpass filters to path|footway|track|
+                # bridleway|steps) so the Curator can de-rank roadlike/access ways
+                # later without a re-fetch. Kept even for a `track`, which the
+                # Curator treats by name (fire roads stay; access roads sink).
+                way_type=tags.get("highway") or None,
+            )
         )
 
     log.info(

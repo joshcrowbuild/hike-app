@@ -20,7 +20,8 @@ from orchestration.config import Settings
 def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     seed = clean_graph.scoped_session("seed")
     seed.run(("MERGE (m:Meta {id: 'schema'}) SET m.schema_version = 'stats-test'", {}))
-    seed.run(("CREATE (:CanonicalTrail {canonical_id: 'ct:a'})", {}))
+    # ct:a carries a 3DEP profile (total_gain_m) → counted by the elevation gauge.
+    seed.run(("CREATE (:CanonicalTrail {canonical_id: 'ct:a', total_gain_m: 120.0})", {}))
     seed.run(("CREATE (:CanonicalTrail {canonical_id: 'ct:b'})", {}))
     seed.run(("CREATE (:SourceRecord {sr_uid: 'sr:1'})", {}))
     seed.run(("CREATE (:Trailhead {trailhead_id: 'th:1'})", {}))
@@ -48,3 +49,6 @@ def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     assert stats.source_records == 2
     assert stats.trailheads == 1
     assert stats.same_as_edges == 1
+    # Elevation gauge: only ct:a has total_gain_m → 1 of 3 (≈33.3%).
+    assert stats.trails_with_elevation == 1
+    assert stats.elevation_coverage_pct == round(1 / 3 * 100, 1)

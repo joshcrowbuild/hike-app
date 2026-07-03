@@ -111,6 +111,22 @@ _SEGMENT_GAP_M = 40.0
 _DEG_PER_M = 1.0 / 98_000.0
 
 
+def _dominant_way_type(features: list[Feature]) -> str | None:
+    """The most common non-None `way_type` across a merged component (ties → first
+    seen). Same-named connected OSM ways almost always share a highway value, so this
+    is just a robust pick when a stray segment differs."""
+    counts: dict[str, int] = defaultdict(int)
+    order: list[str] = []
+    for f in features:
+        if f.way_type:
+            if f.way_type not in counts:
+                order.append(f.way_type)
+            counts[f.way_type] += 1
+    if not counts:
+        return None
+    return max(order, key=lambda wt: counts[wt])
+
+
 def _connected_components(features: list[Feature], gap_deg: float) -> list[list[Feature]]:
     """Cluster features into spatially-connected components (union-find): two ways join
     when their geometries are within `gap_deg` of each other. O(n²) in the group size —
@@ -182,7 +198,12 @@ def consolidate_osm_segments(
             # component is its OWN CanonicalTrail — no slug collision between disconnected
             # same-named ways, and the id is stable across re-ingests.
             ref = min((f.ref for f in comp if f.ref), default=None)
-            consolidated.append(Feature(name=name, geom=combined, source=comp[0].source, ref=ref))
+            # Carry the way-type: same-named connected ways almost always share it, so
+            # take the most common (ties → first seen) as the component's type.
+            way_type = _dominant_way_type(comp)
+            consolidated.append(
+                Feature(name=name, geom=combined, source=comp[0].source, ref=ref, way_type=way_type)
+            )
 
     if split_groups:
         log.info(
@@ -224,6 +245,7 @@ def _canonical_nodes(
                 lat=lat,
                 lon=lon,
                 geom_wkt=_assembled_route_wkt(m.a.geom),
+                way_type=m.a.way_type,
             )
         )
         matched.add(m.a.ref or m.a.name)
@@ -239,6 +261,7 @@ def _canonical_nodes(
                 lat=lat,
                 lon=lon,
                 geom_wkt=_assembled_route_wkt(feat.geom),
+                way_type=feat.way_type,
             )
         )
     return nodes
@@ -274,7 +297,36 @@ def _run_enrichment(
             len(enrichment_sources),
             len(canonical_nodes),
         )
+    _log_elevation_coverage(enrichment_sources, facts, len(canonical_nodes))
     return facts
+
+
+# Elevation attributes carry this marker (the always-emitted scalar) so we can count
+# how many nodes actually received a profile this run — distinct from the raw fact count.
+_ELEV_MARKER_ATTR = "total_gain_m"
+
+
+def _log_elevation_coverage(
+    enrichment_sources: list[CorpusSource], facts: list[EnrichmentFact], n_nodes: int
+) -> None:
+    """Make elevation lag VISIBLE at ingest time (Epic 017 durability). Logs how many
+    of the run's canonical nodes got a 3DEP profile; a WARNING when 3DEP is active but
+    zero nodes were covered (a lost/missing DEM, the exact "elevation went null"
+    failure) so it can't pass silently. A no-op when no 3DEP source is configured."""
+    has_3dep = any(getattr(s, "name", "") == "usgs-3dep" for s in enrichment_sources)
+    if not has_3dep or n_nodes == 0:
+        return
+    covered = len({f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR})
+    pct = covered / n_nodes * 100
+    if covered == 0:
+        log.warning(
+            "Elevation: 0/%d trails got a 3DEP profile this run — DEM missing or "
+            "empty? (existing elevation, if any, is left untouched; run "
+            "scripts/fetch_dem.py to obtain the region DEM)",
+            n_nodes,
+        )
+    else:
+        log.info("Elevation: %d/%d trails (%.0f%%) carry a 3DEP profile", covered, n_nodes, pct)
 
 
 # ── Load ──────────────────────────────────────────────────────────────────────
@@ -342,6 +394,7 @@ def _load_matches(
             lat=lat,
             lon=lon,
             route_geom_wkt=route_wkt,
+            way_type=m.a.way_type,
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
@@ -405,6 +458,7 @@ def _load_matches(
             lat=lat,
             lon=lon,
             route_geom_wkt=route_wkt,
+            way_type=feat.way_type,
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)

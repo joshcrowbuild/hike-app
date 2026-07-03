@@ -58,6 +58,13 @@ def test_scout_passes_origin_param() -> None:
     assert params["origin"] == {"latitude": 38.5, "longitude": -78.4}
 
 
+def test_scout_maps_way_type_from_row() -> None:
+    # way_type rides the candidate query row into the Candidate (Curator de-rank input).
+    rows = [{**_row("a", 100), "way_type": "track"}]
+    out = scout(38.5, -78.4, _FakeSession(rows), k=1)  # type: ignore[arg-type]
+    assert out[0].way_type == "track"
+
+
 def test_scout_carries_trailhead_point_separate_from_trail_point() -> None:
     # H3: the drive-time prefilter needs the trailhead's own point, distinct from the
     # trail's centroid (`point`) — both must survive the row -> Candidate mapping.

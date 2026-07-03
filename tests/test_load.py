@@ -185,6 +185,23 @@ def test_load_canonical_trail_omits_route_geom_when_not_passed():
     load_canonical_trail(runner, "ct:1", "T")
     _, params = calls[0]
     assert "route_geom_wkt" not in params
+    assert "way_type" not in params  # same sentinel discipline as route geometry
+
+
+def test_load_canonical_trail_sets_and_clears_way_type():
+    # way_type follows the route-geom sentinel pattern: a value SETs it, an explicit
+    # None SETs null (clears a stale type on re-ingest), and omission leaves it alone.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", way_type="track")
+    cypher, params = calls[-1]
+    assert "t.way_type = $way_type" in cypher
+    assert params["way_type"] == "track"
+
+    load_canonical_trail(runner, "ct:1", "T", way_type=None)
+    _, params = calls[-1]
+    assert "way_type" in params and params["way_type"] is None
 
 
 def test_prune_stale_trails_query_shape():

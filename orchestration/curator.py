@@ -23,6 +23,7 @@ Thresholds are module constants so they're easy to tune against real conditions.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -199,6 +200,62 @@ def evaluate_guardrails(
     )
 
 
+# ── Way-type de-rank (feed quality — persisted OSM way-type) ─────────────────
+# The Overpass spine query pulls path|footway|track|bridleway|steps, and the
+# fetch-time `trail_filter` already HARD-DROPS clear non-trails (sidewalks, private
+# drives, numbered TIGER routes, coastal residential street-suffixes). What still
+# leaks into the feed is the ambiguous middle: an access/service/maintenance road
+# tagged `highway=track` that poses as a hike. This is a SOFT, reversible demotion
+# in ranking (never a drop — the trail stays in the feed, just below real trails),
+# so it can't silently hide a mis-classified real trail the way a hard filter would.
+#
+# Same care as #56 / #75: it fires ONLY on roadlike way-types and ONLY when the name
+# carries a positive access/service signal, and it explicitly KEEPS fire / dike /
+# forest roads (legit hikes that happen to be `track`s). A genuine footpath
+# (`path`/`footway`/`bridleway`/`steps`) is never demoted on this signal, whatever
+# its name.
+
+# Way-types that are ROADS, not foot trails. Only these are eligible for the name-
+# keyed access demotion (a `service`/`residential`/`unclassified` value can't arrive
+# from today's Overpass query, but keeping them here makes the rule forward-safe if
+# the fetch filter widens).
+_ROADLIKE_WAY_TYPES = frozenset(
+    {"track", "service", "road", "residential", "unclassified", "service_road"}
+)
+
+# Positive access/service/connector name signals — a roadlike way named this way is
+# infrastructure, not a hike. Kept tight (precision over recall, like trail_filter):
+# a false demote only sinks a real trail a few slots, but we still don't want it.
+_ACCESS_NAME = re.compile(
+    r"\b(access|service|maintenance|utility|utilities|connector|"
+    r"parking|driveway|gate|pipeline|powerline|substation|reservoir access)\b",
+    re.I,
+)
+
+# Fire / dike / forest / gravel roads ARE legit hikes — keep them even though they
+# are `track`s and even if they'd otherwise match an access word. Explicit markers
+# win; a bare "…Road"/"…Rd" ending also keeps (matches the #75 "keep fire roads"
+# stance: "Salt Pond Road", "Compton Gap Road", "Mathews Arm Road" are real).
+_FIRE_ROAD_KEEP = re.compile(
+    r"\b(fire\s?road|fire\s?rd|dike|levee|forest\s?(road|route|service\s?road)|"
+    r"fs\s?rd|f\.?r\.?\s?\d)\b|\b(road|rd)\s*$",
+    re.I,
+)
+
+
+def is_roadlike_demoted(way_type: str | None, name: str) -> bool:
+    """True if a candidate should be SOFT-demoted in the feed as a roadlike/access
+    way (never dropped). Fires only for roadlike `way_type`s carrying an access/
+    service name signal, and never for a recognized fire/dike/forest road. Pure and
+    side-effect-free so it's unit-testable against real names."""
+    if not way_type or way_type.lower() not in _ROADLIKE_WAY_TYPES:
+        return False
+    text = name or ""
+    if _FIRE_ROAD_KEEP.search(text):
+        return False  # legit fire/dike/forest road — keep it in normal position
+    return bool(_ACCESS_NAME.search(text))
+
+
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────
 # The soft half of the Curator. Confidence is deliberately NOT an input here —
 # uncertainty must never penalize ranking (rule #2). Works on (id, name) pairs so
@@ -238,6 +295,18 @@ def _parse_ids(text: str, known: list[str]) -> list[str]:
     return list(seen)
 
 
+def _apply_demotion(ordered: list[str], demote_ids: Collection[str]) -> list[str]:
+    """Stable-partition a ranked id list so demoted ids sink below the rest while
+    both groups keep their relative taste order. A soft, reversible move — nothing
+    is dropped (the demoted trail still rides the feed, just lower)."""
+    if not demote_ids:
+        return ordered
+    demote = set(demote_ids)
+    kept = [cid for cid in ordered if cid not in demote]
+    sunk = [cid for cid in ordered if cid in demote]
+    return kept + sunk
+
+
 def rank_ids(
     items: list[tuple[str, str]],
     provider: ModelProvider,
@@ -245,10 +314,14 @@ def rank_ids(
     *,
     profile: str | None = None,
     hints: dict[str, str] | None = None,
+    demote_ids: Collection[str] = (),
 ) -> list[str]:
     """Ask the judgment-tier model to order candidate (canonical_id, name) pairs.
     `hints` surfaces a per-candidate ordering input (e.g. drive minutes) into the
-    payload — an explicit, legible ranking term, never a confidence input (rule #2)."""
+    payload — an explicit, legible ranking term, never a confidence input (rule #2).
+    `demote_ids` (roadlike/access ways — see `is_roadlike_demoted`) are stably sunk
+    below the rest of the order afterward: a transparent, reversible feed-quality
+    demotion, never a drop."""
     if not items:
         return []
     known = [cid for cid, _ in items]
@@ -265,4 +338,5 @@ def rank_ids(
         model=model,
         max_tokens=512,
     )
-    return _parse_ids(provider.complete(request).text, known)
+    ordered = _parse_ids(provider.complete(request).text, known)
+    return _apply_demotion(ordered, demote_ids)

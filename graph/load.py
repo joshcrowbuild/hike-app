@@ -182,6 +182,7 @@ def load_canonical_trail(
     gain_ft: float | None = None,
     gain_source: str | None = None,
     route_geom_wkt: str | None = _UNSET,
+    way_type: str | None = _UNSET,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -200,6 +201,12 @@ def load_canonical_trail(
         # that loses geometry clears the stale route rather than serving it (Rule #1).
         params["route_geom_wkt"] = route_geom_wkt
         set_clauses.append("t.route_geom_wkt = $route_geom_wkt")
+    if way_type is not _UNSET:
+        # The OSM way-type (Curator de-rank input). As with route geometry, passing
+        # None explicitly SETs null so a re-ingest that drops the type clears a stale
+        # value rather than leaving it standing (source-or-silence).
+        params["way_type"] = way_type
+        set_clauses.append("t.way_type = $way_type")
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")

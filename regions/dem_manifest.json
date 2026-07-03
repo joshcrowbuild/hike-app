@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Per-region USGS 3DEP 1/3-arc-second (~10 m) DEM manifest — the reproducible way to",
+    "obtain the elevation raster in ANY environment (fixing 'elevation kept disappearing':",
+    "the DEM used to live only in a transient local worktree). `scripts/fetch_dem.py`",
+    "reads this, downloads each tile from `tile_base_url`, verifies its sha256 (or records",
+    "it on first fetch), then merges + clips to the region bbox into `output` (under",
+    "gitignored data/ — the raster itself is never committed).",
+    "Tile names are USGS NW-corner cells (n{lat}w{lon} spans lat [lat-1,lat], lon",
+    "[-lon,-lon+1]); regenerate a region's list from its geojson bbox with",
+    "`python scripts/fetch_dem.py --init <region>`. Checksums are null until an operator",
+    "runs the fetch and commits the values back (we do not fabricate them)."
+  ],
+  "tile_base_url": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/current",
+  "regions": {
+    "shenandoah-gwj": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-79.4, 37.8, -78.0, 39.1],
+      "output": "data/dem/shenandoah-gwj.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n38w079", "sha256": null},
+        {"name": "n38w080", "sha256": null},
+        {"name": "n39w079", "sha256": null},
+        {"name": "n39w080", "sha256": null},
+        {"name": "n40w079", "sha256": null},
+        {"name": "n40w080", "sha256": null}
+      ]
+    },
+    "richmond": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-78.0, 37.2, -77.0, 37.9],
+      "output": "data/dem/richmond.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n38w078", "sha256": null}
+      ]
+    },
+    "outer-banks": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-76.05, 35.05, -75.4, 36.45],
+      "output": "data/dem/outer-banks.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n36w076", "sha256": null},
+        {"name": "n36w077", "sha256": null},
+        {"name": "n37w076", "sha256": null},
+        {"name": "n37w077", "sha256": null}
+      ]
+    }
+  }
+}

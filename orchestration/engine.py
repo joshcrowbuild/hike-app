@@ -43,6 +43,7 @@ from orchestration.curator import (
     ConditionUnavailable,
     GuardrailVerdict,
     evaluate_guardrails,
+    is_roadlike_demoted,
     rank_ids,
 )
 from orchestration.drive_time import prefilter, time_budget_s
@@ -374,7 +375,18 @@ def rank_plan(
     by_id = {p.candidate.canonical_id: p for p in ordered}
     items = [(p.candidate.canonical_id, p.candidate.name) for p in ordered]
     hints = {cid: f"~{mins:.0f} min drive" for cid, mins in drive_secs.items() if mins is not None}
-    order = rank_ids(items, provider, model, profile=profile, hints=hints)
+    # Feed-quality de-rank: sink roadlike/access ways (persisted OSM way-type) below
+    # real trails — soft + reversible, never a drop, fire/dike roads kept (see
+    # `is_roadlike_demoted`). A no-op until a re-ingest persists `way_type` (older
+    # nodes carry None → never demoted).
+    demote_ids = {
+        p.candidate.canonical_id
+        for p in ordered
+        if is_roadlike_demoted(p.candidate.way_type, p.candidate.name)
+    }
+    if demote_ids:
+        log.debug("rank_plan: de-ranking %d roadlike/access way(s)", len(demote_ids))
+    order = rank_ids(items, provider, model, profile=profile, hints=hints, demote_ids=demote_ids)
     return [by_id[cid] for cid in order if cid in by_id]
 
 
