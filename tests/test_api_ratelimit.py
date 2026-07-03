@@ -160,6 +160,36 @@ def test_plan_buckets_are_keyed_per_forwarded_client_ip(proxied_client, monkeypa
     assert b_ok.status_code == 200  # ...without spending from client B's
 
 
+def test_plan_bucket_ignores_client_spoofed_xff_prefix(proxied_client, monkeypatch) -> None:
+    """AH2 regression: a client-supplied X-Forwarded-For prefix must not be able to (a)
+    evade its own limit by rotating a fake leftmost entry, or (b) poison a different real
+    client's bucket by reusing their forged prefix. `real_client_ip` (api/ratelimit.py)
+    keys on the LAST X-Forwarded-For entry — the one only Render's own proxy could have
+    appended, since the container is never directly reachable — not the first (which,
+    behind uvicorn's real ProxyHeadersMiddleware in trust-all mode, is exactly what an
+    attacker controls; see `test_plan_buckets_are_keyed_per_forwarded_client_ip`'s
+    single-entry case for the trust-all mechanics this builds on).
+    """
+    monkeypatch.setenv("ADVENTURE_RATELIMIT_PLAN", "1/hour")
+
+    # Same real (rightmost/proxy-appended) client, two different attacker-forged prefixes.
+    real_client_first_try = {"X-Forwarded-For": "203.0.113.7, 9.9.9.9"}
+    real_client_rotated_spoof = {"X-Forwarded-For": "198.51.100.1, 9.9.9.9"}
+    # A different real client who happens to share the FIRST attacker's forged prefix.
+    different_real_client = {"X-Forwarded-For": "203.0.113.7, 8.8.8.8"}
+
+    first = proxied_client.post("/plan", json=_PLAN_BODY, headers=real_client_first_try)
+    rotated = proxied_client.post("/plan", json=_PLAN_BODY, headers=real_client_rotated_spoof)
+    other = proxied_client.post("/plan", json=_PLAN_BODY, headers=different_real_client)
+
+    assert first.status_code == 200
+    # Rotating the forged prefix does NOT buy a fresh bucket — same real tail, same key.
+    assert rotated.status_code == 429
+    # Reusing someone else's forged prefix does NOT poison their bucket — different real
+    # tail, independent key, still fresh.
+    assert other.status_code == 200
+
+
 def test_health_rate_limited_returns_429(client, monkeypatch) -> None:
     monkeypatch.setenv("ADVENTURE_RATELIMIT_HEALTH", "1/hour")
     assert client.get("/health").status_code == 200

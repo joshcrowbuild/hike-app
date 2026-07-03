@@ -48,11 +48,15 @@ EXPOSE 8000
 #
 # --proxy-headers --forwarded-allow-ips='*': every request's TCP peer is Render's proxy
 # (the container port is not directly reachable from the public internet), so without
-# these flags request.client.host is the proxy for ALL clients and slowapi collapses
-# per-IP rate limits into one shared bucket. Trust-all makes uvicorn take the FIRST
-# X-Forwarded-For entry as the client — safe on Render specifically because Render
-# rewrites that header so its first entry is the real client IP (clients can't smuggle
-# a spoofed one past it, and there's no proxy-bypass path to the origin). On any host
-# where the origin is directly reachable or the proxy merely appends to X-Forwarded-For,
-# '*' would be a limiter bypass — narrow it to the proxy's hop instead.
+# these flags request.client.host is the proxy for ALL clients. Historically this repo
+# relied on uvicorn's trust-all rewrite (taking the FIRST X-Forwarded-For entry) to
+# restore per-IP keying for the rate limiter — VERIFIED (2026-07-02, AH2) that trust-all
+# takes X-Forwarded-For[0] with no hop-count check, so its safety depended entirely on an
+# unverified claim that Render always overwrites (never appends to) a client-supplied
+# X-Forwarded-For. That could not be confirmed within a safe live-test budget, so
+# api/ratelimit.py no longer trusts request.client.host at all — it reads the raw header
+# itself and takes the LAST entry (the one hop closest to us can only have appended,
+# never the client). These flags stay on for `request.scope["client"]` consumers other
+# than the limiter; they are NOT what makes rate-limit keying spoof-resistant anymore —
+# see api/ratelimit.py:real_client_ip for the load-bearing logic.
 CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
