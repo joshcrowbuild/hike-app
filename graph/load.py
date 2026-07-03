@@ -72,12 +72,15 @@ def _scalar_count(rows_or_result: Any, key: str = "n") -> int:
 @dataclass(frozen=True)
 class PruneOutcome:
     """What `prune_stale_trails` decided. `pruned=False` means every node was left
-    intact — either guard can fire this; `reason` says which and names the counts."""
+    intact — either guard can fire this; `reason` says which and names the counts.
+    `protected` counts stale trails that WERE eligible but were kept because a live
+    personal Episode still references them (owned-ref safety)."""
 
     pruned: bool
     n_cur: int
     n_prev: int
     reason: str | None = None
+    protected: int = 0
 
 
 # Distinguishes "caller omitted this optional property" from "caller explicitly passed
@@ -279,6 +282,57 @@ def clear_trail_segments(runner: Runner, canonical_id: str) -> None:
     )
 
 
+# Same-region, not-current candidate predicate (separator-anchored prefix). Shared
+# by `count_region_versions` and `prune_stale_trails` so the candidate set the guards
+# count is EXACTLY the set the delete passes act on (the anchor stops region "shen"
+# from pruning region "shenandoah-gwj" — a silent cross-region wipe).
+_REGION_VERSION_PRED = (
+    "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)\n"
+    "  AND node.ingest_version <> $iv"
+)
+
+# A stale world CanonicalTrail with a LIVE incoming owned edge — a personal
+# `(:Episode)-[:ON]->(t)` reference — must NEVER be DETACH-DELETEd: severing it is
+# the personal→world dangling-ref that produced the viewer-path 500. Prune skips such
+# nodes (and logs the count). Episode-[:ON] is the only owned→world edge into a
+# CanonicalTrail in the schema; if another is ever added, widen this predicate.
+_OWNED_REF_PRED = "(node)<-[:ON]-(:Episode)"
+
+
+def _region_version_params(
+    ingest_version: str, region_id: str, min_current: int = 1
+) -> dict[str, Any]:
+    return {
+        "iv": ingest_version,
+        "region_id": region_id,
+        "prefix": f"{region_id}-",
+        "min_current": min_current,
+    }
+
+
+def count_region_versions(
+    runner: Runner, ingest_version: str, *, region_id: str
+) -> tuple[int, int]:
+    """`(n_cur, n_prev)`: this region's current-`ingest_version` CanonicalTrail count,
+    and its prior-version (stale-candidate) count. The two numbers the prune guards —
+    and the pre-prune verify gate (`ingestion.pipeline.verify_before_prune`) — decide
+    on, factored out so both compute them identically from the SAME candidate
+    predicate. Read-only; issues no writes."""
+    n_cur = _scalar_count(
+        runner(
+            "MATCH (cur:CanonicalTrail {ingest_version: $iv})\nRETURN count(cur) AS n",
+            {"iv": ingest_version},
+        )
+    )
+    n_prev = _scalar_count(
+        runner(
+            f"MATCH (node:CanonicalTrail)\nWHERE {_REGION_VERSION_PRED}\nRETURN count(node) AS n",
+            _region_version_params(ingest_version, region_id),
+        )
+    )
+    return n_cur, n_prev
+
+
 def prune_stale_trails(
     runner: Runner,
     ingest_version: str,
@@ -331,38 +385,22 @@ def prune_stale_trails(
     `SAME_AS` edges. Pass 2 then deletes only the SourceRecords that are now *orphaned*
     (no surviving `SAME_AS` to any CanonicalTrail) AND stale-versioned in this region —
     so a SourceRecord still corroborating a surviving current-version trail is kept
-    (rule #1 source-or-silence / rule #7 provenance)."""
-    prefix = f"{region_id}-"
-    # Empty-ingest guard: no current trails → the WHERE drops the only row → no delete.
+    (rule #1 source-or-silence / rule #7 provenance).
+
+    Owned-ref safety — pass 1 additionally SKIPS any stale trail a live personal
+    `(:Episode)-[:ON]->(t)` still references. DETACH-deleting such a node would sever a
+    personal→world reference (the viewer-path 500). Skipped nodes are counted into
+    `PruneOutcome.protected` and logged; they simply wait for a future re-ingest to
+    refresh (and thus retire) them, rather than being wiped out from under an Episode."""
     guard = (
         "MATCH (cur:CanonicalTrail {ingest_version: $iv})\n"
         "WITH count(cur) AS n_cur\n"
         "WHERE n_cur >= $min_current\n"
     )
-    # Same-region, not-current candidate predicate (separator-anchored prefix).
-    region_pred = (
-        "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)\n"
-        "  AND node.ingest_version <> $iv"
-    )
-    params: dict[str, Any] = {
-        "iv": ingest_version,
-        "region_id": region_id,
-        "prefix": prefix,
-        "min_current": min_current,
-    }
+    region_pred = _REGION_VERSION_PRED
+    params = _region_version_params(ingest_version, region_id, min_current)
 
-    n_cur = _scalar_count(
-        runner(
-            "MATCH (cur:CanonicalTrail {ingest_version: $iv})\nRETURN count(cur) AS n",
-            {"iv": ingest_version},
-        )
-    )
-    n_prev = _scalar_count(
-        runner(
-            f"MATCH (node:CanonicalTrail)\nWHERE {region_pred}\nRETURN count(node) AS n",
-            dict(params),
-        )
-    )
+    n_cur, n_prev = count_region_versions(runner, ingest_version, region_id=region_id)
 
     if n_cur < min_current:
         reason = (
@@ -383,11 +421,29 @@ def prune_stale_trails(
         log.warning(reason)
         return PruneOutcome(pruned=False, n_cur=n_cur, n_prev=n_prev, reason=reason)
 
-    # Pass 1 — stale trails + their private segments.
+    # Owned-ref safety (2c): count the stale trails a live Episode still references so
+    # the skip is visible, then EXCLUDE them from the delete (never sever a personal ref).
+    protected = _scalar_count(
+        runner(
+            f"MATCH (node:CanonicalTrail)\nWHERE {region_pred}\n"
+            f"  AND {_OWNED_REF_PRED}\nRETURN count(node) AS n",
+            dict(params),
+        )
+    )
+    if protected:
+        log.info(
+            "prune: keeping %d stale trail(s) in region %r that a live Episode still "
+            "references (owned-ref safety — they retire on a future re-ingest)",
+            protected,
+            region_id,
+        )
+
+    # Pass 1 — stale trails + their private segments, EXCEPT owned-referenced ones.
     runner(
         guard
         + "MATCH (node:CanonicalTrail)\n"
         + f"WHERE {region_pred}\n"
+        + f"  AND NOT {_OWNED_REF_PRED}\n"
         + "OPTIONAL MATCH (node)-[:HAS_SEGMENT]->(s:Segment)\n"
         + "DETACH DELETE node, s",
         params,
@@ -401,7 +457,7 @@ def prune_stale_trails(
         + "DETACH DELETE node",
         params,
     )
-    return PruneOutcome(pruned=True, n_cur=n_cur, n_prev=n_prev)
+    return PruneOutcome(pruned=True, n_cur=n_cur, n_prev=n_prev, protected=protected)
 
 
 def load_source_record(

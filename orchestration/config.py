@@ -8,7 +8,7 @@ See `.env.example` for the shape.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping
 
@@ -135,6 +135,22 @@ class Settings:
     # the ceiling on how long a deploy waits for a slow-but-alive Aura, not a hang:
     # past it the failure is surfaced in /health instead.
     warmup_deadline_s: float = 30.0
+
+    def for_region(self, region_id: str, env: Mapping[str, str] | None = None) -> "Settings":
+        """A copy of these settings bound to the region actually being ingested.
+
+        The source registry resolves per-region assets (chiefly the 3DEP DEM) off
+        `settings.region`/`settings.dem_path`. `from_env` resolves those against the
+        *ambient* `ADVENTURE_REGION`, so ingesting region B while the environment
+        still names region A silently handed B's trails A's DEM (or none) — the
+        "Richmond got 0 elevation" bug. The pipeline calls this with its `--region`
+        so `enabled_sources`/`from_config` receive the ingest region, never the
+        ambient one. The explicit `ADVENTURE_3DEP_DEM` override still wins (operator
+        intent); only the conventional-path fallback is re-resolved for `region_id`.
+        """
+        e = os.environ if env is None else env
+        dem = e.get("ADVENTURE_3DEP_DEM") or default_dem_path(region_id)
+        return replace(self, region=region_id, dem_path=dem)
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> "Settings":

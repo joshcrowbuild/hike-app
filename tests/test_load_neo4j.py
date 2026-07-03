@@ -156,6 +156,52 @@ def test_personal_nodes_survive_prune(clean_graph):
     assert len(survivors) == 3  # PhysicalProfile + Person + Episode all untouched
 
 
+@pytest.mark.neo4j
+def test_owned_referenced_trail_survives_prune(clean_graph):
+    # Owned-ref safety (2c): a STALE world trail a live Episode still references must NOT
+    # be DETACH-deleted (that severs the personal→world ref — the viewer-path 500). It is
+    # kept and counted into PruneOutcome.protected; every other stale trail still prunes.
+    sess = clean_graph.scoped_session("ingest")
+    runner = _runner(sess)
+    region = "shenandoah-gwj"
+
+    _seed_trails(runner, region, f"{region}-v1", 20)
+    _seed_trails(runner, region, f"{region}-v2", 19)  # healthy re-ingest
+    stale_cid = f"ct:{region}-v1:0"  # one now-stale v1 trail is personally referenced
+    sess.run(
+        (
+            "MATCH (t:CanonicalTrail {canonical_id: $cid}) "
+            "MERGE (p:Person {owner_id: 'mem:test'}) "
+            "MERGE (e:Episode {episode_id: 'ep:test', owner_id: 'mem:test'}) "
+            "MERGE (p)-[:DID]->(e) MERGE (e)-[:ON]->(t)",
+            {"cid": stale_cid},
+        )
+    )
+
+    outcome = prune_stale_trails(runner, f"{region}-v2", region_id=region)
+
+    assert outcome.pruned is True
+    assert outcome.protected == 1  # the Episode-referenced stale trail was kept
+    # 19 (v2) + 1 (protected v1) survive; the other 19 stale v1 trails are pruned.
+    assert _count_trails(sess) == 20
+    survivor = sess.run(
+        (
+            "MATCH (t:CanonicalTrail {canonical_id: $cid}) RETURN t.canonical_id AS cid",
+            {"cid": stale_cid},
+        )
+    )
+    assert [r["cid"] for r in survivor] == [stale_cid]
+    # The read path still resolves Episode -> its world trail (no severed ref → no 500).
+    linked = sess.run(
+        (
+            "MATCH (:Episode {episode_id: 'ep:test'})-[:ON]->(t:CanonicalTrail) "
+            "RETURN t.canonical_id AS cid",
+            {},
+        )
+    )
+    assert [r["cid"] for r in linked] == [stale_cid]
+
+
 # ── Elevation survives a re-ingest (root-cause fix: usgs-3dep default + degrade) ─
 #
 # The bug: a region re-ingest that ran without `usgs-3dep` in ADVENTURE_CORPUS_SOURCES

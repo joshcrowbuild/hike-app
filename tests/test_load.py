@@ -217,7 +217,7 @@ def test_prune_stale_trails_query_shape():
     trail_cypher, params = calls[0]
     sr_cypher, _ = calls[1]
 
-    # Both passes carry the (unchanged) empty-ingest guard.
+    # Both passes carry the (unchanged) empty-ingest guard + separator-anchored scope.
     for cypher in (trail_cypher, sr_cypher):
         assert "count(cur)" in cypher and "n_cur >= $min_current" in cypher
         assert "DETACH DELETE" in cypher
@@ -226,20 +226,58 @@ def test_prune_stale_trails_query_shape():
             "node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix" in cypher
         )
         assert "node.ingest_version <> $iv" in cypher
-        # World-only: never touches an owned/personal label (rule #4).
-        for personal_label in ("Episode", "Belief", "Outcome", "Person", "PhysicalProfile"):
-            assert personal_label not in cypher
 
-    # Pass 1 removes the trail + its private segments.
+    # Pass 1 removes the trail + its private segments, EXCEPT owned-referenced ones:
+    # the only owned label it may name is `:Episode`, and only in the protective NOT
+    # guard (never as a DELETE target) — the owned-ref safety that fixes the severed
+    # personal→world reference (viewer-path 500).
     assert "CanonicalTrail" in trail_cypher and "HAS_SEGMENT" in trail_cypher
-    # Pass 2 deletes only SourceRecords with no surviving SAME_AS to a trail.
+    assert "AND NOT (node)<-[:ON]-(:Episode)" in trail_cypher
+    for personal_label in ("Belief", "Outcome", "Person", "PhysicalProfile"):
+        assert personal_label not in trail_cypher
+
+    # Pass 2 deletes only SourceRecords with no surviving SAME_AS to a trail, and never
+    # names any owned/personal label (rule #4).
     assert "SourceRecord" in sr_cypher
     assert "NOT (node)-[:SAME_AS]->(:CanonicalTrail)" in sr_cypher
+    for personal_label in ("Episode", "Belief", "Outcome", "Person", "PhysicalProfile"):
+        assert personal_label not in sr_cypher
 
     assert params["iv"] == "shenandoah-gwj-v11"
     assert params["region_id"] == "shenandoah-gwj"
     assert params["prefix"] == "shenandoah-gwj-"
     assert params["min_current"] == 1
+
+
+def test_prune_reports_owned_ref_protected_count():
+    # Owned-ref safety (2c): stale trails a live Episode still references are counted
+    # into PruneOutcome.protected and excluded from the delete. A runner that answers the
+    # protected-count query (the Episode-guarded one) with 2.
+    def runner(cypher: str, params: dict) -> Any:
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 100}]
+        if "(node)<-[:ON]-(:Episode)" in cypher:  # the owned-ref protected count query
+            return [{"n": 2}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 100}]
+        return None  # the two DETACH DELETE passes
+
+    outcome = prune_stale_trails(runner, "r-v2", region_id="r")
+    assert outcome.pruned is True
+    assert outcome.protected == 2
+
+
+def test_count_region_versions_returns_cur_and_prev():
+    from graph.load import count_region_versions
+
+    def runner(cypher: str, params: dict) -> Any:
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 42}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 99}]
+        return None
+
+    assert count_region_versions(runner, "r-v2", region_id="r") == (42, 99)
 
 
 def test_prune_stale_trails_prefix_is_separator_anchored():
