@@ -1,4 +1,4 @@
-"""Stage-3 ingestion pipeline — fetch → transform → hygiene → conflate → load.
+"""Stage-3 ingestion pipeline — fetch → conflate → load.
 
 CLI entry:
     python -m ingestion.pipeline --region shenandoah-gwj [--dry-run] [--source <name> …]
@@ -67,7 +67,7 @@ def load_region(region_id: str) -> Region:
     return Region(region_id=region_id, bbox=(south, west, north, east), props=props)
 
 
-# ── Feature normalisation (thin shim over ingestion.transform) ─────────────────
+# ── Feature normalisation ──────────────────────────────────────────────────────
 
 
 def _safe_geom_centroid(feature: Feature) -> tuple[float, float]:
