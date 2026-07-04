@@ -40,11 +40,14 @@ def _age(fetched_at: datetime, now: datetime) -> str:
     return f"{secs // 86_400}d ago"
 
 
-def _provider_short(source: str) -> str:
-    """The recognizable short name for the feed line — the leading token of the
+def provider_short(source: str) -> str:
+    """The recognizable short name for a source label — the leading token of the
     adapter's own source label ("NWS api.weather.gov" → "NWS", "USGS Water Data
     (…)" → "USGS"). Derived from the real source, never fabricated; the full label
-    and origin ids live in `FeedLine.source` (the detail Sources section)."""
+    and origin ids live in `FeedLine.source` (the detail Sources section). Shared
+    with `curator.py`/`engine.py` so a card warning or a set-aside reason wears the
+    same short provider name a condition line does — one source-shortening rule,
+    not two (D3 consistency pass)."""
     parts = source.split()
     return parts[0] if parts else source
 
@@ -127,6 +130,6 @@ def summarize_fact(
     # The raw grid/station codes and the single-source honesty descriptor move to
     # `source` (rendered in the detail Sources section), so the feed line stays
     # legible without dropping any provenance (source-or-silence, just relocated).
-    text = f"{hedge}{body} · {_provider_short(fact.source)}, {_age(fact.fetched_at, now)}"
+    text = f"{hedge}{body} · {provider_short(fact.source)}, {_age(fact.fetched_at, now)}"
     source = f"{fact.source} · {_source_note(kind, fact.value)}"
     return FeedLine(kind=kind, text=text, source=source, presentation=confidence.presentation)

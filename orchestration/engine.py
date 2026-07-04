@@ -49,7 +49,7 @@ from orchestration.curator import (
 )
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
-from orchestration.present import FeedLine, summarize_fact
+from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
 from orchestration.scout import Candidate, scout
@@ -229,10 +229,15 @@ def _corpus_corroboration(
 
 def _set_aside(candidate: Candidate, verdict: GuardrailVerdict) -> SetAsideTrail:
     """Build the disclosed set-aside record for a hard-blocked candidate (Epic 018 S5).
-    Each block becomes a source-stamped reason line — the cause, then its source in
-    parens — mirroring how `present.py` stamps a surfaced fact (AC-5.1/5.2)."""
+    Each block becomes a source-stamped reason line — the cause, then its short
+    provider name in parens (D3 consistency pass: the same calm label a condition
+    line or a card warning wears, never the raw domain-suffixed source) — mirroring
+    how `present.py` stamps a surfaced fact (AC-5.1/5.2). `source` itself stays the
+    fact's full provenance, preserved for a future inspectable detail surface."""
     reasons = tuple(
-        SetAsideReason(text=f"{b.reason} ({b.source})", source=b.source, kind=b.kind)
+        SetAsideReason(
+            text=f"{b.reason} ({provider_short(b.source)})", source=b.source, kind=b.kind
+        )
         for b in verdict.blocks
     )
     return SetAsideTrail(canonical_id=candidate.canonical_id, name=candidate.name, reasons=reasons)

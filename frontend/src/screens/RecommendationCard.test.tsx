@@ -88,7 +88,9 @@ describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
 describe('RecommendationCard verified hazard warnings (2026-07-01: show, never hide)', () => {
   const warning = {
     text: 'weather alert: Extreme Heat Warning',
-    source: 'NWS api.weather.gov',
+    // Short provider name (D3 consistency pass, backend `provider_short`) — never
+    // the raw domain-suffixed "NWS api.weather.gov" (that stays out of the card).
+    source: 'NWS',
     observedAgo: '2h ago',
     kind: 'weather',
     provenance: 'live' as const,
@@ -104,7 +106,8 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
     const block = container.querySelector('.card-warnings')
     expect(block).toBeInTheDocument()
     expect(block?.textContent).not.toContain('weather alert: Extreme Heat Warning')
-    expect(block?.textContent).toContain('NWS api.weather.gov') // source-stamped …
+    expect(block?.textContent).toContain('NWS') // source-stamped …
+    expect(block?.textContent).not.toContain('api.weather.gov') // never the raw domain-suffixed source
     expect(block?.textContent).toContain('2h ago') // … and aged (§7.2)
     // Assistive tech gets the same "Warning" framing sighted users read from the
     // accent treatment — colour is never the only cue.
@@ -120,7 +123,9 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
 describe('RecommendationCard accessible name carries the warning state (report #4/#7)', () => {
   const warning = {
     text: 'weather alert: Extreme Heat Warning',
-    source: 'NWS api.weather.gov',
+    // Short provider name (D3 consistency pass, backend `provider_short`) — never
+    // the raw domain-suffixed "NWS api.weather.gov" (that stays out of the card).
+    source: 'NWS',
     observedAgo: '2h ago',
     kind: 'weather',
     provenance: 'live' as const,
