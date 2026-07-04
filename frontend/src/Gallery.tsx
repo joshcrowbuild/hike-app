@@ -204,7 +204,6 @@ type SheetVariant = 'options' | 'back' | null
 function SheetSection() {
   const [open, setOpen] = useState<SheetVariant>(null)
   const [origin, setOrigin] = useState('frontRoyal')
-  const [backOpen, setBackOpen] = useState(false)
 
   return (
     <section className={g.section}>
@@ -288,24 +287,6 @@ function SheetSection() {
           <OptionButton value="moderate">Moderate — 6–10 mi, 800–2 k ft</OptionButton>
           <OptionButton value="bigDay">Big day — 10+ mi or 2 k+ ft</OptionButton>
         </OptionGroup>
-      </Sheet>
-
-      {/* Nested sheet demo — separate open state so Back can return here */}
-      <Sheet
-        isOpen={backOpen}
-        onClose={() => setBackOpen(false)}
-        title="Adjust"
-      >
-        <div style={{ display: 'grid', gap: '8px' }}>
-          <button
-            type="button"
-            className={g.sheetTrigger}
-            onClick={() => { setBackOpen(false); setOpen('back') }}
-          >
-            Effort
-            <span className={g.arrow}>→</span>
-          </button>
-        </div>
       </Sheet>
     </section>
   )

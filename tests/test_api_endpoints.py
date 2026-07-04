@@ -11,9 +11,8 @@ Coverage
             size([(pattern)|x]) pattern-comprehension form Aura's Cypher 25 rejects
             (42I06: Invalid input '|'), which had silently left graph=null on every call.
   /plan   — the happy-path request/response contract; viewer authorization (anonymous
-            default vs an authenticated viewer, Epic 014 S3); input validation
-            (malformed body → 4xx, never a 500); and the #53 per-IP rate limit
-            (over the limit → a clean JSON 429).
+            default vs an authenticated viewer, Epic 014 S3); and input validation
+            (malformed body → 4xx, never a 500).
 
 Adjacent behaviour is also exercised in test_api_ratelimit.py (rate-limit + observability),
 test_viewer_auth.py (the auth guard in depth), and test_graph_stats_neo4j.py (the #44
@@ -394,21 +393,3 @@ def test_plan_invalid_json_body_is_4xx_never_500(client: Any) -> None:
     )
     assert resp.status_code != 500
     assert 400 <= resp.status_code < 500
-
-
-# ── /plan: #53 per-IP rate limit ────────────────────────────────────────────────
-
-
-def test_plan_over_limit_returns_clean_429(client: Any, monkeypatch: Any) -> None:
-    # A wide window ("/hour") so the count, not the clock, is what trips here.
-    monkeypatch.setenv("ADVENTURE_RATELIMIT_PLAN", "2/hour")
-
-    assert client.post("/plan", json=_PLAN_BODY).status_code == 200
-    assert client.post("/plan", json=_PLAN_BODY).status_code == 200
-    limited = client.post("/plan", json=_PLAN_BODY)
-
-    assert limited.status_code == 429
-    # Clean JSON envelope mirroring the rest of the API, plus the back-off contract.
-    assert "detail" in limited.json()
-    assert "rate limit" in limited.json()["detail"].lower()
-    assert "retry-after" in {k.lower() for k in limited.headers}

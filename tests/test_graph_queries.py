@@ -43,11 +43,11 @@ def test_candidate_query_returns_trailhead_point_distinct_from_trail_point() -> 
 
 def test_personal_query_is_owner_scoped() -> None:
     # The access-control-at-query-layer invariant (#4): owned reads carry the scope.
-    cypher, params = queries.episodes_on_trail("ct:old-rag-loop")
+    cypher, params = queries.episode_fields_read("ep:old-rag-2025-09")
     assert "e.owner_id" in cypher
     assert "$viewer_id" in cypher
     assert "$granted_ids" in cypher
-    assert params["canonical_id"] == "ct:old-rag-loop"
+    assert params["eid"] == "ep:old-rag-2025-09"
 
 
 def test_trail_detail_query_shape_and_deterministic_trailhead() -> None:

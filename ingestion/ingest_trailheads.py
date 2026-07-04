@@ -2,8 +2,7 @@
 
 Run after the main trail pipeline (requires CanonicalTrail nodes to be present).
 Matches each trailhead to nearby CanonicalTrail nodes via Neo4j spatial query:
-  - Within 200m  → ACCESSES edge (high confidence; trailhead is for this trail)
-  - Within 500m  → ACCESSES edge (reasonable; within typical parking-lot distance)
+  - Within 500m → ACCESSES edge, capped at the 5 nearest trails per trailhead.
 
 The primary Scout query (Trailhead→ACCESSES→CanonicalTrail) only activates once
 Trailhead nodes exist; until then Scout uses the CanonicalTrail.point fallback.

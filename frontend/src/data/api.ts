@@ -163,21 +163,3 @@ export interface OutcomeResponse {
   skipped: boolean
   overall: number | null
 }
-
-// ---- GET /health ---------------------------------------------------------
-
-export interface GraphStats {
-  canonical_trails: number
-  source_records: number
-  trailheads: number
-  same_as_edges: number
-  schema_version: string | null
-}
-
-export interface HealthResponse {
-  status: string
-  version: string
-  region: string
-  probes_available: string[]
-  graph: GraphStats | null
-}

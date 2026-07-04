@@ -7,7 +7,9 @@
     "bbox": [-79.4, 37.8, -78.0, 39.1],
     "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
     "sources": ["OSM", "USFS", "NPS"],
-    "area_ids": ["nps:shen", "usfs:gwj-lee", "usfs:gwj-massanutten"]
+    "area_ids": ["nps:shen", "usfs:gwj-lee", "usfs:gwj-massanutten"],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names; conservative lower bounds (well under known-good fetch counts) sized to catch gross truncation without false-tripping. Env-overridable per source via ADVENTURE_FETCH_MIN_<SOURCE>.",
+    "min_fetch_counts": {"osm": 800, "usfs": 25, "nps": 25}
   },
   "geometry": {
     "type": "Polygon",

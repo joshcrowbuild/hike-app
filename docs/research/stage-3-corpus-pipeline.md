@@ -42,7 +42,7 @@ Batch ingestion = **ordinary scheduled jobs, not MCP** (Decision Log §8). The p
                  │   LOAD   │   + Segments/Junctions/Trailheads; enrich (3DEP,
                  └────┬─────┘   PAD-US manager, RIDB permits); compute best-view
                       ▼
-                 ┌──────────┐   constraints, point index, vector index (reserved);
+                 ┌──────────┐   constraints, point index;
                  │  INDEX   │   + fork de-identified commons write (T3 stub)
                  └──────────┘
 ```

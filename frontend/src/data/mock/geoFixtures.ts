@@ -11,7 +11,7 @@
  * deliberately exercise the honest states (S3): `dark-hollow` is `approximate`
  * (dashed), `hawksbill` has no mapped route and no profile.
  */
-import { clamp01, routeLengthMeters, summarizeProfile } from '../geo'
+import { clamp01, summarizeProfile } from '../geo'
 import type {
   ElevationProfile,
   ElevationSample,
@@ -192,10 +192,4 @@ export function buildTrailGeo(id: string, distanceMiles: number, ascentFeet: num
     summit: spec.summit,
     elevationProfile,
   }
-}
-
-/** Total drawn length of a trail's mock route (m); 0 when unmapped. Test aid. */
-export function mockRouteLength(id: string): number {
-  const geo = buildTrailGeo(id, 1, 1)
-  return geo.geometry ? routeLengthMeters(geo.geometry) : 0
 }

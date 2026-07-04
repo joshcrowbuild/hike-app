@@ -49,9 +49,9 @@ The crawl-vs-fetch question resolves by splitting data by rate of change.
 
 ## 6. Data model — property graph (Neo4j) ✅
 - **Why graph:** conflation + provenance and the belief layer are graph-native and the most differentiating parts. "Memory with receipts" = edges. Entity resolution = source-record nodes joined by `SAME_AS` to a canonical trail node, *preserving provenance as structure*. Beliefs `DERIVED_FROM` episodes that are `ON` trails a person `DID` — "why do you believe this?" is a traversal.
-- **Graph-based context = the answer to "RAG pointed at the self":** hand the agent a *subgraph* (the trail, your similar episodes, the beliefs from them, Ruby's capability, nearby alternatives) — *why*, not just *what*. Hybrid GraphRAG (Neo4j vector index + traversal). Double-duty with the role's team.
+- **Graph-based context = the answer to "RAG pointed at the self":** hand the agent a *subgraph* (the trail, your similar episodes, the beliefs from them, Ruby's capability, nearby alternatives) — *why*, not just *what*. Graph traversal for context assembly; vector retrieval deferred until embeddings actually exist. Double-duty with the role's team.
 - **Discipline — keep live data OUT of the graph.** Slow/structural in-graph; fast/ephemeral fetched JIT and overlaid, never persisted as nodes to expire.
-- **Neo4j fit:** local Community, Cypher traversals, spatial point types for "near my origin," vector index for hybrid retrieval. *Caution:* don't let it become a schema project — v0 graph is thin (canonical trails + provenance, stub profile/party), grown as episodes/beliefs accrue.
+- **Neo4j fit:** local Community, Cypher traversals, spatial point types for "near my origin." *Caution:* don't let it become a schema project — v0 graph is thin (canonical trails + provenance, stub profile/party), grown as episodes/beliefs accrue.
 
 ## 7. Confidence model — one property, applied to every fact 🔶
 "Data confidence" unifies source-or-silence, the staleness worry, crowd sample-size, and belief-confidence. **Three axes that roll into one score:**

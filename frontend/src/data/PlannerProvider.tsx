@@ -70,11 +70,6 @@ function scopeKeyOf(scope: ScopeContext): string {
   return `${scope.viewerId}|${scope.grantedIds.join(',')}`
 }
 
-/** The current viewer scope. `viewerId === 'anonymous'` is the n=0 world-browse. */
-export function useScope(): ScopeContext {
-  return usePlanner().scope
-}
-
 export function useIsAnonymous(): boolean {
   return usePlanner().scope.viewerId === 'anonymous'
 }

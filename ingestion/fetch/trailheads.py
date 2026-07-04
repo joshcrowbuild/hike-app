@@ -1,6 +1,6 @@
 """OSM trailhead fetch — nodes tagged amenity/tourism/highway=trailhead.
 
-Returns minimal TrailheadFeature records (name, lat, lon, osm_id, tags).
+Returns minimal TrailheadFeature records (name, lat, lon, osm_id).
 Restores the primary Scout query path: Scout prefers Trailhead→ACCESSES→CanonicalTrail
 over the direct CanonicalTrail.point fallback that runs when no Trailhead nodes exist.
 """
@@ -8,7 +8,7 @@ over the direct CanonicalTrail.point fallback that runs when no Trailhead nodes 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -33,7 +33,6 @@ class TrailheadFeature:
     name: str | None
     lat: float
     lon: float
-    tags: dict[str, str] = field(default_factory=dict)
 
 
 def fetch(
@@ -72,7 +71,6 @@ def fetch(
                 name=tags.get("name") or tags.get("official_name"),
                 lat=float(el["lat"]),
                 lon=float(el["lon"]),
-                tags=tags,
             )
         )
 

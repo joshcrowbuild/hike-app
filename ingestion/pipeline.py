@@ -1,4 +1,4 @@
-"""Stage-3 ingestion pipeline — fetch → transform → hygiene → conflate → load.
+"""Stage-3 ingestion pipeline — fetch → conflate → load.
 
 CLI entry:
     python -m ingestion.pipeline --region shenandoah-gwj [--dry-run] [--source <name> …]
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -66,7 +67,7 @@ def load_region(region_id: str) -> Region:
     return Region(region_id=region_id, bbox=(south, west, north, east), props=props)
 
 
-# ── Feature normalisation (thin shim over ingestion.transform) ─────────────────
+# ── Feature normalisation ──────────────────────────────────────────────────────
 
 
 def _safe_geom_centroid(feature: Feature) -> tuple[float, float]:
@@ -329,6 +330,145 @@ def _log_elevation_coverage(
         log.info("Elevation: %d/%d trails (%.0f%%) carry a 3DEP profile", covered, n_nodes, pct)
 
 
+# ── Fetch sanity + pre-prune verify gate (data-safety foundation) ─────────────
+
+
+class FetchSanityError(RuntimeError):
+    """A source returned suspiciously few features — a truncated/partial fetch (an
+    Overpass timeout that returns 1 of ~1500 ways looks valid and is MORE dangerous
+    than an empty one, because a downstream prune would read it as healthy and wipe
+    the rest). Raised BEFORE any load/prune so a partial fetch aborts this region's
+    ingest with nothing written, never a half-load that later self-wipes."""
+
+
+class IngestVerificationError(RuntimeError):
+    """A loaded region failed a pre-prune safety check (collapse or elevation). The
+    caller MUST NOT prune — the last-good corpus stays intact and the new nodes coexist
+    additively — and this propagates so the run exits nonzero (a bad run is visible,
+    never a silent half-wipe)."""
+
+
+_DEFAULT_MIN_ELEV_COVERAGE = 0.8
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float env override, falling back SAFE (to `default`) on unset/garbage —
+    a bad knob must never silently disable a data-safety gate."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning("%s=%r is not a float — using default %.2f", name, raw, default)
+        return default
+
+
+def _fetch_floor(source_name: str, region: Region) -> int | None:
+    """The minimum feature count `source_name` must fetch for `region` before the run
+    is allowed to proceed, or None if unconfigured (no check). An env override
+    `ADVENTURE_FETCH_MIN_<SOURCE>` wins; otherwise the region file's
+    `min_fetch_counts` map. Per-region-per-source so a floor sized for a dense region
+    can't false-trip a sparse one."""
+    key = f"ADVENTURE_FETCH_MIN_{source_name.upper().replace('-', '_')}"
+    raw = os.environ.get(key)
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            log.warning("%s=%r is not an int — ignoring env floor for %s", key, raw, source_name)
+    floors = region.props.get("min_fetch_counts") or {}
+    val = floors.get(source_name)
+    return int(val) if val is not None else None
+
+
+def _check_fetch_sanity(source_name: str, count: int, region: Region) -> None:
+    """Abort (raise `FetchSanityError`) when a source fetched fewer than its configured
+    floor — a truncated/partial fetch. A no-op when no floor is configured."""
+    floor = _fetch_floor(source_name, region)
+    if floor is not None and count < floor:
+        raise FetchSanityError(
+            f"{source_name} fetched {count} feature(s) for region {region.region_id!r}, "
+            f"below the configured floor of {floor} — looks like a truncated/partial "
+            "fetch. Aborting before any load/prune so a partial run can't self-wipe."
+        )
+
+
+def _elevation_expected(enrichment_sources: list[CorpusSource], settings: Settings) -> bool:
+    """True only when elevation enrichment is BOTH configured AND resolvable this run:
+    the 3DEP source is active and a DEM was resolved for the ingest region. Only then is
+    0% coverage a failure (verify aborts) rather than an expected no-op — a DEM-less
+    region degrades silently by design (rule #6), so it must NOT trip the gate."""
+    from ingestion.sources.usgs_3dep import ELEV_SOURCE
+
+    return bool(settings.dem_path) and any(
+        getattr(s, "name", "") == ELEV_SOURCE for s in enrichment_sources
+    )
+
+
+def verify_before_prune(
+    region: Region,
+    counts: dict[str, int],
+    runner: Any,
+    *,
+    iv: str,
+    elevation_expected: bool,
+    pre_load_count: int,
+) -> tuple[int, int]:
+    """The gate that MUST pass before `prune_stale_trails` runs — positioned between the
+    load and the prune (post-run is too late: prune already committed). Raises
+    `IngestVerificationError` on failure so the caller skips the prune (leaving the
+    last-good corpus intact) and the run surfaces loudly. Returns `(n_cur, n_prev)`.
+
+    (a) COLLAPSE — relative and scale-safe: the region's current-version trail count
+        must be at least `min_ratio` of its PRIOR CORPUS TOTAL (`pre_load_count`, the
+        snapshot taken BEFORE this run's load — default ratio 0.5, the single knob
+        `ADVENTURE_PRUNE_MIN_RATIO`). The denominator is the pre-load total, NOT the
+        post-load `n_prev`: the loaders MERGE by a version-independent id, so a re-ingest
+        flips each recovered trail old→new and `n_prev` is only the run's MISSED trails —
+        `n_cur`/`n_prev` are complementary halves of one total, and a 50% partial
+        (n_cur == n_prev) would wrongly pass an `n_prev`-based check while pruning the
+        stragglers (a silent half-wipe). Comparing against `pre_load_count` is
+        scale-correct and turns a truncated re-ingest into a loud abort. `pre_load_count
+        == 0` (first-ever ingest) has no denominator and passes.
+    (b) ELEVATION — only when `elevation_expected`: coverage (nodes that got a 3DEP
+        profile / the geometry-bearing canonical nodes that are ELIGIBLE for one) must be
+        ≥ threshold (default 0.8, env `ADVENTURE_ELEV_MIN_COVERAGE`). This promotes today's
+        silent "0% elevation" warning — the exact lost/empty-DEM failure — into an abort.
+    """
+    from graph.load import count_region_versions, prune_min_ratio
+
+    n_cur, n_prev = count_region_versions(runner, iv, region_id=region.region_id)
+    counts["verify_n_cur"] = n_cur
+    counts["verify_n_prev"] = n_prev
+    counts["verify_pre_load"] = pre_load_count
+
+    ratio = prune_min_ratio()
+    if pre_load_count > 0 and n_cur < pre_load_count * ratio:
+        raise IngestVerificationError(
+            f"ingest verify FAILED for region {region.region_id!r}: current-version trail "
+            f"count {n_cur} collapsed below {ratio:.0%} of the prior corpus total "
+            f"{pre_load_count}. Skipping prune to protect the last-good corpus — the new "
+            "nodes coexist additively. Fix the ingest, or lower ADVENTURE_PRUNE_MIN_RATIO "
+            "if the shrink is intentional."
+        )
+
+    if elevation_expected:
+        nodes = counts.get("elev_nodes", 0)
+        covered = counts.get("elev_covered", 0)
+        min_cov = _env_float("ADVENTURE_ELEV_MIN_COVERAGE", _DEFAULT_MIN_ELEV_COVERAGE)
+        coverage = (covered / nodes) if nodes else 0.0
+        if nodes and coverage < min_cov:
+            raise IngestVerificationError(
+                f"ingest verify FAILED for region {region.region_id!r}: elevation coverage "
+                f"{covered}/{nodes} ({coverage:.0%}) is below the required {min_cov:.0%} while "
+                "3DEP was active with a resolved DEM — a lost or empty DEM. Skipping prune; fix "
+                "the DEM (scripts/fetch_dem.py) or lower ADVENTURE_ELEV_MIN_COVERAGE."
+            )
+
+    return n_cur, n_prev
+
+
 # ── Load ──────────────────────────────────────────────────────────────────────
 
 
@@ -503,7 +643,9 @@ def run_pipeline(
     override) limits to those names, else ADVENTURE_CORPUS_SOURCES is used. The
     spine is resolved by declared role, so no source is named literally here.
     """
-    settings = settings or Settings.from_env()
+    # Bind settings to the region BEING INGESTED so the registry resolves THIS region's
+    # DEM/sources (not the ambient ADVENTURE_REGION — the "Richmond got 0 elevation" bug).
+    settings = (settings or Settings.from_env()).for_region(region.region_id)
     active = registry.enabled_sources(settings, names=sources)
     geometry_sources = [s for s in active if s.kind is SourceKind.geometry]
     enrichment_sources = [s for s in active if s.kind is SourceKind.enrichment]
@@ -514,6 +656,7 @@ def run_pipeline(
     # ── Fetch spine + conflate each non-spine geometry source onto it ───────────
     log.info("Fetching %s trails (spine) …", spine_source.name)
     raw_spine = spine_source.fetch(region)
+    _check_fetch_sanity(spine_source.name, len(raw_spine), region)
     counts[spine_source.name] = len(raw_spine)
     spine_features = consolidate_osm_segments(raw_spine)
     counts[f"{spine_source.name}_consolidated"] = len(spine_features)
@@ -530,6 +673,7 @@ def run_pipeline(
             continue
         log.info("Fetching %s trails …", s.name)
         feats = s.fetch(region)
+        _check_fetch_sanity(s.name, len(feats), region)
         counts[s.name] = len(feats)
         log.info("  %s: %d features", s.name, len(feats))
         if spine_features and feats:
@@ -555,7 +699,12 @@ def run_pipeline(
 
     try:
         from graph.client import GraphClient
-        from graph.load import load_enrichment_facts, make_runner, prune_stale_trails
+        from graph.load import (
+            count_region_trails,
+            load_enrichment_facts,
+            make_runner,
+            prune_stale_trails,
+        )
     except ImportError as exc:
         log.error("Neo4j not available: %s — run 'pip install -e .[graph]'", exc)
         return counts
@@ -567,6 +716,12 @@ def run_pipeline(
             version_suffix = region.props.get("ingest_version", "")
             iv = f"{region.region_id}-{version_suffix}" if version_suffix else region.region_id
             tier_by_name = {s.name: s.authority_tier for s in geometry_sources}
+            # Snapshot the region's prior corpus total BEFORE the load — the collapse
+            # gate's correct denominator (post-load counts can't recover it: a MERGE by
+            # version-independent id makes n_prev the run's MISSED trails, not the prior
+            # total). First-ever ingest → 0 → the gate's no-denominator (passes) path.
+            pre_load_count = count_region_trails(runner, region_id=region.region_id)
+            counts["pre_load_count"] = pre_load_count
             load_counts = _load_matches(
                 runner, auto_accept, spine_features, tier_by_name=tier_by_name, iv=iv
             )
@@ -577,20 +732,40 @@ def run_pipeline(
             # enrichment sources; a failing source degrades inside _run_enrichment.
             facts = _run_enrichment(enrichment_sources, canonical_nodes)
             counts["enrichment_facts"] = load_enrichment_facts(runner, facts)
-            # ── Prune stale trails: a tighter filter (e.g. dropping a TIGER-misimported
-            # state route) only STOPS refreshing the old MERGE'd node — it never deletes
-            # it — so without this a re-ingest leaves the non-hike serving forever. Gated
-            # on a non-empty load (belt) plus prune_stale_trails' own in-query
-            # current-version guard AND ratio guard (finding M1 — a truncated ingest that
-            # loaded a nonzero-but-tiny count must not read as "healthy" and wipe the rest
-            # of the region) so neither a failed/empty NOR a truncated ingest can wipe the
-            # graph.
+            # Elevation coverage for the verify gate: nodes that actually got a 3DEP
+            # profile this run vs. the canonical nodes ELIGIBLE for one — i.e. those with
+            # geometry (a point-only trail can never receive a 3DEP profile, so counting it
+            # in the denominator would falsely drag coverage below the gate and skip a prune
+            # for a perfectly healthy region). Distinct from the raw fact count.
+            counts["elev_nodes"] = sum(1 for n in canonical_nodes if n.geom_wkt)
+            counts["elev_covered"] = len(
+                {f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR}
+            )
+            # ── Gate BEFORE prune (positioned between the load and the prune — post-run
+            # would be too late, the prune already committed). verify_before_prune checks
+            # for a collapsed trail count (scale-safe, supersedes absolute bands) and, when
+            # elevation is expected, adequate coverage. On FAIL it RAISES: prune never runs,
+            # the last-good corpus stays intact (the new iv nodes coexist additively rather
+            # than a half-wipe), and the bad run surfaces loudly (nonzero) instead of
+            # silently self-wiping. A tighter filter (e.g. dropping a TIGER-misimported
+            # state route) still self-heals: the stale node is pruned only once the gate
+            # confirms the run is healthy.
             counts["pruned"] = 0
-            if load_counts["loaded"] > 0:
-                prune_outcome = prune_stale_trails(runner, iv, region_id=region.region_id)
-                counts["pruned"] = int(prune_outcome.pruned)
-                if not prune_outcome.pruned:
-                    log.warning(prune_outcome.reason)
+            verify_before_prune(
+                region,
+                counts,
+                runner,
+                iv=iv,
+                elevation_expected=_elevation_expected(enrichment_sources, settings),
+                pre_load_count=pre_load_count,
+            )
+            prune_outcome = prune_stale_trails(
+                runner, iv, region_id=region.region_id, pre_load_count=pre_load_count
+            )
+            counts["pruned"] = int(prune_outcome.pruned)
+            counts["prune_protected"] = int(prune_outcome.protected)
+            if not prune_outcome.pruned:
+                log.warning(prune_outcome.reason)
     finally:
         gc.close()
 

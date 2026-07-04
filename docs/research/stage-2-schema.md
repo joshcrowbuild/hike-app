@@ -174,7 +174,7 @@ Nothing time-varying is persisted as a node. The "freshness" disclosure (gauge i
 
 - **`ingest_version`** (e.g. `"2026-06"`) on every `:SourceRecord` and `:SAME_AS` → monthly refresh is idempotent and reconcilable (re-sync by `(source, source_id)`); stale records pruned by version.
 - **`:Meta {schema_version}`** singleton node; migrations are versioned Cypher scripts in `graph/migrations/` (monorepo), forward-only, each bumping `schema_version`. 🅓 *(tool choice: hand-rolled migration runner vs. a library — defer to Stage 0/3.)*
-- **Constraints & indexes (v0):** uniqueness on `canonical_id`, `(source, source_id)`; spatial point index on `:Trailhead(point)`, `:Junction(point)`; a **vector index** on `:CanonicalTrail` description embeddings for hybrid GraphRAG (§6) — reserved, populated later.
+- **Constraints & indexes (v0):** uniqueness on `canonical_id`, `(source, source_id)`; spatial point index on `:Trailhead(point)`, `:Junction(point)`.
 - **Hygiene on ingest (§17):** validate + drop malformed; flag incomplete (RIDB blank coords); provenance integrity = every world fact traces to a `:SourceRecord`.
 
 ---
