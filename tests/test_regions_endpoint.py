@@ -35,7 +35,10 @@ def test_regions_serves_the_committed_catalog(client: Any) -> None:
     payload = resp.json()
 
     by_id = {r["region_id"]: r for r in payload["regions"]}
-    assert set(by_id) == {"shenandoah-gwj", "richmond", "outer-banks"}
+    # The core regions are always present with their committed origins; more regions
+    # may be onboarded purely by adding regions/*.geojson (Phase 2), so assert a
+    # superset, not an exact set — a new region must never break the catalog test.
+    assert {"shenandoah-gwj", "richmond", "outer-banks"} <= set(by_id)
 
     shen = by_id["shenandoah-gwj"]
     assert shen["label"] == "Shenandoah"
