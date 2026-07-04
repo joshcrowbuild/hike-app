@@ -135,6 +135,22 @@ export function boundsOf(geo: {
   ]
 }
 
+/**
+ * Grow a bounding box to include an extra `{lat, lon}` point — used to reframe
+ * the map around BOTH the route and the viewer's own "Locate me" fix. Without
+ * this the map only ever fits the route bounds, so a fix taken from anywhere off
+ * the trail (the common plan-from-home case) drops a marker outside the viewport
+ * and "Locate me" looks dead. Degenerate/empty inputs are handled by `boundsOf`
+ * upstream; here we only widen.
+ */
+export function expandBounds(bounds: Bounds, point: GeoPosition): Bounds {
+  const [[minLon, minLat], [maxLon, maxLat]] = bounds
+  return [
+    [Math.min(minLon, point.lon), Math.min(minLat, point.lat)],
+    [Math.max(maxLon, point.lon), Math.max(maxLat, point.lat)],
+  ]
+}
+
 /** Interpolated `[lon, lat]` at a fraction (`0..1`, clamped) of total length. */
 export function pointAtFraction(geometry: RouteGeometry, fraction: number): [number, number] {
   const coords = flattenGeometry(geometry)
