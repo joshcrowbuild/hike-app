@@ -103,3 +103,60 @@ def test_scout_skips_direct_when_trailheads_dense() -> None:
     out = scout(38.5, -78.4, session, k=5)  # type: ignore[arg-type]
     assert [c.canonical_id for c in out] == ["t0", "t1", "t2", "t3", "t4"]
     assert len(session.calls) == 1  # only the trailhead query ran
+
+
+def test_scout_dedupes_same_name_segments_keeping_longest() -> None:
+    # D11: Richmond's "Canal Walk" is split into multiple CanonicalTrail segments
+    # (different canonical_id, same name) — the feed must show one card, and it
+    # should be the richest (longest) segment, not just whichever is nearest.
+    rows = [
+        {**_row("canal-a", 300), "name": "Canal Walk", "length_mi": 0.4},
+        {**_row("canal-b", 100), "name": "Canal Walk", "length_mi": 1.8},
+        {**_row("other", 200), "name": "Brown's Island Trail", "length_mi": 0.6},
+    ]
+    out = scout(37.54, -77.44, _FakeSession(rows), k=10)  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["canal-b", "other"]
+    canal = next(c for c in out if c.canonical_id == "canal-b")
+    assert canal.length_mi == 1.8
+
+
+def test_scout_dedupe_name_match_is_case_and_whitespace_insensitive() -> None:
+    rows = [
+        {**_row("a", 100), "name": "Pipeline Trail", "length_mi": 0.5},
+        {**_row("b", 400), "name": "  pipeline   trail  ", "length_mi": 2.0},
+    ]
+    out = scout(37.54, -77.44, _FakeSession(rows), k=10)  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["b"]
+
+
+def test_scout_dedupe_ties_on_length_keep_nearest() -> None:
+    rows = [
+        {**_row("far", 500), "name": "Loop Trail", "length_mi": 1.0},
+        {**_row("near", 50), "name": "Loop Trail", "length_mi": 1.0},
+    ]
+    out = scout(37.54, -77.44, _FakeSession(rows), k=10)  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["near"]
+
+
+def test_scout_dedupe_keeps_distinct_unnamed_candidates() -> None:
+    # An empty/missing name never collapses candidates into each other.
+    rows = [
+        {**_row("a", 100), "name": ""},
+        {**_row("b", 200), "name": ""},
+    ]
+    out = scout(37.54, -77.44, _FakeSession(rows), k=10)  # type: ignore[arg-type]
+    assert {c.canonical_id for c in out} == {"a", "b"}
+
+
+def test_scout_dedupe_caps_to_k_after_collapsing_duplicates() -> None:
+    # The name-collapse must free up feed slots for OTHER distinct trails, not just
+    # shrink duplicate names below k — this is the actual dogfood symptom (D11):
+    # duplicate segments were eating slots that should have gone to real trails.
+    rows = [
+        {**_row("canal-a", 100), "name": "Canal Walk", "length_mi": 0.4},
+        {**_row("canal-b", 150), "name": "Canal Walk", "length_mi": 1.8},
+        {**_row("c", 200), "name": "Trail C"},
+        {**_row("d", 300), "name": "Trail D"},
+    ]
+    out = scout(37.54, -77.44, _FakeSession(rows), k=3)  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["canal-b", "c", "d"]
