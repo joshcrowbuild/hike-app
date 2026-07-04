@@ -15,7 +15,11 @@ untouched.
 Deliberately conservative — high precision over recall. It removes only clear
 non-trails; the residual noise (residential footway loops with innocuous names, a
 named `track` that is really a back road, private institutional footways like the
-"Andreae" wellness path) needs a spatial / park-boundary signal, which is a follow-up.
+"Andreae" wellness path) is handled by the Phase-2 spatial signal: a way OUTSIDE the
+region's protected-area boundary is SOFT-demoted in the feed (never dropped) — see
+`ingestion.boundary` + `orchestration.curator.is_outside_boundary_demoted`. These
+regexes stay as the high-precision *hard-drop* catch (TIGER routes, private access,
+residential suffixes); the spatial signal ADDS to them, it does not replace them.
 Tags come straight from Overpass (`element["tags"]`); they were previously discarded
 at fetch, so capturing them is half the fix.
 """
@@ -70,9 +74,13 @@ _RESIDENTIAL_STREET_SUFFIX = re.compile(
 # `wellness` be followed by an institutional word ("and recreation", "center", "campus",
 # …) so a bare public "Wellness Trail" / "Wellness Loop" — a common, legitimate municipal
 # fitness loop — is NOT dropped. Still a name heuristic, not a real signal.
-# TODO: replace the `wellness` token with a spatial / park-boundary test (is the way
-# inside a managed recreation area?) — the durable discriminator for institutional
-# footways, which the name denylist can only approximate.
+#
+# The durable discriminator this token approximates — "is the way inside a managed
+# recreation area?" — now exists as the Phase-2 spatial signal (`ingestion.boundary`):
+# a way OUTSIDE the region's protected-area boundary is soft-demoted by the Curator.
+# This token stays as a high-precision hard drop for the institutional-footway class
+# in regions that ship no boundary polygon yet (the spatial signal degrades to a
+# no-op there); the two are complementary, not a replacement.
 _NAME_DENY = re.compile(
     r"\b(side ?walk|drive ?way|cross ?walk|wheelchair|colonnade"
     r"|parking (lot|area)|bus (stop|loop))\b"

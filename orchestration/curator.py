@@ -243,6 +243,44 @@ _FIRE_ROAD_KEEP = re.compile(
 )
 
 
+# ── Spatial park-boundary de-rank (Phase 2 — the durable discriminator) ──────
+# The name denylist in `trail_filter` was *approximating* one question: is this way
+# inside the region's protected-area boundary? Phase 2 answers it directly. A way
+# whose point sits OUTSIDE the NPS/USFS polygon that defines the region, and that is
+# an ambiguous foot/track way-type with no other trail signal (the "Andreae" wellness
+# path, a coastal residential street posing as a footway), is likely access/
+# institutional infrastructure — SOFT-demoted here, never dropped.
+#
+# Same #56/#75 stance as the roadlike de-rank: soft + reversible (a real trail just
+# outside a boundary sinks a few slots, it does not vanish), fires only on ambiguous
+# way-types, and explicitly KEEPS fire/dike/forest roads (a fire road mapped just
+# outside the buffer is still a hike). The inside/outside call is the persisted
+# ingest-time `outside_boundary` flag (None → unknown / no boundary → never demoted),
+# so a region with no real boundary polygon degrades to today's name-only behaviour.
+
+# Ambiguous foot/track way-types eligible for the boundary demotion. A `path` /
+# `bridleway` / `steps` is a strong recreational-trail signal on its own, so it is
+# never demoted on position alone — only the ambiguous `track`/`footway` middle is.
+_SPATIAL_AMBIGUOUS_WAY_TYPES = frozenset({"track", "footway"})
+
+
+def is_outside_boundary_demoted(
+    way_type: str | None, name: str, outside_boundary: bool | None
+) -> bool:
+    """True if a candidate should be SOFT-demoted (never dropped) as an ambiguous way
+    sitting OUTSIDE the region's protected-area boundary. `outside_boundary` is the
+    persisted ingest-time classification: None (unknown / no boundary) → never demoted
+    (degrade). Fires only for ambiguous `track`/`footway` way-types and never for a
+    recognized fire/dike/forest road. Pure and side-effect-free."""
+    if not outside_boundary:  # None or False → inside / unknown → keep
+        return False
+    if not way_type or way_type.lower() not in _SPATIAL_AMBIGUOUS_WAY_TYPES:
+        return False
+    if _FIRE_ROAD_KEEP.search(name or ""):
+        return False  # fire/dike/forest road just outside the buffer — still a hike
+    return True
+
+
 def is_roadlike_demoted(way_type: str | None, name: str) -> bool:
     """True if a candidate should be SOFT-demoted in the feed as a roadlike/access
     way (never dropped). Fires only for roadlike `way_type`s carrying an access/

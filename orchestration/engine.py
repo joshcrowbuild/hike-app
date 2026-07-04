@@ -43,6 +43,7 @@ from orchestration.curator import (
     ConditionUnavailable,
     GuardrailVerdict,
     evaluate_guardrails,
+    is_outside_boundary_demoted,
     is_roadlike_demoted,
     rank_ids,
 )
@@ -379,10 +380,18 @@ def rank_plan(
     # real trails — soft + reversible, never a drop, fire/dike roads kept (see
     # `is_roadlike_demoted`). A no-op until a re-ingest persists `way_type` (older
     # nodes carry None → never demoted).
+    # Two soft, reversible de-rank signals feed the same demotion set: the roadlike/
+    # access name signal (persisted way-type) and the Phase-2 spatial signal (the
+    # trail's point outside the region's protected-area boundary). Either sinks an
+    # ambiguous way below real trails; neither drops it. Both are no-ops until a
+    # re-ingest persists the respective flag (older nodes carry None).
     demote_ids = {
         p.candidate.canonical_id
         for p in ordered
         if is_roadlike_demoted(p.candidate.way_type, p.candidate.name)
+        or is_outside_boundary_demoted(
+            p.candidate.way_type, p.candidate.name, p.candidate.outside_boundary
+        )
     }
     if demote_ids:
         log.debug("rank_plan: de-ranking %d roadlike/access way(s)", len(demote_ids))

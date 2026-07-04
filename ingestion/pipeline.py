@@ -24,8 +24,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
+from ingestion.boundary import classify_outside_boundary, load_region_boundary
 from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
 from ingestion.route import assemble_geometry, line_parts
 from ingestion.sources import registry
@@ -504,13 +506,19 @@ def _load_matches(
     *,
     tier_by_name: dict[str, int],
     iv: str,
+    boundary: BaseGeometry | None = None,
 ) -> dict[str, int]:
     """Persist auto-accept matches + unmatched spine features via the idempotent
     MERGE loaders. The spine side is read generically from the `Feature.source`
     (no literal "OSM" special-case); each SourceRecord carries the per-source
     `authority_tier` floor read from the source object (AC-4.3), recorded via the
     loader's `extra` slot — best-view per-attribute overrides stay in the
-    best-view layer."""
+    best-view layer.
+
+    `boundary` is the region's protected-area polygon (Phase 2). Each trail's point
+    is classified inside/outside it and persisted as `outside_boundary` for the
+    Curator's soft-demote. `None` (no real boundary) → the flag is `None` and nothing
+    is demoted — the spatial signal degrades to today's name-only filter."""
     from graph.load import load_canonical_trail, load_source_record, merge_same_as
 
     # `load_segment` is imported lazily inside `_persist_segments` (same module).
@@ -535,6 +543,7 @@ def _load_matches(
             lon=lon,
             route_geom_wkt=route_wkt,
             way_type=m.a.way_type,
+            outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
@@ -599,6 +608,7 @@ def _load_matches(
             lon=lon,
             route_geom_wkt=route_wkt,
             way_type=feat.way_type,
+            outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
@@ -722,8 +732,17 @@ def run_pipeline(
             # total). First-ever ingest → 0 → the gate's no-denominator (passes) path.
             pre_load_count = count_region_trails(runner, region_id=region.region_id)
             counts["pre_load_count"] = pre_load_count
+            # Phase-2 spatial signal: the region's protected-area boundary (None when
+            # the region ships only a placeholder bbox — the classifier then abstains,
+            # so behaviour is never worse than today's name-only filter).
+            boundary = load_region_boundary(region.region_id)
             load_counts = _load_matches(
-                runner, auto_accept, spine_features, tier_by_name=tier_by_name, iv=iv
+                runner,
+                auto_accept,
+                spine_features,
+                tier_by_name=tier_by_name,
+                iv=iv,
+                boundary=boundary,
             )
             counts["loaded"] = load_counts["loaded"]
             counts["skipped_hygiene"] = load_counts["skipped_hygiene"]
