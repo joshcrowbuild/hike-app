@@ -158,6 +158,25 @@ button {
   gap: 0.85rem;
 }
 
+/* ---- progressive reveal (real cards settling in after the skeleton stack,
+   D4 perceived performance) — opacity + transform only, so nothing reflows
+   and the skeleton-to-real swap never shifts layout. The per-card delay is
+   set inline (Home.tsx), staggered so the stack arrives, not pops in. */
+.card-reveal {
+  animation: card-reveal 220ms ease-out both;
+}
+
+@keyframes card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .sparse-note {
   margin: 0.85rem 0 0;
   font-size: 0.85rem;

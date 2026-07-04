@@ -1,0 +1,33 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "great-falls",
+    "name": "Great Falls & Potomac Gorge (Northern Virginia)",
+    "region_label": "Great Falls",
+    "description": "The Potomac Gorge just upriver of Washington, D.C.: Great Falls Park on the Virginia bank (an NPS site administered under the George Washington Memorial Parkway), the dramatic falls and Mather Gorge, and the River/Difficult Run trails down toward the Beltway. Includes Fairfax County's Riverbend Park and Scott's Run Nature Preserve, with the C&O Canal towpath and Great Falls Tavern visible across the river on the Maryland side. Rocky river-gorge singletrack with real relief above the water.",
+    "bbox": [-77.3, 38.9, -77.1, 39.05],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84). Covers the VA-side gorge corridor from Riverbend (N) past Great Falls Park down toward Chain Bridge (S), plus the near MD bank (C&O towpath) across the river.",
+    "sources": ["OSM", "NPS", "USGS"],
+    "area_ids": ["nps:grfa", "nps:gwmp", "local:riverbend-park"],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {"key": "greatFalls", "label": "Great Falls", "lat": 38.9977, "lon": -77.256},
+      {"key": "mcLean", "label": "McLean", "lat": 38.9339, "lon": -77.1773},
+      {"key": "potomacMd", "label": "Potomac (MD)", "lat": 39.0182, "lon": -77.2086}
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Only OSM (geometry) is floor-gated here; NPS/USGS are enrichment (USGS is 3DEP elevation and never fetches). This floor is a CONSERVATIVE pre-calibration estimate — this config-only lane cannot run a live Overpass fetch, so unlike the pilot regions there is no measured baseline yet. Recalibrate to ~70% of the measured live baseline after the first successful ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {"osm": 200}
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-77.3, 38.9],
+        [-77.1, 38.9],
+        [-77.1, 39.05],
+        [-77.3, 39.05],
+        [-77.3, 38.9]
+      ]
+    ]
+  }
+}

@@ -19,7 +19,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-REGIONS_DIR = Path("regions")
+REGIONS_DIR = Path(__file__).resolve().parent.parent / "regions"
 
 
 @dataclass(frozen=True)

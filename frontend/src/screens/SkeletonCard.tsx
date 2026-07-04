@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from '../data/motion'
+
 /**
  * A card-shaped placeholder shown the instant a search is submitted (NNG:
  * skeleton screens over spinners/text — a structured wait feels shorter than a
@@ -5,19 +7,7 @@
  * silhouette already occupies the same shape). Purely decorative: `aria-hidden`,
  * because the sr-only status line Home renders alongside the stack already
  * carries the loading state to assistive tech (WCAG 4.1.3).
- *
- * The shimmer is applied per-element via `matchMedia`, not a CSS-only
- * `prefers-reduced-motion` query, so the reduced-motion behaviour is a unit-
- * testable fact rather than a stylesheet assertion jsdom can't evaluate.
  */
-function prefersReducedMotion(): boolean {
-  try {
-    return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  } catch {
-    return false
-  }
-}
-
 export function SkeletonCard() {
   const shimmer = prefersReducedMotion() ? '' : ' skeleton-shimmer'
   const line = (modifier: string) => `skeleton-line skeleton-line--${modifier}${shimmer}`

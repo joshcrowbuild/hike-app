@@ -15,7 +15,6 @@ neo4j/
 
 # Frontend (separate Vercel deploy) and non-serve code/docs.
 frontend/
-regions/
 evals/
 tests/
 spikes/

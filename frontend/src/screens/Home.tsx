@@ -3,7 +3,8 @@ import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
 import { splitFeedWarnings } from '../data/feedWarnings'
-import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
+import { prefersReducedMotion } from '../data/motion'
+import { useFeed, useRecentEpisodes, type LoadingStage } from '../data/PlannerProvider'
 import { useOrigins, type OriginOption } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
@@ -13,6 +14,31 @@ import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
 import { RecommendationCard } from './RecommendationCard'
 import { SkeletonCard } from './SkeletonCard'
+
+/** The honest progress ladder for a still-loading request (D4 — perceived
+ *  performance). Never a frozen line past NNG's ~10s attention threshold: the
+ *  copy keeps changing as the wait stretches, without pretending to know a
+ *  cause it can't confirm until the wait is long enough to make one likely. */
+const LOADING_COPY: Record<LoadingStage, string> = {
+  initial: 'Reading conditions…',
+  reassure: 'Still checking conditions…',
+  coldstart: 'Waking the server — this can take up to a minute…',
+}
+
+/** A short, staggered per-card delay so real cards settle in one after another
+ *  instead of popping in as one flat block — a calmer "arriving" feel than an
+ *  instant swap, without reflowing anything (opacity/transform only, so no
+ *  layout shift). Skipped under reduced motion; capped so a long feed doesn't
+ *  make the tail of the stack wait noticeably longer than the top. */
+const REVEAL_STAGGER_MS = 45
+const REVEAL_STAGGER_MAX_MS = 270
+
+/** `undefined` under reduced motion — callers skip the reveal class entirely
+ *  rather than just zeroing the delay, so no animation fires at all. */
+function revealDelay(index: number): number | undefined {
+  if (prefersReducedMotion()) return undefined
+  return Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_MAX_MS)
+}
 
 /** Home shows peers, not a full page of results (v0.3 §2: "≤3 peers") — the
  *  skeleton mirrors that count so the placeholder shape matches what actually
@@ -59,7 +85,7 @@ export function Home({
   onOpenOutcome,
   onApplyTuning,
 }: HomeProps) {
-  const { status, feed, error, slow, reload } = useFeed({ tuning })
+  const { status, feed, error, loadingStage, reload } = useFeed({ tuning })
   const { episodes } = useRecentEpisodes()
   const { origins } = useOrigins()
   // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
@@ -112,98 +138,107 @@ export function Home({
 
       {feed ? <ReadinessLine feed={feed} /> : null}
 
-      {status === 'loading' ? (
-        <>
-          {/* A skeleton card silhouette renders instantly (NNG: structured wait
-              beats a bare "loading" line). A slow request is almost always the
-              free-tier API cold-starting; that gets a calmer note layered on
-              top rather than replacing the structure. The status line is
-              always rendered visibly, not just to assistive tech (role=status
-              also reaches AT, WCAG 4.1.3) — a cold start that silently sits on
-              a bare skeleton for 30-60s reads as broken, not honest (report
-              #4). */}
-          <p className="state-note" role="status">
-            {slow ? 'Waking the server — this can take up to a minute…' : 'Reading conditions…'}
-          </p>
-          <div className="card-stack" aria-hidden="true">
-            {Array.from({ length: SKELETON_COUNT }, (_, i) => (
-              <SkeletonCard key={i} />
-            ))}
+      <div aria-busy={status === 'loading'}>
+        {status === 'loading' ? (
+          <>
+            {/* A skeleton card silhouette renders instantly (NNG: structured wait
+                beats a bare "loading" line). The status line keeps changing as
+                the wait stretches past NNG's ~10s attention mark, never sitting
+                frozen on one line — and is always rendered visibly, not just to
+                assistive tech (role=status also reaches AT, WCAG 4.1.3), so a
+                long wait never silently sits on a bare skeleton (report #4). */}
+            <p className="state-note" role="status">
+              {LOADING_COPY[loadingStage]}
+            </p>
+            <div className="card-stack" aria-hidden="true">
+              {Array.from({ length: SKELETON_COUNT }, (_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {status === 'error' ? (
+          <div className="state-block">
+            <p className="state-note">{error?.message ?? 'Couldn’t load trails right now.'}</p>
+            <button className="text-action" type="button" onClick={reload}>
+              Try again
+            </button>
           </div>
-        </>
-      ) : null}
+        ) : null}
 
-      {status === 'error' ? (
-        <div className="state-block">
-          <p className="state-note">{error?.message ?? 'Couldn’t load trails right now.'}</p>
-          <button className="text-action" type="button" onClick={reload}>
-            Try again
-          </button>
-        </div>
-      ) : null}
+        {status === 'empty' ? (
+          <EmptyState tuning={tuning} onApplyTuning={onApplyTuning} onOpenTuning={onOpenTuning} />
+        ) : null}
 
-      {status === 'empty' ? (
-        <EmptyState tuning={tuning} onApplyTuning={onApplyTuning} onOpenTuning={onOpenTuning} />
-      ) : null}
+        {(status === 'ready' || status === 'empty') && feed ? (
+          <section className="stack">
+            {feed.cards.length > 0 || savedIds.size > 0 ? (
+              <div className="stack-controls">
+                <ToggleButton className="action-chip" isSelected={savedOnly} onChange={setSavedOnly}>
+                  {savedOnly ? 'Show all' : savedIds.size > 0 ? `Saved (${savedIds.size})` : 'Saved'}
+                </ToggleButton>
+              </div>
+            ) : null}
 
-      {(status === 'ready' || status === 'empty') && feed ? (
-        <section className="stack">
-          {feed.cards.length > 0 || savedIds.size > 0 ? (
-            <div className="stack-controls">
-              <ToggleButton className="action-chip" isSelected={savedOnly} onChange={setSavedOnly}>
-                {savedOnly ? 'Show all' : savedIds.size > 0 ? `Saved (${savedIds.size})` : 'Saved'}
-              </ToggleButton>
-            </div>
-          ) : null}
+            {shown.length > 0 ? (
+              <p className="stack-meta">
+                {savedOnly
+                  ? shown.length === 1
+                    ? '1 saved'
+                    : `${shown.length} saved`
+                  : feed.cards.length === 1
+                    ? '1 option'
+                    : `${feed.cards.length} options`}{' '}
+                · {resolveRegionLabel(cards, tuning, origins)}
+              </p>
+            ) : null}
 
-          {shown.length > 0 ? (
-            <p className="stack-meta">
-              {savedOnly
-                ? shown.length === 1
-                  ? '1 saved'
-                  : `${shown.length} saved`
-                : feed.cards.length === 1
-                  ? '1 option'
-                  : `${feed.cards.length} options`}{' '}
-              · {resolveRegionLabel(cards, tuning, origins)}
-            </p>
-          ) : null}
+            {banner.length > 0 ? (
+              <div className="feed-alert-banner">
+                <WarningBlock warnings={banner} label="Regional alert" />
+              </div>
+            ) : null}
 
-          {banner.length > 0 ? (
-            <div className="feed-alert-banner">
-              <WarningBlock warnings={banner} label="Regional alert" />
-            </div>
-          ) : null}
+            {shown.length > 0 ? (
+              <div className="card-stack">
+                {shown.map((card, i) => {
+                  const cardWarnings = perCard.get(card.id) ?? card.warnings
+                  const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
+                  const delay = revealDelay(i)
+                  return (
+                    <div
+                      key={card.id}
+                      className={delay != null ? 'card-reveal' : undefined}
+                      style={delay != null ? { animationDelay: `${delay}ms` } : undefined}
+                    >
+                      <RecommendationCard card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+                    </div>
+                  )
+                })}
+              </div>
+            ) : savedOnly ? (
+              <SavedEmptyState anySaved={savedIds.size > 0} />
+            ) : null}
 
-          {shown.length > 0 ? (
-            <div className="card-stack">
-              {shown.map((card) => {
-                const cardWarnings = perCard.get(card.id) ?? card.warnings
-                const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
-                return <RecommendationCard key={card.id} card={displayCard} onOpen={() => onOpenTrail(card.id)} />
-              })}
-            </div>
-          ) : savedOnly ? (
-            <SavedEmptyState anySaved={savedIds.size > 0} />
-          ) : null}
+            {!savedOnly && feed.cards.length === 1 ? (
+              <SparseNote tuning={tuning} onApplyTuning={onApplyTuning} />
+            ) : null}
 
-          {!savedOnly && feed.cards.length === 1 ? (
-            <SparseNote tuning={tuning} onApplyTuning={onApplyTuning} />
-          ) : null}
+            {feed.setAside.length > 0 ? (
+              <SetAsideList items={feed.setAside} onOpenTrail={onOpenTrail} />
+            ) : null}
 
-          {feed.setAside.length > 0 ? (
-            <SetAsideList items={feed.setAside} onOpenTrail={onOpenTrail} />
-          ) : null}
+            {feed.heldBack.length > 0 ? <HeldBackNote items={feed.heldBack} /> : null}
 
-          {feed.heldBack.length > 0 ? <HeldBackNote items={feed.heldBack} /> : null}
-
-          {feed.notices.map((notice) => (
-            <p key={notice} className="frame-note">
-              {notice}
-            </p>
-          ))}
-        </section>
-      ) : null}
+            {feed.notices.map((notice) => (
+              <p key={notice} className="frame-note">
+                {notice}
+              </p>
+            ))}
+          </section>
+        ) : null}
+      </div>
     </div>
   )
 }
