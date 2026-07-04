@@ -53,9 +53,12 @@ from api.schemas import (
     GeoPoint,
     GraphStats,
     HealthResponse,
+    OriginResponse,
     OutcomeBody,
     OutcomeResponse,
     PlanRequest,
+    RegionResponse,
+    RegionsResponse,
     SetAsideReasonResponse,
     SetAsideResponse,
     StatusResponse,
@@ -70,6 +73,7 @@ from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
 from orchestration.providers.registry import resolve
+from orchestration.regions import list_regions
 
 logger = logging.getLogger(__name__)
 
@@ -420,6 +424,28 @@ def status(request: Request) -> StatusResponse:
         meta_updated_at=meta_updated_at,
         last_ingest=last_ingest,
         corpus=corpus,
+    )
+
+
+@app.get("/regions", response_model=RegionsResponse)
+@limiter.limit(health_limit)
+def regions(request: Request) -> RegionsResponse:
+    """Every region's picker-facing config (Phase 2: config-driven origins) — a plain
+    read of `regions/*.geojson`, independent of the graph and of which region this
+    process was last started with (`ADVENTURE_REGION`). Adding a region's origins is
+    now a config edit (regions/*.geojson) rather than a frontend deploy."""
+    return RegionsResponse(
+        regions=[
+            RegionResponse(
+                region_id=r.region_id,
+                label=r.label,
+                origins=[
+                    OriginResponse(key=o.key, label=o.label, lat=o.lat, lon=o.lon)
+                    for o in r.origins
+                ],
+            )
+            for r in list_regions()
+        ]
     )
 
 

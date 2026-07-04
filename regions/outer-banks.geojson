@@ -3,13 +3,21 @@
   "properties": {
     "region_id": "outer-banks",
     "name": "Outer Banks (NC Barrier Islands)",
+    "region_label": "Outer Banks",
     "description": "North Carolina's Outer Banks barrier islands: Corolla/Currituck in the north, through Duck, Kitty Hawk, Nags Head and Jockey's Ridge, south down Cape Hatteras National Seashore (Pea Island NWR, Buxton Woods, Hatteras village) to Ocracoke. Coastal nature trails, dune paths, maritime-forest loops and beach-access walking paths — terrain is near sea level, so elevation profiles are correctly flat.",
     "bbox": [-76.05, 35.05, -75.4, 36.45],
     "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
     "sources": ["OSM", "USGS"],
     "area_ids": ["nps:caha", "fws:pea-island"],
-    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). Conservative lower bound sized to catch gross truncation without false-tripping. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
-    "min_fetch_counts": {"osm": 90}
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {"key": "duck", "label": "Duck", "lat": 36.166, "lon": -75.75},
+      {"key": "nagsHead", "label": "Nags Head", "lat": 35.957, "lon": -75.624},
+      {"key": "hatteras", "label": "Hatteras", "lat": 35.22, "lon": -75.69},
+      {"key": "ocracoke", "label": "Ocracoke", "lat": 35.115, "lon": -75.98}
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). Calibrated to ~70% of the measured live Overpass baseline for this region's bbox (2026-07-03: 253 named ways). Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {"osm": 177}
   },
   "geometry": {
     "type": "Polygon",

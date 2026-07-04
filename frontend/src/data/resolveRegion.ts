@@ -7,42 +7,43 @@
  * match, rather than from the origin the viewer happened to pick. The origin
  * mapping is only a fallback for the (thin, geometry-less) cards that carry no
  * coordinate at all.
+ *
+ * `origins` is the fetched region catalog (Phase 2: config-driven), passed in by
+ * the caller rather than imported statically — see `regionsCatalog.ts`.
  */
-import { originCoords } from './origins'
-import { regionLabels } from './labels'
-import type { OriginKey, TuningState } from '../types'
+import type { OriginOption } from './regionsCatalog'
+import type { TuningState } from '../types'
 import type { CardVM } from './vm'
 
-function nearestOriginRegion(lat: number, lon: number): string {
-  let bestKey: OriginKey | null = null
+function nearestOriginRegion(lat: number, lon: number, origins: OriginOption[]): string | null {
+  let best: OriginOption | null = null
   let bestDist = Infinity
-  for (const key of Object.keys(originCoords) as OriginKey[]) {
-    const o = originCoords[key]
+  for (const o of origins) {
     // A cheap planar proxy, not haversine: named regions sit hundreds of miles
     // apart, so no precision is lost picking the nearest one.
     const dist = (o.lat - lat) ** 2 + (o.lon - lon) ** 2
     if (dist < bestDist) {
       bestDist = dist
-      bestKey = key
+      best = o
     }
   }
-  return regionLabels[bestKey as OriginKey]
+  return best?.regionLabel ?? null
 }
 
 /** The region actually represented by the served cards' trailheads (majority
  *  vote), falling back to the query's own origin only when no card discloses
  *  a coordinate to check that assumption against. */
-export function resolveRegionLabel(cards: CardVM[], tuning: TuningState): string {
+export function resolveRegionLabel(cards: CardVM[], tuning: TuningState, origins: OriginOption[]): string {
   const counts = new Map<string, number>()
   for (const card of cards) {
     const trailhead = card.geo?.trailhead
     if (!trailhead) continue
-    const region = nearestOriginRegion(trailhead.lat, trailhead.lon)
-    counts.set(region, (counts.get(region) ?? 0) + 1)
+    const region = nearestOriginRegion(trailhead.lat, trailhead.lon, origins)
+    if (region) counts.set(region, (counts.get(region) ?? 0) + 1)
   }
   if (counts.size > 0) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
   }
   if (tuning.originCoords) return 'Near you'
-  return regionLabels[tuning.origin]
+  return origins.find((o) => o.key === tuning.origin)?.regionLabel ?? ''
 }
