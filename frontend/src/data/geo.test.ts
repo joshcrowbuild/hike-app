@@ -4,6 +4,7 @@ import {
   boundsOf,
   cumulativeDistances,
   deriveRouteShape,
+  expandBounds,
   elevationAtFraction,
   flattenGeometry,
   haversineMeters,
@@ -150,6 +151,23 @@ describe('boundsOf', () => {
       [-78.4, 38.5],
       [-78.4, 38.5],
     ])
+  })
+})
+
+describe('expandBounds', () => {
+  it('grows the box to include a fix far off the route', () => {
+    const routeBounds = boundsOf({ geometry: LINE, trailhead: { lat: 38.5, lon: -78.4 } })
+    // A viewer 100+ mi east and south of the trail — the plan-from-home case.
+    const [[minLon, minLat], [maxLon, maxLat]] = expandBounds(routeBounds, { lat: 37.5, lon: -77.4 })
+    expect(minLon).toBeCloseTo(-78.4)
+    expect(maxLon).toBeCloseTo(-77.4)
+    expect(minLat).toBeCloseTo(37.5)
+    expect(maxLat).toBeCloseTo(38.6)
+  })
+
+  it('leaves the box unchanged when the fix is already inside it', () => {
+    const routeBounds = boundsOf({ geometry: LINE, trailhead: { lat: 38.5, lon: -78.4 } })
+    expect(expandBounds(routeBounds, { lat: 38.55, lon: -78.35 })).toEqual(routeBounds)
   })
 })
 

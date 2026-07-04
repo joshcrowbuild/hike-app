@@ -152,6 +152,22 @@ describe('TerrainMap — controls (S6)', () => {
     expect(getCurrentPosition).toHaveBeenCalledTimes(1)
     expect(await screen.findByText(/location off/i)).toBeInTheDocument()
   })
+
+  it('accepts a granted fix without surfacing an error note (AC-6.3)', async () => {
+    const getCurrentPosition = vi.fn((ok) => ok({ coords: { latitude: 37.5, longitude: -77.4 } }))
+    Object.defineProperty(navigator, 'geolocation', {
+      value: { getCurrentPosition },
+      configurable: true,
+    })
+    const user = userEvent.setup()
+    render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
+    await user.click(screen.getByRole('button', { name: /locate me/i }))
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1)
+    // A successful fix is silent — no "location off"/unavailable disclosure, and
+    // the control returns from its "Locating…" state rather than getting stuck.
+    expect(screen.queryByText(/location off|isn’t available/i)).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /locate me/i })).toBeInTheDocument()
+  })
 })
 
 describe('TerrainMap — elevation scrub sync (S5b)', () => {

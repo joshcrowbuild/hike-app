@@ -8,7 +8,7 @@
  * they stay testable without a GL context; this component only renders the
  * resulting user-location marker and reports errors upward.
  */
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import Map, {
   Layer,
   Marker,
@@ -22,7 +22,8 @@ import Map, {
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { boundsOf, nearestFractionToPoint, pointAtFraction } from '../../data/geo'
+import { boundsOf, expandBounds, nearestFractionToPoint, pointAtFraction } from '../../data/geo'
+import type { Bounds } from '../../data/geo'
 import type { GeoPosition, TrailGeo } from '../../data/vm'
 import { basemapStyle } from './mapStyle'
 import type { MapLayerKey } from './layers'
@@ -52,22 +53,34 @@ export default function MapPanel({
 }: MapPanelProps) {
   const ref = useRef<MapRef>(null)
 
-  const fit = useCallback(() => {
+  const fitToBounds = useCallback((bounds: Bounds, duration: number) => {
     const map = ref.current
     if (!map) return
-    const [[w, s], [e, n]] = boundsOf(geo)
+    const [[w, s], [e, n]] = bounds
     if (w === e && s === n) {
-      map.flyTo({ center: [w, s], zoom: 13, duration: 0 })
+      map.flyTo({ center: [w, s], zoom: 13, duration })
     } else {
       map.fitBounds(
         [
           [w, s],
           [e, n],
         ],
-        { padding: 44, duration: 0, maxZoom: 15 },
+        { padding: 44, duration, maxZoom: 15 },
       )
     }
-  }, [geo])
+  }, [])
+
+  // Initial framing (on GL load): the route + trailhead, no animation.
+  const fit = useCallback(() => fitToBounds(boundsOf(geo), 0), [fitToBounds, geo])
+
+  // When a "Locate me" fix lands, reframe to include the viewer's position so
+  // the marker is always on-screen — otherwise a fix taken far from the trail
+  // (planning from home) is placed outside the route bounds and the button
+  // appears to do nothing. Animated, so the move is legible as feedback.
+  useEffect(() => {
+    if (!userLocation) return
+    fitToBounds(expandBounds(boundsOf(geo), userLocation), 600)
+  }, [userLocation, geo, fitToBounds])
 
   const handleClick = useCallback(
     (event: MapMouseEvent) => {
