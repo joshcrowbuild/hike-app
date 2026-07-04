@@ -275,8 +275,8 @@ def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
     """End-to-end behavior-preservation golden: the real OsmSource/NpsSource/
     UsfsSource (only their transports mocked) flow through the reworked
     fetch→consolidate→conflate→count glue under the default config, producing the
-    counts the pre-epic pipeline produced for this fixture (one OSM×NPS
-    auto-accept; USFS present but unmatched)."""
+    expected counts for this fixture (the OSM×NPS pair routes to REVIEW because their
+    names differ by a discriminating "loop" suffix; USFS present but unmatched)."""
     usfs_path = _e2e_usfs_file()
     try:
         real_sources = [
@@ -292,8 +292,14 @@ def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
         assert counts["osm_consolidated"] == 1
         assert counts["nps"] == 1
         assert counts["usfs"] == 1
-        assert counts["auto_accept"] == 1  # OSM 'Old Rag Loop' × NPS 'Old Rag'
-        assert counts["review"] == 0
+        # Matcher redesign: OSM 'Old Rag Loop' × NPS 'Old Rag' share geometry but their
+        # names differ by a DISCRIMINATING suffix ("loop"), which the matcher keeps distinct
+        # (a loop is a distinct route from its base name). Geometry is strong, so the pair is
+        # not dropped — it routes to REVIEW rather than auto-stamping the loop's name. (Under
+        # the old suffix-stripping scorer this auto-accepted; the redesign trades that recall
+        # for precision by design — see ingestion/conflate/match.py note #1.)
+        assert counts["auto_accept"] == 0
+        assert counts["review"] == 1
         assert counts["skipped_hygiene"] == 0
     finally:
         usfs_path.unlink(missing_ok=True)
@@ -996,9 +1002,12 @@ def test_golden_region_regression(monkeypatch, tmp_path):
         # is dropped by the trail_filter. If a regression lets the junk through this is 2.
         assert counts["osm"] == 1
         assert counts["osm_consolidated"] == 1
-        # A known real trail PRESENT and conflated with its NPS record.
-        assert counts["auto_accept"] == 1
-        assert counts["review"] == 0
+        # A known real trail PRESENT and conflated with its NPS record. The OSM name
+        # ('Old Rag Loop') differs from the NPS name ('Old Rag') by a DISCRIMINATING
+        # "loop" suffix, so the redesigned matcher routes the pair to REVIEW rather than
+        # auto-stamping the loop's name — precision over recall by design (matcher note #1).
+        assert counts["auto_accept"] == 0
+        assert counts["review"] == 1
         # Elevation PRESENT for the DEM'd region: 8 profile facts for the one trail.
         assert counts["enrichment_facts"] == 8
     finally:
