@@ -16,8 +16,10 @@ from orchestration.adapters.base import ConditionKind, VerifiedFact
 from orchestration.curator import (
     evaluate_guardrails,
     is_outside_boundary_demoted,
+    is_over_length_demoted,
     is_roadlike_demoted,
     rank_ids,
+    valid_max_length_mi,
 )
 from orchestration.providers.base import LLMResponse
 
@@ -225,6 +227,39 @@ def test_is_outside_boundary_demoted_never_touches_strong_foot_types() -> None:
     assert is_outside_boundary_demoted("bridleway", "Horse Loop", True) is False
     assert is_outside_boundary_demoted("steps", "Overlook Steps", True) is False
     assert is_outside_boundary_demoted(None, "Mystery", True) is False
+
+
+def test_is_over_length_demoted_over_ceiling() -> None:
+    assert is_over_length_demoted(9.5, 8.0) is True
+
+
+def test_is_over_length_demoted_under_or_at_ceiling_kept() -> None:
+    assert is_over_length_demoted(7.9, 8.0) is False
+    assert is_over_length_demoted(8.0, 8.0) is False  # exactly at ceiling → kept
+
+
+def test_is_over_length_demoted_missing_data_never_demoted() -> None:
+    # A candidate with no known length_mi isn't "too long" — never demoted.
+    assert is_over_length_demoted(None, 8.0) is False
+    # No filter requested → nothing is demoted, however long.
+    assert is_over_length_demoted(20.0, None) is False
+    assert is_over_length_demoted(None, None) is False
+
+
+def test_valid_max_length_mi_accepts_positive_numbers() -> None:
+    assert valid_max_length_mi(8) == 8.0
+    assert valid_max_length_mi(8.5) == 8.5
+
+
+def test_valid_max_length_mi_rejects_malformed_values() -> None:
+    # A malformed LLM-parsed value must no-op the filter, never crash it.
+    assert valid_max_length_mi(None) is None
+    assert valid_max_length_mi(True) is None  # bool is an int in Python — excluded
+    assert valid_max_length_mi(False) is None
+    assert valid_max_length_mi("8") is None
+    assert valid_max_length_mi([8]) is None
+    assert valid_max_length_mi(0) is None
+    assert valid_max_length_mi(-3) is None
 
 
 def test_rank_ids_demotes_roadlike_below_real_trails() -> None:

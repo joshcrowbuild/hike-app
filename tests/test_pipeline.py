@@ -16,11 +16,19 @@ from pathlib import Path
 
 import httpx
 import pytest
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiLineString, Point
 
 from ingestion import pipeline
 from ingestion.conflate.match import Feature
-from ingestion.pipeline import _load_matches, consolidate_osm_segments, load_region, run_pipeline
+from ingestion.elevation import haversine_m
+from ingestion.pipeline import (
+    LENGTH_SOURCE_GEOM,
+    _load_matches,
+    _route_length_mi,
+    consolidate_osm_segments,
+    load_region,
+    run_pipeline,
+)
 from ingestion.sources.base import (
     ConflationRole,
     CorpusSource,
@@ -32,6 +40,7 @@ from ingestion.sources.echo import EchoSource
 from ingestion.sources.nps import NpsSource
 from ingestion.sources.osm import OsmSource
 from ingestion.sources.usfs import UsfsSource
+from ingestion.transform import to_miles
 from orchestration.config import Settings
 
 _REGION = Region(region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25))
@@ -706,6 +715,85 @@ def test_unmatched_spine_way_type_flows_to_load():
     _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
     canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
     assert canonical and canonical[0].get("way_type") == "track"
+
+
+# ── Distance activation: haversine length_mi (task: activate distance) ──────────
+
+
+def test_route_length_mi_matches_known_synthetic_geometry():
+    # A pure north-south line: haversine reduces to an exact R*dlat great-circle
+    # distance, so this is a real analytic oracle, not a hand-typed magic number.
+    coords = [(-78.0, 38.00), (-78.0, 38.01), (-78.0, 38.02)]
+    line = LineString(coords)
+    expected_m = sum(haversine_m(a, b) for a, b in zip(coords, coords[1:]))
+
+    got = _route_length_mi(line)
+
+    assert got == pytest.approx(to_miles(expected_m))
+    assert got == pytest.approx(1.382, rel=1e-2)  # ~1.38 mi sanity anchor
+
+
+def test_route_length_mi_none_geometry_is_none():
+    assert _route_length_mi(None) is None
+
+
+def test_route_length_mi_sums_within_part_not_across_the_gap():
+    # Two disconnected parts (a MultiLineString): length is the sum of each part's
+    # own ground distance — the gap BETWEEN parts is not real trail and must not
+    # be counted (same discipline as the elevation profile's part bridging).
+    part_a = LineString([(-78.00, 38.00), (-78.00, 38.01)])
+    part_b = LineString([(-77.00, 39.00), (-77.00, 39.01)])  # far away, disconnected
+    multi = MultiLineString([part_a, part_b])
+    expected_m = haversine_m((-78.00, 38.00), (-78.00, 38.01)) + haversine_m(
+        (-77.00, 39.00), (-77.00, 39.01)
+    )
+
+    assert _route_length_mi(multi) == pytest.approx(to_miles(expected_m))
+
+
+def test_length_mi_flows_to_canonical_trail_load():
+    from ingestion.conflate.match import Agreement, Match
+
+    coords = [(-78.00, 38.00), (-78.00, 38.01)]
+    spine = Feature(name="Compton Gap Road", geom=LineString(coords), source="OSM", ref="osm/1")
+    agency = _feat("Compton Gap Road", "USFS")
+    m = Match(spine, agency, 96, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    expected_mi = to_miles(haversine_m(*coords))
+    assert canonical and canonical[0]["length_mi"] == pytest.approx(expected_mi)
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
+
+
+def test_unmatched_spine_length_mi_flows_to_load():
+    coords = [(-78.28, 38.55), (-78.27, 38.56)]
+    spine = Feature(name="Service Access", geom=LineString(coords), source="OSM", ref="way/9")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    expected_mi = to_miles(haversine_m(*coords))
+    assert canonical and canonical[0]["length_mi"] == pytest.approx(expected_mi)
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
+
+
+def test_point_only_spine_feature_gets_no_length_and_does_not_crash():
+    # A point-only trail (no line geometry) must degrade to null length_mi — never
+    # crash, never fabricate a distance (source-or-silence). It's passed through as an
+    # explicit None (not omitted), so a re-ingest that loses geometry actively clears
+    # any length_mi a prior ingest_version had computed, rather than leaving it stale.
+    spine = Feature(name="Trailhead Only", geom=Point(-78.28, 38.55), source="OSM", ref="way/10")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical
+    assert canonical[0]["length_mi"] is None
+    assert canonical[0]["length_source"] == ""
 
 
 # ── Per-source fetch sanity (task 3): a truncated/partial fetch aborts pre-load ──

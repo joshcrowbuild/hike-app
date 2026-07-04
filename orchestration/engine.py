@@ -44,8 +44,10 @@ from orchestration.curator import (
     GuardrailVerdict,
     evaluate_guardrails,
     is_outside_boundary_demoted,
+    is_over_length_demoted,
     is_roadlike_demoted,
     rank_ids,
+    valid_max_length_mi,
 )
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
@@ -357,12 +359,16 @@ def rank_plan(
     model: str,
     *,
     profile: str | None = None,
+    max_length_mi: float | None = None,
 ) -> list[PlannedTrail]:
     """Reorder guardrail-passing trails by the judgment-tier taste ranking. Drive time
     enters ordering as an explicit term (a deterministic closer-by-road pre-order when
     every candidate has a time, plus a per-card hint to the judge) — never via
     confidence (rule #2): a long drive lowers position, not trust. Absence of a time is
-    never treated as 'far' (AC-5.3)."""
+    never treated as 'far' (AC-5.3). `max_length_mi` (Intent.filters, already validated
+    by the caller) SOFT-demotes over-length candidates alongside the roadlike/boundary
+    signals — never a hard drop (rule #2); a candidate with no known length_mi is
+    never demoted."""
     if not planned:
         return []
     drive_secs = {
@@ -392,6 +398,7 @@ def rank_plan(
         or is_outside_boundary_demoted(
             p.candidate.way_type, p.candidate.name, p.candidate.outside_boundary
         )
+        or is_over_length_demoted(p.candidate.length_mi, max_length_mi)
     }
     if demote_ids:
         log.debug("rank_plan: de-ranking %d roadlike/access way(s)", len(demote_ids))
@@ -495,9 +502,18 @@ def plan(
     # combined_profile is at most user free-text (intent.profile), never overlay.
     use_personal_judge = viewer_id != "anonymous" or bool(personal_context)
     judge = runtime.personalized_judge if use_personal_judge else runtime.judge
+    # Validated once, up front: a malformed LLM-parsed value (bool/str/list/negative)
+    # no-ops the filter instead of crashing either rank_plan call below.
+    max_length_mi = valid_max_length_mi(intent.filters.get("max_length_mi"))
     if judge:
         try:
-            planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
+            planned = rank_plan(
+                planned,
+                judge[0],
+                judge[1],
+                profile=combined_profile,
+                max_length_mi=max_length_mi,
+            )
         except Exception:
             if not use_personal_judge:
                 raise  # anonymous path: a judge failure is not a personal-context failure
@@ -509,7 +525,11 @@ def plan(
             context_degraded = True
             if runtime.judge:
                 planned = rank_plan(
-                    planned, runtime.judge[0], runtime.judge[1], profile=intent.profile or None
+                    planned,
+                    runtime.judge[0],
+                    runtime.judge[1],
+                    profile=intent.profile or None,
+                    max_length_mi=max_length_mi,
                 )
     notices = batch.notices
     if context_degraded:

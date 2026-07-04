@@ -344,6 +344,37 @@ def test_rank_plan_reorders_by_taste() -> None:
     assert [p.candidate.canonical_id for p in out] == ["b", "a"]
 
 
+def _planned_len(cid: str, length_mi: float | None) -> PlannedTrail:
+    return PlannedTrail(
+        Candidate(cid, cid.upper(), "th", 0.0, length_mi=length_mi),
+        {},
+        {},
+        GuardrailVerdict(False),
+    )
+
+
+def test_rank_plan_demotes_over_length_candidates() -> None:
+    # Judge indifferent ("[]") -> input order holds absent demotion, so "long" sinking
+    # below "short" is attributable only to the max_length_mi filter.
+    plan_list = [_planned_len("long", 12.0), _planned_len("short", 3.0)]
+    out = rank_plan(plan_list, _FakeJudge("[]"), "m", max_length_mi=8.0)
+    assert [p.candidate.canonical_id for p in out] == ["short", "long"]
+
+
+def test_rank_plan_never_demotes_missing_length() -> None:
+    # A candidate with no known length_mi isn't "too long" — it keeps its place while
+    # the genuinely over-length candidate sinks below it.
+    plan_list = [_planned_len("long", 12.0), _planned_len("unknown", None)]
+    out = rank_plan(plan_list, _FakeJudge("[]"), "m", max_length_mi=8.0)
+    assert [p.candidate.canonical_id for p in out] == ["unknown", "long"]
+
+
+def test_rank_plan_max_length_mi_none_is_a_noop() -> None:
+    plan_list = [_planned_len("long", 12.0), _planned_len("short", 3.0)]
+    out = rank_plan(plan_list, _FakeJudge("[]"), "m")  # no filter requested
+    assert [p.candidate.canonical_id for p in out] == ["long", "short"]  # unchanged
+
+
 def test_plan_builds_feed_with_cards() -> None:
     rows = [_row("safe", 38.5, -78.4, 1609.344)]  # 1 mile out
 

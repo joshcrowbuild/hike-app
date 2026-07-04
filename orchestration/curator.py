@@ -294,6 +294,34 @@ def is_roadlike_demoted(way_type: str | None, name: str) -> bool:
     return bool(_ACCESS_NAME.search(text))
 
 
+# ── Length preference de-rank (Intent.filters.max_length_mi) ─────────────────
+# A hiker's requested length ceiling is a taste preference, not a safety guardrail
+# (rule #2): it sinks an over-length candidate, never drops it — same soft-demote
+# discipline as the roadlike/boundary signals above.
+
+
+def is_over_length_demoted(length_mi: float | None, max_length_mi: float | None) -> bool:
+    """True if a candidate should be SOFT-demoted for exceeding `max_length_mi`. A
+    candidate with no known `length_mi` is never demoted — a missing measurement
+    isn't "too long" (same missing-data discipline as `is_outside_boundary_demoted`).
+    `None` `max_length_mi` (no filter requested) never demotes anything."""
+    if max_length_mi is None or length_mi is None:
+        return False
+    return length_mi > max_length_mi
+
+
+def valid_max_length_mi(raw: object) -> float | None:
+    """Coerce an `Intent.filters["max_length_mi"]` value to a usable positive float,
+    or `None` if absent/malformed. The filter arrives via LLM-parsed free-text JSON,
+    so a bool, string, list, zero, or negative value must no-op rather than crash or
+    demote every candidate (`bool` is excluded explicitly — `isinstance(True, int)`
+    is `True` in Python)."""
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    value = float(raw)
+    return value if value > 0 else None
+
+
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────
 # The soft half of the Curator. Confidence is deliberately NOT an input here —
 # uncertainty must never penalize ranking (rule #2). Works on (id, name) pairs so
