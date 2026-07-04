@@ -52,7 +52,10 @@ function toCardVM(trail: Trail, tuning: TuningState, origin: OriginKey | undefin
       conditionValue: trail.conditionValue,
       freshness: trail.freshness,
       caution: trail.caution,
-      character: trail.detailCharacter,
+      // The card's "Character" line is now DERIVED from verified figures
+      // (`deriveSummary`), not this hand-written prose — the fabricated texture
+      // ("exposed rock", "clean summit reward") is exactly what can't scale
+      // honestly (R1). The fixture field is left unused rather than propagated.
       practicalNote: trail.practicalNote,
       sources: trail.sources,
       provenance: 'mock',

@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   boundsOf,
   cumulativeDistances,
+  deriveRouteShape,
   elevationAtFraction,
   flattenGeometry,
   haversineMeters,
+  mappedLengthMeters,
   metersToFeet,
   nearestFractionToPoint,
   pointAtFraction,
@@ -84,6 +86,48 @@ describe('routeLengthMeters', () => {
   it('equals the last cumulative distance', () => {
     const cum = cumulativeDistances(flattenGeometry(LINE))
     expect(routeLengthMeters(LINE)).toBeCloseTo(cum[cum.length - 1], 5)
+  })
+})
+
+describe('mappedLengthMeters', () => {
+  it('matches routeLengthMeters for a single LineString', () => {
+    expect(mappedLengthMeters(LINE)).toBeCloseTo(routeLengthMeters(LINE), 5)
+  })
+
+  it('never counts the phantom connector between disjoint MultiLineString segments', () => {
+    // Two far-apart segments: concatenating them (routeLengthMeters) adds a long
+    // phantom jump; per-segment (mappedLengthMeters) does not.
+    const multi: RouteGeometry = {
+      type: 'MultiLineString',
+      coordinates: [
+        [[-78.4, 38.5], [-78.39, 38.5]],
+        [[-78.2, 38.5], [-78.19, 38.5]],
+      ],
+    }
+    expect(mappedLengthMeters(multi)).toBeLessThan(routeLengthMeters(multi))
+  })
+})
+
+describe('deriveRouteShape', () => {
+  it('reads a closed geometry as a loop', () => {
+    const loop: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[-78.4, 38.5], [-78.395, 38.508], [-78.39, 38.5], [-78.4, 38.5]],
+    }
+    expect(deriveRouteShape(loop)).toBe('loop')
+  })
+
+  it('reads an open line as an out-and-back', () => {
+    const open: RouteGeometry = {
+      type: 'LineString',
+      coordinates: [[-78.4, 38.5], [-78.39, 38.505], [-78.38, 38.51]],
+    }
+    expect(deriveRouteShape(open)).toBe('out-and-back')
+  })
+
+  it('returns null for a missing or undrawable route (degrade, never guess)', () => {
+    expect(deriveRouteShape(null)).toBeNull()
+    expect(deriveRouteShape({ type: 'LineString', coordinates: [[-78.4, 38.5]] })).toBeNull()
   })
 })
 

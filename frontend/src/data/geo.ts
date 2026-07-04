@@ -58,6 +58,50 @@ export function routeLengthMeters(geometry: RouteGeometry): number {
   return cum.length > 0 ? cum[cum.length - 1] : 0
 }
 
+/**
+ * Per-segment mapped length (m): sums each `MultiLineString` segment on its own,
+ * so a phantom connector between disjoint segments is NEVER counted — unlike
+ * `routeLengthMeters`, which concatenates (fine for marker math, wrong for a
+ * user-facing distance). On real Shenandoah `/plan` geometry the concatenated
+ * figure over-reports by up to ~3 mi, so this is the honest length a trail
+ * summary is allowed to state (source-or-silence, Rule #1).
+ */
+export function mappedLengthMeters(geometry: RouteGeometry): number {
+  const segs = geometry.type === 'LineString' ? [geometry.coordinates] : geometry.coordinates
+  let total = 0
+  for (const seg of segs) {
+    for (let i = 1; i < seg.length; i++) total += haversineMeters(seg[i - 1], seg[i])
+  }
+  return total
+}
+
+export type RouteShape = 'loop' | 'out-and-back'
+
+/**
+ * Loop vs out-and-back, DERIVED from the geometry's own endpoints (Rule #1: read
+ * off the sourced route line, never asserted beyond it). A route whose start and
+ * end coincide within a length-relative tolerance is a `loop`; an open line
+ * anchored to a single trailhead is described as an `out-and-back` — the
+ * conventional reading of a one-way mapped centerline you walk back. `null` when
+ * there is no drawable route to judge (degrade, never guess). Presentation only;
+ * never a ranking signal (Rule #2).
+ */
+export function deriveRouteShape(geometry: RouteGeometry | null): RouteShape | null {
+  if (!isDrawableRoute(geometry)) return null
+  const segs = geometry.type === 'LineString' ? [geometry.coordinates] : geometry.coordinates
+  const nonEmpty = segs.filter((s) => s.length > 0)
+  if (nonEmpty.length === 0) return null
+  const start = nonEmpty[0][0]
+  const lastSeg = nonEmpty[nonEmpty.length - 1]
+  const end = lastSeg[lastSeg.length - 1]
+  const len = mappedLengthMeters(geometry)
+  // Close enough to call it closed: 75 m, or 5% of length for larger loops that
+  // OSM traces don't perfectly seal. Well clear of the ≥18% endpoint gaps every
+  // open SNP trail shows today, so a one-way line never masquerades as a loop.
+  const tolerance = Math.max(75, 0.05 * len)
+  return haversineMeters(start, end) < tolerance ? 'loop' : 'out-and-back'
+}
+
 /** `[[minLon, minLat], [maxLon, maxLat]]`. */
 export type Bounds = [[number, number], [number, number]]
 

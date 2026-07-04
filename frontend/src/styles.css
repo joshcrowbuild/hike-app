@@ -370,6 +370,65 @@ button {
   max-width: 40ch;
 }
 
+/* ---- derived trail summary (the one-line character — product voice 2026-07-03) ----
+   A summary of the card's own verified figures (R1); presentation only. Reads as
+   quiet subtitle prose, a step below the name. */
+.trail-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+
+.trail-summary--card {
+  margin-top: -0.15rem;
+  margin-bottom: 0.6rem;
+}
+
+/* ---- derived difficulty estimate (Rule #2: presentation only, never ranking) ----
+   Text-first and neutral by design — meaning is the label + "est.", never colour
+   (§4.3: no stoplight, the calm-utility palette holds). All four bands share one
+   quiet treatment; the word carries the rating. */
+.difficulty {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.1rem;
+  align-self: start;
+  margin-top: 0.6rem;
+  padding: 0.16rem 0.5rem;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.difficulty-label {
+  font-weight: 600;
+}
+
+.difficulty-est {
+  font-family: var(--font-family-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* A non-live estimate wears the same "sample" tag as <Confidence>/<Verdict>. */
+.difficulty--sample {
+  color: var(--text-secondary);
+}
+
+.difficulty-sample {
+  margin-inline-start: 0.28rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
 /* ---- card foot ---- */
 .card-foot {
   display: flex;

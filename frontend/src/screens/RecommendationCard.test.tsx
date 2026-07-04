@@ -49,8 +49,10 @@ describe('RecommendationCard feed glyph (S4)', () => {
   it('degrades to the ascent figure with no glyph when there is no profile (AC-4.2)', () => {
     const { container } = render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
-    // The ascent figure still reads the shape of the day in text.
-    expect(screen.getByText(/1,050 ft/)).toBeInTheDocument()
+    // The ascent figure still reads the shape of the day in the decision row.
+    // (The derived summary also names the climb in prose, hence scope to the stat.)
+    const stats = [...container.querySelectorAll('.decision-value')].map((el) => el.textContent ?? '')
+    expect(stats.some((t) => /1,050 ft/.test(t))).toBe(true)
   })
 
   it('opens Detail on tap, with no in-card map (AC-4.3)', async () => {
@@ -59,6 +61,27 @@ describe('RecommendationCard feed glyph (S4)', () => {
     render(<RecommendationCard card={card()} onOpen={onOpen} />)
     await user.click(screen.getByRole('button', { name: /open stony man loop/i }))
     expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
+  it('renders the derived one-line character in the card', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    // The card's open geometry reads as out-and-back, so the stated mileage is
+    // the ROUND TRIP (2 × the curated 3.7 mi one-way figure) — what the hiker
+    // actually walks (Josh, 2026-07-03).
+    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/7\.4-mile out-and-back, climbing 1,050 ft\./)
+  })
+
+  it('renders the difficulty estimate, tagged as an estimate (never a rank)', () => {
+    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
+    const badge = container.querySelector('.difficulty')
+    // Banded off the round-trip 7.4 mi (not the one-way 3.7 mi), so this reads
+    // Strenuous rather than Moderate.
+    expect(badge?.textContent).toMatch(/Strenuous/)
+    expect(badge?.textContent).toMatch(/est\./)
+    // Sample data wears the sample tag, mirroring <Confidence>.
+    expect(container.querySelector('.difficulty--sample')).toBeInTheDocument()
   })
 })
 
