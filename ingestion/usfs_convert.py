@@ -135,4 +135,10 @@ def clip_to_bbox(
     and `scripts/fetch_dem.py`)."""
     west, south, east, north = bbox
     region_box = box(west, south, east, north)
-    return [feat for feat in features if shape(feat["geometry"]).intersects(region_box)]
+    # The national dataset contains segments with null geometry — skip them rather
+    # than crashing shape() on None (a real-data case the synthetic fixture missed).
+    return [
+        feat
+        for feat in features
+        if feat.get("geometry") is not None and shape(feat["geometry"]).intersects(region_box)
+    ]
