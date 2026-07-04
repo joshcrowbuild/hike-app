@@ -2,15 +2,17 @@
 
 Mostly deterministic: a scoped Cypher traversal (via graph.queries) for trails
 near the origin, mapped to Candidates, deduped to the nearest trailhead per trail,
-and capped to top-K before the expensive Verifier stage. Runs through a
-ScopedSession so access control (#4) is honored at the query layer. Free-text
-intent parsing (the optional mechanical-tier LLM call) is added later; structured
-inputs skip it.
+deduped again by trail name (D11 — a trail split into multiple CanonicalTrail
+segments must still show as one feed card), and capped to top-K before the
+expensive Verifier stage. Runs through a ScopedSession so access control (#4) is
+honored at the query layer. Free-text intent parsing (the optional mechanical-tier
+LLM call) is added later; structured inputs skip it.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -55,6 +57,38 @@ def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
     )
 
 
+def _norm_name(name: str) -> str:
+    """Whitespace/case-normalized trail name — the identity key for presentation
+    dedup (D11). Deliberately loose (not the corpus's own identity resolution): two
+    OSM ways that were never conflated into one CanonicalTrail (e.g. a canal walk
+    split into segments) still read as one trail to a person by name alone."""
+    return re.sub(r"\s+", " ", name).strip().casefold()
+
+
+def _richer(a: Candidate, b: Candidate) -> Candidate:
+    """Pick the better representative of two same-name segments: longer wins (a
+    missing `length_mi` never beats a known one); nearer breaks a tie."""
+    a_len = a.length_mi if a.length_mi is not None else -1.0
+    b_len = b.length_mi if b.length_mi is not None else -1.0
+    if a_len != b_len:
+        return a if a_len > b_len else b
+    return a if a.distance_m <= b.distance_m else b
+
+
+def _dedupe_by_name(candidates: list[Candidate]) -> list[Candidate]:
+    """Collapse same-name segments (D11: Richmond's "Canal Walk"/"Pipeline Trail"
+    each mapped as multiple CanonicalTrail nodes) to one candidate per distinct
+    trail name, keeping the richest (longest, then nearest) segment. Presentation
+    only — the corpus keeps every segment node; this just picks one to show.
+    An empty/missing name never collapses across candidates (each keys on its own
+    canonical_id instead), since there's no name identity to dedupe on."""
+    best: dict[str, Candidate] = {}
+    for candidate in candidates:
+        key = _norm_name(candidate.name) or f"__unnamed__{candidate.canonical_id}"
+        best[key] = _richer(best[key], candidate) if key in best else candidate
+    return sorted(best.values(), key=lambda c: c.distance_m)
+
+
 def scout(
     lat: float,
     lon: float,
@@ -95,4 +129,4 @@ def scout(
         _absorb(session.run(queries.candidate_trails_near_direct(lat, lon, radius_m, k)))
         out.sort(key=lambda c: c.distance_m)
 
-    return out[:k]
+    return _dedupe_by_name(out)[:k]
