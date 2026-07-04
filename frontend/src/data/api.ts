@@ -148,6 +148,25 @@ export interface FeedResponse {
   set_aside?: SetAsideResponse[]
 }
 
+// ---- GET /regions (Phase 2: config-driven origins) -----------------------
+
+export interface OriginResponse {
+  key: string
+  label: string
+  lat: number
+  lon: number
+}
+
+export interface RegionResponse {
+  region_id: string
+  label: string
+  origins: OriginResponse[]
+}
+
+export interface RegionsResponse {
+  regions: RegionResponse[]
+}
+
 // ---- POST /episode/{id}/outcome ------------------------------------------
 
 export interface OutcomeBody {

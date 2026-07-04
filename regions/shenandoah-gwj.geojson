@@ -3,13 +3,20 @@
   "properties": {
     "region_id": "shenandoah-gwj",
     "name": "Shenandoah + GWJ National Forest (Pilot Region)",
+    "region_label": "Shenandoah",
     "description": "Pilot ingestion region: Shenandoah National Park + George Washington & Jefferson National Forest (Lee, Massanutten, Deerfield Ranger Districts). Covers the northern Appalachian spine from Waynesboro VA north to Front Royal VA.",
     "bbox": [-79.4, 37.8, -78.0, 39.1],
     "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
     "sources": ["OSM", "USFS", "NPS"],
     "area_ids": ["nps:shen", "usfs:gwj-lee", "usfs:gwj-massanutten"],
-    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names; conservative lower bounds (well under known-good fetch counts) sized to catch gross truncation without false-tripping. Env-overridable per source via ADVENTURE_FETCH_MIN_<SOURCE>.",
-    "min_fetch_counts": {"osm": 800, "usfs": 25, "nps": 25}
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {"key": "frontRoyal", "label": "Front Royal", "lat": 38.918, "lon": -78.194},
+      {"key": "luray", "label": "Luray", "lat": 38.665, "lon": -78.459},
+      {"key": "charlottesville", "label": "Charlottesville", "lat": 38.029, "lon": -78.477}
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names; calibrated to ~70% of the measured live Overpass baseline for this region's bbox (2026-07-03: 2419 named ways), so the gate catches gross truncation without false-tripping on ordinary OSM churn. Env-overridable per source via ADVENTURE_FETCH_MIN_<SOURCE>.",
+    "min_fetch_counts": {"osm": 1693, "usfs": 25, "nps": 25}
   },
   "geometry": {
     "type": "Polygon",

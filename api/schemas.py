@@ -213,6 +213,33 @@ class OutcomeResponse(BaseModel):
     overall: int | None
 
 
+class OriginResponse(BaseModel):
+    """One named search origin the frontend picker can offer (Phase 2: config-driven
+    origins — sourced from `regions/*.geojson` `properties.origins`, never hardcoded
+    in frontend code)."""
+
+    key: str
+    label: str
+    lat: float
+    lon: float
+
+
+class RegionResponse(BaseModel):
+    """One ingest region's picker-facing config: its display label and named origins."""
+
+    region_id: str
+    label: str
+    origins: list[OriginResponse]
+
+
+class RegionsResponse(BaseModel):
+    """`GET /regions`: every region's origin config, independent of which region this
+    process last ingested (`ADVENTURE_REGION`) — the graph holds every ingested
+    region's trails at once, so the picker must offer all of them."""
+
+    regions: list[RegionResponse]
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str

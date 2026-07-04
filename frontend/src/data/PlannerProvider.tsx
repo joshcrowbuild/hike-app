@@ -12,6 +12,7 @@ import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
 import { HttpPlannerClient } from './http/httpPlanner'
 import { MockPlannerClient } from './mock/mockPlanner'
+import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
 import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
 
@@ -47,14 +48,30 @@ export interface PlannerProviderProps {
 
 export function PlannerProvider({ scope, client, children }: PlannerProviderProps) {
   const feedSnapshot = useRef<FeedSnapshot | null>(null)
+  // The config-driven origin catalog (Phase 2) — HttpPlannerClient needs the
+  // resolved coords before its first /plan call, so real (non-injected) HTTP mode
+  // gates rendering until this has loaded (below); mock and injected-client (tests,
+  // Storybook) never touch it and render immediately.
+  const { origins, loading: originsLoading } = useOrigins()
+  const coordsMap = useMemo(() => originCoordsMap(origins), [origins])
+
   const value = useMemo<PlannerContextValue>(
     () => ({
-      client: client ?? (useMockDefault ? new MockPlannerClient() : new HttpPlannerClient(baseUrl)),
+      client: client ?? (useMockDefault ? new MockPlannerClient() : new HttpPlannerClient(baseUrl, coordsMap)),
       scope,
       feedSnapshot,
     }),
-    [client, scope],
+    [client, scope, coordsMap],
   )
+
+  if (!client && !useMockDefault && originsLoading) {
+    return (
+      <p className="app-loading" role="status">
+        Loading…
+      </p>
+    )
+  }
+
   return <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>
 }
 

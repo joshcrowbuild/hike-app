@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpPlannerClient } from './httpPlanner'
 import { ANON_SCOPE, type ScopeContext, type FeedResponse, type OutcomeResponse } from '../api'
 import type { PlanInput } from '../source'
-import type { TuningState } from '../../types'
+import type { Coords, TuningState } from '../../types'
 
 const JOSH: ScopeContext = { viewerId: 'josh', grantedIds: [] }
 
@@ -16,6 +16,18 @@ const TUNING: TuningState = {
   prompt: '',
 }
 const PLAN_INPUT: PlanInput = { tuning: TUNING }
+
+// The config-driven origin catalog (Phase 2) as `PlannerProvider` would inject it
+// after `GET /regions` resolves — a small fixture standing in for that fetch, not
+// a static map the client imports itself.
+const ORIGIN_COORDS: Record<string, Coords> = {
+  frontRoyal: { lat: 38.918, lon: -78.194 },
+  nagsHead: { lat: 35.957, lon: -75.624 },
+}
+
+function client(): HttpPlannerClient {
+  return new HttpPlannerClient('http://api', ORIGIN_COORDS)
+}
 
 const FEED: FeedResponse = { query: '', cards: [], card_count: 0, notices: [] }
 const OUTCOME: OutcomeResponse = { outcome_id: 'o1', episode_id: 'e1', skipped: false, overall: 2 }
@@ -45,19 +57,19 @@ describe('HttpPlannerClient auth headers', () => {
 
   it('sends the dev-viewer secret on /plan for a non-anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await new HttpPlannerClient('http://api').plan(PLAN_INPUT, JOSH)
+    await client().plan(PLAN_INPUT, JOSH)
     expect(headersOf(fetchMock.mock.calls[0])['X-Dev-Viewer-Secret']).toBe(SECRET)
   })
 
   it('omits the secret on /plan for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
   })
 
   it('sends the dev-viewer secret on /outcome for a non-anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await new HttpPlannerClient('http://api').recordOutcome(
+    await client().recordOutcome(
       'e1',
       { overall: 2, skipped: false },
       [],
@@ -68,7 +80,7 @@ describe('HttpPlannerClient auth headers', () => {
 
   it('omits the secret on /outcome for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await new HttpPlannerClient('http://api').recordOutcome(
+    await client().recordOutcome(
       'e1',
       { overall: 2, skipped: false },
       [],
@@ -119,7 +131,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     const geo = result.cards[0].geo
     expect(geo?.geometry?.type).toBe('LineString')
     // A surveyed trailhead (no `derived` on the wire) → derived:false, never approximate.
@@ -153,7 +165,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(result.cards[0].geo?.trailhead).toEqual({ lat: 36.17, lon: -75.75, derived: true })
   })
 
@@ -165,7 +177,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
       cards: [{ canonical_id: 'x', name: 'X', distance_mi: null, lines: [], warnings: [], unavailable: [] }],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(result.cards[0].geo).toBeUndefined()
   })
 })
@@ -210,7 +222,7 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(result.cards).toHaveLength(1) // shown, never hidden
     expect(result.cards[0].warnings).toEqual([
       {
@@ -244,7 +256,7 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(result.heldBack).toEqual([
       {
         id: 'foggy-hollow',
@@ -262,7 +274,7 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
 
   it('degrades an absent set_aside to an honest empty heldBack', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    const result = await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(result.heldBack).toEqual([])
   })
 })
@@ -302,7 +314,7 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const card = await new HttpPlannerClient('http://api').getCard('jockeys-ridge', ANON_SCOPE, nagsHead)
+    const card = await client().getCard('jockeys-ridge', ANON_SCOPE, nagsHead)
 
     expect(card?.id).toBe('jockeys-ridge')
     // Nags Head's coordinates, not Front Royal's default — proves the fallback
@@ -312,20 +324,20 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
 
   it('falls back to the Front Royal default only when no tuning at all is supplied (true cold link)', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await new HttpPlannerClient('http://api').getCard('some-id', ANON_SCOPE)
+    await client().getCard('some-id', ANON_SCOPE)
     expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 38.918, lon: -78.194 })
   })
 
   it('returns null for a genuine absence (id not in the refetched set)', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    const card = await new HttpPlannerClient('http://api').getCard('no-such-trail', ANON_SCOPE, TUNING)
+    const card = await client().getCard('no-such-trail', ANON_SCOPE, TUNING)
     expect(card).toBeNull()
   })
 
   it('throws — never a false "not found" — when the refetch itself fails (R1: stays retryable)', async () => {
     fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 503 } as Response))
     await expect(
-      new HttpPlannerClient('http://api').getCard('some-id', ANON_SCOPE, TUNING),
+      client().getCard('some-id', ANON_SCOPE, TUNING),
     ).rejects.toThrow()
   })
 })
@@ -350,13 +362,13 @@ describe('HttpPlannerClient "Near me" live-coords override', () => {
   it('sends the live originCoords fix instead of the named origin lookup when present', async () => {
     fetchMock.mockReturnValue(ok(FEED))
     const nearMe: TuningState = { ...TUNING, originCoords: { lat: 39.123, lon: -77.456 } }
-    await new HttpPlannerClient('http://api').plan({ tuning: nearMe }, ANON_SCOPE)
+    await client().plan({ tuning: nearMe }, ANON_SCOPE)
     expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 39.123, lon: -77.456 })
   })
 
   it('falls back to the named origin lookup when originCoords is absent (named origins unchanged)', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    await client().plan(PLAN_INPUT, ANON_SCOPE)
     expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 38.918, lon: -78.194 })
   })
 })
@@ -389,7 +401,7 @@ describe('HttpPlannerClient /plan cold-start timeout', () => {
 
   it('does not abort /plan at the old 10s budget, but does at exactly 60s (cold-start fix)', async () => {
     const signal = hangingFetch()
-    const promise = new HttpPlannerClient('http://api').plan(PLAN_INPUT, ANON_SCOPE)
+    const promise = client().plan(PLAN_INPUT, ANON_SCOPE)
 
     // The old 10s timeout would have aborted here — it must not anymore.
     await vi.advanceTimersByTimeAsync(10_000)
