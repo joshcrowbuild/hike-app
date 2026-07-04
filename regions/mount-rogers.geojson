@@ -1,0 +1,34 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "mount-rogers",
+    "name": "Mount Rogers & Grayson Highlands (Southwest Virginia)",
+    "region_label": "Mount Rogers",
+    "description": "Virginia's high country in the far southwest: Mount Rogers (5,729 ft — the state's highest peak) and Whitetop Mountain in the Mount Rogers National Recreation Area (Jefferson National Forest), plus adjoining Grayson Highlands State Park with its open balds and free-roaming wild ponies. The Appalachian Trail and the Virginia Creeper Trail thread the area; Damascus is the classic AT trail town on the west edge. High, rugged terrain — steep elevation profiles are correct.",
+    "bbox": [-81.85, 36.55, -81.3, 36.85],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84). Tight around the Mount Rogers high country: Damascus (W), Troutdale/NRA HQ (N), Grayson Highlands and Mount Rogers/Whitetop (core), Mouth of Wilson (SE).",
+    "sources": ["OSM", "USGS"],
+    "area_ids": ["usfs:mount-rogers-nra", "va:grayson-highlands-sp"],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {"key": "damascus", "label": "Damascus", "lat": 36.633, "lon": -81.782},
+      {"key": "whitetop", "label": "Whitetop", "lat": 36.643, "lon": -81.607},
+      {"key": "graysonHighlands", "label": "Grayson Highlands", "lat": 36.628, "lon": -81.497},
+      {"key": "troutdale", "label": "Troutdale", "lat": 36.702, "lon": -81.437}
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Only OSM (geometry) is floor-gated here; USGS is 3DEP elevation enrichment and never fetches. This floor is a CONSERVATIVE pre-calibration estimate — this config-only lane cannot run a live Overpass fetch, so unlike the pilot regions there is no measured baseline yet. Recalibrate to ~70% of the measured live baseline after the first successful ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {"osm": 150}
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-81.85, 36.55],
+        [-81.3, 36.55],
+        [-81.3, 36.85],
+        [-81.85, 36.85],
+        [-81.85, 36.55]
+      ]
+    ]
+  }
+}
