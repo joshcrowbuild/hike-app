@@ -1,11 +1,11 @@
 {
   "_comment": [
-    "Per-region USGS 3DEP 1/3-arc-second (~10 m) DEM manifest — the reproducible way to",
+    "Per-region USGS 3DEP 1/3-arc-second (~10 m) DEM manifest \u2014 the reproducible way to",
     "obtain the elevation raster in ANY environment (fixing 'elevation kept disappearing':",
     "the DEM used to live only in a transient local worktree). `scripts/fetch_dem.py`",
     "reads this, downloads each tile from `tile_base_url`, verifies its sha256 (or records",
     "it on first fetch), then merges + clips to the region bbox into `output` (under",
-    "gitignored data/ — the raster itself is never committed).",
+    "gitignored data/ \u2014 the raster itself is never committed).",
     "Tile names are USGS NW-corner cells (n{lat}w{lon} spans lat [lat-1,lat], lon",
     "[-lon,-lon+1]); regenerate a region's list from its geojson bbox with",
     "`python scripts/fetch_dem.py --init <region>`. Checksums are null until an operator",
@@ -15,75 +15,237 @@
   "regions": {
     "shenandoah-gwj": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-79.4, 37.8, -78.0, 39.1],
+      "bbox": [
+        -79.4,
+        37.8,
+        -78.0,
+        39.1
+      ],
       "output": "data/dem/shenandoah-gwj.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n38w079", "sha256": null},
-        {"name": "n38w080", "sha256": null},
-        {"name": "n39w079", "sha256": null},
-        {"name": "n39w080", "sha256": null},
-        {"name": "n40w079", "sha256": null},
-        {"name": "n40w080", "sha256": null}
+        {
+          "name": "n38w079",
+          "sha256": null
+        },
+        {
+          "name": "n38w080",
+          "sha256": null
+        },
+        {
+          "name": "n39w079",
+          "sha256": null
+        },
+        {
+          "name": "n39w080",
+          "sha256": null
+        },
+        {
+          "name": "n40w079",
+          "sha256": null
+        },
+        {
+          "name": "n40w080",
+          "sha256": null
+        }
       ]
     },
     "richmond": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-78.0, 37.2, -77.0, 37.9],
+      "bbox": [
+        -78.0,
+        37.2,
+        -77.0,
+        37.9
+      ],
       "output": "data/dem/richmond.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n38w078", "sha256": null}
+        {
+          "name": "n38w078",
+          "sha256": null
+        }
       ]
     },
     "outer-banks": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-76.05, 35.05, -75.4, 36.45],
+      "bbox": [
+        -76.05,
+        35.05,
+        -75.4,
+        36.45
+      ],
       "output": "data/dem/outer-banks.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n36w076", "sha256": null},
-        {"name": "n36w077", "sha256": null},
-        {"name": "n37w076", "sha256": null},
-        {"name": "n37w077", "sha256": null}
+        {
+          "name": "n36w076",
+          "sha256": null
+        },
+        {
+          "name": "n36w077",
+          "sha256": null
+        },
+        {
+          "name": "n37w076",
+          "sha256": null
+        },
+        {
+          "name": "n37w077",
+          "sha256": null
+        }
+      ]
+    },
+    "peaks-of-otter": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -79.75,
+        37.32,
+        -79.5,
+        37.55
+      ],
+      "output": "data/dem/peaks-of-otter.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n38w080",
+          "sha256": null
+        }
+      ]
+    },
+    "douthat": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -79.9,
+        37.8,
+        -79.72,
+        38.06
+      ],
+      "output": "data/dem/douthat.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n38w080",
+          "sha256": null
+        },
+        {
+          "name": "n39w080",
+          "sha256": null
+        }
+      ]
+    },
+    "sky-meadows": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -77.98,
+        38.9,
+        -77.86,
+        39.06
+      ],
+      "output": "data/dem/sky-meadows.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n39w078",
+          "sha256": null
+        },
+        {
+          "name": "n40w078",
+          "sha256": null
+        }
+      ]
+    },
+    "james-river-sp": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -78.86,
+        37.55,
+        -78.7,
+        37.68
+      ],
+      "output": "data/dem/james-river-sp.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n38w079",
+          "sha256": null
+        }
       ]
     },
     "mount-rogers": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-81.85, 36.55, -81.3, 36.85],
+      "bbox": [
+        -81.85,
+        36.55,
+        -81.3,
+        36.85
+      ],
       "output": "data/dem/mount-rogers.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n37w082", "sha256": null}
+        {
+          "name": "n37w082",
+          "sha256": null
+        }
       ]
     },
     "great-falls": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-77.3, 38.9, -77.1, 39.05],
+      "bbox": [
+        -77.3,
+        38.9,
+        -77.1,
+        39.05
+      ],
       "output": "data/dem/great-falls.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n39w078", "sha256": null},
-        {"name": "n40w078", "sha256": null}
+        {
+          "name": "n39w078",
+          "sha256": null
+        },
+        {
+          "name": "n40w078",
+          "sha256": null
+        }
       ]
     },
     "prince-william-forest": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-77.46, 38.53, -77.3, 38.66],
+      "bbox": [
+        -77.46,
+        38.53,
+        -77.3,
+        38.66
+      ],
       "output": "data/dem/prince-william-forest.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n39w078", "sha256": null}
+        {
+          "name": "n39w078",
+          "sha256": null
+        }
       ]
     },
     "first-landing": {
       "resolution": "1/3 arc-second (~10 m)",
-      "bbox": [-76.13, 36.83, -75.96, 36.95],
+      "bbox": [
+        -76.13,
+        36.83,
+        -75.96,
+        36.95
+      ],
       "output": "data/dem/first-landing.tif",
       "output_sha256": null,
       "tiles": [
-        {"name": "n37w076", "sha256": null},
-        {"name": "n37w077", "sha256": null}
+        {
+          "name": "n37w076",
+          "sha256": null
+        },
+        {
+          "name": "n37w077",
+          "sha256": null
+        }
       ]
     }
   }
