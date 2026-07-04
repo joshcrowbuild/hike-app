@@ -116,8 +116,25 @@ def test_suspicious_region_id_yields_no_boundary():
     assert load_region_boundary("../secrets") is None
 
 
-def test_shipped_placeholder_regions_degrade():
-    # Today's committed regions ship bbox placeholders — the signal must stay OFF for
-    # them (degrade to the name-only filter) until a real boundary is committed.
-    for region_id in ("shenandoah-gwj", "outer-banks", "richmond"):
-        assert load_region_boundary(region_id) is None
+def test_urban_region_degrades():
+    # Richmond is an URBAN region — its junk is city streets threaded among trails,
+    # not "outside a park", so the protected-area signal does not fit. It deliberately
+    # keeps its bbox placeholder and the spatial signal stays OFF (name-only filter).
+    assert load_region_boundary("richmond") is None
+
+
+def test_park_regions_ship_real_boundaries():
+    # The park-based regions now ship real protected-area polygons (OSM boundary
+    # relations), so the spatial signal is ON: a usable, valid, non-empty boundary
+    # loads (not the degrade sentinel None).
+    for region_id in (
+        "shenandoah-gwj",
+        "outer-banks",
+        "great-falls",
+        "mount-rogers",
+        "first-landing",
+        "prince-william-forest",
+    ):
+        boundary = load_region_boundary(region_id)
+        assert boundary is not None, region_id
+        assert boundary.is_valid and not boundary.is_empty, region_id
