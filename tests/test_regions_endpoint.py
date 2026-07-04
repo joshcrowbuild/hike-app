@@ -35,7 +35,15 @@ def test_regions_serves_the_committed_catalog(client: Any) -> None:
     payload = resp.json()
 
     by_id = {r["region_id"]: r for r in payload["regions"]}
-    assert set(by_id) == {"shenandoah-gwj", "richmond", "outer-banks"}
+    assert set(by_id) == {
+        "shenandoah-gwj",
+        "richmond",
+        "outer-banks",
+        "first-landing",
+        "great-falls",
+        "mount-rogers",
+        "prince-william-forest",
+    }
 
     shen = by_id["shenandoah-gwj"]
     assert shen["label"] == "Shenandoah"
