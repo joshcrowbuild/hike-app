@@ -29,6 +29,7 @@ COPY api ./api
 COPY orchestration ./orchestration
 COPY graph ./graph
 COPY ingestion ./ingestion
+COPY regions ./regions
 
 # Editable install (the repo's documented norm) of the API + its serve-time deps.
 RUN python -m pip install --upgrade pip \
