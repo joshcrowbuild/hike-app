@@ -79,3 +79,50 @@ describe('"Near me" origin control', () => {
     expect(screen.getByRole('button', { name: /near me.*use current location/i })).toBeInTheDocument()
   })
 })
+
+describe('origin picker ordering', () => {
+  // `role=radio` lands on react-aria-components' bare <input>, whose visible
+  // label sits in a sibling node (no text content on the input itself) — its
+  // `value` attribute is the origin key, so order is asserted against that.
+  it('lists named origins alphabetically by default (no location)', async () => {
+    render(<OriginPanel />)
+    const keys = (await screen.findAllByRole('radio')).map((r) => r.getAttribute('value'))
+    expect(keys).toEqual([
+      'charlottesville',
+      'duck',
+      'frontRoyal',
+      'hatteras',
+      'luray',
+      'nagsHead',
+      'ocracoke',
+      'richmond',
+    ])
+  })
+
+  it('re-orders nearest-first the instant a live fix lands ("Near me")', async () => {
+    // A fix right on top of Luray: Front Royal and Charlottesville (both
+    // Shenandoah) are next-closest, then Richmond, then the Outer Banks
+    // origins ordered by their own distance from Luray — proof this is live
+    // haversine math, not a fixed region-grouped list.
+    const getCurrentPosition = vi.fn((ok) => ok({ coords: { latitude: 38.665, longitude: -78.459 } }))
+    Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition }, configurable: true })
+    const user = userEvent.setup()
+    render(<OriginPanel />)
+
+    await screen.findAllByRole('radio')
+    await user.click(screen.getByRole('button', { name: /near me.*use current location/i }))
+    await screen.findByText(/use a named place instead/i)
+
+    const keys = screen.getAllByRole('radio').map((r) => r.getAttribute('value'))
+    expect(keys).toEqual([
+      'luray',
+      'frontRoyal',
+      'charlottesville',
+      'richmond',
+      'duck',
+      'nagsHead',
+      'ocracoke',
+      'hatteras',
+    ])
+  })
+})
