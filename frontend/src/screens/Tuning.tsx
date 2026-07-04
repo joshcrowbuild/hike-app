@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { OptionButton, OptionGroup, Sheet, Toggle } from '../components'
 import { effortLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
-import { useOrigins, type OriginOption } from '../data/regionsCatalog'
+import { orderOrigins, useOrigins, type OriginOption } from '../data/regionsCatalog'
 import type { EffortKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
 
 export type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
@@ -187,7 +187,7 @@ export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelShe
             value={state.origin}
             onChange={(key) => setState((current) => ({ ...current, origin: key, originCoords: undefined }))}
           >
-            {origins.map((o) => (
+            {orderOrigins(origins, state.originCoords).map((o) => (
               <OptionButton key={o.key} value={o.key}>
                 {o.label}
               </OptionButton>

@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 
 import type { Coords } from '../types'
 import type { RegionsResponse } from './api'
+import { haversineMeters } from './geo'
 
 export interface OriginOption extends Coords {
   key: string
@@ -107,6 +108,20 @@ export function flattenOrigins(regions: RegionCatalogEntry[]): OriginOption[] {
 
 export function originCoordsMap(origins: OriginOption[]): Record<string, Coords> {
   return Object.fromEntries(origins.map((o) => [o.key, { lat: o.lat, lon: o.lon }]))
+}
+
+/** The picker's default order is alphabetical (no assumption about which named
+ *  place is "closer" without a location to anchor that on). Once a live fix is
+ *  available (`tuning.originCoords`, from "Near me" — see `NearMeControl`), the
+ *  same list re-sorts nearest-first so switching from the exact fix to a named
+ *  place doesn't mean scanning past a page of far-away regions. No location:
+ *  graceful fallback to alphabetical. */
+export function orderOrigins(origins: OriginOption[], location?: Coords): OriginOption[] {
+  if (!location) return [...origins].sort((a, b) => a.label.localeCompare(b.label))
+  const from: [number, number] = [location.lon, location.lat]
+  return [...origins].sort(
+    (a, b) => haversineMeters(from, [a.lon, a.lat]) - haversineMeters(from, [b.lon, b.lat]),
+  )
 }
 
 /** The flattened origin list for the picker + origin→label/region lookups, loaded
