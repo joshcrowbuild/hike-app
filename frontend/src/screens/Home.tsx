@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
-import { originLabels, partyLabels, whenLabels } from '../data/labels'
+import { partyLabels, whenLabels } from '../data/labels'
 import { splitFeedWarnings } from '../data/feedWarnings'
 import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
+import { useOrigins, type OriginOption } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
 import { widenFrame } from '../data/widen'
@@ -27,9 +28,16 @@ const EMPTY_CARDS: CardVM[] = []
  *  than leaving the region tag below to speak for it alone (report #3). The
  *  region itself is derived from the SERVED cards, never the picker's
  *  assumption — see `resolveRegionLabel`. */
-function contextSentence(tuning: TuningState, anonymous: boolean, cards: CardVM[]): string {
-  const region = resolveRegionLabel(cards, tuning)
-  const origin = tuning.originCoords ? 'your location' : originLabels[tuning.origin]
+function contextSentence(
+  tuning: TuningState,
+  anonymous: boolean,
+  cards: CardVM[],
+  origins: OriginOption[],
+): string {
+  const region = resolveRegionLabel(cards, tuning, origins)
+  const origin = tuning.originCoords
+    ? 'your location'
+    : (origins.find((o) => o.key === tuning.origin)?.label ?? '')
   if (anonymous) return `${whenLabels[tuning.when]} · ${region} · from ${origin}`
   return `${whenLabels[tuning.when]} · from ${origin} · ${partyLabels[tuning.party]}`
 }
@@ -53,6 +61,7 @@ export function Home({
 }: HomeProps) {
   const { status, feed, error, slow, reload } = useFeed({ tuning })
   const { episodes } = useRecentEpisodes()
+  const { origins } = useOrigins()
   // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
   // Trips tab to navigate to. Quiet, dismissible by simply not tapping it.
   const pending = episodes.find((e) => !e.outcome)
@@ -90,7 +99,7 @@ export function Home({
 
       <section className="frame">
         <button className="context" type="button" onClick={onOpenTuning}>
-          <span className="context-text">{contextSentence(tuning, anonymous, cards)}</span>
+          <span className="context-text">{contextSentence(tuning, anonymous, cards, origins)}</span>
           <span className="context-adjust">Adjust</span>
         </button>
       </section>
@@ -156,7 +165,7 @@ export function Home({
                 : feed.cards.length === 1
                   ? '1 option'
                   : `${feed.cards.length} options`}{' '}
-              · {resolveRegionLabel(cards, tuning)}
+              · {resolveRegionLabel(cards, tuning, origins)}
             </p>
           ) : null}
 

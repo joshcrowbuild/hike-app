@@ -1,21 +1,12 @@
 import { useState } from 'react'
 
 import { OptionButton, OptionGroup, Sheet, Toggle } from '../components'
-import { effortLabels, originLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
-import type { EffortKey, OriginKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
+import { effortLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
+import { useOrigins, type OriginOption } from '../data/regionsCatalog'
+import type { EffortKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
 
 export type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
 
-const originOptions: OriginKey[] = [
-  'frontRoyal',
-  'luray',
-  'charlottesville',
-  'richmond',
-  'duck',
-  'nagsHead',
-  'hatteras',
-  'ocracoke',
-]
 const whenOptions: WhenKey[] = ['tomorrowMorning', 'weekendMorning', 'weekendAfternoon', 'fullDay']
 const effortOptions: EffortKey[] = ['easy', 'moderate', 'bigDay']
 const partyOptions: PartyKey[] = ['solo', 'ruby', 'friends']
@@ -44,10 +35,12 @@ export function panelTitle(panel: PanelKey): string {
   }
 }
 
-function chipValue(panel: PanelKey, state: TuningState): string {
+function chipValue(panel: PanelKey, state: TuningState, origins: OriginOption[]): string {
   switch (panel) {
     case 'origin':
-      return state.originCoords ? 'Your location' : originLabels[state.origin]
+      return state.originCoords
+        ? 'Your location'
+        : (origins.find((o) => o.key === state.origin)?.label ?? '')
     case 'when':
       return whenLabels[state.when]
     case 'effort':
@@ -140,6 +133,7 @@ export interface AdjustSheetProps {
 }
 
 export function AdjustSheet({ open, state, setState, onClose, onOpenFacet, anonymous }: AdjustSheetProps) {
+  const { origins } = useOrigins()
   if (!open) return null
   const facets = anonymous ? facetMeta.filter((f) => f.key !== 'party' && f.key !== 'today') : facetMeta
   return (
@@ -153,7 +147,7 @@ export function AdjustSheet({ open, state, setState, onClose, onOpenFacet, anony
             onClick={() => onOpenFacet(facet.key)}
           >
             <span className="facet-label">{facet.label}</span>
-            <span className="facet-value">{chipValue(facet.key, state)}</span>
+            <span className="facet-value">{chipValue(facet.key, state, origins)}</span>
           </button>
         ))}
       </div>
@@ -181,6 +175,7 @@ export interface PanelSheetProps {
 }
 
 export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps) {
+  const { origins } = useOrigins()
   if (!panel) return null
   return (
     <Sheet isOpen onClose={onClose} onBack={onBack} title={panelTitle(panel)}>
@@ -192,9 +187,9 @@ export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelShe
             value={state.origin}
             onChange={(key) => setState((current) => ({ ...current, origin: key, originCoords: undefined }))}
           >
-            {originOptions.map((key) => (
-              <OptionButton key={key} value={key}>
-                {originLabels[key]}
+            {origins.map((o) => (
+              <OptionButton key={o.key} value={o.key}>
+                {o.label}
               </OptionButton>
             ))}
           </OptionGroup>

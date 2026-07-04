@@ -9,7 +9,6 @@
 import { relativeAge } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
-import { originCoords } from '../origins'
 import type {
   ConfidenceLevel,
   FeedCardResponse,
@@ -22,7 +21,13 @@ import type {
 } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
 import type { CardVM, ElevationProfile, EpisodeVM, FeedError, FeedVM, OutcomeVM, TrailGeo } from '../vm'
-import type { TuningState } from '../../types'
+import type { Coords, TuningState } from '../../types'
+
+// Last-resort default when a named origin key isn't in the loaded catalog at all
+// (e.g. a stale key from a region since removed from config) — never crashes the
+// coordinate lookup (Rule #1). `PlannerProvider` always constructs this client with
+// the real fetched catalog, so this only ever fires for a genuinely unknown key.
+const FALLBACK_COORDS: Coords = { lat: 38.918, lon: -78.194 }
 
 // The Render free-tier API cold-starts in 30–60s after idling out. A 10s budget
 // lost that race — the browser aborted /plan while a long-timeout curl succeeded
@@ -138,13 +143,20 @@ function mapElevationProfile(p: WireElevationProfile | null | undefined): Elevat
 }
 
 export class HttpPlannerClient implements PlannerClient {
-  constructor(private readonly baseUrl: string) {}
+  /** `originCoords` is the config-driven origin→coordinates map (Phase 2), fetched
+   *  once from `GET /regions` and injected by `PlannerProvider` — never a static
+   *  import here, so this adapter carries no hardcoded per-region data. */
+  constructor(
+    private readonly baseUrl: string,
+    private readonly originCoords: Record<string, Coords> = {},
+  ) {}
 
   async plan(input: PlanInput, scope: ScopeContext): Promise<FeedVM> {
     // A live "Near me" fix overrides the named origin's fixed coordinates so
     // /plan searches from the viewer's actual position; absent that, the named
     // origin lookup is unchanged.
-    const { lat, lon } = input.tuning.originCoords ?? originCoords[input.tuning.origin]
+    const { lat, lon } =
+      input.tuning.originCoords ?? this.originCoords[input.tuning.origin] ?? FALLBACK_COORDS
     const body: PlanRequest = {
       query: buildQuery(input.tuning),
       lat,

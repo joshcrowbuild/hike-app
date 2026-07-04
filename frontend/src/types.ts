@@ -1,14 +1,11 @@
 import type { TrailGeo } from './data/vm'
 
-export type OriginKey =
-  | 'frontRoyal'
-  | 'luray'
-  | 'charlottesville'
-  | 'richmond'
-  | 'duck'
-  | 'nagsHead'
-  | 'hatteras'
-  | 'ocracoke'
+/**
+ * A named search origin's key (Phase 2: config-driven — the actual set of valid
+ * keys lives in `regions/*.geojson` `properties.origins`, fetched at runtime via
+ * `regionsCatalog.ts`, never a compile-time literal union).
+ */
+export type OriginKey = string
 export type WhenKey = 'tomorrowMorning' | 'weekendMorning' | 'weekendAfternoon' | 'fullDay'
 export type EffortKey = 'easy' | 'moderate' | 'bigDay'
 export type PartyKey = 'solo' | 'ruby' | 'friends'
