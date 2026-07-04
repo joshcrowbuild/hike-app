@@ -87,7 +87,12 @@ export interface CardEnrichment {
   freshness?: string
   /** A soft verify-before-you-go caution (distinct from the safety `warnings`). */
   caution?: string
-  /** Richer prose, used only on Detail. */
+  /**
+   * Reserved for a future human-curated character override. The card's shown
+   * "Character" line is now DERIVED (`deriveSummary`) from verified figures, not
+   * this free-text field — so fabricated prose can't scale in unnoticed (R1).
+   * Unused today; kept as the extension point for editorial copy behind review.
+   */
   character?: string
   practicalNote?: string
   /** Inspectable source basis (Detail). Reuses real per-line sources when live. */

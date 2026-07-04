@@ -1,7 +1,18 @@
 import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
-import { DecisionItem, DirectionsLink, formatDrive, geoAscentFeet, SaveButton, Verdict, WarningBlock } from './cardParts'
+import {
+  DecisionItem,
+  DifficultyBadge,
+  DirectionsLink,
+  formatDrive,
+  geoAscentFeet,
+  SaveButton,
+  TrailSummary,
+  Verdict,
+  WarningBlock,
+} from './cardParts'
+import { deriveSummary } from '../data/summary'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -97,6 +108,9 @@ function DetailBody({ card }: { card: CardVM }) {
           {e?.durationHours ? <DecisionItem label="Duration" value={e.durationHours} /> : null}
         </div>
 
+        {/* A derived difficulty estimate (R2: presentation only, never ranking). */}
+        <DifficultyBadge card={card} />
+
         <ConditionLines card={card} />
 
         {e?.caution ? <Signal className="signal--detail">{e.caution}</Signal> : null}
@@ -105,10 +119,14 @@ function DetailBody({ card }: { card: CardVM }) {
 
       {card.geo ? <TerrainMap geo={card.geo} trailName={card.name} /> : null}
 
-      {e?.character ? (
+      {/* The honest one-line character, DERIVED from the card's own verified
+          figures (R1) — it replaces the hand-written prose that could not scale
+          without fabricating texture. `null` when nothing verified is worth
+          saying, so the section drops rather than pad. */}
+      {deriveSummary(card) ? (
         <section className="detail-block">
           <p className="kicker">Character</p>
-          <p className="prose">{e.character}</p>
+          <TrailSummary card={card} className="prose" />
         </section>
       ) : null}
 

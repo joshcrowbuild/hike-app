@@ -5,6 +5,7 @@ import { ToggleButton } from 'react-aria-components'
 import { Signal, Staleness } from '../components'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
+import { deriveDifficulty, deriveSummary } from '../data/summary'
 import type { CardVM, GeoPosition, TrailGeo, WarningVM } from '../data/vm'
 import { deriveVerdict } from '../data/verdict'
 
@@ -90,6 +91,51 @@ export function WarningBlock({
         </Signal>
       ))}
     </div>
+  )
+}
+
+/**
+ * The one-line trail character (product voice, 2026-07-03), rendered on both the
+ * card and Detail. It is `deriveSummary`'s output — a *summary of the card's own
+ * verified figures* (mapped length, profile climb, geometry-read shape, summit),
+ * never invented texture (source-or-silence, R1). `null` when there isn't enough
+ * verified data to say anything, so the caller renders nothing rather than pad.
+ */
+export function TrailSummary({ card, className }: { card: CardVM; className?: string }) {
+  const summary = deriveSummary(card)
+  if (!summary) return null
+  return <p className={className ? `trail-summary ${className}` : 'trail-summary'}>{summary}</p>
+}
+
+/**
+ * The derived difficulty estimate (√(2·climb·miles), banded easy →
+ * very-strenuous). Labeled "est." on its face and given an inspectable
+ * description of the exact formula + score, so it never poses as an authoritative
+ * rating — it is a transparent derivation from the two figures the card already
+ * shows. Presentation only: it is NEVER a ranking signal (Rule #2). A non-live
+ * estimate wears a "sample" tag, mirroring <Confidence>. `null` (renders nothing)
+ * when climb or length is unknown, so we never guess a rating.
+ */
+export function DifficultyBadge({ card }: { card: CardVM }) {
+  const d = deriveDifficulty(card)
+  if (!d) return null
+  const live = d.provenance === 'live'
+  const desc = `Estimated from distance and climb (rating ${d.score}); an estimate, not a rank.`
+  return (
+    <span className={`difficulty difficulty--${d.band}${live ? '' : ' difficulty--sample'}`} title={desc}>
+      <span className="sr-only">Difficulty estimate: </span>
+      <span className="difficulty-label">{d.label}</span>
+      <span className="difficulty-est" aria-label="derived estimate">
+        {' '}
+        est.
+      </span>
+      {live ? null : (
+        <span className="difficulty-sample" aria-hidden="true">
+          {' '}
+          sample
+        </span>
+      )}
+    </span>
   )
 }
 

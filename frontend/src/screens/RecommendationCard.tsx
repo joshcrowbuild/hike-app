@@ -3,11 +3,13 @@ import type { CardVM, ConditionSilence as ConditionSilenceVM, SilenceState } fro
 import {
   cardAccessibleName,
   DecisionItem,
+  DifficultyBadge,
   DirectionsLink,
   formatDrive,
   formatTrail,
   geoAscentFeet,
   SaveButton,
+  TrailSummary,
   Verdict,
   WarningBlock,
 } from './cardParts'
@@ -40,6 +42,10 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
           ) : null}
         </div>
 
+        {/* The honest one-line character, derived from the card's own verified
+            figures (R1) — shown on the card, not just Detail. */}
+        <TrailSummary card={card} className="trail-summary--card" />
+
         <WarningBlock warnings={card.warnings} collapsed />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
@@ -57,6 +63,9 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
             <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} />
           ) : null}
         </div>
+
+        {/* A derived difficulty estimate (R2: presentation only, never ranking). */}
+        <DifficultyBadge card={card} />
 
         <ConditionBlock card={card} />
 
