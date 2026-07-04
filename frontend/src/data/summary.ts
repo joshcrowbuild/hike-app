@@ -98,11 +98,13 @@ const BAND_LABEL: Record<DifficultyBand, string> = {
  * verified figures the card already shows. Deliberately NOT a ranking input
  * (Rule #2): the caller renders it, the engine never sorts by it.
  *
- * KNOWN LIMITATION (disclosed, for review): `climb_ft` and `miles` are the
- * profile's ONE-WAY figures. For an out-and-back the real round trip climbs more
- * and walks twice as far, so this under-rates one-directional descents (a
- * gain≈0 line reads "Easy"). We take the sourced figure verbatim rather than
- * infer a round trip — open for Josh to decide.
+ * `miles` is already the round-trip figure for a confidently-detected
+ * out-and-back (`resolveMiles`, Josh's call 2026-07-03) — the real distance
+ * walked. `climb_ft` remains the profile's ONE-WAY figure, though: the return
+ * leg of an out-and-back re-climbs whatever it just descended, so this still
+ * under-rates one-directional descents (a gain≈0 line reads "Easy"). We take
+ * the sourced climb figure verbatim rather than infer a round-trip climb —
+ * open for Josh to decide.
  */
 export function deriveDifficulty(card: CardVM): DifficultyVM | null {
   const miles = resolveMiles(card)
@@ -120,12 +122,28 @@ export function deriveDifficulty(card: CardVM): DifficultyVM | null {
  * Trail length in miles: the curated `distanceMiles` when present (mock), else
  * the honest per-segment mapped length of the live geometry — NEVER the API's
  * `distanceMi`, which is the crow-flies origin→trailhead hop, not the trail.
+ *
+ * For a confidently-detected out-and-back (Josh's call, 2026-07-03) this is the
+ * ROUND-TRIP figure — 2× the one-way path length — because that's what the
+ * hiker actually walks. A loop's path length already IS the full walk, so it is
+ * never doubled; when the shape can't be read (no geometry) we stay
+ * conservative and report the one-way figure rather than guess.
  */
 function resolveMiles(card: CardVM): number | null {
+  const oneWay = resolveOneWayMiles(card)
+  if (oneWay == null) return null
+  return isConfidentOutAndBack(card) ? oneWay * 2 : oneWay
+}
+
+function resolveOneWayMiles(card: CardVM): number | null {
   const e = card.enrichment
   if (e?.distanceMiles != null) return e.distanceMiles
   const g = card.geo?.geometry ?? null
   return isDrawableRoute(g) ? metersToMiles(mappedLengthMeters(g)) : null
+}
+
+function isConfidentOutAndBack(card: CardVM): boolean {
+  return deriveRouteShape(card.geo?.geometry ?? null) === 'out-and-back'
 }
 
 /** Climb in feet: curated `ascentFeet` when present, else the live 3DEP profile. */

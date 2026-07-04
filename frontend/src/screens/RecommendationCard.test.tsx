@@ -67,14 +67,18 @@ describe('RecommendationCard feed glyph (S4)', () => {
 describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
   it('renders the derived one-line character in the card', () => {
     const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
-    // Derived from the card's own figures: 3.7 mi, 1,050 ft, open geometry.
-    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/3\.7-mile out-and-back, climbing 1,050 ft\./)
+    // The card's open geometry reads as out-and-back, so the stated mileage is
+    // the ROUND TRIP (2 × the curated 3.7 mi one-way figure) — what the hiker
+    // actually walks (Josh, 2026-07-03).
+    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/7\.4-mile out-and-back, climbing 1,050 ft\./)
   })
 
   it('renders the difficulty estimate, tagged as an estimate (never a rank)', () => {
     const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
     const badge = container.querySelector('.difficulty')
-    expect(badge?.textContent).toMatch(/Moderate/)
+    // Banded off the round-trip 7.4 mi (not the one-way 3.7 mi), so this reads
+    // Strenuous rather than Moderate.
+    expect(badge?.textContent).toMatch(/Strenuous/)
     expect(badge?.textContent).toMatch(/est\./)
     // Sample data wears the sample tag, mirroring <Confidence>.
     expect(container.querySelector('.difficulty--sample')).toBeInTheDocument()

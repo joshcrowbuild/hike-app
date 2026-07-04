@@ -38,6 +38,25 @@ describe('deriveSummary — an honest one-line character (source-or-silence, R1)
     expect(deriveSummary(c)).toMatch(/-mile loop, climbing/)
   })
 
+  it('an out-and-back states the ROUND-TRIP mileage — what the hiker actually walks (Josh, 2026-07-03)', () => {
+    // OPEN's mapped one-way length is ~1.28 mi; the line must show the 2.6 mi
+    // round trip, never the one-way figure.
+    const c = card({ geo: geo(OPEN, { elevationProfile: profile(90, 10) }) })
+    expect(deriveSummary(c)).toMatch(/^An? 2\.6-mile out-and-back/)
+  })
+
+  it('a loop states its own path length, never doubled — the loop already IS the full walk', () => {
+    // LOOP's mapped length is ~1.77 mi; doubling would be wrong since a loop
+    // walker never retraces the line.
+    const c = card({ geo: geo(LOOP, { elevationProfile: profile(90, 90) }) })
+    expect(deriveSummary(c)).toMatch(/^A 1\.8-mile loop/)
+  })
+
+  it('when the shape can’t be confirmed (no geometry), the curated distance is taken at face value — never doubled blind', () => {
+    const c = card({ enrichment: { provenance: 'mock', distanceMiles: 3.7, ascentFeet: 1050 } })
+    expect(deriveSummary(c)).toMatch(/^An? 3\.7-mile trail/)
+  })
+
   it('a marked summit is named — but only when a summit coordinate exists', () => {
     const withSummit = card({ geo: geo(OPEN, { elevationProfile: profile(120, 5), summit: { lat: 38.51, lon: -78.38 } }) })
     expect(deriveSummary(withSummit)).toMatch(/climbing \d+ ft to a summit\.$/)
@@ -119,6 +138,21 @@ describe('deriveDifficulty — a transparent, derived estimate (never a rank inp
     const d = deriveDifficulty(card({ enrichment: { provenance: 'live', distanceMiles: 3.7, ascentFeet: 1050 } }))
     expect(d?.score).toBe(88) // round(√(2·1050·3.7))
     expect(d?.label).toBe('Moderate')
+  })
+
+  it('bands an out-and-back off the ROUND-TRIP mileage, not the one-way figure (Josh, 2026-07-03)', () => {
+    // Same OPEN geometry + 762 m (2500 ft) climb: the one-way distance alone
+    // (~1.28 mi) scores "moderate"; the round trip (~2.57 mi) the hiker
+    // actually walks pushes it into "strenuous".
+    const c = card({ geo: geo(OPEN, { elevationProfile: profile(762, 10) }) })
+    const d = deriveDifficulty(c)
+    expect(d?.band).toBe('strenuous')
+  })
+
+  it('never doubles a loop’s mileage when banding difficulty', () => {
+    const c = card({ geo: geo(LOOP, { elevationProfile: profile(762, 762) }) })
+    const d = deriveDifficulty(c)
+    expect(d?.score).toBe(Math.round(Math.sqrt(2 * 2500 * 1.7713686991398496)))
   })
 
   it('carries provenance so a sample estimate can demote/tag (R1)', () => {
