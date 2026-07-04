@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Reproducible source for USFS National Forest System (NFS) Trails — the",
+    "national bulk shapefile from the USFS Enterprise Data Warehouse, converted to",
+    "WGS84 GeoJSON by `scripts/fetch_usfs.py`. `ingestion/fetch/usfs.py` reads the",
+    "converted `data/usfs/trails.geojson` at ingest time but has no way to obtain",
+    "it itself — this manifest is the durable, checked-in record of where it came",
+    "from (mirrors `regions/dem_manifest.json`'s role for the elevation raster).",
+    "`sha256` is null until an operator runs a real fetch and commits the observed",
+    "value back — we do not fabricate it (source-or-silence, CLAUDE.md rule #1).",
+    "`vintage` is the USFS EDW page's stated publication/update date for",
+    "S_USA.TrailNFS_Publish, recorded by hand since the zip carries no",
+    "machine-readable date field — also left null until an operator checks the",
+    "EDW page at fetch time and records it, so a stale download is distinguishable",
+    "from a fresh one rather than silently assumed current."
+  ],
+  "dataset": "S_USA.TrailNFS_Publish",
+  "source_url": "https://data.fs.usda.gov/geodata/edw/edw_resources/shp/S_USA.TrailNFS_Publish.zip",
+  "vintage": null,
+  "sha256": null,
+  "output": "data/usfs/trails.geojson"
+}
