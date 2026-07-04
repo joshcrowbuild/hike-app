@@ -353,6 +353,55 @@ def test_ac4_3_load_records_authority_tier_from_source():
     assert sr_params and all("ex_authority_tier" in p for p in sr_params)
 
 
+# ── Phase 2 — spatial park-boundary flag persisted through the load loop ───────
+
+
+def test_load_persists_outside_boundary_from_region_polygon():
+    from shapely.geometry import Polygon
+
+    # An L-shaped "park": the SE corner (lon>-78.1, lat<39.0) is the missing notch —
+    # outside the boundary though inside its bbox. A fire road inside the park KEEPs
+    # (outside_boundary=False); a way in the notch is flagged outside (True).
+    boundary = Polygon(
+        [(-78.3, 38.8), (-78.1, 38.8), (-78.1, 39.0), (-78.0, 39.0), (-78.0, 39.1), (-78.3, 39.1)]
+    )
+    inside = Feature(  # centroid ~(-78.245, 38.905) — inside the park
+        name="Compton Gap Road",
+        geom=LineString([[-78.25, 38.90], [-78.24, 38.91]]),
+        source="OSM",
+        ref="way/1",
+        way_type="track",
+    )
+    outside = Feature(  # centroid ~(-78.045, 38.855) — in the notch, outside the park
+        name="Andreae Wellness Path",
+        geom=LineString([[-78.05, 38.85], [-78.04, 38.86]]),
+        source="OSM",
+        ref="way/2",
+        way_type="footway",
+    )
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [inside, outside], tier_by_name={"osm": 1}, iv="t", boundary=boundary)
+
+    flags = {
+        p["name"]: p.get("outside_boundary") for c, p in calls if "MERGE (t:CanonicalTrail" in c
+    }
+    assert flags["Compton Gap Road"] is False  # inside the park → kept
+    assert flags["Andreae Wellness Path"] is True  # outside → demote candidate
+
+
+def test_load_no_boundary_degrades_flag_to_none():
+    # No region boundary (today's placeholder-bbox regions) → the flag is None, so
+    # nothing is demoted: behaviour is never worse than the name-only filter.
+    feat = _feat("Some Track", "OSM")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"osm": 1}, iv="t", boundary=None)
+    flags = [p.get("outside_boundary") for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert flags == [None]
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 

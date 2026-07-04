@@ -30,6 +30,7 @@ class Candidate:
     is_loop: bool | None = None
     length_mi: float | None = None
     way_type: str | None = None
+    outside_boundary: bool | None = None
     point: Any = None
     trailhead_point: Any = None
 
@@ -48,6 +49,7 @@ def _row_to_candidate(row: dict[str, Any]) -> Candidate | None:
         is_loop=row.get("is_loop"),
         length_mi=row.get("length_mi"),
         way_type=row.get("way_type"),
+        outside_boundary=row.get("outside_boundary"),
         point=row.get("point"),
         trailhead_point=row.get("trailhead_point"),
     )

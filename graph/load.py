@@ -201,6 +201,7 @@ def load_canonical_trail(
     gain_source: str | None = None,
     route_geom_wkt: str | None = _UNSET,
     way_type: str | None = _UNSET,
+    outside_boundary: bool | None = _UNSET,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -225,6 +226,14 @@ def load_canonical_trail(
         # value rather than leaving it standing (source-or-silence).
         params["way_type"] = way_type
         set_clauses.append("t.way_type = $way_type")
+    if outside_boundary is not _UNSET:
+        # Phase-2 spatial signal: True when the trail's point falls OUTSIDE the
+        # region's protected-area boundary (Curator soft-demote input — see
+        # `is_outside_boundary_demoted`). None means "no boundary / unknown"; as with
+        # way_type, passing it explicitly SETs null so a re-ingest without a boundary
+        # clears a stale flag rather than leaving it standing (source-or-silence).
+        params["outside_boundary"] = outside_boundary
+        set_clauses.append("t.outside_boundary = $outside_boundary")
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")

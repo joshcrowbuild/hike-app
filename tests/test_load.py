@@ -191,6 +191,26 @@ def test_load_canonical_trail_sets_and_clears_way_type():
     assert "way_type" in params and params["way_type"] is None
 
 
+def test_load_canonical_trail_sets_and_clears_outside_boundary():
+    # The Phase-2 spatial flag follows the same sentinel pattern: True/False SETs it,
+    # an explicit None SETs null (clears a stale flag on re-ingest), omission leaves it.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", outside_boundary=True)
+    cypher, params = calls[-1]
+    assert "t.outside_boundary = $outside_boundary" in cypher
+    assert params["outside_boundary"] is True
+
+    load_canonical_trail(runner, "ct:1", "T", outside_boundary=None)
+    _, params = calls[-1]
+    assert "outside_boundary" in params and params["outside_boundary"] is None
+
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[-1]
+    assert "outside_boundary" not in params  # omitted → property untouched
+
+
 def test_prune_stale_trails_query_shape():
     # Healthy re-ingest: current count (1400) is well within ratio of the prior corpus
     # total (1500), so both guards clear and the two delete passes fire.

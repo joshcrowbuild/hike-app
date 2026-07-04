@@ -13,7 +13,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
-from orchestration.curator import evaluate_guardrails, is_roadlike_demoted, rank_ids
+from orchestration.curator import (
+    evaluate_guardrails,
+    is_outside_boundary_demoted,
+    is_roadlike_demoted,
+    rank_ids,
+)
 from orchestration.providers.base import LLMResponse
 
 _NOW = datetime.now(timezone.utc)
@@ -190,6 +195,36 @@ def test_is_roadlike_demoted_plain_track_not_demoted_without_access_signal() -> 
     # Precision over recall: a bare-named track (no access signal) is NOT demoted — a
     # false demote is worse than leaving an ambiguous track in place.
     assert is_roadlike_demoted("track", "Whiteoak Canyon") is False
+
+
+def test_is_outside_boundary_demoted_ambiguous_way_outside() -> None:
+    # The whole point: an ambiguous track/footway OUTSIDE the park boundary → demoted,
+    # whatever its (even "Trail"-suffixed) name. This is the "Andreae" wellness-path case.
+    assert is_outside_boundary_demoted("footway", "Andreae Family Wellness Trail", True) is True
+    assert is_outside_boundary_demoted("track", "Some Access Way", True) is True
+
+
+def test_is_outside_boundary_demoted_inside_or_unknown_kept() -> None:
+    # Inside the boundary (False) or no boundary / no classification (None) → never
+    # demoted. None is the degrade path: a region with no real boundary polygon.
+    assert is_outside_boundary_demoted("footway", "Andreae Family Wellness Trail", False) is False
+    assert is_outside_boundary_demoted("footway", "Andreae Family Wellness Trail", None) is False
+    assert is_outside_boundary_demoted("track", "Anything", None) is False
+
+
+def test_is_outside_boundary_demoted_keeps_fire_roads_even_outside() -> None:
+    # A fire/dike/forest road mapped just outside the buffered boundary is still a hike.
+    for name in ("Compton Gap Road", "Salt Pond Road", "Mathews Arm Fire Road", "River Dike"):
+        assert is_outside_boundary_demoted("track", name, True) is False
+
+
+def test_is_outside_boundary_demoted_never_touches_strong_foot_types() -> None:
+    # path/bridleway/steps are strong trail signals — never demoted on position alone,
+    # even outside the boundary. Only the ambiguous track/footway middle is eligible.
+    assert is_outside_boundary_demoted("path", "Ridge Trail", True) is False
+    assert is_outside_boundary_demoted("bridleway", "Horse Loop", True) is False
+    assert is_outside_boundary_demoted("steps", "Overlook Steps", True) is False
+    assert is_outside_boundary_demoted(None, "Mystery", True) is False
 
 
 def test_rank_ids_demotes_roadlike_below_real_trails() -> None:

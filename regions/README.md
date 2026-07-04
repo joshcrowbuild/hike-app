@@ -17,3 +17,22 @@ is near sea level, so elevation profiles are correctly flat (not a bug).
 The boundary `*.geojson` is produced/committed when the Stage-3 pipeline is built
 (small enough to track here; bulk corpus extracts stay under the git-ignored
 `data/`). See `docs/research/stage-3-corpus-pipeline.md` §2.
+
+## Protected-area boundary → spatial trail signal (Phase 2)
+
+A region's `geometry` doubles as its **protected-area boundary** for the spatial
+trail classifier (`ingestion/boundary.py`). At ingest, each trail's point is tested
+against this polygon: a way OUTSIDE the boundary that is an ambiguous
+`track`/`footway` (the "Andreae" wellness path, coastal residential streets) is
+SOFT-demoted in the feed by the Curator — never dropped. Fire/dike roads inside the
+park (Compton Gap Road, Salt Pond Road) sit inside and are kept. This replaces
+"add a name regex per new geography" with "the boundary tells us."
+
+**Degradation.** The signal only fires when `geometry` is a *real, irregular*
+protected-area polygon. Every region today ships a placeholder **bbox rectangle**
+(a polygon whose area fills its whole bounding box); the classifier detects that and
+abstains, so behaviour is identical to the name-only filter — never worse than
+today. Tighten a region's `geometry` to the true NPS/USFS boundary and the spatial
+signal turns on automatically, with no code change and no new config field. The flag
+is persisted as `CanonicalTrail.outside_boundary`, so it takes effect on the next
+re-ingest (older nodes carry `null` → never demoted).
