@@ -5,12 +5,15 @@ Authority: tier-1 for existence + allowed_use (Decision Log §27).
 License: public domain (US federal government).
 
 The USFS EDW ArcGIS REST service requires network authentication (returns 403
-from non-USFS IPs). Use the bulk shapefile download and convert to GeoJSON:
+from non-USFS IPs). Use the bulk shapefile download instead, reproducibly obtained
+via `scripts/fetch_usfs.py` (source URL + checksum + vintage tracked in
+`regions/usfs_manifest.json`, DEM-manifest-style):
 
-  curl -L -o data/usfs/S_USA.TrailNFS_Publish.zip \\
-    https://data.fs.usda.gov/geodata/edw/edw_resources/shp/S_USA.TrailNFS_Publish.zip
-  cd data/usfs && unzip S_USA.TrailNFS_Publish.zip
-  ogr2ogr -f GeoJSON trails.geojson S_USA.TrailNFS_Publish.shp -t_srs EPSG:4326
+  python scripts/fetch_usfs.py --region shenandoah-gwj
+
+That downloads the national NFS Trails shapefile, converts to WGS84 GeoJSON with
+geopandas, consolidates the raw per-segment export into whole trails keyed by
+TRAIL_NO, clips to the region bbox, and writes data/usfs/trails.geojson.
 
 Then run: python -m ingestion.pipeline --region shenandoah-gwj
 
@@ -62,8 +65,7 @@ def fetch(
     if not path.exists():
         log.warning(
             "USFS trail file not found at %s — skipping USFS source.\n"
-            "  Download: curl -L -o data/usfs/S_USA.TrailNFS_Publish.zip \\\n"
-            "    https://data.fs.usda.gov/geodata/edw/edw_resources/shp/S_USA.TrailNFS_Publish.zip",
+            "  Fetch it: python scripts/fetch_usfs.py --region <region>",
             path,
         )
         return []
