@@ -47,6 +47,44 @@
         {"name": "n37w076", "sha256": null},
         {"name": "n37w077", "sha256": null}
       ]
+    },
+    "peaks-of-otter": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-79.75, 37.32, -79.5, 37.55],
+      "output": "data/dem/peaks-of-otter.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n38w080", "sha256": null}
+      ]
+    },
+    "douthat": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-79.9, 37.8, -79.72, 38.06],
+      "output": "data/dem/douthat.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n38w080", "sha256": null},
+        {"name": "n39w080", "sha256": null}
+      ]
+    },
+    "sky-meadows": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-77.98, 38.9, -77.86, 39.06],
+      "output": "data/dem/sky-meadows.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n39w078", "sha256": null},
+        {"name": "n40w078", "sha256": null}
+      ]
+    },
+    "james-river-sp": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [-78.86, 37.55, -78.7, 37.68],
+      "output": "data/dem/james-river-sp.tif",
+      "output_sha256": null,
+      "tiles": [
+        {"name": "n38w079", "sha256": null}
+      ]
     }
   }
 }
