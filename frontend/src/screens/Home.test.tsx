@@ -48,22 +48,35 @@ function renderHome() {
   )
 }
 
-describe('Home cold-start loading copy', () => {
+describe('Home loading progress copy (D4 — never a frozen line past ~10s)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('shows "Reading conditions…" first, then "Waking the server…" after the slow mark', () => {
+  it('shows "Reading conditions…" first, then steps through reassure and cold-start copy', () => {
     renderHome()
 
     expect(screen.getByText('Reading conditions…')).toBeInTheDocument()
+    expect(screen.queryByText(/Still checking conditions/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Waking the server/)).not.toBeInTheDocument()
 
     act(() => {
-      vi.advanceTimersByTime(8_000)
+      vi.advanceTimersByTime(10_000)
+    })
+
+    expect(screen.getByText(/Still checking conditions/)).toBeInTheDocument()
+    expect(screen.queryByText('Reading conditions…')).not.toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(15_000)
     })
 
     expect(screen.getByText(/Waking the server/)).toBeInTheDocument()
-    expect(screen.queryByText('Reading conditions…')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Still checking conditions/)).not.toBeInTheDocument()
+  })
+
+  it('marks the results region aria-busy only while loading', () => {
+    const { container } = renderHome()
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument()
   })
 })
 
@@ -260,11 +273,36 @@ describe('Home loading state (skeleton placeholders, NNG structured wait)', () =
     vi.useFakeTimers()
     const { container } = renderHome()
     act(() => {
-      vi.advanceTimersByTime(8_000)
+      vi.advanceTimersByTime(25_000)
     })
     expect(screen.getByText(/Waking the server/)).toBeInTheDocument()
     expect(container.querySelectorAll('.skeleton-card').length).toBe(3)
     vi.useRealTimers()
+  })
+})
+
+describe('Home progressive card reveal (D4 — cards settle in, not a flat pop-in)', () => {
+  it('staggers each card with an increasing reveal delay', async () => {
+    const cards = [
+      { id: 'a', name: 'A', distanceMi: 1, conditionLines: [], warnings: [] },
+      { id: 'b', name: 'B', distanceMi: 2, conditionLines: [], warnings: [] },
+      { id: 'c', name: 'C', distanceMi: 3, conditionLines: [], warnings: [] },
+    ]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+    const reveals = container.querySelectorAll('.card-reveal')
+    expect(reveals.length).toBe(3)
+    const delays = Array.from(reveals).map((el) => parseInt((el as HTMLElement).style.animationDelay, 10))
+    expect(delays).toEqual([0, 45, 90])
+  })
+
+  it('applies no reveal animation under prefers-reduced-motion', async () => {
+    const matchMediaMock = vi.fn().mockReturnValue({ matches: true })
+    vi.stubGlobal('matchMedia', matchMediaMock)
+    const cards = [{ id: 'a', name: 'A', distanceMi: 1, conditionLines: [], warnings: [] }]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+    expect(container.querySelectorAll('.card-reveal').length).toBe(0)
+    expect(container.querySelector('.card')).toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 })
 
