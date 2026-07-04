@@ -39,6 +39,7 @@ dev = [
   "pytest>=8.0",
   "httpx>=0.27",      # adapter tests
   "shapely>=2.0",     # conflation-matcher + hygiene tests
+  "geopandas>=1.0",   # scripts/fetch_usfs.py shapefile->GeoJSON conversion tests
   "thefuzz>=0.22",    # conflation-matcher tests
   "fastapi>=0.111",   # API schema tests
   "slowapi>=0.1.9",   # rate-limit tests (api.ratelimit)
