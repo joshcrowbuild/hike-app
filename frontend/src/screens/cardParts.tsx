@@ -236,12 +236,17 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
  * state, §4.3 colour-blind safe), and no two look like the same gray (AC-4.2).
  * `stale-degraded` routes its age through the <Staleness> primitive so a
  * last-known value wears its age honestly (§7.2).
+ *
+ * `stale-degraded`'s glyph is a hand-drawn `history` mark, not a bare `glyph`
+ * character (Epic 020, AC-20.3.1) — `lucide-react` isn't installed until
+ * Epic 021, so this is a placeholder in the same spirit as the Directions/
+ * Bookmark icons below, swappable for the real `<History>` icon once it lands.
  */
-const SILENCE_COPY: Record<SilenceState, { glyph: string; announce: string; label: string }> = {
+const SILENCE_COPY: Record<SilenceState, { glyph: string | null; announce: string; label: string }> = {
   'not-fetched': { glyph: '○', announce: 'Not checked yet', label: 'Conditions not checked — open to verify' },
   'checked-clear': { glyph: '✓', announce: 'Checked, clear', label: 'Checked — nothing to flag' },
   'no-data': { glyph: '–', announce: 'No source', label: 'No live source covers this spot' },
-  'stale-degraded': { glyph: '!', announce: 'Stale, may have changed', label: 'Last known conditions' },
+  'stale-degraded': { glyph: null, announce: 'Stale, may have changed', label: 'Last known conditions' },
 }
 
 export function ConditionSilence({ silence, partial }: { silence: ConditionSilenceVM; partial?: boolean }) {
@@ -251,7 +256,7 @@ export function ConditionSilence({ silence, partial }: { silence: ConditionSilen
     <p className={`condition-silence condition-silence--${state}${partial ? ' condition-silence--partial' : ''}`}>
       <span className="sr-only">{copy.announce}: </span>
       <span className="condition-silence-glyph" aria-hidden="true">
-        {copy.glyph}
+        {copy.glyph ?? <HistoryIcon />}
       </span>
       <span className="condition-silence-text">
         {partial ? 'Other conditions: ' : ''}
@@ -268,6 +273,32 @@ export function ConditionSilence({ silence, partial }: { silence: ConditionSilen
         ) : null}
       </span>
     </p>
+  )
+}
+
+/**
+ * `history` — reserved solely for the stale-degraded silence state (never the
+ * hazard glyph; `!`/`triangle-alert` stays reserved for a live warning, DD2).
+ * A near-full circular arc (the "look back" sweep) plus a clock hand, at the
+ * same 1.3 stroke used by the Directions/Bookmark icons above.
+ */
+function HistoryIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="10"
+      height="10"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.3 8a5.7 5.7 0 1 0 1.7-4" />
+      <path d="M2 3.3 2.3 6l2.6-.6" />
+      <path d="M8 5v3.2l2.1 1.3" />
+    </svg>
   )
 }
 

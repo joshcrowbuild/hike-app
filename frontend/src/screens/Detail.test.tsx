@@ -140,3 +140,11 @@ describe('Detail Save (client-side, localStorage, anonymous-friendly)', () => {
     )
   })
 })
+
+describe('Detail uses a real screen title, not the quiet .wordmark slot (Epic 020, AC-20.4.1)', () => {
+  it('renders .screen-title instead of .wordmark', async () => {
+    const { container } = await renderDetail(card())
+    expect(container.querySelector('.wordmark')).not.toBeInTheDocument()
+    expect(container.querySelector('.screen-title')).toBeInTheDocument()
+  })
+})
