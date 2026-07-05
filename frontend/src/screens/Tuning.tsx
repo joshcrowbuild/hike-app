@@ -1,9 +1,11 @@
+import type { LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 
-import { OptionButton, OptionGroup, Sheet, Toggle } from '../components'
+import { Icon, OptionButton, OptionGroup, Sheet, Toggle } from '../components'
 import { effortLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
 import { orderOrigins, useOrigins, type OriginOption } from '../data/regionsCatalog'
 import type { EffortKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
+import { glyphs } from './glyphs'
 
 export type PanelKey = 'origin' | 'when' | 'effort' | 'party' | 'today'
 
@@ -12,13 +14,33 @@ const effortOptions: EffortKey[] = ['easy', 'moderate', 'bigDay']
 const partyOptions: PartyKey[] = ['solo', 'ruby', 'friends']
 const todayOptions: TodayKey[] = ['standard', 'seekShade', 'bigViews', 'quieter']
 
-const facetMeta: Array<{ key: PanelKey; label: string }> = [
-  { key: 'when', label: 'When' },
-  { key: 'origin', label: 'From' },
-  { key: 'party', label: 'Party' },
-  { key: 'effort', label: 'Effort' },
+/**
+ * A facet's leading glyph is a small accent beside its word (Epic 021 · DD2).
+ * `glyph` is optional: `today` has no assigned DD2 meaning, so it stays word-only
+ * rather than borrowing a glyph that means something else somewhere else.
+ */
+const facetMeta: Array<{ key: PanelKey; label: string; glyph?: LucideIcon }> = [
+  { key: 'when', label: 'When', glyph: glyphs.when },
+  { key: 'origin', label: 'From', glyph: glyphs.from },
+  { key: 'party', label: 'Party', glyph: glyphs.party },
+  { key: 'effort', label: 'Effort', glyph: glyphs.effort },
   { key: 'today', label: 'Today' },
 ]
+
+/**
+ * A facet row's label: icon accent + the word, which always stays. The row's
+ * button has no `aria-label`, so its accessible name is computed from content —
+ * the icon's sr-only label carries the word once and the visible word is a
+ * sighted-only echo (`aria-hidden`), so the row never reads the word twice.
+ */
+function FacetLabel({ label, glyph }: { label: string; glyph?: LucideIcon }) {
+  return (
+    <span className="facet-label">
+      {glyph ? <Icon glyph={glyph} label={label} className="facet-icon" /> : null}
+      <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
+    </span>
+  )
+}
 
 export function panelTitle(panel: PanelKey): string {
   switch (panel) {
@@ -95,7 +117,7 @@ function NearMeControl({ state, setState }: { state: TuningState; setState: SetS
   if (state.originCoords) {
     return (
       <div className="facet-row" role="status">
-        <span className="facet-label">Near me</span>
+        <FacetLabel label="Near me" glyph={glyphs.nearMe} />
         <button
           type="button"
           className="text-action"
@@ -110,7 +132,7 @@ function NearMeControl({ state, setState }: { state: TuningState; setState: SetS
   return (
     <div>
       <button type="button" className="facet-row" onClick={useMyLocation} disabled={locating}>
-        <span className="facet-label">Near me</span>
+        <FacetLabel label="Near me" glyph={glyphs.nearMe} />
         <span className="facet-value">{locating ? 'Locating…' : 'Use current location'}</span>
       </button>
       {note ? (
@@ -146,7 +168,7 @@ export function AdjustSheet({ open, state, setState, onClose, onOpenFacet, anony
             type="button"
             onClick={() => onOpenFacet(facet.key)}
           >
-            <span className="facet-label">{facet.label}</span>
+            <FacetLabel label={facet.label} glyph={facet.glyph} />
             <span className="facet-value">{chipValue(facet.key, state, origins)}</span>
           </button>
         ))}
