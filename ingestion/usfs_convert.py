@@ -78,6 +78,8 @@ def consolidate_by_trail_no(features: list[dict[str, Any]]) -> list[dict[str, An
     groups: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
     for i, feat in enumerate(features):
+        if feat.get("geometry") is None:
+            continue  # national dataset has null-geometry segments; skip (can't consolidate)
         props = feat.get("properties") or {}
         trail_no = _pick_trail_no(props)
         key = f"trail_no:{trail_no}" if trail_no else f"__unkeyed_{i}"
