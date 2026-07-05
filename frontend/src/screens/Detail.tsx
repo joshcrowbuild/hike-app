@@ -2,6 +2,7 @@ import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
 import {
+  ConditionSilence,
   DecisionItem,
   DifficultyBadge,
   DirectionsLink,
@@ -86,6 +87,10 @@ function DetailBody({ card }: { card: CardVM }) {
           <p className="detail-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
         ) : null}
 
+        {/* The poetic place cue lives on the commitment view now, not the lean
+            feed card (Epic 019). */}
+        {e?.placeCue ? <p className="detail-place">{e.placeCue}</p> : null}
+
         <Verdict card={card} className="verdict--detail" />
 
         <WarningBlock warnings={card.warnings} collapsed />
@@ -145,7 +150,12 @@ function DetailBody({ card }: { card: CardVM }) {
   )
 }
 
-/** The "Now" conditions, each carrying its own source + confidence tier. */
+/**
+ * The full "Now" conditions, each carrying its own source + confidence tier —
+ * the commitment view (Epic 019) shows every line, not just the card's single
+ * slot. The empty case and the residual-silence note (the shown set isn't
+ * exhaustive, AC-4.3) render here through the shared <ConditionSilence>.
+ */
 function ConditionLines({ card }: { card: CardVM }) {
   const e = card.enrichment
   if (e?.conditionValue) {
@@ -160,17 +170,22 @@ function ConditionLines({ card }: { card: CardVM }) {
       </div>
     )
   }
-  if (card.conditionLines.length === 0) return null
+  if (card.conditionLines.length === 0) {
+    return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
+  }
   return (
-    <ul className="condition-lines condition-lines--detail">
-      {card.conditionLines.map((line, i) => (
-        <li key={i} className="condition-line">
-          <Confidence level={line.confidence} provenance={line.provenance}>
-            {line.text}
-          </Confidence>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="condition-lines condition-lines--detail">
+        {card.conditionLines.map((line, i) => (
+          <li key={i} className="condition-line">
+            <Confidence level={line.confidence} provenance={line.provenance}>
+              {line.text}
+            </Confidence>
+          </li>
+        ))}
+      </ul>
+      {card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null}
+    </>
   )
 }
 

@@ -204,15 +204,6 @@ button {
   background: var(--surface-press);
 }
 
-.card-place {
-  margin: 0;
-  font-size: 1.16rem;
-  line-height: 1.28;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
 .card-id {
   display: flex;
   flex-wrap: wrap;
@@ -220,17 +211,21 @@ button {
   gap: 0.35rem 0.6rem;
 }
 
+/* The name is the DOMINANT type on the lean card (Epic 019 · DD1) — the largest
+   text present, so the card reads name-first at a glance. */
 .card-name {
   margin: 0;
-  font-size: 0.98rem;
-  font-weight: 600;
+  font-size: var(--type-name-size);
+  line-height: 1.2;
+  font-weight: var(--type-name-weight);
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 .card-area {
   margin: 0;
   font-family: var(--font-family-mono);
-  font-size: 0.72rem;
+  font-size: var(--type-supporting-size);
   letter-spacing: 0.04em;
   color: var(--text-muted);
 }
@@ -261,7 +256,7 @@ button {
    stoplight — the calm-utility palette holds. */
 .verdict {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: var(--type-verdict-size);
   line-height: 1.4;
 }
 
@@ -347,7 +342,8 @@ button {
 }
 
 .decision-label {
-  font-size: var(--size-label);
+  font-size: var(--type-fact-label-size);
+  font-weight: var(--type-fact-label-weight);
   color: var(--text-muted);
 }
 
@@ -356,9 +352,11 @@ button {
   color: var(--text-muted);
 }
 
+/* A decision fact's value is a legible figure, not a caption (DD1). */
 .decision-value {
   font-family: var(--font-family-mono);
-  font-size: var(--size-emphasis);
+  font-size: var(--type-fact-value-size);
+  font-weight: var(--type-fact-value-weight);
   color: var(--text-primary);
 }
 
@@ -370,7 +368,7 @@ button {
 
 .condition-value {
   font-family: var(--font-family-mono);
-  font-size: 0.85rem;
+  font-size: var(--type-condition-size);
   color: var(--text-primary);
 }
 
@@ -380,29 +378,15 @@ button {
    here (see .signal--detail below), consistent with the other *--detail
    spacing utilities. */
 
-/* ---- fit line ---- */
-.fit {
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  max-width: 40ch;
-}
-
 /* ---- derived trail summary (the one-line character — product voice 2026-07-03) ----
-   A summary of the card's own verified figures (R1); presentation only. Reads as
-   quiet subtitle prose, a step below the name. */
+   A summary of the card's own verified figures (R1); presentation only. Now a
+   Detail-only line (Epic 019) — reads as quiet subtitle prose. */
 .trail-summary {
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.4;
   color: var(--text-secondary);
   max-width: 46ch;
-}
-
-.trail-summary--card {
-  margin-top: -0.15rem;
-  margin-bottom: 0.6rem;
 }
 
 /* ---- derived difficulty estimate (Rule #2: presentation only, never ranking) ----
@@ -566,6 +550,17 @@ button {
   font-size: 0.74rem;
   letter-spacing: 0.04em;
   color: var(--text-muted);
+}
+
+/* The poetic place cue, relocated off the lean card to the commitment view
+   (Epic 019). Reads as a quiet lead line under the name/area. */
+.detail-place {
+  margin: 0.55rem 0 0;
+  font-size: var(--size-place-lead);
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
 .detail-facts {
@@ -1103,18 +1098,21 @@ button {
   height: 0.8em;
 }
 
-.skeleton-line--place {
-  width: 60%;
-  height: 1.1em;
+/* Mirrors the new lean silhouette (Epic 019): verdict → name → area → decision
+   → glyph → condition → foot, so the real card never reflows on swap. */
+.skeleton-line--verdict {
+  width: 55%;
+  height: 0.95em;
 }
 
 .skeleton-line--name {
-  width: 42%;
+  width: 55%;
+  height: 1.3em;
 }
 
 .skeleton-line--area {
   width: 26%;
-  height: 0.65em;
+  height: 0.7em;
 }
 
 .skeleton-glyph {

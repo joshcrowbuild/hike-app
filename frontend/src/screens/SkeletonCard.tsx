@@ -15,16 +15,16 @@ export function SkeletonCard() {
   return (
     <div className="card skeleton-card" aria-hidden="true">
       <div className="card-tap">
-        <div className={line('place')} />
+        <div className={line('verdict')} />
         <div className="card-id">
           <div className={line('name')} />
           <div className={line('area')} />
         </div>
-        <div className={`skeleton-glyph${shimmer}`} />
         <div className="decision">
           <div className={line('decision')} />
           <div className={line('decision')} />
         </div>
+        <div className={`skeleton-glyph${shimmer}`} />
         <div className={line('condition')} />
         <div className="card-foot">
           <div className={line('foot')} />

@@ -6,7 +6,14 @@ import { Signal, Staleness } from '../components'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
 import { deriveDifficulty, deriveSummary } from '../data/summary'
-import type { CardVM, GeoPosition, TrailGeo, WarningVM } from '../data/vm'
+import type {
+  CardVM,
+  ConditionSilence as ConditionSilenceVM,
+  GeoPosition,
+  SilenceState,
+  TrailGeo,
+  WarningVM,
+} from '../data/vm'
 import { deriveVerdict } from '../data/verdict'
 
 /**
@@ -219,6 +226,48 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
       <BookmarkIcon filled={saved} />
       {saved ? 'Saved' : 'Save'}
     </ToggleButton>
+  )
+}
+
+/**
+ * The four silence states (CDP-02), shared by the card's single condition slot
+ * and Detail's condition block. Each carries its own copy, a leading glyph, and
+ * its own treatment — meaning is never colour-only (glyph + copy differ per
+ * state, §4.3 colour-blind safe), and no two look like the same gray (AC-4.2).
+ * `stale-degraded` routes its age through the <Staleness> primitive so a
+ * last-known value wears its age honestly (§7.2).
+ */
+const SILENCE_COPY: Record<SilenceState, { glyph: string; announce: string; label: string }> = {
+  'not-fetched': { glyph: '○', announce: 'Not checked yet', label: 'Conditions not checked — open to verify' },
+  'checked-clear': { glyph: '✓', announce: 'Checked, clear', label: 'Checked — nothing to flag' },
+  'no-data': { glyph: '–', announce: 'No source', label: 'No live source covers this spot' },
+  'stale-degraded': { glyph: '!', announce: 'Stale, may have changed', label: 'Last known conditions' },
+}
+
+export function ConditionSilence({ silence, partial }: { silence: ConditionSilenceVM; partial?: boolean }) {
+  const { state, detail } = silence
+  const copy = SILENCE_COPY[state]
+  return (
+    <p className={`condition-silence condition-silence--${state}${partial ? ' condition-silence--partial' : ''}`}>
+      <span className="sr-only">{copy.announce}: </span>
+      <span className="condition-silence-glyph" aria-hidden="true">
+        {copy.glyph}
+      </span>
+      <span className="condition-silence-text">
+        {partial ? 'Other conditions: ' : ''}
+        {copy.label}
+        {detail ? (
+          state === 'stale-degraded' ? (
+            <>
+              {' — '}
+              <Staleness stale>{detail}</Staleness>
+            </>
+          ) : (
+            ` — ${detail}`
+          )
+        ) : null}
+      </span>
+    </p>
   )
 }
 
