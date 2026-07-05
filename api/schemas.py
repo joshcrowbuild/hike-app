@@ -192,6 +192,12 @@ class GraphStats(BaseModel):
     # trails). Makes a corpus-wide elevation lag/wipe visible instead of silent.
     trails_with_elevation: int = 0
     elevation_coverage_pct: float | None = None
+    # Corroboration gauge (CDP-01 / Epic 026a): how many CanonicalTrails are joined by
+    # SAME_AS to ≥2 distinct upstream SourceRecord.source values, and that as a % of all
+    # trails (null when there are no trails). Makes the trust gradient visible on the
+    # dashboard the same way elevation coverage is.
+    trails_multi_source: int = 0
+    corroboration_pct: float | None = None
     source_records: int
     trailheads: int
     same_as_edges: int
