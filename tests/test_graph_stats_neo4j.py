@@ -33,6 +33,17 @@ def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
             {},
         )
     )
+    # ct:d is corroborated by two distinct-source SAME_AS edges → counted by the
+    # corroboration gauge; ct:c above has only one source, so it stays below the floor.
+    seed.run(
+        (
+            "CREATE (t:CanonicalTrail {canonical_id: 'ct:d'})"
+            "<-[:SAME_AS]-(:SourceRecord {sr_uid: 'sr:3', source: 'osm'})\n"
+            "WITH t "
+            "CREATE (t)<-[:SAME_AS]-(:SourceRecord {sr_uid: 'sr:4', source: 'nps'})",
+            {},
+        )
+    )
 
     app_mod._graph_client = clean_graph
     app_mod._settings = Settings.from_env({})
@@ -45,10 +56,14 @@ def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     # COUNT {} executed cleanly on the live DB (no 42I06) and counted correctly.
     assert stats is not None
     assert stats.schema_version == "stats-test"
-    assert stats.canonical_trails == 3
-    assert stats.source_records == 2
+    assert stats.canonical_trails == 4
+    assert stats.source_records == 4
     assert stats.trailheads == 1
-    assert stats.same_as_edges == 1
-    # Elevation gauge: only ct:a has total_gain_m → 1 of 3 (≈33.3%).
+    assert stats.same_as_edges == 3
+    # Elevation gauge: only ct:a has total_gain_m → 1 of 4 (25%).
     assert stats.trails_with_elevation == 1
-    assert stats.elevation_coverage_pct == round(1 / 3 * 100, 1)
+    assert stats.elevation_coverage_pct == round(1 / 4 * 100, 1)
+    # Corroboration gauge: only ct:d has ≥2 distinct SAME_AS sources (osm + nps) →
+    # 1 of 4 (25%); ct:c's single un-sourced SourceRecord doesn't clear the floor.
+    assert stats.trails_multi_source == 1
+    assert stats.corroboration_pct == round(1 / 4 * 100, 1)
