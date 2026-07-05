@@ -342,9 +342,19 @@ button {
 }
 
 .decision-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: var(--type-fact-label-size);
   font-weight: var(--type-fact-label-weight);
   color: var(--text-muted);
+}
+
+/* The fact's leading glyph is an accent, one step up from the muted label text
+   so it reads as an icon without competing with the value. It inherits colour
+   from the label (currentColor), so it demotes with it in both themes. */
+.decision-icon {
+  font-size: 1.15em;
 }
 
 .condition-label {
@@ -509,10 +519,11 @@ button {
   outline-offset: 2px;
 }
 
+/* The chip's leading glyph, sized a touch larger than the mono caption beside
+   it so the accent reads. The <Icon> wrapper strokes currentColor, so it tracks
+   the chip's ink (incl. the selected/hover treatments) in both themes. */
 .action-chip-icon {
-  width: 13px;
-  height: 13px;
-  flex: none;
+  font-size: 1.25em;
 }
 
 /* ---- detail ---- */
@@ -968,9 +979,18 @@ button {
 }
 
 .facet-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+/* A facet's leading glyph rides at the label's own size, inheriting its primary
+   ink so it reads as a quiet accent, never a second focal point. */
+.facet-icon {
+  color: var(--text-secondary);
 }
 
 .facet-value {

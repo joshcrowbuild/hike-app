@@ -10,6 +10,7 @@ import {
   Verdict,
   WarningBlock,
 } from './cardParts'
+import { glyphs } from './glyphs'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 /**
@@ -41,11 +42,13 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
             Ascent + Duration) lives on Detail. */}
         <div className="decision">
           {e?.distanceMiles != null ? (
-            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : card.distanceMi != null ? (
-            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : null}
-          {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}
+          {e?.driveMinutes != null ? (
+            <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
+          ) : null}
         </div>
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
