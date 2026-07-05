@@ -61,7 +61,8 @@ button {
 .open-detail,
 .back,
 .facet-value,
-.refine-label {
+.refine-label,
+.housekeeping-summary {
   font-family: var(--font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1054,6 +1055,7 @@ button {
 .context:focus-visible,
 .pending-nod:focus-visible,
 .facet-row:focus-visible,
+.housekeeping-summary:focus-visible,
 .back:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -1065,25 +1067,63 @@ button {
   outline-offset: -2px;
 }
 
-/* The sample-data disclosure: calm, unmissable, never alarmist. It is how the
-   mock stays honest — the layout is real, the conditions are not yet live. */
+/* The sample-data disclosure: the quietest thing on screen (Epic 025) — a
+   build-time note, not a user concern. Never boxed or alarmed; it stays
+   honest through the words alone, not a container that competes for
+   attention with the safety banner or the housekeeping tier below it. */
 .sample-strip {
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.74rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
 }
 
-/* Readiness disclosure (R2): effect-first, fails open, never a number. */
+/* Readiness disclosure (R2): effect-first, fails open, never a number.
+   Housekeeping-tier (Epic 025) — rendered inside `.housekeeping`. */
 .readiness-line {
-  margin: 0 0 1rem;
+  margin: 0;
   font-size: 0.85rem;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+/* ---- housekeeping disclosures (Epic 025): the recessive + collapsible tier
+   between the safety banner (the sole accent-hue element, always shown) and
+   the sample-strip build note (the quietest thing on screen). Native
+   <details>/<summary> gives a keyboard-operable, self-announcing expand
+   control for free; open by default so nothing here is hidden
+   un-inspectably (AC-25.1.2) — collapsing is an option, not the default. */
+.housekeeping {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.housekeeping-summary {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.housekeeping-body {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.housekeeping-body > .readiness-line {
+  margin: 0;
+}
+
+.housekeeping-body > .sparse-block {
+  margin-top: 0;
+}
+
+.housekeeping-body > .set-aside {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
 }
 
 /* ---- async states: loading / empty / error / not-found (R8) ---- */

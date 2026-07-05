@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
@@ -221,21 +221,13 @@ export function Home({
               <SavedEmptyState anySaved={savedIds.size > 0} />
             ) : null}
 
-            {!savedOnly && feed.cards.length === 1 ? (
-              <SparseNote tuning={tuning} onApplyTuning={onApplyTuning} />
-            ) : null}
-
-            {feed.setAside.length > 0 ? (
-              <SetAsideList items={feed.setAside} onOpenTrail={onOpenTrail} />
-            ) : null}
-
-            {feed.heldBack.length > 0 ? <HeldBackNote items={feed.heldBack} /> : null}
-
-            {feed.notices.map((notice) => (
-              <p key={notice} className="frame-note">
-                {notice}
-              </p>
-            ))}
+            <HousekeepingGroup
+              feed={feed}
+              savedOnly={savedOnly}
+              tuning={tuning}
+              onApplyTuning={onApplyTuning}
+              onOpenTrail={onOpenTrail}
+            />
           </section>
         ) : null}
       </div>
@@ -259,13 +251,32 @@ function SavedEmptyState({ anySaved }: { anySaved: boolean }) {
   )
 }
 
-/** Readiness disclosure (R2): effect-first; fails open and says so. Never a number. */
+/**
+ * Shared recessive-disclosure shell for the housekeeping tier (Epic 025):
+ * one step down from the safety banner (the sole accent-hue element), one
+ * step up from the sample-strip build note. Native `<details>`/`<summary>`
+ * gives a keyboard-operable, self-announcing expand control for free — open
+ * by default so nothing here is hidden un-inspectably (AC-25.1.2).
+ */
+function Housekeeping({ summary, children }: { summary: string; children: ReactNode }) {
+  return (
+    <details className="housekeeping" open>
+      <summary className="housekeeping-summary">{summary}</summary>
+      <div className="housekeeping-body">{children}</div>
+    </details>
+  )
+}
+
+/** Readiness disclosure (R2): effect-first; fails open and says so. Never a
+ *  number. Housekeeping-tier (Epic 025) — recessive + collapsible. */
 function ReadinessLine({ feed }: { feed: FeedVM }) {
   if (!feed.readiness.on) return null
-  if (feed.readiness.state === 'open') {
-    return <p className="readiness-line">{feed.readiness.staleReason}</p>
-  }
-  return <p className="readiness-line">{feed.readiness.rationale}</p>
+  const text = feed.readiness.state === 'open' ? feed.readiness.staleReason : feed.readiness.rationale
+  return (
+    <Housekeeping summary="About this list">
+      <p className="readiness-line">{text}</p>
+    </Housekeeping>
+  )
 }
 
 function WidenAction({
@@ -368,5 +379,42 @@ function SetAsideList({
         </p>
       ))}
     </div>
+  )
+}
+
+/**
+ * The housekeeping tier (Epic 025): set-aside / held-back / sparse / generic
+ * notices, grouped into one recessive, collapsible disclosure so they read as
+ * a quiet aside beneath the results — never at the same weight as the safety
+ * banner above them. Nothing here is new: same components, same source data,
+ * just given a shared shell instead of rendering as separate loose lines.
+ */
+function HousekeepingGroup({
+  feed,
+  savedOnly,
+  tuning,
+  onApplyTuning,
+  onOpenTrail,
+}: {
+  feed: FeedVM
+  savedOnly: boolean
+  tuning: TuningState
+  onApplyTuning: (next: TuningState) => void
+  onOpenTrail: (id: string) => void
+}) {
+  const showSparse = !savedOnly && feed.cards.length === 1
+  const hasAny = showSparse || feed.setAside.length > 0 || feed.heldBack.length > 0 || feed.notices.length > 0
+  if (!hasAny) return null
+  return (
+    <Housekeeping summary="More about this frame">
+      {showSparse ? <SparseNote tuning={tuning} onApplyTuning={onApplyTuning} /> : null}
+      {feed.setAside.length > 0 ? <SetAsideList items={feed.setAside} onOpenTrail={onOpenTrail} /> : null}
+      {feed.heldBack.length > 0 ? <HeldBackNote items={feed.heldBack} /> : null}
+      {feed.notices.map((notice) => (
+        <p key={notice} className="frame-note">
+          {notice}
+        </p>
+      ))}
+    </Housekeeping>
   )
 }
