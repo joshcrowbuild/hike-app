@@ -100,3 +100,24 @@ def test_full_source_and_short_provider_are_both_present() -> None:
     line = summarize_fact("weather", _fact({"short_forecast": "Sunny"}), _high(), now=NOW)
     assert "· NWS," in line.text  # short, glanceable
     assert line.source.startswith("NWS ")  # full label, for the Sources section
+
+
+# ── Epic 026a: honest per-fact `sources` (never fabricated multi-source corroboration) ──
+
+
+def test_sources_carries_the_real_single_live_provider() -> None:
+    # Live facts are single-source by construction (CDP-01) — the field reports that
+    # honestly rather than padding it, so a later UI cue never implies corroboration a
+    # live fact doesn't have.
+    line = summarize_fact("weather", _fact({"short_forecast": "Sunny"}), _high(), now=NOW)
+    assert line.sources == ("NWS",)
+
+
+def test_sources_reflects_the_fact_own_provider_not_a_fixed_name() -> None:
+    usgs_fact = VerifiedFact(
+        value={"site_id": "01631000"},
+        source="USGS Water Data (waterservices.usgs.gov)",
+        fetched_at=NOW,
+    )
+    line = summarize_fact("water", usgs_fact, _high(), now=NOW)
+    assert line.sources == ("USGS",)  # the recognizable short name, never the raw source

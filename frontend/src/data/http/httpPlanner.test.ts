@@ -90,6 +90,43 @@ describe('HttpPlannerClient auth headers', () => {
   })
 })
 
+describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration contract)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  it('carries a live line’s real sources onto the VM, unmodified', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'stony-man',
+          name: 'Stony Man Loop',
+          distance_mi: 3.7,
+          lines: [
+            { text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS api.weather.gov', confidence_level: 'stated', sources: ['NWS'] },
+          ],
+          warnings: [],
+          unavailable: [],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    const line = result.cards[0].conditionLines[0]
+    expect(line.provenance).toBe('live')
+    expect(line.sources).toEqual(['NWS'])
+  })
+})
+
 describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

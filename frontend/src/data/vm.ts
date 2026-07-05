@@ -20,6 +20,14 @@ export interface LineVM {
   source: string
   confidence: ConfidenceLevel
   provenance: Provenance
+  /**
+   * Distinct live-source names backing this fact (Epic 026a) — the substrate for a
+   * later corroboration cue. Populated ONLY when `provenance === 'live'`; absent on
+   * `mock`/`sample` lines. Must never be filled from `CardEnrichment.sources` (the
+   * card-level illustrative list) — that would fabricate per-fact provenance on a
+   * non-live line (Rule #2/#11).
+   */
+  sources?: string[]
 }
 
 /**

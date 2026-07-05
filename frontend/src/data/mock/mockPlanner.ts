@@ -34,6 +34,10 @@ function toCardVM(trail: Trail, tuning: TuningState, origin: OriginKey | undefin
         source: trail.sources[0] ?? 'NWS point forecast',
         confidence: 'stated',
         provenance: 'mock',
+        // `sources` (Epic 026a) deliberately omitted: `trail.sources` is the
+        // illustrative card-level list, not a real per-fact corroboration count —
+        // populating it here would fabricate provenance on a non-live line (Rule
+        // #2/#11). Left absent, exactly like every other mock line.
       },
     ],
     warnings: [],

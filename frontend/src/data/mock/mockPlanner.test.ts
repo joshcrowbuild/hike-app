@@ -28,6 +28,17 @@ describe('MockPlannerClient — provenance is disclosed (R1)', () => {
       for (const line of card.conditionLines) expect(line.provenance).toBe('mock')
     }
   })
+
+  it('never populates a mock line’s per-fact sources from the card-level enrichment list (Epic 026a AC-26.1.2)', async () => {
+    // `enrichment.sources` is the illustrative card-level list (often 2-3 entries);
+    // a mock condition line carries no per-fact `sources` at all — filling it from
+    // that list would fabricate live corroboration on a non-live line.
+    const feed = await client.plan({ tuning: frame }, JOSH)
+    for (const card of feed.cards) {
+      expect(card.enrichment?.sources?.length).toBeGreaterThan(0)
+      for (const line of card.conditionLines) expect(line.sources).toBeUndefined()
+    }
+  })
 })
 
 describe('MockPlannerClient — readiness fails open, never reorders (R2)', () => {
