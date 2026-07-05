@@ -310,6 +310,15 @@ def _graph_stats() -> GraphStats | None:
                 # instead of silent. MATCH…WHERE inside COUNT{} is valid Cypher 5 and 25.
                 "       COUNT { MATCH (te:CanonicalTrail) "
                 "               WHERE te.total_gain_m IS NOT NULL } AS with_elev, "
+                # Corroboration-presence gauge (CDP-01 / Epic 026a): trails joined by
+                # SAME_AS to ≥2 distinct upstream SourceRecord.source values — the same
+                # independent-origin definition as trail_source_corroboration() in
+                # graph/queries.py. A full COUNT{} subquery (WITH…WHERE…RETURN) is valid
+                # Cypher 5 and 25, same as the pattern-only COUNT{} forms above.
+                "       COUNT { MATCH (tc:CanonicalTrail)<-[:SAME_AS]-(sc:SourceRecord) "
+                "               WITH tc, count(DISTINCT sc.source) AS n "
+                "               WHERE n >= 2 "
+                "               RETURN tc } AS with_multi_source, "
                 "       COUNT { (r:SourceRecord) } AS srs, "
                 "       COUNT { (h:Trailhead) } AS ths, "
                 "       COUNT { ()-[:SAME_AS]->() } AS edges",
@@ -322,10 +331,14 @@ def _graph_stats() -> GraphStats | None:
         trails = int(r.get("trails") or 0)
         with_elev = int(r.get("with_elev") or 0)
         pct = round(with_elev / trails * 100, 1) if trails else None
+        with_multi = int(r.get("with_multi_source") or 0)
+        corroboration_pct = round(with_multi / trails * 100, 1) if trails else None
         return GraphStats(
             canonical_trails=trails,
             trails_with_elevation=with_elev,
             elevation_coverage_pct=pct,
+            trails_multi_source=with_multi,
+            corroboration_pct=corroboration_pct,
             source_records=int(r.get("srs") or 0),
             trailheads=int(r.get("ths") or 0),
             same_as_edges=int(r.get("edges") or 0),
