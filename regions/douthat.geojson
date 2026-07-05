@@ -5,28 +5,72 @@
     "name": "Douthat State Park (Alleghany Highlands)",
     "region_label": "Douthat",
     "description": "Douthat State Park in the Alleghany Highlands of western Virginia, straddling Bath and Alleghany counties north of Clifton Forge: a ~4,500-acre CCC-era park wrapped around Douthat Lake with roughly 40 miles of interconnecting mountain trails (Blue Suck Falls, Tuscarora, Buck Lick) climbing the surrounding George Washington National Forest ridges toward Warm Springs. Steep forested singletrack with real elevation.",
-    "bbox": [-79.9, 37.8, -79.72, 38.06],
-    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
-    "sources": ["OSM", "USGS"],
-    "area_ids": ["va:douthat-sp", "usfs:gwnf-warm-springs"],
-    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
-    "origins": [
-      {"key": "douthat", "label": "Douthat State Park", "lat": 37.8956, "lon": -79.8017},
-      {"key": "cliftonForge", "label": "Clifton Forge", "lat": 37.8165, "lon": -79.825},
-      {"key": "warmSprings", "label": "Warm Springs", "lat": 38.0537, "lon": -79.7975}
+    "bbox": [
+      -79.9,
+      37.8,
+      -79.72,
+      38.06
     ],
-    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane — set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
-    "min_fetch_counts": {"osm": 50}
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "USGS",
+      "USFS"
+    ],
+    "area_ids": [
+      "va:douthat-sp",
+      "usfs:gwnf-warm-springs"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "douthat",
+        "label": "Douthat State Park",
+        "lat": 37.8956,
+        "lon": -79.8017
+      },
+      {
+        "key": "cliftonForge",
+        "label": "Clifton Forge",
+        "lat": 37.8165,
+        "lon": -79.825
+      },
+      {
+        "key": "warmSprings",
+        "label": "Warm Springs",
+        "lat": 38.0537,
+        "lon": -79.7975
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 50
+    }
   },
   "geometry": {
     "type": "Polygon",
     "coordinates": [
       [
-        [-79.9, 37.8],
-        [-79.72, 37.8],
-        [-79.72, 38.06],
-        [-79.9, 38.06],
-        [-79.9, 37.8]
+        [
+          -79.9,
+          37.8
+        ],
+        [
+          -79.72,
+          37.8
+        ],
+        [
+          -79.72,
+          38.06
+        ],
+        [
+          -79.9,
+          38.06
+        ],
+        [
+          -79.9,
+          37.8
+        ]
       ]
     ]
   }
