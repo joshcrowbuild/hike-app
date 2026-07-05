@@ -344,6 +344,85 @@ def test_rank_plan_reorders_by_taste() -> None:
     assert [p.candidate.canonical_id for p in out] == ["b", "a"]
 
 
+# ── Intent.filters as soft rank signals (Sonnet lane) ──
+
+
+def _planned_len(cid: str, length_mi: float | None) -> PlannedTrail:
+    candidate = Candidate(cid, cid.upper(), "th", 10.0, length_mi=length_mi)
+    return PlannedTrail(candidate, {}, {}, GuardrailVerdict(False))
+
+
+def test_rank_plan_demotes_over_length_candidates() -> None:
+    short = _planned_len("short", 3.0)
+    long = _planned_len("long", 12.0)
+    out = rank_plan(
+        [long, short],
+        _FakeJudge('["long","short"]'),  # judge prefers the long one
+        "m",
+        filters={"max_length_mi": 8},
+    )
+    # Demotion sinks the over-budget trail below the rest — never dropped.
+    assert [p.candidate.canonical_id for p in out] == ["short", "long"]
+
+
+def test_rank_plan_over_length_never_drops_the_trail() -> None:
+    long = _planned_len("long", 12.0)
+    out = rank_plan([long], _FakeJudge('["long"]'), "m", filters={"max_length_mi": 8})
+    assert [p.candidate.canonical_id for p in out] == ["long"]
+
+
+def test_rank_plan_no_length_filter_is_a_no_op() -> None:
+    plan_list = [_planned_len("a", 12.0), _planned_len("b", 3.0)]
+    out = rank_plan(plan_list, _FakeJudge('["a","b"]'), "m", filters=None)
+    assert [p.candidate.canonical_id for p in out] == ["a", "b"]
+
+
+def test_rank_plan_unknown_length_never_demoted() -> None:
+    unknown = _planned_len("unknown", None)
+    known_short = _planned_len("short", 3.0)
+    out = rank_plan(
+        [unknown, known_short],
+        _FakeJudge('["unknown","short"]'),
+        "m",
+        filters={"max_length_mi": 8},
+    )
+    assert [p.candidate.canonical_id for p in out] == ["unknown", "short"]
+
+
+class _RecordingJudge:
+    name = "fake"
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.last_user_message: str | None = None
+
+    def complete(self, request: Any) -> LLMResponse:
+        self.last_user_message = request.messages[-1]["content"]
+        return LLMResponse(text=self.text, model=request.model, provider=self.name)
+
+
+def test_rank_plan_dog_and_difficulty_reach_judge_as_a_hint_not_a_demotion() -> None:
+    plan_list = [_planned("a", 10.0), _planned("b", 20.0)]
+    judge = _RecordingJudge('["a","b"]')
+    out = rank_plan(plan_list, judge, "m", filters={"dog": True, "difficulty": "easy"})
+    # Neither trail is dropped or demoted — it's a hint, not a filter.
+    assert {p.candidate.canonical_id for p in out} == {"a", "b"}
+    assert judge.last_user_message is not None
+    assert "dog-friendly" in judge.last_user_message
+    assert "preferred difficulty: easy" in judge.last_user_message
+
+
+def test_rank_plan_malformed_filters_no_op() -> None:
+    plan_list = [_planned("a", 10.0), _planned("b", 20.0)]
+    out = rank_plan(
+        plan_list,
+        _FakeJudge('["b","a"]'),
+        "m",
+        filters={"max_length_mi": "not a number", "dog": "yes", "difficulty": 42},
+    )
+    assert [p.candidate.canonical_id for p in out] == ["b", "a"]
+
+
 def test_plan_builds_feed_with_cards() -> None:
     rows = [_row("safe", 38.5, -78.4, 1609.344)]  # 1 mile out
 
@@ -598,3 +677,61 @@ def test_confidence_never_reorders_candidates() -> None:
     b_high = [mk("a", low), mk("b", high)]
     assert [p.candidate.canonical_id for p in rank_plan(a_high, judge, "m")] == ["b", "a"]
     assert [p.candidate.canonical_id for p in rank_plan(b_high, judge, "m")] == ["b", "a"]
+
+
+# ── plan()-level intent.filters threading (Sonnet lane) ──
+
+
+class _FakeMechanical:
+    name = "mech"
+
+    def __init__(self, json_text: str) -> None:
+        self.json_text = json_text
+
+    def complete(self, request: Any) -> LLMResponse:
+        return LLMResponse(text=self.json_text, model=request.model, provider=self.name)
+
+
+def _row_with_length(cid: str, dist: float, length_mi: float) -> dict[str, Any]:
+    row = _row(cid, 38.5, -78.4, dist)
+    row["length_mi"] = length_mi
+    return row
+
+
+def test_plan_threads_max_length_mi_filter_from_parsed_intent() -> None:
+    # "long" is nearer (would rank first on distance) but exceeds the parsed
+    # max_length_mi — it must sink below "short", never disappear from the feed.
+    rows = [_row_with_length("long", 100.0, 12.0), _row_with_length("short", 200.0, 3.0)]
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        mechanical=(_FakeMechanical('{"filters": {"max_length_mi": 8}}'), "m"),  # type: ignore[arg-type]
+        judge=(_FakeJudge('["long","short"]'), "m"),  # type: ignore[arg-type]
+    )
+    feed = plan("a short loop", (38.5, -78.4), runtime, k=5)
+    assert [c.canonical_id for c in feed.cards] == ["short", "long"]
+
+
+def test_plan_threads_max_length_mi_on_personalized_judge_failure_fallback() -> None:
+    """The overlay-privacy fallback path (personalized judge raises) must still apply
+    intent.filters — the degrade-and-disclose story (Rule #6) shouldn't silently drop
+    the length filter along with personal context."""
+
+    class _RaisingJudge:
+        name = "local"
+
+        def complete(self, request: Any) -> LLMResponse:
+            raise RuntimeError("no local model available")
+
+    rows = [_row_with_length("long", 100.0, 12.0), _row_with_length("short", 200.0, 3.0)]
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        mechanical=(_FakeMechanical('{"filters": {"max_length_mi": 8}}'), "m"),  # type: ignore[arg-type]
+        judge=(_FakeJudge('["long","short"]'), "m"),  # type: ignore[arg-type]
+        personalized_judge=(_RaisingJudge(), "m"),  # type: ignore[arg-type]
+    )
+    # A non-anonymous viewer forces the personalized (local-forced) judge path — it
+    # raises here, exercising the fallback that re-ranks with the plain judge.
+    feed = plan("a short loop", (38.5, -78.4), runtime, k=5, viewer_id="mem:josh")
+    assert [c.canonical_id for c in feed.cards] == ["short", "long"]
