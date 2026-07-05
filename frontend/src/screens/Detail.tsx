@@ -14,6 +14,7 @@ import {
   WarningBlock,
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
+import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -101,16 +102,20 @@ function DetailBody({ card }: { card: CardVM }) {
         </div>
 
         <div className="detail-facts">
-          {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}
+          {e?.driveMinutes != null ? (
+            <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
+          ) : null}
           {e?.distanceMiles != null ? (
-            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : card.distanceMi != null ? (
-            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : null}
           {ascentFeet != null ? (
-            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} />
+            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
           ) : null}
-          {e?.durationHours ? <DecisionItem label="Duration" value={e.durationHours} /> : null}
+          {e?.durationHours ? (
+            <DecisionItem label="Duration" value={e.durationHours} glyph={glyphs.duration} />
+          ) : null}
         </div>
 
         {/* A derived difficulty estimate (R2: presentation only, never ranking). */}

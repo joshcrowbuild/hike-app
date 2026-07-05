@@ -51,10 +51,13 @@ describe('RecommendationCard feed glyph (S4)', () => {
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
     // The lean card owns ascent through the glyph only; with no glyph there is no
     // separate Ascent fact (it lives on Detail). Distance + Drive remain.
+    // Each label now carries a leading icon whose sr-only text echoes the word
+    // (Epic 021), so a label's textContent reads the word twice — assert the word
+    // is present rather than an exact string match.
     const labels = [...container.querySelectorAll('.decision-label')].map((el) => el.textContent ?? '')
-    expect(labels).not.toContain('Ascent')
-    expect(labels).toContain('Distance')
-    expect(labels).toContain('Drive')
+    expect(labels.every((l) => !l.includes('Ascent'))).toBe(true)
+    expect(labels.some((l) => l.includes('Distance'))).toBe(true)
+    expect(labels.some((l) => l.includes('Drive'))).toBe(true)
   })
 
   it('opens Detail on tap, with no in-card map (AC-4.3)', async () => {
@@ -197,7 +200,9 @@ describe('RecommendationCard ascent is owned by the glyph, never a separate fact
     // separate Ascent fact on the lean card — that figure lives on Detail.
     expect(container.querySelector('svg.glyph')).toBeInTheDocument()
     expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
-    expect(screen.getByText('Distance')).toBeInTheDocument()
+    // The Distance label's icon (Epic 021) adds a second, sr-only "Distance"
+    // node, so match one-or-more rather than exactly one.
+    expect(screen.getAllByText('Distance').length).toBeGreaterThan(0)
     expect(screen.getByText('3.2 mi')).toBeInTheDocument()
   })
 
@@ -304,7 +309,9 @@ describe('RecommendationCard Save (client-side, localStorage, anonymous-friendly
       'aria-pressed',
       'true',
     )
-    expect(screen.getByText('Saved')).toBeInTheDocument()
+    // The bookmark-check icon's sr-only label echoes "Saved", so the word now
+    // appears in two nodes (accent + chip caption).
+    expect(screen.getAllByText('Saved').length).toBeGreaterThan(0)
   })
 
   it('toggles back to unsaved on a second tap', async () => {
