@@ -28,6 +28,7 @@ _STATS_ROW = {
     "sv": "0.2.0-test",
     "trails": 1481,
     "with_elev": 1184,  # ~80% elevation coverage — the durability gauge
+    "with_multi_source": 592,  # ~40% corroboration coverage — the trust gradient
     "srs": 2900,
     "ths": 310,
     "edges": 640,
@@ -112,6 +113,9 @@ def test_status_success_shape_and_types(client: Any) -> None:
     # Elevation-presence gauge (Epic 017 durability): count + derived %.
     assert corpus["trails_with_elevation"] == 1184
     assert corpus["elevation_coverage_pct"] == round(1184 / 1481 * 100, 1)
+    # Corroboration-presence gauge (CDP-01 / Epic 026a): count + derived %.
+    assert corpus["trails_multi_source"] == 592
+    assert corpus["corroboration_pct"] == round(592 / 1481 * 100, 1)
 
 
 def test_status_reports_render_deploy_env(client: Any, monkeypatch: Any) -> None:
