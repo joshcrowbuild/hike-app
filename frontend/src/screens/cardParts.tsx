@@ -1,8 +1,10 @@
 /** Small presentational pieces shared by the card and the detail screen. Each
  *  is typed against the view-model, not the legacy Trail. */
+import type { LucideIcon } from 'lucide-react'
 import { ToggleButton } from 'react-aria-components'
 
-import { Signal, Staleness } from '../components'
+import { Icon, Signal, Staleness } from '../components'
+import { glyphs } from './glyphs'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
 import { deriveDifficulty, deriveSummary } from '../data/summary'
@@ -171,10 +173,22 @@ export function geoAscentFeet(geo: TrailGeo | undefined): number | undefined {
   return gain != null ? Math.round(metersToFeet(gain)) : undefined
 }
 
-export function DecisionItem({ label, value }: { label: string; value: string }) {
+/**
+ * One decision fact — icon + LABEL WORD + value (Epic 021 · AC-21.2.1). The
+ * glyph is a small LEADING ACCENT beside the word, never a replacement: the word
+ * always stays, so a fact is never label-less. `glyph` is optional so a caller
+ * that has no assigned DD2 glyph degrades to the word alone rather than reaching
+ * for a stand-in. The icon's sr-only label carries the word to assistive tech;
+ * the visible word is a sighted-only echo of it (`aria-hidden`), so the fact
+ * reads once, not twice.
+ */
+export function DecisionItem({ label, value, glyph }: { label: string; value: string; glyph?: LucideIcon }) {
   return (
     <div className="decision-item">
-      <span className="decision-label">{label}</span>
+      <span className="decision-label">
+        {glyph ? <Icon glyph={glyph} label={label} className="decision-icon" /> : null}
+        <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
+      </span>
       <span className="decision-value">{value}</span>
     </div>
   )
@@ -201,7 +215,7 @@ export function DirectionsLink({ trailhead, name, className }: { trailhead: GeoP
       rel="noreferrer"
       aria-label={`Directions to the ${name} trailhead (opens Google Maps in a new tab)`}
     >
-      <DirectionsIcon />
+      <Icon glyph={glyphs.directions} label="Directions" className="action-chip-icon" />
       Directions
     </a>
   )
@@ -223,7 +237,7 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
       onChange={() => toggleTrailSaved(id)}
       aria-label={saved ? `Remove ${name} from saved trails` : `Save ${name}`}
     >
-      <BookmarkIcon filled={saved} />
+      <Icon glyph={saved ? glyphs.saved : glyphs.save} label={saved ? 'Saved' : 'Save'} className="action-chip-icon" />
       {saved ? 'Saved' : 'Save'}
     </ToggleButton>
   )
@@ -271,35 +285,3 @@ export function ConditionSilence({ silence, partial }: { silence: ConditionSilen
   )
 }
 
-function DirectionsIcon() {
-  return (
-    <svg
-      className="action-chip-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-      strokeLinecap="round"
-    >
-      <path d="M8 1.5 13.5 14 8 11 2.5 14 8 1.5Z" />
-    </svg>
-  )
-}
-
-function BookmarkIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      className="action-chip-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    >
-      <path d="M4 2.75a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 .75.75v10.6l-4-2.35-4 2.35V2.75Z" />
-    </svg>
-  )
-}

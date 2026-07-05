@@ -44,6 +44,7 @@ _HEALTH_ROW = {
     "sv": "epic008-test",
     "trails": 42,
     "with_elev": 30,
+    "with_multi_source": 18,
     "srs": 100,
     "ths": 7,
     "edges": 12,
@@ -242,6 +243,9 @@ def test_health_returns_ok_with_typed_graph_stats(client: Any) -> None:
     # Elevation-presence gauge (Epic 017 durability): count + derived coverage %.
     assert graph["trails_with_elevation"] == 30
     assert graph["elevation_coverage_pct"] == round(30 / 42 * 100, 1)
+    # Corroboration-presence gauge (CDP-01 / Epic 026a): count + derived coverage %.
+    assert graph["trails_multi_source"] == 18
+    assert graph["corroboration_pct"] == round(18 / 42 * 100, 1)
 
 
 def test_health_query_uses_count_subquery_not_pattern_comprehension(monkeypatch: Any) -> None:

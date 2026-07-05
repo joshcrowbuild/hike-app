@@ -391,6 +391,69 @@ def apply_corroboration_rescue(
     }
 
 
+# ── Length de-rank (intent.filters.max_length_mi) ────────────────────────────
+# The mechanical-tier parser (orchestration/intent.py) extracts a hiker's requested
+# max trail length from free text ("something under 8 miles"), but the engine used
+# to discard `Intent.filters` entirely after parsing. Same soft-demotion discipline
+# as the roadlike/boundary de-ranks above (Rule #2 — demote, never hard-drop): a
+# trail over budget sinks below the rest, it is never dropped — still worth
+# showing, just not first.
+
+
+def valid_max_length_mi(value: object) -> float | None:
+    """Validate an intent-filter max_length_mi value: a positive real number, not a
+    bool (JSON booleans are also ints in Python — `isinstance(True, int)` is True).
+    Any other shape (missing, string, negative, zero, list) degrades to None — no
+    filter applied — rather than raising, since this reads a mechanical-tier LLM's
+    parsed JSON (a malformed model output must no-op, never crash)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value > 0 else None
+
+
+def is_over_length_demoted(length_mi: float | None, max_length_mi: float | None) -> bool:
+    """True if a candidate should be SOFT-demoted (never dropped) for exceeding the
+    hiker's requested max_length_mi. No filter set, or an unknown candidate
+    `length_mi` (a corpus that hasn't backfilled the field yet), never demotes —
+    absence of data is not evidence a trail is too long (mirrors AC-5.3's "absence
+    of a drive time is never treated as far")."""
+    if max_length_mi is None or length_mi is None:
+        return False
+    return length_mi > max_length_mi
+
+
+# ── Preference hints (dog / difficulty) — soft, until real graph props exist ──
+# Neither `dog` (dog-friendliness) nor `difficulty` is a persisted corpus property
+# yet — no ingest source populates them — so there is nothing to filter or demote
+# per-candidate against. Until that lands, both ride as a documented hint in the
+# judge's free-text profile: a soft nudge the judgment-tier ranker can weigh,
+# never a hard drop (Rule #2) and never dressed up as a verified fact (Rule #1 in
+# spirit — the hint is honest about being an unverified preference).
+
+_KNOWN_DIFFICULTIES = frozenset({"easy", "moderate", "hard", "strenuous"})
+
+
+def filter_preference_hints(filters: Mapping[str, object]) -> str | None:
+    """Build a hint string from `intent.filters` (dog / difficulty) for the judge's
+    profile text. Validates each value (dog: bool; difficulty: one of
+    `_KNOWN_DIFFICULTIES`, case-insensitive) and silently omits anything malformed
+    — a bad LLM-parsed filter value no-ops rather than crashing or misleading the
+    judge. Returns None when neither filter is present/valid."""
+    parts: list[str] = []
+    dog = filters.get("dog")
+    if isinstance(dog, bool):
+        parts.append("dog-friendly trail preferred" if dog else "hiker is not bringing a dog")
+    difficulty = filters.get("difficulty")
+    if isinstance(difficulty, str) and difficulty.strip().lower() in _KNOWN_DIFFICULTIES:
+        parts.append(f"preferred difficulty: {difficulty.strip().lower()}")
+    if not parts:
+        return None
+    return (
+        "Soft preference (not yet a verified corpus property — weigh gently, "
+        "never as a hard requirement): " + "; ".join(parts)
+    )
+
+
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────
 # The soft half of the Curator. Confidence is deliberately NOT an input here —
 # uncertainty must never penalize ranking (rule #2). Works on (id, name) pairs so

@@ -43,9 +43,12 @@ from orchestration.curator import (
     ConditionUnavailable,
     GuardrailVerdict,
     evaluate_guardrails,
+    filter_preference_hints,
     is_outside_boundary_demoted,
+    is_over_length_demoted,
     is_roadlike_demoted,
     rank_ids,
+    valid_max_length_mi,
 )
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
@@ -357,12 +360,22 @@ def rank_plan(
     model: str,
     *,
     profile: str | None = None,
+    filters: dict[str, object] | None = None,
 ) -> list[PlannedTrail]:
     """Reorder guardrail-passing trails by the judgment-tier taste ranking. Drive time
     enters ordering as an explicit term (a deterministic closer-by-road pre-order when
     every candidate has a time, plus a per-card hint to the judge) — never via
     confidence (rule #2): a long drive lowers position, not trust. Absence of a time is
-    never treated as 'far' (AC-5.3)."""
+    never treated as 'far' (AC-5.3).
+
+    `filters` is the mechanical-tier parser's `Intent.filters` (dog/difficulty/
+    max_length_mi). All three are SOFT signals only (Rule #2 — demote, never hard-
+    drop): `max_length_mi` sinks over-budget candidates via `is_over_length_demoted`
+    (same stable-partition demotion as the roadlike/boundary de-ranks); `dog` and
+    `difficulty` have no persisted corpus property yet, so they ride as a documented
+    hint in the judge's profile text instead (`filter_preference_hints`) until real
+    graph props exist. Values are validated defensively — a malformed mechanical-
+    tier parse (bool/str/negative/missing) no-ops rather than crashing."""
     if not planned:
         return []
     drive_secs = {
@@ -380,11 +393,15 @@ def rank_plan(
     # real trails — soft + reversible, never a drop, fire/dike roads kept (see
     # `is_roadlike_demoted`). A no-op until a re-ingest persists `way_type` (older
     # nodes carry None → never demoted).
-    # Two soft, reversible de-rank signals feed the same demotion set: the roadlike/
-    # access name signal (persisted way-type) and the Phase-2 spatial signal (the
-    # trail's point outside the region's protected-area boundary). Either sinks an
-    # ambiguous way below real trails; neither drops it. Both are no-ops until a
-    # re-ingest persists the respective flag (older nodes carry None).
+    # Three soft, reversible de-rank signals feed the same demotion set: the roadlike/
+    # access name signal (persisted way-type), the Phase-2 spatial signal (the
+    # trail's point outside the region's protected-area boundary), and the hiker's
+    # requested max_length_mi (Intent.filters). Any of the three sinks a candidate
+    # below the rest; none of them drops it. All are no-ops absent the backing data
+    # (way_type/outside_boundary/length_mi all default to None on an un-backfilled
+    # corpus → never demoted).
+    filters = filters or {}
+    max_length_mi = valid_max_length_mi(filters.get("max_length_mi"))
     demote_ids = {
         p.candidate.canonical_id
         for p in ordered
@@ -392,9 +409,15 @@ def rank_plan(
         or is_outside_boundary_demoted(
             p.candidate.way_type, p.candidate.name, p.candidate.outside_boundary
         )
+        or is_over_length_demoted(p.candidate.length_mi, max_length_mi)
     }
     if demote_ids:
-        log.debug("rank_plan: de-ranking %d roadlike/access way(s)", len(demote_ids))
+        log.debug("rank_plan: de-ranking %d roadlike/access/over-length way(s)", len(demote_ids))
+    # dog/difficulty have no corpus property to demote against yet — surfaced as a
+    # documented soft hint on the judge's profile text instead (Rule #2).
+    hint = filter_preference_hints(filters)
+    if hint:
+        profile = f"{profile}\n{hint}" if profile else hint
     # CDP-01 corroboration, carried per-trail on PlannedTrail already (Epic 026a) —
     # handed to the Curator's rescue-only pass (default OFF; see
     # `curator.apply_corroboration_rescue`), which can lift a demoted way back out
@@ -513,7 +536,9 @@ def plan(
     judge = runtime.personalized_judge if use_personal_judge else runtime.judge
     if judge:
         try:
-            planned = rank_plan(planned, judge[0], judge[1], profile=combined_profile)
+            planned = rank_plan(
+                planned, judge[0], judge[1], profile=combined_profile, filters=intent.filters
+            )
         except Exception:
             if not use_personal_judge:
                 raise  # anonymous path: a judge failure is not a personal-context failure
@@ -525,7 +550,11 @@ def plan(
             context_degraded = True
             if runtime.judge:
                 planned = rank_plan(
-                    planned, runtime.judge[0], runtime.judge[1], profile=intent.profile or None
+                    planned,
+                    runtime.judge[0],
+                    runtime.judge[1],
+                    profile=intent.profile or None,
+                    filters=intent.filters,
                 )
     notices = batch.notices
     if context_degraded:

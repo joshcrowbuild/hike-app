@@ -17,10 +17,13 @@ from orchestration.curator import (
     apply_corroboration_rescue,
     corroboration_rescue_enabled,
     evaluate_guardrails,
+    filter_preference_hints,
     is_corroboration_rescued,
     is_outside_boundary_demoted,
+    is_over_length_demoted,
     is_roadlike_demoted,
     rank_ids,
+    valid_max_length_mi,
 )
 from orchestration.providers.base import LLMResponse
 
@@ -350,3 +353,57 @@ def test_rank_ids_corroboration_rescue_off_by_default_still_demotes() -> None:
         corroboration_sources={"svc": ["osm", "nps"]},
     )
     assert order == ["t1", "t2", "svc"]
+
+
+def test_valid_max_length_mi_accepts_positive_numbers() -> None:
+    assert valid_max_length_mi(8) == 8.0
+    assert valid_max_length_mi(2.5) == 2.5
+
+
+def test_valid_max_length_mi_rejects_malformed_values() -> None:
+    assert valid_max_length_mi(None) is None
+    assert valid_max_length_mi(True) is None  # bool is an int subclass — must not sneak through
+    assert valid_max_length_mi(-3) is None
+    assert valid_max_length_mi(0) is None
+    assert valid_max_length_mi("8") is None
+    assert valid_max_length_mi([8]) is None
+
+
+def test_is_over_length_demoted_over_budget() -> None:
+    assert is_over_length_demoted(9.0, 8.0) is True
+
+
+def test_is_over_length_demoted_under_or_equal_budget_kept() -> None:
+    assert is_over_length_demoted(8.0, 8.0) is False
+    assert is_over_length_demoted(5.0, 8.0) is False
+
+
+def test_is_over_length_demoted_null_safe() -> None:
+    # No filter set, or unknown candidate length (pre-backfill corpus) — never demoted.
+    assert is_over_length_demoted(9.0, None) is False
+    assert is_over_length_demoted(None, 8.0) is False
+    assert is_over_length_demoted(None, None) is False
+
+
+def test_filter_preference_hints_dog_and_difficulty() -> None:
+    hint = filter_preference_hints({"dog": True, "difficulty": "Easy"})
+    assert hint is not None
+    assert "dog-friendly trail preferred" in hint
+    assert "preferred difficulty: easy" in hint
+
+
+def test_filter_preference_hints_dog_false() -> None:
+    hint = filter_preference_hints({"dog": False})
+    assert hint is not None
+    assert "not bringing a dog" in hint
+
+
+def test_filter_preference_hints_ignores_malformed_and_unknown_values() -> None:
+    assert filter_preference_hints({"dog": "yes", "difficulty": "extreme"}) is None
+    assert filter_preference_hints({}) is None
+
+
+def test_rank_ids_demotes_over_length_below_real_trails() -> None:
+    items = [("long", "Long Trail"), ("t1", "Old Rag"), ("t2", "Whiteoak Canyon")]
+    order = rank_ids(items, _FakeJudge('["long","t1","t2"]'), "m", demote_ids={"long"})
+    assert order == ["t1", "t2", "long"]

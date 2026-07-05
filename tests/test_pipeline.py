@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -19,8 +20,14 @@ import pytest
 from shapely.geometry import LineString
 
 from ingestion import pipeline
-from ingestion.conflate.match import Feature
-from ingestion.pipeline import _load_matches, consolidate_osm_segments, load_region, run_pipeline
+from ingestion.conflate.match import Agreement, Feature, Match
+from ingestion.pipeline import (
+    _load_matches,
+    _persist_review_band,
+    consolidate_osm_segments,
+    load_region,
+    run_pipeline,
+)
 from ingestion.sources.base import (
     ConflationRole,
     CorpusSource,
@@ -147,12 +154,13 @@ def test_load_region_rejects_path_traversal(tmp_path, monkeypatch, region_id):
 # ── Pipeline counts: per-source keys derive from source.name (no literals) ────
 
 
-def test_pipeline_dry_run_returns_counts(monkeypatch):
+def test_pipeline_dry_run_returns_counts(monkeypatch, tmp_path):
     spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
     agency = _StubSource("nps", features=[_feat("Old Rag", "NPS")])
     _inject(monkeypatch, [spine, agency])
+    settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
     assert counts["osm"] == 1
     assert counts["osm_consolidated"] == 1
@@ -271,7 +279,7 @@ def _e2e_usfs_file() -> Path:
     return Path(f.name)
 
 
-def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
+def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch, tmp_path):
     """End-to-end behavior-preservation golden: the real OsmSource/NpsSource/
     UsfsSource (only their transports mocked) flow through the reworked
     fetch→consolidate→conflate→count glue under the default config, producing the
@@ -285,8 +293,9 @@ def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
             UsfsSource(geojson_path=usfs_path),
         ]
         _inject(monkeypatch, real_sources)
+        settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+        counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
         assert counts["osm"] == 1
         assert counts["osm_consolidated"] == 1
@@ -995,8 +1004,9 @@ def test_golden_region_regression(monkeypatch, tmp_path):
             UsgsThreeDEPSource(sampler=RasterioDEMSampler(str(dem)), resolution_m=50.0),
         ]
         _inject(monkeypatch, real_sources)
+        settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+        counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
         # Trail count + junk ABSENT: only the real trail survives; "Snake Road" (SR 650)
         # is dropped by the trail_filter. If a regression lets the junk through this is 2.
@@ -1012,3 +1022,113 @@ def test_golden_region_regression(monkeypatch, tmp_path):
         assert counts["enrichment_facts"] == 8
     finally:
         usfs_path.unlink(missing_ok=True)
+
+
+# ── Review-band persistence (DQ follow-up: adjudicate the middle tier later) ──
+
+
+def _review_match(osm_name: str, agency_name: str, agency_source: str, score: int = 70) -> Match:
+    return Match(
+        a=_feat(osm_name, "osm"),
+        b=_feat(agency_name, agency_source),
+        name_score=score,
+        agreement=Agreement(overlap=0.1, hausdorff_m=120.0),
+        verdict="review",
+    )
+
+
+def test_persist_review_band_writes_one_line_per_match_with_expected_fields(tmp_path):
+    review = [
+        _review_match("Old Rag Loop", "Old Rag", "nps", score=72),
+        _review_match("Snake Hollow Trail", "Snake Hollow", "usfs", score=65),
+    ]
+
+    written = _persist_review_band(review, "test-r", str(tmp_path))
+
+    assert written == 2
+    out = tmp_path / "test-r.jsonl"
+    lines = [json.loads(line) for line in out.read_text().splitlines()]
+    assert lines == [
+        {
+            "osm_name": "Old Rag Loop",
+            "agency_name": "Old Rag",
+            "name_score": 72,
+            "source": "nps",
+            "region": "test-r",
+        },
+        {
+            "osm_name": "Snake Hollow Trail",
+            "agency_name": "Snake Hollow",
+            "name_score": 65,
+            "source": "usfs",
+            "region": "test-r",
+        },
+    ]
+
+
+def test_persist_review_band_noop_on_empty_review(tmp_path):
+    written = _persist_review_band([], "test-r", str(tmp_path))
+
+    assert written == 0
+    assert not (tmp_path / "test-r.jsonl").exists()
+
+
+def test_persist_review_band_creates_missing_dir(tmp_path):
+    out_dir = tmp_path / "nested" / "review"
+
+    written = _persist_review_band([_review_match("A", "B", "nps")], "test-r", str(out_dir))
+
+    assert written == 1
+    assert (out_dir / "test-r.jsonl").exists()
+
+
+def test_persist_review_band_overwrites_rather_than_appends(tmp_path):
+    _persist_review_band([_review_match("A", "B", "nps")], "test-r", str(tmp_path))
+    _persist_review_band([_review_match("C", "D", "usfs")], "test-r", str(tmp_path))
+
+    lines = (tmp_path / "test-r.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["osm_name"] == "C"
+
+
+def test_persist_review_band_scopes_file_by_region(tmp_path):
+    _persist_review_band([_review_match("A", "B", "nps")], "region-a", str(tmp_path))
+    _persist_review_band([_review_match("C", "D", "usfs")], "region-b", str(tmp_path))
+
+    assert (tmp_path / "region-a.jsonl").exists()
+    assert (tmp_path / "region-b.jsonl").exists()
+
+
+def test_persist_review_band_degrades_on_write_failure(tmp_path, caplog):
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")  # a file, not a dir — mkdir under it must fail
+
+    with caplog.at_level("WARNING"):
+        written = _persist_review_band(
+            [_review_match("A", "B", "nps")], "test-r", str(blocked / "review")
+        )
+
+    assert written == 0
+    assert "Review-band persistence failed" in caplog.text
+
+
+def test_run_pipeline_persists_review_band(monkeypatch, tmp_path):
+    """Integration: run_pipeline wires the review list it already computes (line ~695)
+    through to disk — the file exists, matches counts['review'], and never touches
+    the graph (dry_run means no Neo4j import even happens)."""
+    a = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
+    b = _StubSource("nps", features=[_feat("Old Rag", "NPS")])
+    _inject(monkeypatch, [a, b])
+    settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=settings)
+
+    assert counts["review"] == 1
+    assert counts["review_persisted"] == 1
+    out = tmp_path / "review" / f"{_REGION.region_id}.jsonl"
+    assert out.exists()
+    record = json.loads(out.read_text().splitlines()[0])
+    assert record["osm_name"] == "Old Rag Loop"
+    assert record["agency_name"] == "Old Rag"
+    assert record["source"] == "NPS"
+    assert record["region"] == _REGION.region_id
