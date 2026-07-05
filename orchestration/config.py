@@ -19,6 +19,12 @@ from typing import Mapping
 # `data/`, so the raster is never committed (rule: never commit data/).
 DEM_DIR = "data/dem"
 
+# Conflation review-band artifacts (DQ follow-up). The pipeline writes matches that
+# fell between auto-accept and no-match here as one JSONL file per region — a
+# reviewable file, NEVER a graph node (CLAUDE.md rule #3: fast/derived data isn't
+# persisted as structural graph state). Under gitignored `data/`, so it never commits.
+REVIEW_BAND_DIR = "data/review"
+
 
 def default_dem_path(region: str) -> str | None:
     """The conventional DEM path for `region` (`data/dem/{region}.tif`) if it exists on
@@ -129,6 +135,12 @@ class Settings:
     dem_path: str | None = None
     elev_resolution_m: float = 20.0
 
+    # Conflation review-band persistence (DQ follow-up). Directory the pipeline
+    # writes `{region}.jsonl` review-band matches under; override via
+    # ADVENTURE_REVIEW_BAND_DIR (tests redirect this so no test writes into the
+    # real repo tree). Defaults to the conventional gitignored path.
+    review_band_dir: str = REVIEW_BAND_DIR
+
     # API startup warm-up budget (seconds) for one round over /plan's dependency
     # stack — chiefly how long the graph connectivity check may retry before the
     # round reports failure. /health stays 503 until a round succeeds, so this is
@@ -218,4 +230,5 @@ class Settings:
             dem_path=e.get("ADVENTURE_3DEP_DEM") or default_dem_path(region),
             elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
             warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
+            review_band_dir=e.get("ADVENTURE_REVIEW_BAND_DIR", REVIEW_BAND_DIR),
         )
