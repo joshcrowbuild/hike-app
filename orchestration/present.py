@@ -25,6 +25,13 @@ class FeedLine:
     text: str
     source: str
     presentation: str
+    # Distinct live-source names backing this fact (Epic 026a). Live conditions are
+    # single-source by construction (CDP-01: genuine multi-origin corroboration lives
+    # only on the corpus SAME_AS layer, never a live fact — engine.py's
+    # `PlannedTrail.corpus_corroboration`), so this is always a 1-tuple today. Carried
+    # honestly rather than fabricated so a later UI cue never implies corroboration a
+    # live fact doesn't have (Rule #2/#11).
+    sources: tuple[str, ...] = ()
 
 
 def _age(fetched_at: datetime, now: datetime) -> str:
@@ -129,4 +136,10 @@ def summarize_fact(
     # legible without dropping any provenance (source-or-silence, just relocated).
     text = f"{hedge}{body} · {_provider_short(fact.source)}, {_age(fact.fetched_at, now)}"
     source = f"{fact.source} · {_source_note(kind, fact.value)}"
-    return FeedLine(kind=kind, text=text, source=source, presentation=confidence.presentation)
+    return FeedLine(
+        kind=kind,
+        text=text,
+        source=source,
+        presentation=confidence.presentation,
+        sources=(_provider_short(fact.source),),
+    )

@@ -39,6 +39,13 @@ export interface FeedLineResponse {
   text: string
   source: string
   confidence_level: ConfidenceLevel
+  /**
+   * Distinct live-source names backing this fact (Epic 026a). Present on every
+   * wire line (the feed carries no non-live lines) — always a single-entry list
+   * today, since a live condition fact is single-source by construction (CDP-01).
+   * Never conflate with a card-level enrichment/mock source list.
+   */
+  sources: string[]
 }
 
 /**

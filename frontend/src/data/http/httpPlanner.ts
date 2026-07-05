@@ -69,6 +69,9 @@ function mapFeed(res: FeedResponse): FeedVM {
           source: l.source,
           confidence: l.confidence_level,
           provenance: 'live',
+          // Real per-fact corroboration (Epic 026a) — every wire line is live, so this
+          // carries straight through; never backfilled from card-level enrichment.
+          sources: l.sources,
         })),
         // Source-or-silence: a live card with no lines gets the honest
         // `not-fetched` state, not a blank (CDP-02). We never claim `checked-clear`

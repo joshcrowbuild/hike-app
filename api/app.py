@@ -250,6 +250,7 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
                 text=line.text,
                 source=line.source,
                 confidence_level=line.presentation,  # "stated" | "hedged" | "flagged"
+                sources=list(line.sources),
             )
             for line in card.lines
         ],

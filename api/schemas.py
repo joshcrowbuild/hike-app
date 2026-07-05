@@ -38,6 +38,13 @@ class FeedLineResponse(BaseModel):
     text: str
     source: str
     confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
+    # Distinct live-source names backing this fact (Epic 026a). Populated only for a
+    # line built from a live probe (every line the engine emits qualifies — the feed
+    # carries no non-live lines); never backfilled from a card-level enrichment/mock
+    # source list, which would fabricate per-fact provenance (Rule #2/#11). Always a
+    # single-entry list today (CDP-01: live facts are single-source by construction),
+    # carried honestly rather than padded — the corpus-level count lives elsewhere.
+    sources: list[str] = []
 
 
 class CardWarningResponse(BaseModel):

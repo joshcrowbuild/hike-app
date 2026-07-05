@@ -51,6 +51,7 @@ class _Line:
     text: str
     source: str
     presentation: str = "stated"
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass
