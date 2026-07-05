@@ -696,6 +696,9 @@ def run_pipeline(
     counts["auto_accept"] = len(auto_accept)
     counts["review"] = len(review)
     log.info("Conflation: %d auto-accept, %d review", len(auto_accept), len(review))
+    counts["review_persisted"] = _persist_review_band(
+        review, region.region_id, settings.review_band_dir
+    )
 
     canonical_nodes = _canonical_nodes(auto_accept, spine_features)
 
@@ -796,6 +799,42 @@ def run_pipeline(
         counts["review"],
     )
     return counts
+
+
+def _persist_review_band(review: list[Match], region_id: str, out_dir: str) -> int:
+    """Write the conflation review band (auto-accept < name_score < no-match, per
+    `classify`) to a reviewable `{out_dir}/{region_id}.jsonl` — one line per OSM×agency
+    pair the matcher flagged for a human to adjudicate later, NOT a graph node (rule #3:
+    fast/derived data never persists as structural graph state). Overwrites the region's
+    file each run so it always reflects the latest ingest rather than growing unbounded
+    across re-runs of an idempotent pipeline.
+
+    Best-effort: a write failure (e.g. read-only filesystem) is logged and swallowed —
+    this is a triage aid, never a pipeline dependency (rule #6's degrade-and-disclose
+    spirit)."""
+    if not review:
+        return 0
+    path = Path(out_dir) / f"{region_id}.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            for m in review:
+                f.write(
+                    json.dumps(
+                        {
+                            "osm_name": m.a.name,
+                            "agency_name": m.b.name,
+                            "name_score": m.name_score,
+                            "source": m.b.source,
+                            "region": region_id,
+                        }
+                    )
+                    + "\n"
+                )
+    except OSError as exc:
+        log.warning("Review-band persistence failed for %s, skipping: %s", region_id, exc)
+        return 0
+    return len(review)
 
 
 def _print_dry_run_summary(
