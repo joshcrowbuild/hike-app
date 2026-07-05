@@ -23,6 +23,7 @@ Thresholds are module constants so they're easy to tune against real conditions.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
@@ -294,6 +295,102 @@ def is_roadlike_demoted(way_type: str | None, name: str) -> bool:
     return bool(_ACCESS_NAME.search(text))
 
 
+# ── Corroboration rescue (Lane C — data-quality demote, default-off) ────────
+# The roadlike/access and outside-boundary demotions above are OSM-tag heuristics
+# (a name pattern, a boundary flag) — cheap, but occasionally wrong about a real
+# trail that just happens to carry an access-y name or sit near a boundary. CDP-01
+# (`graph.queries.trail_source_corroboration`) is the one place genuine multi-
+# origin agreement lives: when an authoritative agency inventory (NPS/USFS/
+# USGS_NTD/RIDB — a government source, not another echo of the same OSM tags)
+# independently agrees the way exists, that is real corroborating evidence the
+# name/boundary heuristic doesn't have.
+#
+# RESCUE-ONLY (Rule #2: confidence/corroboration never penalizes ranking — so it
+# must never *manufacture* a demotion either): this can only LIFT a way OUT of a
+# demote set some other signal already put it in. A way that isn't demoted is
+# never touched here, and a single-source way (corroboration == 1, or every
+# distinct source is non-authoritative) is never rescued — the original heuristic
+# stands because there's no independent evidence to override it with.
+#
+# Default OFF (`ADVENTURE_CORROBORATION_RESCUE`) — first cut from the 2026-07
+# spike, not yet bake-off validated.
+
+CORROBORATION_RESCUE_ENV = "ADVENTURE_CORROBORATION_RESCUE"
+
+# Government/agency inventories — genuine independent agreement. OSM (and any
+# non-agency echo) doesn't count: two OSM-derived records agreeing is still one
+# origin's tagging, not cross-source corroboration (the "authoritative coverage
+# present" gate — a region with no agency ingest at all can never clear this,
+# however many times a way is counted).
+_AUTHORITATIVE_SOURCES = frozenset({"nps", "usfs", "usgs_ntd", "usgs-ntd", "ridb"})
+
+# Below this distinct-origin count, there's no second opinion to rescue with —
+# corroboration == 1 means the demoted way's own OSM tags are the only evidence
+# either way, so the heuristic that demoted it stands.
+_MIN_RESCUE_CORROBORATION = 2
+
+
+def corroboration_rescue_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """True when the corroboration-rescue mechanism is switched on. Default OFF —
+    an unset or unrecognized value degrades to off, never silently on (a bad knob
+    must never turn on an unvalidated rescue path)."""
+    e = os.environ if env is None else env
+    raw = (e.get(CORROBORATION_RESCUE_ENV) or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def is_corroboration_rescued(
+    name: str,
+    *,
+    sources: Collection[str] = (),
+    corroboration: int = 1,
+) -> bool:
+    """True if a way already in a demote set should be RESCUED back to normal
+    position. Never a reason to demote on its own (Rule #2) — this predicate only
+    answers "does this one need rescuing", for a caller to apply against an
+    existing demote set. Carries the same fire/dike/forest-road guard as the
+    demote checks above (belt-and-suspenders: those already never reach the
+    demote set, but a rescue predicate must never treat a legit fire road as
+    needing a corroboration gate either). Requires BOTH real multi-origin
+    agreement (>= `_MIN_RESCUE_CORROBORATION` distinct origins) AND at least one
+    of them authoritative — a cluster of OSM-only echoes never clears this."""
+    if _FIRE_ROAD_KEEP.search(name or ""):
+        return True  # fire/dike/forest road — never gated on corroboration
+    if corroboration < _MIN_RESCUE_CORROBORATION:
+        return False
+    normalized = {s.strip().lower() for s in sources if isinstance(s, str)}
+    return bool(normalized & _AUTHORITATIVE_SOURCES)
+
+
+def apply_corroboration_rescue(
+    demote_ids: Collection[str],
+    names: Mapping[str, str],
+    *,
+    corroboration: Mapping[str, int] | None = None,
+    sources: Mapping[str, Collection[str]] | None = None,
+    enabled: bool,
+) -> set[str]:
+    """Rescue-only pass over an already-computed demote set. Can only REMOVE ids
+    from `demote_ids`; never adds one — a way no other signal demoted is never
+    touched (Rule #2). A no-op (returns `demote_ids` unchanged) when `enabled` is
+    False, so the default-off flag is a single, obvious branch rather than
+    threaded through every call site."""
+    demoted = set(demote_ids)
+    if not enabled or not demoted:
+        return demoted
+    corroboration = corroboration or {}
+    sources = sources or {}
+    return {
+        cid
+        for cid in demoted
+        if not is_corroboration_rescued(
+            names.get(cid, ""),
+            sources=sources.get(cid, ()),
+            corroboration=corroboration.get(cid, 1),
+        )
+    }
+
+
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────
 # The soft half of the Curator. Confidence is deliberately NOT an input here —
 # uncertainty must never penalize ranking (rule #2). Works on (id, name) pairs so
@@ -343,13 +440,19 @@ def rank_ids(
     profile: str | None = None,
     hints: dict[str, str] | None = None,
     demote_ids: Collection[str] = (),
+    corroboration: Mapping[str, int] | None = None,
+    corroboration_sources: Mapping[str, Collection[str]] | None = None,
 ) -> list[str]:
     """Ask the judgment-tier model to order candidate (canonical_id, name) pairs.
     `hints` surfaces a per-candidate ordering input (e.g. drive minutes) into the
     payload — an explicit, legible ranking term, never a confidence input (rule #2).
     `demote_ids` (roadlike/access ways — see `is_roadlike_demoted`) are stably sunk
     below the rest of the order afterward: a transparent, reversible feed-quality
-    demotion, never a drop."""
+    demotion, never a drop. `corroboration`/`corroboration_sources` (CDP-01
+    distinct-origin counts + names, keyed by canonical_id) feed the rescue-only
+    pass (`apply_corroboration_rescue`, default OFF) that can lift a demoted way
+    back out when it's genuinely corroborated by an authoritative source — it
+    never adds a demotion of its own."""
     if not items:
         return []
     known = [cid for cid, _ in items]
@@ -367,4 +470,11 @@ def rank_ids(
         max_tokens=512,
     )
     ordered = _parse_ids(provider.complete(request).text, known)
-    return _apply_demotion(ordered, demote_ids)
+    rescued_demote_ids = apply_corroboration_rescue(
+        demote_ids,
+        dict(items),
+        corroboration=corroboration,
+        sources=corroboration_sources,
+        enabled=corroboration_rescue_enabled(),
+    )
+    return _apply_demotion(ordered, rescued_demote_ids)
