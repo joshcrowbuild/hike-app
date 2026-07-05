@@ -16,6 +16,19 @@ describe('SkeletonCard', () => {
     expect(container.querySelectorAll('.skeleton-line').length).toBeGreaterThan(0)
   })
 
+  it('mirrors the new lean silhouette — a verdict line at top, no deleted place line (AC-19.3.1)', () => {
+    const { container } = render(<SkeletonCard />)
+    // The restructured card leads with the verdict, not the old placeCue; the
+    // skeleton must match so the real card never reflows on swap.
+    expect(container.querySelector('.skeleton-line--verdict')).toBeInTheDocument()
+    expect(container.querySelector('.skeleton-line--place')).not.toBeInTheDocument()
+    // The element set the card actually renders: verdict, name, area, decision, condition, foot.
+    for (const part of ['verdict', 'name', 'area', 'decision', 'condition', 'foot']) {
+      expect(container.querySelector(`.skeleton-line--${part}`), part).toBeInTheDocument()
+    }
+    expect(container.querySelector('.skeleton-glyph')).toBeInTheDocument()
+  })
+
   it('shimmers by default (no reduced-motion preference)', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
     const { container } = render(<SkeletonCard />)

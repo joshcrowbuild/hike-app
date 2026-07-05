@@ -27,5 +27,31 @@
   },
   "focus": {
     "ring": { "$value": "{color.neutral.900}", "$type": "color" }
+  },
+  "type": {
+    "name": {
+      "size": { "$value": "{size.name}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
+    },
+    "verdict": {
+      "size": { "$value": "{size.verdict}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
+    },
+    "fact-value": {
+      "size": { "$value": "{size.fact-value}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
+    },
+    "fact-label": {
+      "size": { "$value": "{size.fact-label}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.medium}", "$type": "fontWeight" }
+    },
+    "condition": {
+      "size": { "$value": "{size.condition}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "supporting": {
+      "size": { "$value": "{size.supporting}", "$type": "dimension" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    }
   }
 }

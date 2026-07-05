@@ -46,13 +46,15 @@ describe('RecommendationCard feed glyph (S4)', () => {
     expect(container.querySelector('svg.glyph')).toBeInTheDocument()
   })
 
-  it('degrades to the ascent figure with no glyph when there is no profile (AC-4.2)', () => {
+  it('drops the glyph with no profile — ascent is a Detail-only fact now (DD1)', () => {
     const { container } = render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
-    // The ascent figure still reads the shape of the day in the decision row.
-    // (The derived summary also names the climb in prose, hence scope to the stat.)
-    const stats = [...container.querySelectorAll('.decision-value')].map((el) => el.textContent ?? '')
-    expect(stats.some((t) => /1,050 ft/.test(t))).toBe(true)
+    // The lean card owns ascent through the glyph only; with no glyph there is no
+    // separate Ascent fact (it lives on Detail). Distance + Drive remain.
+    const labels = [...container.querySelectorAll('.decision-label')].map((el) => el.textContent ?? '')
+    expect(labels).not.toContain('Ascent')
+    expect(labels).toContain('Distance')
+    expect(labels).toContain('Drive')
   })
 
   it('opens Detail on tap, with no in-card map (AC-4.3)', async () => {
@@ -64,24 +66,63 @@ describe('RecommendationCard feed glyph (S4)', () => {
   })
 })
 
-describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
-  it('renders the derived one-line character in the card', () => {
-    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
-    // The card's open geometry reads as out-and-back, so the stated mileage is
-    // the ROUND TRIP (2 × the curated 3.7 mi one-way figure) — what the hiker
-    // actually walks (Josh, 2026-07-03).
-    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/7\.4-mile out-and-back, climbing 1,050 ft\./)
+describe('RecommendationCard is lean — Detail-only fields are relocated off it (Epic 019 AC-19.1.1)', () => {
+  const enriched = card({
+    enrichment: {
+      placeCue: 'the granite dome above the valley',
+      area: 'Shenandoah',
+      routeShape: 'Loop',
+      distanceMiles: 3.7,
+      ascentFeet: 1050,
+      driveMinutes: 28,
+      durationHours: '3–4 hr',
+      fitLine: 'Matches your taste for open summits.',
+      practicalNote: 'Arrive early; the lot fills by 9.',
+      caution: 'Verify the creek crossing before you commit.',
+      conditionValue: '54°F · clear',
+      freshness: 'NWS · 12m ago',
+      provenance: 'mock',
+    },
   })
 
-  it('renders the difficulty estimate, tagged as an estimate (never a rank)', () => {
-    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
-    const badge = container.querySelector('.difficulty')
-    // Banded off the round-trip 7.4 mi (not the one-way 3.7 mi), so this reads
-    // Strenuous rather than Moderate.
-    expect(badge?.textContent).toMatch(/Strenuous/)
-    expect(badge?.textContent).toMatch(/est\./)
-    // Sample data wears the sample tag, mirroring <Confidence>.
-    expect(container.querySelector('.difficulty--sample')).toBeInTheDocument()
+  it('renders none of {placeCue, fitLine, practicalNote, caution Signal, duration, character, difficulty}', () => {
+    const { container } = render(<RecommendationCard card={enriched} onOpen={vi.fn()} />)
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('the granite dome above the valley') // placeCue
+    expect(text).not.toContain('Matches your taste') // fitLine
+    expect(text).not.toContain('Arrive early') // practicalNote
+    expect(text).not.toContain('Verify the creek crossing') // caution Signal
+    expect(text).not.toContain('3–4 hr') // duration
+    // Character (derived summary) and the difficulty badge are Detail-only now.
+    expect(container.querySelector('.trail-summary')).not.toBeInTheDocument()
+    expect(container.querySelector('.difficulty')).not.toBeInTheDocument()
+    // What DOES stay: name, the two decision facts, and the single Now value.
+    expect(container.querySelector('.card-name')?.textContent).toBe('Stony Man Loop')
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+  })
+
+  it('still carries a freshness/age stamp in the foot (AC-19.1.3, non-relocatable)', () => {
+    const { container } = render(<RecommendationCard card={enriched} onOpen={vi.fn()} />)
+    expect(container.querySelector('.card-foot')?.textContent).toContain('12m ago')
+  })
+
+  it('never renders the multi-line condition LIST — only one Now value (DD1 line 6)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          conditionLines: [
+            { text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' },
+            { text: 'AQI 32 · good', source: 'AirNow', confidence: 'stated', provenance: 'live' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.condition-lines')).not.toBeInTheDocument()
+    // The primary line shows as the single Now value; the second is Detail-only.
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+    expect(container.textContent).not.toContain('AQI 32')
   })
 })
 
@@ -141,9 +182,9 @@ describe('RecommendationCard accessible name carries the warning state (report #
   })
 })
 
-describe('RecommendationCard ascent renders from the live elevation profile when enrichment has none (report #2)', () => {
-  it('shows an Ascent figure from the geo profile total gain, null-safe when absent', () => {
-    render(
+describe('RecommendationCard ascent is owned by the glyph, never a separate fact (DD1)', () => {
+  it('shows the glyph and the Distance fact, but no Ascent decision fact', () => {
+    const { container } = render(
       <RecommendationCard
         card={card({
           enrichment: undefined,
@@ -152,9 +193,12 @@ describe('RecommendationCard ascent renders from the live elevation profile when
         onOpen={vi.fn()}
       />,
     )
-    // The fixture's profile climbs from 1000m to 1200m — 200m ≈ 656 ft.
-    expect(screen.getByText('656 ft')).toBeInTheDocument()
-    expect(screen.getByText('Ascent')).toBeInTheDocument()
+    // The profile drives the elevation glyph (which owns ascent); there is no
+    // separate Ascent fact on the lean card — that figure lives on Detail.
+    expect(container.querySelector('svg.glyph')).toBeInTheDocument()
+    expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
+    expect(screen.getByText('Distance')).toBeInTheDocument()
+    expect(screen.getByText('3.2 mi')).toBeInTheDocument()
   })
 
   it('renders no Ascent figure when there is no elevation profile at all', () => {
@@ -198,7 +242,7 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
     expect(screen.getByText('4h ago')).toBeInTheDocument()
   })
 
-  it('shows present lines AND a residual silence so the set is not implied exhaustive (AC-4.3)', () => {
+  it('shows the primary line as the single Now value; the residual-silence note is Detail-only (DD1)', () => {
     const { container } = render(
       <RecommendationCard
         card={card({
@@ -209,11 +253,10 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
         onOpen={vi.fn()}
       />,
     )
-    expect(container.querySelector('.condition-line')).toBeInTheDocument()
-    const note = container.querySelector('.condition-silence--partial')
-    expect(note).toBeInTheDocument()
-    expect(note?.textContent).toMatch(/other conditions/i)
-    expect(note?.textContent).toMatch(/streamflow, air/)
+    // One Now value, not the multi-line list; the "other conditions" residual
+    // note moves to Detail so the lean card stays a single condition slot.
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+    expect(container.querySelector('.condition-silence--partial')).not.toBeInTheDocument()
   })
 })
 
