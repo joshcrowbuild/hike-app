@@ -510,3 +510,10 @@ describe('Home Saved filter (client-side, localStorage, no backend/auth)', () =>
     expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
   })
 })
+
+describe('Home keeps the persistent quiet .wordmark (Epic 020, AC-20.4.1)', () => {
+  it('renders .wordmark — the only screen that should', async () => {
+    const { container } = await renderHomeWith(feedWith({}))
+    expect(container.querySelector('.wordmark')).toBeInTheDocument()
+  })
+})

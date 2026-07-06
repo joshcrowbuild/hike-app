@@ -4,7 +4,7 @@
       "25": { "$value": "#fbfaf7", "$type": "color" },
       "50": { "$value": "#f4f3ef", "$type": "color" },
       "100": { "$value": "#ecebe4", "$type": "color" },
-      "500": { "$value": "#6b7178", "$type": "color" },
+      "500": { "$value": "#5e636a", "$type": "color" },
       "700": { "$value": "#3c424a", "$type": "color" },
       "900": { "$value": "#16191d", "$type": "color" },
       "alpha": {

@@ -84,7 +84,23 @@ button {
   color: var(--text-muted);
 }
 
+/* A real page title (Epic 020, AC-20.4.1) — Detail/Outcome name what screen
+   you're on in legible primary ink, never the quiet `.wordmark` mono-caps
+   treatment. `.wordmark` itself stays reserved for Home's persistent, quiet
+   brand mark — the only screen that should ever wear it. */
+.screen-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
 .back {
+  position: relative;
   font-size: 0.7rem;
   color: var(--text-primary);
   padding: 0.3rem 0;
@@ -241,12 +257,10 @@ button {
 
 .card-warning-meta {
   font-size: 0.74rem;
-  /* The <Staleness> child reads its color from --text-muted; on the signal's
-     terracotta-tinted field that resolves to ~4.1:1, below WCAG AA (4.5:1) for
-     small text. Re-point the custom property to the higher-contrast secondary
-     tier for this subtree only — Staleness elsewhere sits on plain surfaces,
-     where muted already clears AA. */
-  --text-muted: var(--text-secondary);
+  /* Epic 020 (AC-20.2.1): --text-muted itself was darkened to clear 4.5:1 AA
+     against every surface app-wide, including this signal's terracotta-tinted
+     field (~5:1) — the local re-point to --text-secondary this subtree used to
+     need is gone; the base token now carries the guarantee everywhere. */
 }
 
 /* ---- go/no-go verdict (the glanceable headline — product voice 2026-07-03) ----
@@ -487,6 +501,7 @@ button {
 }
 
 .action-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -773,6 +788,10 @@ button {
 }
 
 .map-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -963,6 +982,7 @@ button {
 }
 
 .facet-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1212,6 +1232,7 @@ button {
 /* A quiet text button for recovery + reversible actions (retry / widen /
    show anyway). Never the accent hue — that stays reserved for the signal. */
 .text-action {
+  position: relative;
   font-family: var(--font-family-mono);
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -1225,6 +1246,25 @@ button {
 .text-action:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
+}
+
+/* ---- 44px minimum hit area (Epic 020, AC-20.1.1) ----
+   A centered, invisible hit-zone extension: the visible chrome (underline,
+   pill, row) renders exactly as designed today; only the tappable area grows
+   to the platform minimum. Applied to every compact text/chip/row control —
+   the card's own whole-tap button is already well past 44px and stays
+   untouched (AC-20.1.1 "card whole-tap unchanged"). */
+.text-action::before,
+.back::before,
+.action-chip::before,
+.map-chip::before,
+.facet-row::before {
+  content: '';
+  position: absolute;
+  inset: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }
 
 /* ---- sparse + set-aside (constraint disclosure, R6/R9) ---- */
@@ -1325,13 +1365,17 @@ button {
   color: var(--text-muted);
 }
 
-/* stale-degraded — the only cautionary one: the signal hue, "may have changed". */
+/* stale-degraded — a neutral note ("may have changed"), never colour-coded as
+   a hazard (Epic 020, AC-20.3.1 / DD2): the terracotta signal hue is reserved
+   for a LIVE warning (`triangle-alert`), never a merely-old timestamp. A solid
+   ring (vs. not-fetched's dashed one) plus its own `history` glyph — never `!`
+   — carry the meaning instead. */
 .condition-silence--stale-degraded {
-  color: var(--signal-caution-fg);
+  color: var(--text-secondary);
 }
 .condition-silence--stale-degraded .condition-silence-glyph {
-  background: var(--signal-caution-bg);
-  color: var(--signal-caution-fg);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
 }
 
 /* When shown beside present lines, it's a quieter footnote (AC-4.3). */

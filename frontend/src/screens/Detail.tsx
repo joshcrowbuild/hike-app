@@ -38,7 +38,7 @@ export function Detail({ id, onBack, onReplan }: DetailProps) {
         <button className="back" type="button" onClick={onBack}>
           Back
         </button>
-        <span className="wordmark">Detail</span>
+        <span className="screen-title">Detail</span>
       </header>
 
       {status === 'loading' ? <p className="state-note">Loading…</p> : null}

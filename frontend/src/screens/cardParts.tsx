@@ -250,12 +250,16 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
  * state, §4.3 colour-blind safe), and no two look like the same gray (AC-4.2).
  * `stale-degraded` routes its age through the <Staleness> primitive so a
  * last-known value wears its age honestly (§7.2).
+ *
+ * `stale-degraded`'s glyph is the real Lucide `History` mark, not a bare `glyph`
+ * character (Epic 020, AC-20.3.1) — kept off the caution hue, its own entry in
+ * the DD2 registry (`glyphs.history`, Epic 021), never the hazard glyph.
  */
-const SILENCE_COPY: Record<SilenceState, { glyph: string; announce: string; label: string }> = {
+const SILENCE_COPY: Record<SilenceState, { glyph: string | null; announce: string; label: string }> = {
   'not-fetched': { glyph: '○', announce: 'Not checked yet', label: 'Conditions not checked — open to verify' },
   'checked-clear': { glyph: '✓', announce: 'Checked, clear', label: 'Checked — nothing to flag' },
   'no-data': { glyph: '–', announce: 'No source', label: 'No live source covers this spot' },
-  'stale-degraded': { glyph: '!', announce: 'Stale, may have changed', label: 'Last known conditions' },
+  'stale-degraded': { glyph: null, announce: 'Stale, may have changed', label: 'Last known conditions' },
 }
 
 export function ConditionSilence({ silence, partial }: { silence: ConditionSilenceVM; partial?: boolean }) {
@@ -265,7 +269,7 @@ export function ConditionSilence({ silence, partial }: { silence: ConditionSilen
     <p className={`condition-silence condition-silence--${state}${partial ? ' condition-silence--partial' : ''}`}>
       <span className="sr-only">{copy.announce}: </span>
       <span className="condition-silence-glyph" aria-hidden="true">
-        {copy.glyph}
+        {copy.glyph ?? <HistoryIcon />}
       </span>
       <span className="condition-silence-text">
         {partial ? 'Other conditions: ' : ''}
@@ -285,3 +289,12 @@ export function ConditionSilence({ silence, partial }: { silence: ConditionSilen
   )
 }
 
+/**
+ * `history` — reserved solely for the stale-degraded silence state (never the
+ * hazard glyph; `triangle-alert` stays reserved for a live warning, DD2). The
+ * wrapping `.condition-silence-glyph` span is already `aria-hidden` (its sr-only
+ * announce lives one level up), so this rides bare — no second `<Icon>` label.
+ */
+function HistoryIcon() {
+  return <glyphs.history size={10} aria-hidden="true" focusable={false} />
+}

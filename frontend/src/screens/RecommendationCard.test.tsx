@@ -247,6 +247,13 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
     expect(screen.getByText('4h ago')).toBeInTheDocument()
   })
 
+  it('stale-degraded wears a `history` glyph, never the `!` hazard mark (Epic 020, AC-20.3.1)', () => {
+    const { container } = silence({ conditionSilence: { state: 'stale-degraded' } })
+    const glyph = container.querySelector('.condition-silence-glyph')
+    expect(glyph?.textContent).not.toBe('!')
+    expect(glyph?.querySelector('svg')).toBeInTheDocument()
+  })
+
   it('shows the primary line as the single Now value; the residual-silence note is Detail-only (DD1)', () => {
     const { container } = render(
       <RecommendationCard

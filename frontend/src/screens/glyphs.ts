@@ -5,6 +5,7 @@ import {
   Car,
   Clock,
   Gauge,
+  History,
   LocateFixed,
   MapPin,
   Mountain,
@@ -34,6 +35,8 @@ export const glyphs = {
   save: Bookmark,
   saved: BookmarkCheck,
   directions: Navigation,
+  // Silence state (Epic 020) — stale-degraded ONLY, never the hazard glyph.
+  history: History,
   // Tuning facets
   when: CalendarClock,
   from: MapPin,
