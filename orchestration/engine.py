@@ -418,7 +418,23 @@ def rank_plan(
     hint = filter_preference_hints(filters)
     if hint:
         profile = f"{profile}\n{hint}" if profile else hint
-    order = rank_ids(items, provider, model, profile=profile, hints=hints, demote_ids=demote_ids)
+    # CDP-01 corroboration, carried per-trail on PlannedTrail already (Epic 026a) —
+    # handed to the Curator's rescue-only pass (default OFF; see
+    # `curator.apply_corroboration_rescue`), which can lift a demoted way back out
+    # when an authoritative source independently corroborates it. Never adds a
+    # demotion of its own.
+    corroboration = {p.candidate.canonical_id: p.corpus_corroboration for p in ordered}
+    corroboration_sources = {p.candidate.canonical_id: p.corpus_sources for p in ordered}
+    order = rank_ids(
+        items,
+        provider,
+        model,
+        profile=profile,
+        hints=hints,
+        demote_ids=demote_ids,
+        corroboration=corroboration,
+        corroboration_sources=corroboration_sources,
+    )
     return [by_id[cid] for cid in order if cid in by_id]
 
 

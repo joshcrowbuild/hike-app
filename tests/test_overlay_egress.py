@@ -110,7 +110,17 @@ def test_s1_ac2_rank_receives_local_provider_under_anthropic(monkeypatch: Any) -
     LocalOpenAIProvider. FAILS before the fix (overlay routed to the cloud judge)."""
     captured: dict[str, Any] = {}
 
-    def fake_rank_ids(items, provider, model, *, profile=None, hints=None, demote_ids=()):  # type: ignore[no-untyped-def]
+    def fake_rank_ids(
+        items,
+        provider,
+        model,
+        *,
+        profile=None,
+        hints=None,
+        demote_ids=(),
+        corroboration=None,
+        corroboration_sources=None,
+    ):  # type: ignore[no-untyped-def]
         captured["provider"] = provider
         captured["profile"] = profile
         return [cid for cid, _ in items]
