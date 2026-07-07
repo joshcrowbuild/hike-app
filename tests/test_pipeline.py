@@ -952,6 +952,64 @@ def test_unmatched_spine_way_type_flows_to_load():
     assert canonical and canonical[0].get("way_type") == "track"
 
 
+# ── classified-tag merge on consolidation (Epic 026 AC-3.4/3.5) ───────────────
+
+
+def test_consolidate_merge_takes_most_severe_path_grade():
+    segs = _chain("Old Rag", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, path_grade=g)
+        for s, g in zip(segs, ["", "difficult"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].path_grade == "difficult"
+
+
+def test_consolidate_merge_takes_most_restrictive_foot_access():
+    segs = _chain("Old Rag", 3)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, foot_access=a)
+        for s, a in zip(segs, ["yes", "private", "permit"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].foot_access == "private"
+
+
+def test_consolidate_merge_takes_worst_quality_psurface():
+    segs = _chain("Old Rag", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, psurface=p)
+        for s, p in zip(segs, ["paved_good", "unpaved_bad"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].psurface == "unpaved_bad"
+
+
+def test_end_to_end_classified_tags_flow_to_canonical_trail_load():
+    # Two connected same-named ways — one plain hiking scale (path_grade=""), one
+    # demanding_mountain_hiking (path_grade="difficult") — consolidate into one
+    # Feature carrying the worse grade, then load_canonical_trail persists it.
+    segs = _chain("Difficult Ridge", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, path_grade=g)
+        for s, g in zip(segs, ["", "difficult"])
+    ]
+    consolidated = consolidate_osm_segments(segs)
+    assert len(consolidated) == 1
+    spine = consolidated[0]
+    assert spine.path_grade == "difficult"
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical and canonical[0].get("path_grade") == "difficult"
+
+
 # ── length/gain flow-through (Epic 023 S4) — agency-first cross-side copy ─────
 
 

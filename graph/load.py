@@ -202,6 +202,9 @@ def load_canonical_trail(
     route_geom_wkt: str | None = _UNSET,
     way_type: str | None = _UNSET,
     outside_boundary: bool | None = _UNSET,
+    path_grade: str | None = _UNSET,
+    psurface: str | None = _UNSET,
+    foot_access: str | None = _UNSET,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -234,6 +237,18 @@ def load_canonical_trail(
         # clears a stale flag rather than leaving it standing (source-or-silence).
         params["outside_boundary"] = outside_boundary
         set_clauses.append("t.outside_boundary = $outside_boundary")
+    if path_grade is not _UNSET:
+        # Classified difficulty (Epic 026). As with way_type, an explicit None SETs
+        # null so a re-ingest that loses the source tag clears a stale grade rather
+        # than leaving it standing (source-or-silence).
+        params["path_grade"] = path_grade
+        set_clauses.append("t.path_grade = $path_grade")
+    if psurface is not _UNSET:
+        params["psurface"] = psurface
+        set_clauses.append("t.psurface = $psurface")
+    if foot_access is not _UNSET:
+        params["foot_access"] = foot_access
+        set_clauses.append("t.foot_access = $foot_access")
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")

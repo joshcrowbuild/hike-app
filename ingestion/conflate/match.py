@@ -100,6 +100,13 @@ class Feature:
     length_source: str | None = None
     gain_ft: float | None = None
     gain_source: str | None = None
+    # Classified OSM tags (Epic 026) — normalized, source-or-silence ("" on absent,
+    # never a fabricated default). `ingestion.classify` derives these from the raw
+    # sac_scale/trail_visibility, surface/smoothness/tracktype, and foot/access tags
+    # at fetch time; nothing downstream reads them yet (ingest + persist only).
+    path_grade: str = ""
+    psurface: str = ""
+    foot_access: str = ""
 
 
 @dataclass(frozen=True)
