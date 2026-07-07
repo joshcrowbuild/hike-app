@@ -228,7 +228,8 @@ def test_local_raster_wins_when_present_even_with_url_set(tmp_path):
     assert isinstance(src._sampler, RasterioDEMSampler)
 
 
-def test_network_fallback_selected_when_dem_path_is_none():
+def test_network_fallback_selected_when_dem_path_is_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # hermetic: dev-box data/dem rasters must not leak in
     s = Settings.from_env({"ADVENTURE_OPENTOPODATA_URL": "http://host:5000"})
     src = UsgsThreeDEPSource.from_config(s)
     assert isinstance(src._sampler, OpenTopoDataSampler)
@@ -245,7 +246,8 @@ def test_network_fallback_selected_when_dem_path_does_not_exist(tmp_path):
     assert isinstance(src._sampler, OpenTopoDataSampler)
 
 
-def test_no_sampler_when_neither_raster_nor_url_configured():
+def test_no_sampler_when_neither_raster_nor_url_configured(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     src = UsgsThreeDEPSource.from_config(Settings.from_env({}))
     assert src._sampler is None
     assert src.enrich(CanonicalNode("ct:1", "X", geom_wkt=_WKT)) == []
@@ -270,7 +272,8 @@ def test_enrich_discloses_opentopodata_source():
     assert n == 1
 
 
-def test_from_config_threads_opentopodata_source_into_facts():
+def test_from_config_threads_opentopodata_source_into_facts(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     client = httpx.Client(transport=httpx.MockTransport(_ramp_handler))
     s = Settings.from_env({"ADVENTURE_OPENTOPODATA_URL": "http://host:5000"})
     src = UsgsThreeDEPSource.from_config(s)
