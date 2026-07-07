@@ -145,6 +145,27 @@ describe('Detail Directions (prominent, no longer buried in the map controls)', 
   })
 })
 
+describe('Detail Send-to-device (GPX export, Epic 028)', () => {
+  it('renders a GPX download link with the export href when the trail has route geometry', async () => {
+    await renderDetail(card())
+    const link = screen.getByRole('link', { name: /download the stony man loop route as a gpx file/i })
+    expect(link).toHaveAttribute('download')
+    expect(link.getAttribute('href')).toContain('/trail/stony-man/export.gpx')
+  })
+
+  it('renders no GPX download link when card.geo is undefined', async () => {
+    await renderDetail(card({ geo: undefined }))
+    expect(screen.queryByRole('link', { name: /gpx file/i })).not.toBeInTheDocument()
+  })
+
+  it('renders no GPX download link when card.geo.geometry is null', async () => {
+    await renderDetail(
+      card({ geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null } }),
+    )
+    expect(screen.queryByRole('link', { name: /gpx file/i })).not.toBeInTheDocument()
+  })
+})
+
 describe('Detail Save (client-side, localStorage, anonymous-friendly)', () => {
   it('toggles saved state', async () => {
     const user = userEvent.setup()
