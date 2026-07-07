@@ -1,6 +1,6 @@
 # Epic 024 — Integer `schema_format` on Meta + API-startup compatibility gate on /health
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 0 (spine hardening)
 **Spec refs:** comaps-borrow-plan.md item A4-lite (wave 1) · CLAUDE.md Rule #1 (source-or-silence) · "fail loud at boundaries, degrade gracefully at the surface" · CoMaps `libs/platform/mwm_version.hpp` (borrowed pattern)
 

@@ -1,6 +1,6 @@
 # Epic 022 — Duration truth: wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1
 **Spec refs:** CLAUDE.md Rules #1 (source-or-silence) / #7 (provenance + confidence — an inference never poses as a stated fact) · CoMaps borrow plan item A5 (wave 1) · decision-log (estimate-vs-fact disclosure)
 

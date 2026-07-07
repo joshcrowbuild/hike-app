@@ -1,6 +1,6 @@
 # Epic 027 — Per-facet leveled ingest-diff check + stats on /health (within-run)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** A/B (ingest-safety tooling)
 **Spec refs:** CoMaps borrow plan §B1 (verifier corrections — **reproduced verbatim-in-substance below** as B1.1–B1.4; the source `docs/research/comaps-borrow-plan.md` is not in the tree, so the inlined B1 text is authoritative and self-sufficient) · `docs/strategy/path-to-complete.md:136,154` (Phase-A/B ingest safety) · CLAUDE.md Rules #3/#6 · depends on Epic 024 (composite build-ID / `data_version` axis — this epic MERGES AFTER 024)
 
