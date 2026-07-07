@@ -129,7 +129,9 @@ def test_nonpositive_resolution_fails_loud():
 
 
 def test_from_config_without_dem_path_degrades_to_noop(caplog, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)  # hermetic: a real data/dem/{region}.tif on the dev box must not leak in
+    monkeypatch.chdir(
+        tmp_path
+    )  # hermetic: a real data/dem/{region}.tif on the dev box must not leak in
     # usgs-3dep is a default corpus source (so a re-ingest never forgets it), but
     # most regions have no DEM downloaded yet. from_config must not raise — a
     # region-scoped re-ingest without a DEM must complete normally and leave any
