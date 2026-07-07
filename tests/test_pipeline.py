@@ -515,6 +515,137 @@ def test_s5_no_warning_when_one_spine_feature_matches_two_agencies(caplog):
     assert not warnings
 
 
+# ── S1 — per-record validity drop in the load path (Epic 025) ─────────────────
+
+
+def test_s1_empty_geometry_dropped_without_aborting_region(caplog):
+    """An empty LineString (e.g. a degenerate OSM way) must be dropped per-record —
+    never crash the region. This is the exact case that would raise GEOSException
+    from _safe_geom_centroid if geometry were not validated before the centroid."""
+    import logging
+
+    good_a = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    bad = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    good_b = _feat("Salt Pond Road", "OSM", lon=-78.20)
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        counts = _load_matches(runner, [], [good_a, bad, good_b], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+    assert any("osm/broken" in r.message and "geometry" in r.message for r in caplog.records)
+
+
+def test_s1_null_island_centroid_dropped():
+    """A feature with an otherwise-valid geometry whose centroid lands exactly on
+    (0,0) — the classic null-island sentinel for missing/corrupt coordinate data —
+    must be dropped, not persisted. The geometry itself is valid and non-empty
+    (a straight line from (-1,-1) to (1,1)), so this exercises the valid_lonlat
+    branch specifically, distinct from the geometry_valid branch."""
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    null_island = Feature(
+        name="Null Island Way",
+        geom=LineString([[-1.0, -1.0], [1.0, 1.0]]),
+        source="OSM",
+        ref="osm/null",
+    )
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(runner, [], [good, null_island], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 1
+    assert canonical_writes[0]["name"] == "Compton Gap Road"
+
+
+def test_s1_all_valid_batch_skips_nothing():
+    a = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    b = _feat("Salt Pond Road", "OSM", lon=-78.20)
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(runner, [], [a, b], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 0
+    assert counts["loaded"] == 2
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+
+
+def test_s1_invalid_features_never_raise():
+    """Per-record drop, never a region abort: a batch mixing an empty geometry and
+    a null-island centroid among valid features must not raise."""
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    empty_geom = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    null_island = Feature(
+        name="Null Island Way",
+        geom=LineString([[-1.0, -1.0], [1.0, 1.0]]),
+        source="OSM",
+        ref="osm/null",
+    )
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(
+        runner, [], [good, empty_geom, null_island], tier_by_name={"osm": 1}, iv="t"
+    )
+
+    assert counts["skipped_hygiene"] == 2
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 1
+
+
+def test_s1_canonical_nodes_also_gated_by_hygiene():
+    """_canonical_nodes (the enrichment-node derivation, run BEFORE _load_matches
+    in run_pipeline — see run_pipeline's `canonical_nodes = _canonical_nodes(...)`
+    call ahead of the dry-run branch) must apply the same hygiene floor as the
+    load loop. It calls _safe_geom_centroid directly on the same Features; if it
+    isn't gated, an empty-geometry feature crashes here — one call site earlier
+    than the load loop's own guard — defeating the point of the hygiene fix."""
+    from ingestion.pipeline import _canonical_nodes
+
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    empty_geom = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+
+    nodes = _canonical_nodes([], [good, empty_geom])  # must not raise GEOSException
+
+    assert [n.name for n in nodes] == ["Compton Gap Road"]
+
+
+def test_s1_hygiene_drop_on_matched_spine_not_double_counted(caplog):
+    """A hygiene-dropped auto-accept spine feature (m.a) must not be re-processed
+    in the unmatched-spine loop as if it were never seen — it's a matched feature,
+    just an invalid one. Regression: matched_spine_ids must be updated before the
+    hygiene continue, or the feature is double-dropped and double-counted."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    bad_spine = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    agency_feat = Feature(
+        name="Broken Way", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(bad_spine, agency_feat, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        counts = _load_matches(runner, [m], [bad_spine], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1  # not 2 — dropped once, not reprocessed
+    drop_warnings = [r for r in caplog.records if "osm/broken" in r.message]
+    assert len(drop_warnings) == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 0
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 

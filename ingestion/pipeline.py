@@ -30,6 +30,7 @@ from shapely.ops import unary_union
 
 from ingestion.boundary import classify_outside_boundary, load_region_boundary
 from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
+from ingestion.hygiene import geometry_valid, valid_lonlat
 from ingestion.route import assemble_geometry, line_parts
 from ingestion.sources import registry
 from ingestion.sources.base import (
@@ -76,6 +77,44 @@ def load_region(region_id: str) -> Region:
 def _safe_geom_centroid(feature: Feature) -> tuple[float, float]:
     c = feature.geom.centroid
     return (c.y, c.x)  # (lat, lon)
+
+
+def _passes_load_hygiene(feature: Feature) -> tuple[float, float] | None:
+    """(lat, lon) if `feature` has a valid, non-empty geometry and a real
+    (non-null-island) centroid, else None. Pure — no logging/counting, so
+    `_canonical_nodes` (which derives the enrichment node set ahead of, and
+    independently of, the load loop) can silently mirror the load loop's
+    selection without double-logging `_hygienic_centroid`'s own drop-and-log.
+
+    Geometry is validated FIRST: `_safe_geom_centroid` reads `centroid.y`/`.x`,
+    which raises `GEOSException` on an empty geometry, so it cannot be called
+    on an unvalidated geom.
+    """
+    if not geometry_valid(feature.geom):
+        return None
+    lat, lon = _safe_geom_centroid(feature)
+    if not valid_lonlat(lon, lat):
+        return None
+    return lat, lon
+
+
+def _hygienic_centroid(feature: Feature, counts: dict[str, int]) -> tuple[float, float] | None:
+    """As `_passes_load_hygiene`, but a drop is logged + counted — used by the
+    load loop, which is the source of truth for what actually gets persisted."""
+    result = _passes_load_hygiene(feature)
+    if result is None:
+        if not geometry_valid(feature.geom):
+            log.warning("Dropping %s: invalid/empty geometry", feature.ref or feature.name)
+        else:
+            lat, lon = _safe_geom_centroid(feature)
+            log.warning(
+                "Dropping %s: invalid/null-island centroid (%.5f,%.5f)",
+                feature.ref or feature.name,
+                lon,
+                lat,
+            )
+        counts["skipped_hygiene"] += 1
+    return result
 
 
 def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
@@ -235,15 +274,20 @@ def _canonical_nodes(
 ) -> list[CanonicalNode]:
     """The canonical trails the load loop would create — derived read-only so the
     enrichment step can run over them in both dry-run and live paths. Mirrors the
-    load loop's selection (auto-accept spine side + unmatched named spine features)
-    so enrichment joins exactly the nodes that get persisted (SS-4). Each node
+    load loop's selection (auto-accept spine side + unmatched named spine features,
+    each gated by the same `_passes_load_hygiene` floor as `_load_matches`) so
+    enrichment joins exactly the nodes that get persisted (SS-4). Each node
     carries its assembled route `geom_wkt` so a geometry-consuming enrichment source
     (3DEP) samples the same line the API serves (Epic 017)."""
     nodes: list[CanonicalNode] = []
     matched: set[str] = set()
     for m in auto_accept:
+        matched.add(m.a.ref or m.a.name)
+        hy = _passes_load_hygiene(m.a)
+        if hy is None:
+            continue
+        lat, lon = hy
         cid = _build_canonical_id(m.a.source, m.a.ref, m.a.name)
-        lat, lon = _safe_geom_centroid(m.a)
         nodes.append(
             CanonicalNode(
                 canonical_id=cid,
@@ -254,12 +298,14 @@ def _canonical_nodes(
                 way_type=m.a.way_type,
             )
         )
-        matched.add(m.a.ref or m.a.name)
     for feat in spine_features:
         if (feat.ref or feat.name) in matched or not feat.name:
             continue
+        hy = _passes_load_hygiene(feat)
+        if hy is None:
+            continue
+        lat, lon = hy
         cid = _build_canonical_id(feat.source, feat.ref, feat.name)
-        lat, lon = _safe_geom_centroid(feat)
         nodes.append(
             CanonicalNode(
                 canonical_id=cid,
@@ -568,8 +614,15 @@ def _load_matches(
     matched_spine_ids: set[str] = set()
 
     for m in auto_accept:
+        # Mark as considered before the hygiene gate: a hygiene-dropped m.a must not
+        # fall through to the unmatched-spine loop below and be re-checked (and
+        # double-counted) there — it's still a matched feature, just an invalid one.
+        matched_spine_ids.add(m.a.ref or m.a.name)
+        hy = _hygienic_centroid(m.a, counts)
+        if hy is None:
+            continue
+        lat, lon = hy
         canonical_id = _build_canonical_id(m.a.source, m.a.ref, m.a.name)
-        lat, lon = _safe_geom_centroid(m.a)
         assembled = assemble_geometry(m.a.geom)
         route_wkt = assembled.wkt if assembled is not None else None
         # Agency-first: the authoritative length usually lives on the agency side
@@ -636,7 +689,6 @@ def _load_matches(
             match_score=float(m.name_score) / 100,
             ingest_version=iv,
         )
-        matched_spine_ids.add(m.a.ref or m.a.name)
         counts["loaded"] += 1
 
     # Unmatched spine features (skip only truly incomplete: no name AND no ref).
@@ -647,8 +699,11 @@ def _load_matches(
         if not feat.name:  # geometry-only, can't conflate or display
             counts["skipped_hygiene"] += 1
             continue
+        hy = _hygienic_centroid(feat, counts)
+        if hy is None:
+            continue
+        lat, lon = hy
         canonical_id = _build_canonical_id(feat.source, feat.ref, feat.name)
-        lat, lon = _safe_geom_centroid(feat)
         assembled = assemble_geometry(feat.geom)
         route_wkt = assembled.wkt if assembled is not None else None
         load_canonical_trail(

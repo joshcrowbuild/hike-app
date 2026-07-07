@@ -1,0 +1,7 @@
+{
+  "_comment": "Incident-tuned trail-filter denylists (Epic 025). Byte-for-byte migrated from ingestion/trail_filter.py; compiled with re.I. See tests/test_trail_filter.py for the pinned behavior.",
+  "public_route_ref": "\\b(SR|CR|VA|US|State Route|County Route)[\\s-]*(Route\\s*)?\\d",
+  "tiger_route_base": "\\b(State|County) Route\\b",
+  "residential_street_suffix": "\\b(street|avenue|boulevard|court|drive|lane|way)\\s*$",
+  "name_deny": "\\b(side ?walk|drive ?way|cross ?walk|wheelchair|colonnade|parking (lot|area)|bus (stop|loop))\\b|\\bwellness (and recreation|cent(er|re)|campus|clinic|hospital|institute)\\b|\\bpath to (a |an |the )?(school|store|parking|lot|bus|garage|garden|building|club|gym|colonnade)\\b|\\b(ramp|stairs?) to\\b"
+}
