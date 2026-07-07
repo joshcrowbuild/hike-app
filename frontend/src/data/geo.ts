@@ -251,6 +251,18 @@ export function trailheadDirectionsUrl(trailhead: GeoPosition): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`
 }
 
+/**
+ * The GPX download URL for a trail's world route (Epic 028 / CoMaps D4). Mirrors
+ * the `apiBase` fallback rule `PlannerProvider` applies to its planner client
+ * (`import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'`) — `baseUrl`
+ * there is module-private, so this is a second, deliberately identical copy
+ * rather than a shared import; keep the two in sync if the fallback ever changes.
+ */
+export function gpxExportUrl(id: string): string {
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
+  return `${apiBase}/trail/${encodeURIComponent(id)}/export.gpx`
+}
+
 // ---- internals -----------------------------------------------------------
 
 function lerpPoint(a: [number, number], b: [number, number], t: number): [number, number] {

@@ -202,6 +202,9 @@ class GraphStats(BaseModel):
     trailheads: int
     same_as_edges: int
     schema_version: str | None
+    # Integer data-shape stamp (Epic 024 / CoMaps A4-lite), distinct from the semver
+    # schema_version string above. None on a legacy graph applied before this epic.
+    schema_format: int | None = None
 
 
 class OutcomeBody(BaseModel):

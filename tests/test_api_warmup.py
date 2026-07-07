@@ -24,6 +24,7 @@ import threading
 import time
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api.app as app_mod
@@ -33,17 +34,31 @@ from orchestration.config import Settings
 
 
 class _StubSession:
+    def __init__(self, schema_format_row: Any = "__unset__") -> None:
+        self._schema_format_row = schema_format_row
+
     def run(self, query: Any, params: Any = None) -> list[dict[str, Any]]:
+        text = query[0] if isinstance(query, tuple) else query
+        if "schema_format" in text and self._schema_format_row != "__unset__":
+            if self._schema_format_row is _RAISE:
+                raise RuntimeError("schema probe blip (stub)")
+            return [{"sf": self._schema_format_row}]
         return []  # /health stats degrade to graph=null — readiness is unaffected
+
+
+_RAISE = object()  # sentinel: the stubbed schema_format read raises instead of returning
 
 
 class _WarmGraph:
     """Graph double for the warm-up path: `verify_connectivity` fails `fail_times`
-    times (a dependency that is down), then succeeds (it recovered)."""
+    times (a dependency that is down), then succeeds (it recovered). `schema_format`
+    controls what the schema-compatibility probe reads on `scoped_session().run(...)`
+    (`"__unset__"` keeps the default no-schema-format stub behavior)."""
 
-    def __init__(self, fail_times: int = 0) -> None:
+    def __init__(self, fail_times: int = 0, schema_format: Any = "__unset__") -> None:
         self.calls = 0
         self.fail_times = fail_times
+        self.schema_format = schema_format
 
     def verify_connectivity(self) -> None:
         self.calls += 1
@@ -51,7 +66,7 @@ class _WarmGraph:
             raise RuntimeError("connection refused (stub)")
 
     def scoped_session(self, viewer_id: str) -> _StubSession:
-        return _StubSession()
+        return _StubSession(self.schema_format)
 
     def close(self) -> None:  # pragma: no cover - lifespan shutdown
         pass
@@ -215,3 +230,83 @@ def test_warm_round_retries_graph_within_deadline(monkeypatch: Any) -> None:
     app_mod._warm_plan_path(state, settings, graph)
 
     assert graph.calls == 2  # failed once, retried within the budget, succeeded
+
+
+# ── Schema-format compatibility gate (Epic 024) ───────────────────────────────
+
+
+def test_verify_schema_format_refuses_newer_graph() -> None:
+    graph = _WarmGraph(schema_format=app_mod.EXPECTED_SCHEMA_FORMAT + 1)
+    with pytest.raises(app_mod.SchemaFormatError) as exc_info:
+        app_mod._verify_schema_format(graph)
+    message = str(exc_info.value)
+    assert str(app_mod.EXPECTED_SCHEMA_FORMAT + 1) in message
+    assert str(app_mod.EXPECTED_SCHEMA_FORMAT) in message
+
+
+@pytest.mark.parametrize(
+    "schema_format",
+    [
+        pytest.param("EXPECTED", id="equal"),
+        pytest.param("EXPECTED_MINUS_1", id="older"),
+        pytest.param(None, id="absent-legacy-graph"),
+        pytest.param(_RAISE, id="read-raises"),
+    ],
+)
+def test_verify_schema_format_proceeds_without_refusal(schema_format: Any) -> None:
+    if schema_format == "EXPECTED":
+        schema_format = app_mod.EXPECTED_SCHEMA_FORMAT
+    elif schema_format == "EXPECTED_MINUS_1":
+        schema_format = app_mod.EXPECTED_SCHEMA_FORMAT - 1
+    graph = _WarmGraph(schema_format=schema_format)
+    app_mod._verify_schema_format(graph)  # must not raise
+
+
+def test_warm_round_refuses_newer_schema_format(monkeypatch: Any) -> None:
+    """AC-3.1/3.4: a confirmed-newer graph schema_format fails the warm round with
+    both numbers in the message; AC-3.3: it's a plain exception, never a crash."""
+    provider = _RecorderProvider()
+    _install_free_stack(monkeypatch, provider)
+    graph = _WarmGraph(schema_format=app_mod.EXPECTED_SCHEMA_FORMAT + 1)
+    state = app_mod._WarmupState()
+
+    with pytest.raises(app_mod.SchemaFormatError):
+        app_mod._warm_plan_path(state, Settings.from_env(_FAST), graph)
+
+    # Providers never ran — the schema gate raised before that stage of the round.
+    assert provider.warmed == 0
+
+
+def test_health_503_discloses_incompatible_schema_format_and_status_still_responds(
+    monkeypatch: Any,
+) -> None:
+    """AC-3.3/3.4: the incompatibility surfaces on /health as a disclosed 503 naming
+    both integers, never a dropped connection — and /status keeps responding."""
+    provider = _RecorderProvider()
+    _install_free_stack(monkeypatch, provider)
+    monkeypatch.setattr(app_mod, "_WARMUP_RETRY_PAUSE_S", 0.02)
+    graph = _WarmGraph(schema_format=app_mod.EXPECTED_SCHEMA_FORMAT + 1)
+    settings = Settings.from_env(_FAST)
+    monkeypatch.setattr(app_mod, "_settings", settings)
+    monkeypatch.setattr(app_mod, "_graph_client", graph)
+    state = app_mod._WarmupState()
+    monkeypatch.setattr(app_mod, "_warmup", state)
+    client = TestClient(app_mod.app)
+
+    thread = threading.Thread(
+        target=app_mod._warmup_loop, args=(state, settings, graph), daemon=True
+    )
+    thread.start()
+    try:
+        assert _wait_for(lambda: state.error is not None)
+        health = client.get("/health")
+        assert health.status_code == 503
+        detail = health.json()["detail"]
+        assert str(app_mod.EXPECTED_SCHEMA_FORMAT + 1) in detail
+        assert str(app_mod.EXPECTED_SCHEMA_FORMAT) in detail
+
+        status = client.get("/status")
+        assert status.status_code == 200
+    finally:
+        state.stop.set()
+        thread.join(timeout=2)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -21,9 +22,10 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 
+from api.gpx import build_gpx
 from api.observability import (
     PlanMetrics,
     cache_size,
@@ -79,6 +81,18 @@ logger = logging.getLogger(__name__)
 
 _VERSION = "0.0.0"
 
+# The integer data-shape stamp this API understands (graph/schema.cypher's
+# Meta.schema_format). Bump only alongside a schema.cypher change that breaks how
+# this API reads the graph; an old API deployment then self-reports incompatible
+# via the warm-up gate below instead of misreading the new shape.
+EXPECTED_SCHEMA_FORMAT: int = 1
+
+
+class SchemaFormatError(RuntimeError):
+    """Raised when the graph's schema_format is confirmed newer than this API
+    understands — surfaced through the warm-up disclose path (never a crash)."""
+
+
 # Module-level singletons populated at startup
 _settings: Settings | None = None
 _graph_client: GraphClient | None = None
@@ -99,6 +113,29 @@ _warmup = _WarmupState()  # replaced by _start_warmup at lifespan startup
 # Pause between failed warm-up rounds: long enough not to hammer a struggling
 # dependency, short enough that /health flips to 200 promptly once it recovers.
 _WARMUP_RETRY_PAUSE_S = 2.0
+
+
+def _verify_schema_format(graph_client: GraphClient) -> None:
+    """Refuse ONLY on a confirmed graph schema_format newer than this API supports.
+
+    A read failure (unreachable graph, blip) is not a confirmed incompatibility, so
+    it is swallowed-and-logged here rather than raised — the caller's own graph
+    connectivity check already covers a genuinely-down graph (Rule #1: degrade,
+    don't crash). A missing schema_format (legacy graph, pre-this-epic) also
+    proceeds: absence isn't a confirmed newer format.
+    """
+    try:
+        session = graph_client.scoped_session("schema-check")
+        rows = session.run(("MATCH (m:Meta {id: 'schema'}) RETURN m.schema_format AS sf", {}))
+    except Exception as exc:
+        logger.warning("schema_format probe failed (%s); proceeding unverified", exc)
+        return
+    graph_format = rows[0].get("sf") if rows else None
+    if isinstance(graph_format, int) and graph_format > EXPECTED_SCHEMA_FORMAT:
+        raise SchemaFormatError(
+            f"graph schema_format {graph_format} is newer than this API supports "
+            f"({EXPECTED_SCHEMA_FORMAT}); deploy the matching API version"
+        )
 
 
 def _warm_plan_path(state: _WarmupState, settings: Settings, graph_client: GraphClient) -> None:
@@ -123,6 +160,10 @@ def _warm_plan_path(state: _WarmupState, settings: Settings, graph_client: Graph
             if state.stop.is_set() or time.monotonic() >= deadline:
                 raise
             state.stop.wait(min(1.0, max(0.1, deadline - time.monotonic())))
+    # Schema-format compatibility gate (Epic 024): refuse only a confirmed newer
+    # graph shape. Raises SchemaFormatError, which _warmup_loop records into
+    # state.error the same as any other warm-up failure.
+    _verify_schema_format(graph_client)
     # Providers: the same three resolutions build_runtime performs per-request.
     # warm() forces SDK-client construction (import + key validation) but never a
     # completion — warm-up must not spend tokens; the first paid call stays /plan's.
@@ -303,6 +344,7 @@ def _graph_stats() -> GraphStats | None:
             (
                 "MATCH (m:Meta {id: 'schema'}) "
                 "RETURN m.schema_version AS sv, "
+                "       m.schema_format AS sf, "
                 "       COUNT { (t:CanonicalTrail) } AS trails, "
                 # Elevation-presence gauge (Epic 017 durability): trails carrying a
                 # 3DEP-derived profile (total_gain_m is the always-written scalar). Makes
@@ -343,6 +385,7 @@ def _graph_stats() -> GraphStats | None:
             trailheads=int(r.get("ths") or 0),
             same_as_edges=int(r.get("edges") or 0),
             schema_version=r.get("sv"),
+            schema_format=r.get("sf"),
         )
     except Exception:
         # Degrade-and-disclose (Rule #1): report graph=null to the caller, but log the
@@ -712,6 +755,84 @@ def trail_detail(
     if not rows:
         raise HTTPException(status_code=404, detail="Trail not found")
     return _trip_detail_response(canonical_id, rows[0])
+
+
+def _route_coords_for_export(row: dict[str, Any]) -> list[tuple[float, float]] | None:
+    """The route's `(lon, lat)` vertex list for GPX export, reusing
+    `_geometry_and_confidence`'s resolution (prefer `route_geom_wkt`, else
+    assemble the segments) rather than re-deriving it, so the two endpoints can
+    never disagree about which route a trail has. Flattened to one ordered list:
+    a `MultiLineString`'s parts are concatenated in part order since the minimal
+    core emits a single `<trkseg>`. `None` when the trail carries no parseable
+    geometry at all."""
+    geometry, _confidence = _geometry_and_confidence(row)
+    if geometry is None:
+        return None
+    if geometry.type == "LineString":
+        coords = geometry.coordinates
+    else:  # MultiLineString: flatten parts in order
+        coords = [pt for part in geometry.coordinates for pt in part]
+    return [(float(lon), float(lat)) for lon, lat in coords]
+
+
+def _safe_filename_slug(canonical_id: str) -> str:
+    """ASCII stem for `Content-Disposition`'s filename — no path separators,
+    quotes, or control chars, so a canonical_id can never inject header syntax."""
+    return re.sub(r"[^A-Za-z0-9_-]", "-", canonical_id)
+
+
+@app.get("/trail/{canonical_id}/export.gpx")
+@limiter.limit(detail_limit)
+def trail_export_gpx(
+    request: Request,  # required by slowapi for per-IP keying
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> Response:
+    """GPX 1.1 download of a trail's WORLD/corpus route (Epic 028 / CoMaps §D4).
+
+    Reads through the same world-only `trail_detail` projection as `GET
+    /trail/{id}` — never a viewer's personal episode/recorded geometry (Rule #5:
+    share the derived conclusion, never the raw substrate). Because it's shared
+    world data, it needs no auth and is anonymous-friendly, mirroring the sibling
+    endpoint's posture exactly. 404 for an unknown trail; 422 for a known trail
+    whose route can't be assembled (never a 200 with an empty/fabricated track —
+    Rule #1). The `<ele>` gate (D4.3) is applied inside `build_gpx`: most current
+    trails have no vertex-aligned elevation profile, so an empty `<ele>` on a real
+    trail is the expected, honest outcome, not a defect.
+    """
+    if _graph_client is None or _settings is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    try:
+        session = _graph_client.scoped_session(viewer_id)
+        rows = session.run(trail_detail_query(canonical_id))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("gpx export failed for canonical_id=%r", canonical_id)
+        raise HTTPException(status_code=500, detail="Internal error") from exc
+    if not rows:
+        raise HTTPException(status_code=404, detail="Trail not found")
+    row = rows[0]
+    coords = _route_coords_for_export(row)
+    if coords is None:
+        raise HTTPException(status_code=422, detail="Trail has no exportable route geometry")
+    trailhead_latlon = _point_latlon(row.get("trailhead_point"))
+    trailhead = (trailhead_latlon[1], trailhead_latlon[0]) if trailhead_latlon else None
+    xml = build_gpx(
+        row.get("name") or canonical_id,
+        coords,
+        elevations=row.get("profile_elevations_m"),
+        elev_source=row.get("elev_source"),
+        trailhead=trailhead,
+    )
+    safe_slug = _safe_filename_slug(canonical_id)
+    return Response(
+        content=xml,
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{safe_slug}.gpx"'},
+    )
 
 
 def _drain_queue_bg(queue, graph_client) -> None:
