@@ -31,6 +31,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [028](epic-028-gpx-export.md) | GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail (CoMaps borrow §D4) | IN_PROGRESS | 1 | Epic 022 · 024 |
 
 | [027](epic-027-facet-ingest-diff.md) | Per-facet leveled ingest-diff check (within-run) + stats on /health | DONE ✅ | A/B | Epic 024 |
+| [032](epic-032-grade-aware-eta.md) | Grade-aware pedestrian ETA (port Valhalla's MIT grade-speed curve; per-segment integral replaces flat Naismith) | REVIEW | 1 | Epic 022 · 016 · 017 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
