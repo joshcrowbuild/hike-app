@@ -19,7 +19,13 @@ from orchestration.config import Settings
 @pytest.mark.neo4j
 def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     seed = clean_graph.scoped_session("seed")
-    seed.run(("MERGE (m:Meta {id: 'schema'}) SET m.schema_version = 'stats-test'", {}))
+    seed.run(
+        (
+            "MERGE (m:Meta {id: 'schema'}) SET m.schema_version = 'stats-test', "
+            "m.schema_format = 1",
+            {},
+        )
+    )
     # ct:a carries a 3DEP profile (total_gain_m) → counted by the elevation gauge.
     seed.run(("CREATE (:CanonicalTrail {canonical_id: 'ct:a', total_gain_m: 120.0})", {}))
     seed.run(("CREATE (:CanonicalTrail {canonical_id: 'ct:b'})", {}))
@@ -56,6 +62,7 @@ def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     # COUNT {} executed cleanly on the live DB (no 42I06) and counted correctly.
     assert stats is not None
     assert stats.schema_version == "stats-test"
+    assert stats.schema_format == 1  # Epic 024 AC-2.2: real int, not the string "1"
     assert stats.canonical_trails == 4
     assert stats.source_records == 4
     assert stats.trailheads == 1
@@ -67,3 +74,20 @@ def test_graph_stats_counts_via_count_subquery(clean_graph: Any) -> None:
     # 1 of 4 (25%); ct:c's single un-sourced SourceRecord doesn't clear the floor.
     assert stats.trails_multi_source == 1
     assert stats.corroboration_pct == round(1 / 4 * 100, 1)
+
+
+@pytest.mark.neo4j
+def test_verify_schema_format_refuses_newer_graph_against_live_db(clean_graph: Any) -> None:
+    """Epic 024 S3/AC-3.1: a real graph seeded with schema_format newer than this
+    API supports drives `_verify_schema_format` (the warm-up gate's schema probe)
+    to raise, rather than silently proceeding against a shape it can't read."""
+    seed = clean_graph.scoped_session("seed")
+    seed.run(
+        (
+            "MERGE (m:Meta {id: 'schema'}) SET m.schema_format = $newer",
+            {"newer": app_mod.EXPECTED_SCHEMA_FORMAT + 1},
+        )
+    )
+
+    with pytest.raises(app_mod.SchemaFormatError):
+        app_mod._verify_schema_format(clean_graph)
