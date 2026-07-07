@@ -30,12 +30,15 @@ def _feature(
     trail_no: str | None,
     coords: list[tuple[float, float]],
     name_field: str = "TRAIL_NAME",
+    gis_miles: object = None,
 ) -> dict:
-    props: dict[str, str] = {}
+    props: dict[str, object] = {}
     if name is not None:
         props[name_field] = name
     if trail_no is not None:
         props["TRAIL_NO"] = trail_no
+    if gis_miles is not None:
+        props["GIS_MILES"] = gis_miles
     return {
         "type": "Feature",
         "properties": props,
@@ -143,6 +146,48 @@ def test_consolidate_falls_back_to_trail_number_field() -> None:
 
 def test_consolidate_empty_input() -> None:
     assert usfs_convert.consolidate_by_trail_no([]) == []
+
+
+# ── GIS_MILES aggregation (Epic 023 S2) ──────────────────────────────────────────
+
+
+def test_consolidate_sums_gis_miles_across_group() -> None:
+    segs = [
+        _feature("Jones Run Trail", "100", [(-78.3, 38.5), (-78.29, 38.51)], gis_miles=0.174),
+        _feature("Jones Run Trail", "100", [(-78.29, 38.51), (-78.28, 38.52)], gis_miles=1.35),
+        _feature("Jones Run Trail", "100", [(-78.5, 38.9), (-78.49, 38.91)], gis_miles=0.627),
+    ]
+    consolidated = usfs_convert.consolidate_by_trail_no(segs)
+    assert len(consolidated) == 1
+    assert consolidated[0]["properties"]["GIS_MILES"] == pytest.approx(0.174 + 1.35 + 0.627)
+
+
+def test_consolidate_gis_miles_absent_when_no_segment_has_usable_value() -> None:
+    segs = [
+        _feature("No Miles Trail", "300", [(-78.3, 38.5), (-78.29, 38.51)]),
+        _feature("No Miles Trail", "300", [(-78.29, 38.51), (-78.28, 38.52)], gis_miles=""),
+    ]
+    consolidated = usfs_convert.consolidate_by_trail_no(segs)
+    assert len(consolidated) == 1
+    assert "GIS_MILES" not in consolidated[0]["properties"]
+
+
+def test_consolidate_gis_miles_ignores_non_positive_and_non_numeric_segments() -> None:
+    segs = [
+        _feature("Partial Trail", "400", [(-78.3, 38.5), (-78.29, 38.51)], gis_miles=0),
+        _feature("Partial Trail", "400", [(-78.29, 38.51), (-78.28, 38.52)], gis_miles="bogus"),
+        _feature("Partial Trail", "400", [(-78.28, 38.52), (-78.27, 38.53)], gis_miles=2.5),
+    ]
+    consolidated = usfs_convert.consolidate_by_trail_no(segs)
+    assert len(consolidated) == 1
+    assert consolidated[0]["properties"]["GIS_MILES"] == pytest.approx(2.5)
+
+
+def test_consolidate_single_segment_keeps_original_gis_miles_unchanged() -> None:
+    segs = [_feature("Solo Trail", "200", [(-78.3, 38.5), (-78.29, 38.51)], gis_miles=3.1)]
+    consolidated = usfs_convert.consolidate_by_trail_no(segs)
+    assert len(consolidated) == 1
+    assert consolidated[0]["properties"]["GIS_MILES"] == 3.1
 
 
 # ── clip_to_bbox ──────────────────────────────────────────────────────────────

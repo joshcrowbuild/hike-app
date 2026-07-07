@@ -101,6 +101,35 @@ describe('Card + Detail read the SAME CardVM (Epic 019 AC-19.1.2 — no VM/DTO c
   })
 })
 
+describe('Detail Duration — live estimate disclosed as such (Epic 022)', () => {
+  it('renders the Naismith estimate with an "est." disclosure when no mock duration string is present', async () => {
+    await renderDetail(
+      card({
+        geo: {
+          geometry: null,
+          trailhead: { lat: 38.5, lon: -78.4 },
+          quality: 'confident',
+          elevationProfile: {
+            samples: [],
+            totalGainMeters: 200,
+            totalLossMeters: 0,
+            maxGradePercent: 40,
+            source: 'USGS 3DEP',
+            resolutionMeters: 10,
+            estimatedDurationMin: 26,
+          },
+        },
+      }),
+    )
+    expect(screen.getByText(/~25 min · est\./)).toBeInTheDocument()
+  })
+
+  it('renders no Duration fact when neither a mock duration nor a live estimate is present', async () => {
+    await renderDetail(card({ geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null } }))
+    expect(screen.queryByText(/Duration/)).not.toBeInTheDocument()
+  })
+})
+
 describe('Detail Directions (prominent, no longer buried in the map controls)', () => {
   it('renders a Directions link near the top when the trail has geo', async () => {
     await renderDetail(card())

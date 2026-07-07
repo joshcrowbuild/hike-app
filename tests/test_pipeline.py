@@ -417,6 +417,104 @@ def test_load_no_boundary_degrades_flag_to_none():
     assert flags == [None]
 
 
+# ── S5 — flag-on-ambiguous merge at load (CDP-14) ──────────────────────────────
+
+
+def test_s5_warns_on_same_source_same_name_reflless_features(caplog):
+    import logging
+
+    a = Feature(
+        name="Ridge Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    b = Feature(
+        name="Ridge Trail", geom=LineString([[-78.30, 38.60], [-78.29, 38.61]]), source="OSM"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [a, b], tier_by_name={"osm": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Ridge Trail" in r.message and "osm" in r.message for r in warnings)
+    # Non-destructive: both features still loaded, nothing raised.
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+
+
+def test_s5_no_warning_on_cross_source_same_trail(caplog):
+    import logging
+
+    osm_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [osm_feat, nps_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_on_auto_accept_cross_source_match(caplog):
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    agency_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(spine_feat, agency_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [m], [spine_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_when_one_spine_feature_matches_two_agencies(caplog):
+    """A single OSM spine feature legitimately corroborated by two different
+    agencies (NPS and USFS) produces two auto-accept Matches sharing the same
+    `m.a` Feature object — that is corroboration, not an ambiguous same-source
+    merge, and must stay silent (regression for the id(feature) dedup)."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    usfs_feat = Feature(
+        name="Old Rag Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="USFS"
+    )
+    m1 = Match(spine_feat, nps_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    m2 = Match(spine_feat, usfs_feat, 85, Agreement(0.85, 12.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(
+            runner, [m1, m2], [spine_feat], tier_by_name={"osm": 1, "nps": 1, "usfs": 1}, iv="t"
+        )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 
@@ -721,6 +819,130 @@ def test_unmatched_spine_way_type_flows_to_load():
     _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
     canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
     assert canonical and canonical[0].get("way_type") == "track"
+
+
+# ── length/gain flow-through (Epic 023 S4) — agency-first cross-side copy ─────
+
+
+def test_matched_length_gain_copied_from_agency_side_m_b():
+    from ingestion.conflate.match import Agreement, Match
+
+    spine = _feat("Old Rag Trail", "OSM")  # m.a — today's spine, carries no length
+    agency = Feature(
+        name="Old Rag",
+        geom=spine.geom,
+        source="USFS",
+        ref="usfs/1",
+        length_mi=4.2,
+        length_source="USFS",
+        gain_ft=1200.0,
+        gain_source="USFS",
+    )
+    m = Match(spine, agency, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(4.2)
+    assert canonical[0]["length_source"] == "USFS"
+    assert canonical[0]["gain_ft"] == pytest.approx(1200.0)
+    assert canonical[0]["gain_source"] == "USFS"
+
+
+def test_matched_length_prefers_m_a_when_agency_is_the_spine():
+    # Latent case (AC-4.2): an agency source IS the region spine (m.a), so its
+    # length must not be silently dropped by a bare m.b read.
+    from ingestion.conflate.match import Agreement, Match
+
+    agency_spine = Feature(
+        name="Old Rag Trail",
+        geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+        source="USFS",
+        ref="usfs/1",
+        length_mi=3.0,
+        length_source="USFS",
+    )
+    osm_side = _feat("Old Rag", "OSM")  # m.b — no length
+    m = Match(agency_spine, osm_side, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [agency_spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(3.0)
+    assert canonical[0]["length_source"] == "USFS"
+
+
+def test_unmatched_spine_length_gain_flows_through():
+    feat = Feature(
+        name="Solo Trail",
+        geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+        source="USFS",
+        ref="usfs/2",
+        length_mi=5.5,
+        length_source="USFS",
+        gain_ft=800.0,
+        gain_source="USFS",
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"usfs": 1}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(5.5)
+    assert canonical[0]["length_source"] == "USFS"
+    assert canonical[0]["gain_ft"] == pytest.approx(800.0)
+    assert canonical[0]["gain_source"] == "USFS"
+
+
+def test_absent_length_writes_nothing_not_a_fabricated_zero():
+    # AC-4.3/4.4: neither side has a length → no length_mi/length_source key at
+    # all reaches the Cypher params (the loader's None-guard is a no-op, not a
+    # fabricated 0.0).
+    feat = _feat("No Length Trail", "OSM")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert "length_mi" not in canonical[0]
+    assert "length_source" not in canonical[0]
+    assert "gain_ft" not in canonical[0]
+    assert "gain_source" not in canonical[0]
+
+
+# ── multipart collapse (Epic 023 S3) — one canonical node, full geometry ──────
+
+
+def test_multipart_feature_yields_one_canonical_node_with_full_geometry():
+    from shapely.geometry import MultiLineString
+
+    from ingestion.route import line_parts, parse_wkt
+
+    # Two disconnected parts sharing one source identity (mirrors a collapsed NPS
+    # MultiLineString Feature) — must load as ONE canonical node with BOTH parts,
+    # not the last-fragment-wins overwrite this epic fixes.
+    parts = MultiLineString(
+        [
+            [(-78.30, 38.60), (-78.29, 38.61)],
+            [(-78.10, 38.80), (-78.09, 38.81)],
+        ]
+    )
+    feat = Feature(name="Fragmented Trail", geom=parts, source="NPS", ref="42")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"nps": 1}, iv="t")
+
+    canonical_calls = [(c, p) for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_calls) == 1  # one canonical node, not N
+
+    route_wkt = canonical_calls[0][1].get("route_geom_wkt")
+    assert route_wkt is not None
+    parsed_lines = line_parts(parse_wkt(route_wkt))
+    total_coords = sum(len(list(line.coords)) for line in parsed_lines)
+    assert total_coords == 4  # both 2-point parts survived, not just one
 
 
 # ── Per-source fetch sanity (task 3): a truncated/partial fetch aborts pre-load ──

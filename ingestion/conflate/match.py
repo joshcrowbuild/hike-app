@@ -94,6 +94,12 @@ class Feature:
     # ("4551") in `ref`. So an `a.ref == b.ref` ID-key match can NEVER fire across OSM and
     # an agency and is intentionally NOT attempted here. A real cross-source id join needs
     # the OSM route code in its own field first. OUT OF SCOPE for this redesign.
+    # Source-backed length/gain (Epic 023). None unless a fetcher verified a real
+    # agency attribute (e.g. USFS GIS_MILES) — never fabricated (Rule #1).
+    length_mi: float | None = None
+    length_source: str | None = None
+    gain_ft: float | None = None
+    gain_source: str | None = None
 
 
 @dataclass(frozen=True)
