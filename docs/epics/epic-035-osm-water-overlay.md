@@ -1,6 +1,6 @@
 # Epic 035 — OSM on-trail water-source overlay (ingest + persist + read)
 
-**Status:** IN_PROGRESS
+**Status:** REVIEW
 **Phase:** 1 (personal-intelligence app; additive corpus enrichment)
 **Spec refs:** `docs/research/discovery.md` item **#3** (OSM water sources — BUILD-NOW) ·
 CLAUDE.md **Rule #1** (source-or-silence) · **Rule #3** (graph holds slow/structural only) ·
