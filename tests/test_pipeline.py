@@ -601,6 +601,51 @@ def test_s1_invalid_features_never_raise():
     assert len(canonical_writes) == 1
 
 
+def test_s1_canonical_nodes_also_gated_by_hygiene():
+    """_canonical_nodes (the enrichment-node derivation, run BEFORE _load_matches
+    in run_pipeline — see run_pipeline's `canonical_nodes = _canonical_nodes(...)`
+    call ahead of the dry-run branch) must apply the same hygiene floor as the
+    load loop. It calls _safe_geom_centroid directly on the same Features; if it
+    isn't gated, an empty-geometry feature crashes here — one call site earlier
+    than the load loop's own guard — defeating the point of the hygiene fix."""
+    from ingestion.pipeline import _canonical_nodes
+
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    empty_geom = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+
+    nodes = _canonical_nodes([], [good, empty_geom])  # must not raise GEOSException
+
+    assert [n.name for n in nodes] == ["Compton Gap Road"]
+
+
+def test_s1_hygiene_drop_on_matched_spine_not_double_counted(caplog):
+    """A hygiene-dropped auto-accept spine feature (m.a) must not be re-processed
+    in the unmatched-spine loop as if it were never seen — it's a matched feature,
+    just an invalid one. Regression: matched_spine_ids must be updated before the
+    hygiene continue, or the feature is double-dropped and double-counted."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    bad_spine = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    agency_feat = Feature(
+        name="Broken Way", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(bad_spine, agency_feat, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        counts = _load_matches(runner, [m], [bad_spine], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1  # not 2 — dropped once, not reprocessed
+    drop_warnings = [r for r in caplog.records if "osm/broken" in r.message]
+    assert len(drop_warnings) == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 0
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 
