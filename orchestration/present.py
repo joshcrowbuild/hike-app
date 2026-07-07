@@ -144,5 +144,5 @@ def summarize_fact(
         text=text,
         source=source,
         presentation=confidence.presentation,
-        sources=(_provider_short(fact.source),),
+        sources=(provider_short(fact.source),),
     )
