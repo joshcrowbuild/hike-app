@@ -15,7 +15,7 @@ dependencies = []
 
 [project.optional-dependencies]
 # Stage 3 corpus pipeline (geospatial stack).
-ingestion = ["shapely>=2.0", "geopandas>=1.0", "pyproj>=3.6", "rasterio>=1.3", "thefuzz>=0.22"]
+ingestion = ["shapely>=2.0", "geopandas>=1.0", "pyproj>=3.6", "rasterio>=1.3", "thefuzz>=0.22", "gpxpy>=1.6"]
 # Stage 2 graph access. certifi gives Python a findable CA bundle so the strict-TLS
 # neo4j+s:// connection to Aura verifies (graph/client.py points ssl at it on import).
 graph = ["neo4j>=5.20", "certifi"]
@@ -46,6 +46,7 @@ dev = [
   "uvicorn>=0.30",    # proxy-header tests (real ProxyHeadersMiddleware)
   "pydantic>=2.0",
   "certifi",          # graph.client imports it at module load (TLS CA bundle)
+  "gpxpy>=1.6",       # test_gpx_reader.py calls read_gpx(), which imports gpxpy
 ]
 all = ["adventure-planner[ingestion,graph,live,providers,api,dev]"]
 
