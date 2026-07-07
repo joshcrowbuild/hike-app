@@ -12,6 +12,7 @@ the pipeline reports it separately).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 from shapely.geometry import LineString
@@ -31,6 +32,18 @@ _OVERPASS_MIRRORS = [
 
 # OSM highway values that represent walkable trails (not roads or cycle lanes).
 _TRAIL_HIGHWAYS = "path|footway|track|bridleway|steps"
+
+# On-trail water POI tags — a sibling node query, same shape as trailheads.py.
+_WATER_QUERY = """
+[out:json][timeout:{timeout}];
+(
+  node["amenity"="drinking_water"]({s},{w},{n},{e});
+  node["natural"="spring"]({s},{w},{n},{e});
+  node["man_made"="water_well"]({s},{w},{n},{e});
+  node["man_made"="water_tap"]({s},{w},{n},{e});
+);
+out body;
+"""
 
 
 def fetch(
@@ -103,3 +116,85 @@ def fetch(
         skipped,
     )
     return features
+
+
+@dataclass(frozen=True)
+class WaterSource:
+    """An on-trail water POI (Epic 035). Surfaces location + water type +
+    seasonality only — never a potability claim (rule #1, source-or-silence).
+    A spring/well/tap is a static POI, not fast/ephemeral like weather or
+    streamflow, so persisting it as a world node is on the right side of rule
+    #3 (graph holds slow/structural data only)."""
+
+    osm_id: str
+    water_type: str
+    name: str | None
+    lat: float
+    lon: float
+    seasonal: str | None
+
+
+def _classify_water_type(tags: dict[str, str]) -> str | None:
+    """Fixed priority when a node carries more than one matching tag:
+    drinking_water > spring > water_well > water_tap. `None` if the node
+    (defensively) carries none of the four — should not occur given the
+    Overpass query, but the caller must not crash on it."""
+    if tags.get("amenity") == "drinking_water":
+        return "drinking_water"
+    if tags.get("natural") == "spring":
+        return "spring"
+    if tags.get("man_made") == "water_well":
+        return "water_well"
+    if tags.get("man_made") == "water_tap":
+        return "water_tap"
+    return None
+
+
+def fetch_water(
+    bbox: tuple[float, float, float, float],
+    *,
+    client: httpx.Client | None = None,
+    timeout: float = 60.0,
+) -> list[WaterSource]:
+    """Fetch OSM on-trail water POIs within bbox (south, west, north, east).
+    Returns [] on error (rule #6: enrichment degrades-and-discloses, never
+    fabricates)."""
+    south, west, north, east = bbox
+    query = _WATER_QUERY.format(timeout=int(timeout), s=south, w=west, n=north, e=east)
+    c = client or httpx.Client(timeout=timeout)
+
+    last_exc: Exception | None = None
+    r = None
+    for mirror in _OVERPASS_MIRRORS:
+        try:
+            r = c.post(mirror, data={"data": query})
+            if r.status_code == 200:
+                break
+            log.debug("Water mirror %s returned %d, trying next", mirror, r.status_code)
+        except Exception as exc:
+            log.debug("Water mirror %s failed: %s", mirror, exc)
+            last_exc = exc
+    if r is None or r.status_code != 200:
+        status = f"HTTP {r.status_code}" if r is not None else str(last_exc)
+        log.warning("Water OSM fetch failed on all mirrors: %s", status)
+        return []
+
+    sources: list[WaterSource] = []
+    for el in r.json().get("elements", []):
+        tags = el.get("tags", {})
+        water_type = _classify_water_type(tags)
+        if water_type is None or "lat" not in el or "lon" not in el:
+            continue
+        sources.append(
+            WaterSource(
+                osm_id=f"node/{el['id']}",
+                water_type=water_type,
+                name=tags.get("name") or tags.get("official_name"),
+                lat=float(el["lat"]),
+                lon=float(el["lon"]),
+                seasonal=tags.get("seasonal"),
+            )
+        )
+
+    log.info("OSM water fetch: %d nodes in bbox %s", len(sources), bbox)
+    return sources

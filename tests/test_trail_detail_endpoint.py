@@ -184,8 +184,13 @@ def test_full_trail_returns_exact_contract_shape():
     assert prof["max_grade_pct"] == pytest.approx(220 / 150 * 100)
     assert prof["source"] == "usgs-3dep"
     assert prof["resolution_m"] == 20.0
-    # Naismith: (0.25km / 5km/h * 60) + 300m * 0.1min/m = 3.0 + 30.0 = 33.0 min.
-    assert prof["estimated_duration_min"] == pytest.approx(33.0)
+    # Grade-aware (Epic 032): this fixture's two segments (0->100m at 80% grade,
+    # 100->250m at ~146.7% grade) are pathologically steep synthetic gradients,
+    # each well past the ported curve's +15% tabulated endpoint, so both extrapolate
+    # to large time factors (~11.3x/~20.3x) with no upper clamp by design (AC-1.4) —
+    # real corpus grades stay sub-100% and never reach this regime. Value taken
+    # from calling `_estimated_duration_min`, not hand-derived.
+    assert prof["estimated_duration_min"] == pytest.approx(50.025)
 
 
 # ── runtime fallback: assemble geometry from segments when no precomputed route ─
@@ -389,7 +394,8 @@ def test_feed_card_carries_maps_fields():
     assert full["summit"] is None
     assert full["elevation_profile"]["total_gain_m"] == 300.0
     assert full["elevation_profile"]["samples"][0] == {"distance_m": 0.0, "elevation_m": 600.0}
-    assert full["elevation_profile"]["estimated_duration_min"] == pytest.approx(33.0)
+    # See the grade-aware note above — same _FULL_ROW fixture, same recomputed value.
+    assert full["elevation_profile"]["estimated_duration_min"] == pytest.approx(50.025)
 
     # A card with no mapped route degrades honestly — geometry/profile null.
     bare = app_mod._card_response(

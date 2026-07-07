@@ -35,6 +35,14 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [037](epic-037-openmeteo-failover.md) | Open-Meteo weather availability-failover (reshaped: refuses corroboration as feed-counting; specs failover + spread-disclosure) | REVIEW | Spike | Epic 013 · downstream build BLOCKED on commercial-license PO decision |
 
+| [033](epic-033-opentopodata-fallback-sampler.md) | OpenTopoData fallback ElevationSampler (degrade-and-disclose network elevation transport) | REVIEW | 1 | Epic 017 |
+
+| [032](epic-032-grade-aware-eta.md) | Grade-aware pedestrian ETA (port Valhalla's MIT grade-speed curve; per-segment integral replaces flat Naismith) | REVIEW | 1 | Epic 022 · 016 · 017 |
+
+| [035](epic-035-osm-water-overlay.md) | OSM on-trail water-source overlay (fetch + persist + proximity read; no potability claim) | REVIEW | 1 | — |
+
+| [034](epic-034-nps-closures-adapter.md) | NPS closures live adapter (new `ConditionKind.closures`; nearest-park Closure/Danger alerts) | REVIEW | 1 | Epic 013 |
+
 | [031](epic-031-gpx-reader.md) | GPX reader-tolerance module (dedupe · <2pt-drop · timestamp-derived-flag) | REVIEW | C | — |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.

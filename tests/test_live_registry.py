@@ -102,6 +102,22 @@ def test_s4_ac2_region_gating_excludes_us_only_feed() -> None:
     assert ConditionKind.drive_time in non_us
 
 
+# ── Epic 034 AC-4.2 — nps_alerts groups under ConditionKind.closures; self-drops
+# without a key ──
+
+
+def test_epic034_ac4_2_nps_alerts_grouped_under_closures() -> None:
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": "nps_alerts", "NPS_API_KEY": "k"})
+    grouped = registry.probes_for("US", s)
+    assert [a.name for a in grouped[ConditionKind.closures]] == ["nps_alerts"]
+
+
+def test_epic034_ac4_2_nps_alerts_self_drops_without_key() -> None:
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": "nps_alerts"})  # no NPS_API_KEY
+    grouped = registry.probes_for("US", s)
+    assert ConditionKind.closures not in grouped
+
+
 def test_s4_ac1_empty_region_set_is_region_agnostic() -> None:
     # Valhalla declares supports_region=frozenset() → selected in any region.
     s = Settings.from_env(
