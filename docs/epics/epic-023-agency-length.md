@@ -1,6 +1,6 @@
 # Epic 023 — Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** A (path-to-complete.md — "substrate honest enough to build the Phase-D verdict surface on")
 **Spec refs:** comaps-borrow-plan.md item **A2** (wave 1) · CLAUDE.md Rule #3 (graph holds slow/structural) · Rule #1 (source-or-silence) · Rule #7 (provenance on every belief)
 

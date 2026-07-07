@@ -1,6 +1,6 @@
 # Epic 025 — Wire geometry/null-island validity into the load path + externalize trail-filter denylists to config
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (corpus quality — foundation, Phase-A adjacent)
 **Wave:** 2 · **depends_on:** Epics **023** and **030** (both wave 1) — this epic **rebases after both merge** and its PR must say *merge AFTER Epics 023 and 030*. See *Merge sequencing* below.
 **Spec refs:** comaps-borrow-plan item A3 · CLAUDE.md rules #1 (source-or-silence), boundary discipline (fail loudly at boundaries, degrade at surface) · path-to-complete.md Phase A (CDP-03 provenance bundle)

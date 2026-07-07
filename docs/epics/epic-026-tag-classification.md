@@ -1,6 +1,6 @@
 # Epic 026 — Classify OSM sac_scale/surface/access tags at ingest into path_grade/psurface/foot_access
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (corpus ingestion — Stage 3 pipeline)
 **Spec refs:** CoMaps borrow plan §A1 (wave 2) · CoMaps `generator/osm2type.cpp` (DeterminePathGrade + DetermineSurfaceAndHighwayType) · Decision Log §27 (OSM = geometry spine) · CLAUDE.md Rule #1 (source-or-silence)
 

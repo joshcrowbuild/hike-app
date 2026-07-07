@@ -1,6 +1,6 @@
 # Epic 030 — Guard the unguarded short-slug canonical_id collision + re-runnable audit
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** A (Stop the lies in the substrate)
 **Spec refs:** `docs/strategy/path-to-complete.md` §Phase A (BLOCKING substrate audit, lines ~131–140) · CLAUDE.md non-negotiable rules #1 (source-or-silence) & #5 (private overlay) · CDP-14 (additive/reversible/degree-guarded/flag-on-ambiguous merges)
 
