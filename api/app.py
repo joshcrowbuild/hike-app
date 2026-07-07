@@ -79,6 +79,18 @@ logger = logging.getLogger(__name__)
 
 _VERSION = "0.0.0"
 
+# The integer data-shape stamp this API understands (graph/schema.cypher's
+# Meta.schema_format). Bump only alongside a schema.cypher change that breaks how
+# this API reads the graph; an old API deployment then self-reports incompatible
+# via the warm-up gate below instead of misreading the new shape.
+EXPECTED_SCHEMA_FORMAT: int = 1
+
+
+class SchemaFormatError(RuntimeError):
+    """Raised when the graph's schema_format is confirmed newer than this API
+    understands — surfaced through the warm-up disclose path (never a crash)."""
+
+
 # Module-level singletons populated at startup
 _settings: Settings | None = None
 _graph_client: GraphClient | None = None
@@ -99,6 +111,29 @@ _warmup = _WarmupState()  # replaced by _start_warmup at lifespan startup
 # Pause between failed warm-up rounds: long enough not to hammer a struggling
 # dependency, short enough that /health flips to 200 promptly once it recovers.
 _WARMUP_RETRY_PAUSE_S = 2.0
+
+
+def _verify_schema_format(graph_client: GraphClient) -> None:
+    """Refuse ONLY on a confirmed graph schema_format newer than this API supports.
+
+    A read failure (unreachable graph, blip) is not a confirmed incompatibility, so
+    it is swallowed-and-logged here rather than raised — the caller's own graph
+    connectivity check already covers a genuinely-down graph (Rule #1: degrade,
+    don't crash). A missing schema_format (legacy graph, pre-this-epic) also
+    proceeds: absence isn't a confirmed newer format.
+    """
+    try:
+        session = graph_client.scoped_session("schema-check")
+        rows = session.run(("MATCH (m:Meta {id: 'schema'}) RETURN m.schema_format AS sf", {}))
+    except Exception as exc:
+        logger.warning("schema_format probe failed (%s); proceeding unverified", exc)
+        return
+    graph_format = rows[0].get("sf") if rows else None
+    if isinstance(graph_format, int) and graph_format > EXPECTED_SCHEMA_FORMAT:
+        raise SchemaFormatError(
+            f"graph schema_format {graph_format} is newer than this API supports "
+            f"({EXPECTED_SCHEMA_FORMAT}); deploy the matching API version"
+        )
 
 
 def _warm_plan_path(state: _WarmupState, settings: Settings, graph_client: GraphClient) -> None:
@@ -123,6 +158,10 @@ def _warm_plan_path(state: _WarmupState, settings: Settings, graph_client: Graph
             if state.stop.is_set() or time.monotonic() >= deadline:
                 raise
             state.stop.wait(min(1.0, max(0.1, deadline - time.monotonic())))
+    # Schema-format compatibility gate (Epic 024): refuse only a confirmed newer
+    # graph shape. Raises SchemaFormatError, which _warmup_loop records into
+    # state.error the same as any other warm-up failure.
+    _verify_schema_format(graph_client)
     # Providers: the same three resolutions build_runtime performs per-request.
     # warm() forces SDK-client construction (import + key validation) but never a
     # completion — warm-up must not spend tokens; the first paid call stays /plan's.
@@ -303,6 +342,7 @@ def _graph_stats() -> GraphStats | None:
             (
                 "MATCH (m:Meta {id: 'schema'}) "
                 "RETURN m.schema_version AS sv, "
+                "       m.schema_format AS sf, "
                 "       COUNT { (t:CanonicalTrail) } AS trails, "
                 # Elevation-presence gauge (Epic 017 durability): trails carrying a
                 # 3DEP-derived profile (total_gain_m is the always-written scalar). Makes
@@ -343,6 +383,7 @@ def _graph_stats() -> GraphStats | None:
             trailheads=int(r.get("ths") or 0),
             same_as_edges=int(r.get("edges") or 0),
             schema_version=r.get("sv"),
+            schema_format=r.get("sf"),
         )
     except Exception:
         # Degrade-and-disclose (Rule #1): report graph=null to the caller, but log the

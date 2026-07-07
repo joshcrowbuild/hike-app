@@ -63,3 +63,14 @@ def test_real_schema_parses_to_nonempty_executable_statements() -> None:
         assert not s.lstrip().startswith("//"), "no pure-comment statements"
     joined = " ".join(stmts).upper()
     assert "CREATE CONSTRAINT" in joined and "MERGE" in joined
+
+
+def test_schema_stamps_integer_schema_format_on_meta() -> None:
+    """Epic 024 AC-1.1/1.4: schema.cypher sets an integer schema_format literal on
+    :Meta in both the ON CREATE and ON MATCH branches (never a string like "1")."""
+    text = (_REPO / "graph" / "schema.cypher").read_text()
+    stmts = split_statements(text)
+    meta_stmt = next(s for s in stmts if 'Meta {id: "schema"}' in s)
+    assert "m.schema_format = 1" in meta_stmt
+    assert 'm.schema_format = "1"' not in meta_stmt
+    assert meta_stmt.count("m.schema_format = 1") == 2  # ON CREATE and ON MATCH
