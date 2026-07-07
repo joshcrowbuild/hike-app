@@ -182,6 +182,8 @@ export interface ElevationProfile {
   /** Provenance string, e.g. "USGS 3DEP". Shown with the profile. */
   source: string
   resolutionMeters: number
+  /** Naismith's-rule duration estimate in minutes — an inference, disclosed as such (Rule #1/#7). */
+  estimatedDurationMin?: number
 }
 
 /**

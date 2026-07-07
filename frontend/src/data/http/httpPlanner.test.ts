@@ -177,6 +177,7 @@ describe('HttpPlannerClient geometry/elevation mapping (Epic 016 S1)', () => {
     expect(geo?.quality).toBe('approximate')
     expect(geo?.elevationProfile?.totalGainMeters).toBe(200)
     expect(geo?.elevationProfile?.samples[1]).toEqual({ distanceMeters: 500, elevationMeters: 1200 })
+    expect(geo?.elevationProfile?.estimatedDurationMin).toBe(26)
   })
 
   it('threads a derived (approximate) access point onto the VM start marker (D7)', async () => {

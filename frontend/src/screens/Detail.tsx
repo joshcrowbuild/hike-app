@@ -14,6 +14,7 @@ import {
   WarningBlock,
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
+import { formatEstimatedDuration } from '../data/duration'
 import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
 
@@ -115,6 +116,12 @@ function DetailBody({ card }: { card: CardVM }) {
           ) : null}
           {e?.durationHours ? (
             <DecisionItem label="Duration" value={e.durationHours} glyph={glyphs.duration} />
+          ) : card.geo?.elevationProfile?.estimatedDurationMin != null ? (
+            <DecisionItem
+              label="Duration"
+              value={formatEstimatedDuration(card.geo.elevationProfile.estimatedDurationMin)}
+              glyph={glyphs.duration}
+            />
           ) : null}
         </div>
 

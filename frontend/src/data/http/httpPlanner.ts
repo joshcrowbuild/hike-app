@@ -142,6 +142,7 @@ function mapElevationProfile(p: WireElevationProfile | null | undefined): Elevat
     maxGradePercent: p.max_grade_pct,
     source: p.source,
     resolutionMeters: p.resolution_m,
+    estimatedDurationMin: p.estimated_duration_min,
   }
 }
 
