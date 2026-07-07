@@ -535,6 +535,14 @@ def _load_matches(
         lat, lon = _safe_geom_centroid(m.a)
         assembled = assemble_geometry(m.a.geom)
         route_wkt = assembled.wkt if assembled is not None else None
+        # Agency-first: the authoritative length usually lives on the agency side
+        # (m.b) since today's spine is always OSM (m.a) — but an agency source CAN
+        # be the spine (m.a) in a latent config, so prefer whichever side carries it
+        # rather than assuming m.b (Correction 3 / AC-4.1).
+        length_mi = m.b.length_mi if m.b.length_mi is not None else m.a.length_mi
+        length_source = m.b.length_source if m.b.length_mi is not None else m.a.length_source
+        gain_ft = m.b.gain_ft if m.b.gain_ft is not None else m.a.gain_ft
+        gain_source = m.b.gain_source if m.b.gain_ft is not None else m.a.gain_source
         load_canonical_trail(
             runner,
             canonical_id,
@@ -545,6 +553,10 @@ def _load_matches(
             way_type=m.a.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
+            length_mi=length_mi,
+            length_source=length_source,
+            gain_ft=gain_ft,
+            gain_source=gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
@@ -610,6 +622,10 @@ def _load_matches(
             way_type=feat.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
+            length_mi=feat.length_mi,
+            length_source=feat.length_source,
+            gain_ft=feat.gain_ft,
+            gain_source=feat.gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
