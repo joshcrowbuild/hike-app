@@ -16,6 +16,7 @@ Idempotent: all Neo4j writes use MERGE. Safe to re-run monthly.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -81,13 +82,17 @@ def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     if ref:
         clean_ref = ref.replace("/", "_").replace(" ", "-").lower()
         return f"ct:{source.lower()}:{clean_ref}"
+    # Two distinct names can slugify to the same string (e.g. "Blue/Ridge Trail"
+    # and "Blue Ridge Trail" both -> "blue-ridge-trail"), so the hash suffix must
+    # apply unconditionally, not just past some length threshold (mode (a) —
+    # short-slug collision). It must hash the full original `name`, not the lossy
+    # `slug`: hashing the slug would give identically-slugified names the same
+    # suffix and fix nothing. The retained prefix is lengthened from 33 to 50
+    # chars so two names sharing a long common prefix (mode (b) — long
+    # shared-prefix truncation) stay human-distinguishable in the readable part.
     slug = name.lower().replace(" ", "-").replace("/", "-")
-    if len(slug) > 40:
-        # Hash suffix prevents collision when two names share a long common prefix.
-        import hashlib
-
-        suffix = hashlib.sha1(slug.encode()).hexdigest()[:6]
-        slug = f"{slug[:33]}-{suffix}"
+    suffix = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    slug = f"{slug[:50]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
 
@@ -96,8 +101,6 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
         return f"{source}:{ref}"
     key = name.replace(" ", "_").lower()
     if len(key) > 30:
-        import hashlib
-
         suffix = hashlib.sha1(key.encode()).hexdigest()[:6]
         key = f"{key[:23]}_{suffix}"
     return f"{source}:{key}"
@@ -527,6 +530,40 @@ def _load_matches(
         tier = tier_by_name.get(source.lower())
         return {"authority_tier": tier} if tier is not None else None
 
+    # CDP-14 flag-on-ambiguous merge (S5): after the S1/S2 fix, two *distinct*
+    # names always get distinct canonical_ids, so a repeat (canonical_id, source)
+    # within this run means two ref-less same-source features share a
+    # byte-identical name — the only same-source fusion the fix can't
+    # distinguish. Cross-source SAME_AS (osm+nps on one trail) keys to two
+    # different tuples and never repeats, so it stays silent (degree-guarded).
+    # Log-only: never raises, deletes, or overwrites (additive + reversible).
+    #
+    # A single spine Feature can legitimately appear as `m.a` in >1 auto-accept
+    # Match (matched against two different agency sources, e.g. NPS and USFS,
+    # by two independent match() calls) — that is corroboration, not ambiguity,
+    # so re-seeing the SAME Feature object must not self-trigger. `id(feature)`
+    # (not any persisted field) tracks "already considered this exact feature";
+    # a genuinely distinct feature that happens to share a name is a different
+    # object and still triggers the warning.
+    seen_cid_source: set[tuple[str, str]] = set()
+    seen_feature_ids: set[int] = set()
+
+    def _flag_if_ambiguous(feature: Feature, canonical_id: str) -> None:
+        if id(feature) in seen_feature_ids:
+            return
+        seen_feature_ids.add(id(feature))
+        key = (canonical_id, feature.source)
+        if key in seen_cid_source:
+            log.warning(
+                "Ambiguous same-source merge: canonical_id=%s source=%s name=%r "
+                "already loaded this run — two ref-less features share this name.",
+                canonical_id,
+                feature.source,
+                feature.name,
+            )
+            return
+        seen_cid_source.add(key)
+
     counts = {"loaded": 0, "skipped_hygiene": 0}
     matched_spine_ids: set[str] = set()
 
@@ -559,6 +596,7 @@ def _load_matches(
             gain_source=gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(m.a, canonical_id)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
         load_source_record(
             runner,
@@ -578,6 +616,7 @@ def _load_matches(
             match_score=1.0,
             ingest_version=iv,
         )
+        _flag_if_ambiguous(m.b, canonical_id)
         sr_b = _sr_uid(m.b.source, m.b.ref, m.b.name)
         load_source_record(
             runner,
@@ -628,6 +667,7 @@ def _load_matches(
             gain_source=feat.gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(feat, canonical_id)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
         load_source_record(
             runner,
