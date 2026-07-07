@@ -382,6 +382,141 @@ def count_region_trails(runner: Runner, *, region_id: str) -> int:
     )
 
 
+def _grouped_counts(
+    rows_or_result: Any, value_key: str = "value", n_key: str = "n"
+) -> dict[str, int]:
+    """Extract a `... AS value, count(...) AS n` GROUPED, multi-row result into a
+    `dict[str, int]` keyed by `str(value)`. Mirrors `_scalar_count`'s dual-shape
+    duck-typing (a real `neo4j.Result` vs. a test's materialized `list[dict]`) but,
+    unlike `_scalar_count`, iterates EVERY row rather than just the first — the
+    facet-count queries below return one row per distinct bucket value, not a single
+    scalar. Do NOT reuse `_scalar_count` for these queries (it reads only `row[0]`
+    and would silently drop every bucket but one)."""
+    rows = rows_or_result if isinstance(rows_or_result, list) else list(rows_or_result)
+    out: dict[str, int] = {}
+    for row in rows:
+        key = str(row[value_key])
+        out[key] = out.get(key, 0) + int(row[n_key])
+    return out
+
+
+# Facet dimensions (Epic 027 Design Decision 2). Each helper counts one MARGINAL
+# per-dimension bucket set — not the full cross-product — over whichever candidate
+# set `version_pred` scopes to (all-versions `_REGION_PRED` for the pre-load
+# snapshot, or the current-version predicate below for the post-load snapshot).
+# Bucket keys are "{dimension}={value}", matching `diff_facets`' key format
+# (ingestion/checks/facet_diff.py).
+
+
+def _facet_source_counts(
+    runner: Runner, version_pred: str, params: dict[str, Any]
+) -> dict[str, int]:
+    """`source=<s>` — MULTI-valued: a trail joined by `SAME_AS` to N distinct
+    `SourceRecord.source` values contributes +1 to N different buckets (the signal
+    that catches "one corroborating source silently returns half"). `DISTINCT
+    node, value` collapses multiple SourceRecords from the SAME source down to one
+    contribution per trail."""
+    rows = runner(
+        "MATCH (node:CanonicalTrail)<-[:SAME_AS]-(sr:SourceRecord)\n"
+        f"WHERE {version_pred}\n"
+        "WITH DISTINCT node, sr.source AS value\n"
+        "RETURN value, count(*) AS n",
+        dict(params),
+    )
+    return {f"source={k}": v for k, v in _grouped_counts(rows).items()}
+
+
+def _facet_way_type_counts(
+    runner: Runner, version_pred: str, params: dict[str, Any]
+) -> dict[str, int]:
+    """`way_type=<t.way_type>` — null coalesces to the empty-string bucket."""
+    rows = runner(
+        "MATCH (node:CanonicalTrail)\n"
+        f"WHERE {version_pred}\n"
+        "WITH coalesce(node.way_type, '') AS value\n"
+        "RETURN value, count(*) AS n",
+        dict(params),
+    )
+    return {f"way_type={k}": v for k, v in _grouped_counts(rows).items()}
+
+
+def _facet_has_elevation_counts(
+    runner: Runner, version_pred: str, params: dict[str, Any]
+) -> dict[str, int]:
+    """`has_elevation=true|false` — identical definition to `/health`'s elevation
+    gauge (`api/app.py`'s `total_gain_m IS NOT NULL`, Epic 017 durability)."""
+    rows = runner(
+        "MATCH (node:CanonicalTrail)\n"
+        f"WHERE {version_pred}\n"
+        "WITH (node.total_gain_m IS NOT NULL) AS value\n"
+        "RETURN value, count(*) AS n",
+        dict(params),
+    )
+    return {f"has_elevation={str(k).lower()}": v for k, v in _grouped_counts(rows).items()}
+
+
+def _facet_named_counts(
+    runner: Runner, version_pred: str, params: dict[str, Any]
+) -> dict[str, int]:
+    """`named=true|false` — near-constant `true` today (load requires a name);
+    included cheap so a future placeholder-name trail has somewhere to show up."""
+    rows = runner(
+        "MATCH (node:CanonicalTrail)\n"
+        f"WHERE {version_pred}\n"
+        "WITH (node.name IS NOT NULL AND trim(node.name) <> '') AS value\n"
+        "RETURN value, count(*) AS n",
+        dict(params),
+    )
+    return {f"named={str(k).lower()}": v for k, v in _grouped_counts(rows).items()}
+
+
+# Current-run candidate predicate for the POST-load facet snapshot — this run's
+# `ingest_version` only (the facet analogue of `count_region_versions`' `n_cur`
+# query, which likewise doesn't need `region_id`: a version string already embeds
+# its region, `"{region_id}"` or `"{region_id}-{suffix}"`).
+_CURRENT_VERSION_PRED = "node.ingest_version = $iv"
+
+
+# The four marginal per-dimension counters, run identically by both snapshot
+# functions below. A single shared tuple means adding a 5th facet dimension is a
+# one-line change in ONE place, not two independently-maintained call sites that
+# could silently drift apart (a dimension present in one snapshot but not the
+# other reads as a fully-appeared/disappeared bucket and could spuriously trip
+# the hard-breach gate).
+_FACET_DIMENSION_COUNTERS: tuple[Callable[[Runner, str, dict[str, Any]], dict[str, int]], ...] = (
+    _facet_source_counts,
+    _facet_way_type_counts,
+    _facet_has_elevation_counts,
+    _facet_named_counts,
+)
+
+
+def count_region_facets(runner: Runner, *, region_id: str) -> dict[str, int]:
+    """PRE-load facet snapshot: this region's CanonicalTrails across ALL ingest
+    versions (`_REGION_PRED`), grouped into the four marginal per-dimension bucket
+    sets. The facet-keyed analogue of `count_region_trails`'s scalar total — same
+    candidate set, just grouped instead of counted flat. Read-only; issues no
+    writes (world-layer read, no scope clause needed — module docstring)."""
+    params = {"region_id": region_id, "prefix": f"{region_id}-"}
+    buckets: dict[str, int] = {}
+    for counter in _FACET_DIMENSION_COUNTERS:
+        buckets.update(counter(runner, _REGION_PRED, params))
+    return buckets
+
+
+def count_version_facets(runner: Runner, iv: str, *, region_id: str) -> dict[str, int]:
+    """POST-load facet snapshot: this run's current-`ingest_version` CanonicalTrails
+    only, grouped the same way as `count_region_facets`. `region_id` is accepted for
+    signature symmetry with `count_region_facets` (and so a future cross-region
+    ambiguity check has somewhere to hook in) but the current-version predicate
+    alone already scopes the query to this run. Read-only; issues no writes."""
+    params = {"iv": iv, "region_id": region_id}
+    buckets: dict[str, int] = {}
+    for counter in _FACET_DIMENSION_COUNTERS:
+        buckets.update(counter(runner, _CURRENT_VERSION_PRED, params))
+    return buckets
+
+
 def prune_stale_trails(
     runner: Runner,
     ingest_version: str,

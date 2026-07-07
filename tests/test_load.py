@@ -8,6 +8,8 @@ import pytest
 
 from graph.load import (
     clear_trail_segments,
+    count_region_facets,
+    count_version_facets,
     load_area,
     load_canonical_trail,
     load_segment,
@@ -518,3 +520,106 @@ def test_idempotency_shape():
 
     for cypher, _ in calls:
         assert "MERGE" in cypher, f"Expected MERGE in: {cypher}"
+
+
+# ── Epic 027 S2 — per-facet count queries ──────────────────────────────────────
+#
+# A dedicated grouped fake Runner: `_make_prune_runner` above matches on
+# `RETURN count(cur)`/`RETURN count(node)` and returns a single-row scalar shape
+# (`[{"n": ...}]`), which does NOT match these queries' grouped
+# `... AS value, count(...) AS n` shape (AC-2.2's note) — reusing it would silently
+# return the wrong shape, so these tests get their own fake.
+
+
+def _make_facet_runner(
+    *,
+    source_rows: list[dict],
+    way_type_rows: list[dict],
+    elev_rows: list[dict],
+    named_rows: list[dict],
+) -> tuple[Any, list[dict]]:
+    """Dispatches on a distinctive Cypher substring per dimension and returns canned
+    multi-row grouped results (the `list[dict]` shape `_grouped_counts` accepts).
+    Records every call (cypher + params) so a test can assert on the query text and
+    the `$prefix`/`$iv` params actually sent."""
+    calls: list[dict] = []
+
+    def runner(cypher: str, params: dict) -> Any:
+        calls.append({"cypher": cypher, "params": params})
+        if "SAME_AS" in cypher:
+            return source_rows
+        if "total_gain_m" in cypher:
+            return elev_rows
+        if "trim(node.name)" in cypher:
+            return named_rows
+        if "way_type" in cypher:
+            return way_type_rows
+        raise AssertionError(f"unexpected facet query: {cypher}")
+
+    return runner, calls
+
+
+def test_count_region_facets_bucket_keys():
+    runner, _ = _make_facet_runner(
+        source_rows=[{"value": "osm", "n": 100}, {"value": "usfs", "n": 40}],
+        way_type_rows=[{"value": "path", "n": 90}, {"value": "", "n": 10}],
+        elev_rows=[{"value": True, "n": 80}, {"value": False, "n": 20}],
+        named_rows=[{"value": True, "n": 100}],
+    )
+    buckets = count_region_facets(runner, region_id="shen")
+    assert buckets == {
+        "source=osm": 100,
+        "source=usfs": 40,
+        "way_type=path": 90,
+        "way_type=": 10,
+        "has_elevation=true": 80,
+        "has_elevation=false": 20,
+        "named=true": 100,
+    }
+
+
+def test_count_region_facets_uses_anchored_region_pred_and_prefix_param():
+    runner, calls = _make_facet_runner(
+        source_rows=[{"value": "osm", "n": 1}],
+        way_type_rows=[{"value": "path", "n": 1}],
+        elev_rows=[{"value": True, "n": 1}],
+        named_rows=[{"value": True, "n": 1}],
+    )
+    count_region_facets(runner, region_id="shenandoah-gwj")
+    assert calls, "expected the facet queries to run"
+    for call in calls:
+        assert call["params"]["prefix"] == "shenandoah-gwj-"
+        assert "STARTS WITH $prefix" in call["cypher"]
+
+
+def test_count_version_facets_bucket_keys_and_iv_param():
+    runner, calls = _make_facet_runner(
+        source_rows=[{"value": "osm", "n": 5}],
+        way_type_rows=[{"value": "footway", "n": 5}],
+        elev_rows=[{"value": False, "n": 5}],
+        named_rows=[{"value": True, "n": 5}],
+    )
+    buckets = count_version_facets(runner, "shen-2026-07", region_id="shen")
+    assert buckets == {
+        "source=osm": 5,
+        "way_type=footway": 5,
+        "has_elevation=false": 5,
+        "named=true": 5,
+    }
+    assert calls, "expected the facet queries to run"
+    for call in calls:
+        assert call["params"]["iv"] == "shen-2026-07"
+
+
+def test_source_facet_is_multi_valued():
+    # A trail joined to two distinct sources contributes independently to both
+    # buckets — the signal that catches "one corroborating source returns half".
+    runner, _ = _make_facet_runner(
+        source_rows=[{"value": "osm", "n": 30}, {"value": "usfs", "n": 30}],
+        way_type_rows=[],
+        elev_rows=[],
+        named_rows=[],
+    )
+    buckets = count_region_facets(runner, region_id="shen")
+    assert buckets["source=osm"] == 30
+    assert buckets["source=usfs"] == 30
