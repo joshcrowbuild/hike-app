@@ -30,6 +30,7 @@ from shapely.ops import unary_union
 
 from ingestion.boundary import classify_outside_boundary, load_region_boundary
 from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
+from ingestion.elevation import haversine_m
 from ingestion.hygiene import geometry_valid, valid_lonlat
 from ingestion.route import assemble_geometry, line_parts
 from ingestion.sources import registry
@@ -41,6 +42,7 @@ from ingestion.sources.base import (
     Region,
     SourceKind,
 )
+from ingestion.transform import to_miles
 from orchestration.config import Settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -307,6 +309,34 @@ def _assembled_route_wkt(geom: Any) -> str | None:
     sample-line) consume, so geometry is assembled once. `None` when no line."""
     assembled = assemble_geometry(geom)
     return assembled.wkt if assembled is not None else None
+
+
+# Length source tag for the haversine-derived measurement below. A future authoritative
+# per-trail source (e.g. USFS GIS_MILES) would override this — the seam is
+# `length_source`, not built here (Distance-activation task).
+LENGTH_SOURCE_GEOM = "geom-haversine"
+
+
+def _route_length_mi(assembled: BaseGeometry | None) -> float | None:
+    """Trail length in miles: sum great-circle distance (`haversine_m`) between
+    consecutive vertices of each assembled-route part, summed only WITHIN a part —
+    never across a between-parts gap (that gap isn't real trail; same discipline as
+    the elevation profile's part bridging in `ingestion/elevation.py`).
+
+    Deliberately NOT `match.py`'s isotropic ~98 000 m/deg scalar applied to the raw
+    (degree-unit) shapely `.length` — that scalar is only correct for a due-east/west
+    line and drifts ~15% off true ground distance at other orientations. `None`
+    (source-or-silence) when there's no line."""
+    if assembled is None:
+        return None
+    total_m = 0.0
+    have_line = False
+    for part in line_parts(assembled):
+        coords = list(part.coords)
+        for a, b in zip(coords, coords[1:]):
+            total_m += haversine_m(a, b)
+            have_line = True
+    return to_miles(total_m) if have_line else None
 
 
 def _canonical_nodes(
@@ -668,11 +698,17 @@ def _load_matches(
         # Agency-first: the authoritative length usually lives on the agency side
         # (m.b) since today's spine is always OSM (m.a) — but an agency source CAN
         # be the spine (m.a) in a latent config, so prefer whichever side carries it
-        # rather than assuming m.b (Correction 3 / AC-4.1).
+        # rather than assuming m.b (Correction 3 / AC-4.1). Only when NEITHER side
+        # states a length does the geometry-derived haversine fill in, honestly
+        # labelled LENGTH_SOURCE_GEOM (authority > derived; a stated agency length
+        # is never overwritten by a derived one).
         length_mi = m.b.length_mi if m.b.length_mi is not None else m.a.length_mi
         length_source = m.b.length_source if m.b.length_mi is not None else m.a.length_source
         gain_ft = m.b.gain_ft if m.b.gain_ft is not None else m.a.gain_ft
         gain_source = m.b.gain_source if m.b.gain_ft is not None else m.a.gain_source
+        if length_mi is None:
+            length_mi = _route_length_mi(assembled)
+            length_source = LENGTH_SOURCE_GEOM if length_mi is not None else None
         load_canonical_trail(
             runner,
             canonical_id,
@@ -749,6 +785,13 @@ def _load_matches(
         canonical_id = _build_canonical_id(feat.source, feat.ref, feat.name)
         assembled = assemble_geometry(feat.geom)
         route_wkt = assembled.wkt if assembled is not None else None
+        # Same authority-first rule as the matched path: a stated source length
+        # wins; the haversine over the assembled route is the labelled fallback.
+        length_mi = feat.length_mi
+        length_source = feat.length_source
+        if length_mi is None:
+            length_mi = _route_length_mi(assembled)
+            length_source = LENGTH_SOURCE_GEOM if length_mi is not None else None
         load_canonical_trail(
             runner,
             canonical_id,
@@ -759,8 +802,8 @@ def _load_matches(
             way_type=feat.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
-            length_mi=feat.length_mi,
-            length_source=feat.length_source,
+            length_mi=length_mi,
+            length_source=length_source,
             gain_ft=feat.gain_ft,
             gain_source=feat.gain_source,
             path_grade=feat.path_grade,

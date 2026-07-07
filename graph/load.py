@@ -195,7 +195,7 @@ def load_canonical_trail(
     lat: float | None = None,
     lon: float | None = None,
     is_loop: bool | None = None,
-    length_mi: float | None = None,
+    length_mi: float | None = _UNSET,
     length_source: str | None = None,
     gain_ft: float | None = None,
     gain_source: str | None = None,
@@ -252,7 +252,11 @@ def load_canonical_trail(
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")
-    if length_mi is not None:
+    if length_mi is not _UNSET:
+        # As with route_geom_wkt/way_type/outside_boundary: passing None explicitly
+        # SETs null, so a re-ingest whose geometry degrades (no route -> no computable
+        # length) clears the stale length rather than leaving a prior ingest's value
+        # standing (source-or-silence, Rule #1). Omitting the arg leaves it untouched.
         params["length_mi"] = length_mi
         params["length_source"] = length_source or ""
         set_clauses += ["t.length_mi = $length_mi", "t.length_source = $length_source"]
