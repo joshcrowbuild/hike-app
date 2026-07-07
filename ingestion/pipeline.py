@@ -78,6 +78,32 @@ def _safe_geom_centroid(feature: Feature) -> tuple[float, float]:
     return (c.y, c.x)  # (lat, lon)
 
 
+def _hygienic_centroid(feature: Feature, counts: dict[str, int]) -> tuple[float, float] | None:
+    """(lat, lon) if `feature` passes the load-time hygiene floor, else None (drop).
+
+    Geometry is validated FIRST: `_safe_geom_centroid` reads `centroid.y`/`.x`,
+    which raises `GEOSException` on an empty geometry, so it cannot be called
+    on an unvalidated geom.
+    """
+    from ingestion.hygiene import geometry_valid, valid_lonlat
+
+    if not geometry_valid(feature.geom):
+        log.warning("Dropping %s: invalid/empty geometry", feature.ref or feature.name)
+        counts["skipped_hygiene"] += 1
+        return None
+    lat, lon = _safe_geom_centroid(feature)
+    if not valid_lonlat(lon, lat):
+        log.warning(
+            "Dropping %s: invalid/null-island centroid (%.5f,%.5f)",
+            feature.ref or feature.name,
+            lon,
+            lat,
+        )
+        counts["skipped_hygiene"] += 1
+        return None
+    return lat, lon
+
+
 def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     if ref:
         clean_ref = ref.replace("/", "_").replace(" ", "-").lower()
@@ -568,8 +594,11 @@ def _load_matches(
     matched_spine_ids: set[str] = set()
 
     for m in auto_accept:
+        hy = _hygienic_centroid(m.a, counts)
+        if hy is None:
+            continue
+        lat, lon = hy
         canonical_id = _build_canonical_id(m.a.source, m.a.ref, m.a.name)
-        lat, lon = _safe_geom_centroid(m.a)
         assembled = assemble_geometry(m.a.geom)
         route_wkt = assembled.wkt if assembled is not None else None
         # Agency-first: the authoritative length usually lives on the agency side
@@ -647,8 +676,11 @@ def _load_matches(
         if not feat.name:  # geometry-only, can't conflate or display
             counts["skipped_hygiene"] += 1
             continue
+        hy = _hygienic_centroid(feat, counts)
+        if hy is None:
+            continue
+        lat, lon = hy
         canonical_id = _build_canonical_id(feat.source, feat.ref, feat.name)
-        lat, lon = _safe_geom_centroid(feat)
         assembled = assemble_geometry(feat.geom)
         route_wkt = assembled.wkt if assembled is not None else None
         load_canonical_trail(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Polygon
 
 from ingestion.hygiene import (
     geometry_valid,
@@ -35,6 +35,9 @@ def test_in_bbox() -> None:
 def test_geometry_valid() -> None:
     assert geometry_valid(LineString([(0, 0), (1, 1)]))
     assert not geometry_valid(LineString())  # empty
+    assert not geometry_valid(None)
+    # Bowtie polygon: non-empty but self-intersecting → geometrically invalid.
+    assert not geometry_valid(Polygon([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)]))
 
 
 def test_has_provenance() -> None:
