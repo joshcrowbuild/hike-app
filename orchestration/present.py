@@ -75,6 +75,9 @@ def _body(kind: str, value: Any) -> str:
         return f"nearest gauge: {value.get('monitoring_location') or value.get('site_id')}"
     if kind == "permits":
         return f"{value.get('count', 0)} nearby facilities"
+    if kind == "closures":
+        park = value.get("park", "nearest park")
+        return f"{value.get('count', 0)} NPS closure/danger alert(s) — {park}"
     if kind == "drive_time":
         secs = value.get("drive_seconds")
         km = value.get("distance_km")
@@ -108,6 +111,9 @@ def _origin(kind: str, value: Any) -> str:
     if kind == "fire":
         sats = [s for s in (value.get("satellites") or []) if isinstance(s, str)]
         return f"FIRMS {'/'.join(sats)}" if sats else ""
+    if kind == "closures":
+        park_code = value.get("park_code")
+        return f"NPS {park_code}" if park_code else ""
     # permits (RIDB → Recreation.gov) is a single federal origin — corroboration moot
     # (spike). No origin id is emitted: it would only restate the provider already in the
     # source-parens, never serve as an independence key.

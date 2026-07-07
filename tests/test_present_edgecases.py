@@ -81,6 +81,18 @@ def test_permits_body_defaults_to_zero_count() -> None:
     assert "0 nearby facilities" in line.text
 
 
+def test_closures_body_renders_count_and_park() -> None:
+    value = {"park": "Shenandoah National Park", "park_code": "SHEN", "count": 2}
+    line = summarize_fact("closures", _fact(value), _high(), now=NOW)
+    assert "2 NPS closure/danger alert(s) — Shenandoah National Park" in line.text
+    assert "NPS SHEN" in line.source
+
+
+def test_closures_body_defaults_to_zero_count_and_nearest_park() -> None:
+    line = summarize_fact("closures", _fact({}), _high(), now=NOW)
+    assert "0 NPS closure/danger alert(s) — nearest park" in line.text
+
+
 def test_water_body_prefers_monitoring_location() -> None:
     line = summarize_fact("water", _fact({"monitoring_location": "Potomac"}), _high(), now=NOW)
     assert "Potomac" in line.text

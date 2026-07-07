@@ -62,6 +62,7 @@ class ConditionKind(Enum):
     fire = "fire"
     water = "water"
     permits = "permits"
+    closures = "closures"
     drive_time = "drive_time"
 
 
