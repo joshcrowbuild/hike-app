@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 from collections import defaultdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,13 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 from ingestion.boundary import classify_outside_boundary, load_region_boundary
+from ingestion.checks.facet_diff import (
+    FacetRow,
+    breached_hard,
+    diff_facets,
+    ingest_stats_path,
+    sorted_by_abs_delta,
+)
 from ingestion.conflate.match import Feature, Match, Thresholds, match, normalize_name
 from ingestion.route import assemble_geometry, line_parts
 from ingestion.sources import registry
@@ -769,7 +777,9 @@ def run_pipeline(
     try:
         from graph.client import GraphClient
         from graph.load import (
+            count_region_facets,
             count_region_trails,
+            count_version_facets,
             load_enrichment_facts,
             make_runner,
             prune_stale_trails,
@@ -791,6 +801,11 @@ def run_pipeline(
             # total). First-ever ingest → 0 → the gate's no-denominator (passes) path.
             pre_load_count = count_region_trails(runner, region_id=region.region_id)
             counts["pre_load_count"] = pre_load_count
+            # Epic 027: the facet-keyed analogue of the scalar snapshot above — this
+            # region's per-source/per-way_type/per-elevation/per-named counts BEFORE
+            # this run's load, so a class-specific collapse (one source silently
+            # returning half) is visible even while the total stays healthy.
+            pre_facets = count_region_facets(runner, region_id=region.region_id)
             # Phase-2 spatial signal: the region's protected-area boundary (None when
             # the region ships only a placeholder bbox — the classifier then abstains,
             # so behaviour is never worse than today's name-only filter).
@@ -819,6 +834,11 @@ def run_pipeline(
             counts["elev_covered"] = len(
                 {f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR}
             )
+            # POST-load facet snapshot (Epic 027): current-`iv` trails only, taken
+            # after enrichment (so has_elevation reflects this run) and before the
+            # prune — the facet analogue of the n_cur/n_prev split verify_before_prune
+            # already does for the scalar total.
+            post_facets = count_version_facets(runner, iv, region_id=region.region_id)
             # ── Gate BEFORE prune (positioned between the load and the prune — post-run
             # would be too late, the prune already committed). verify_before_prune checks
             # for a collapsed trail count (scale-safe, supersedes absolute bands) and, when
@@ -837,13 +857,43 @@ def run_pipeline(
                 elevation_expected=_elevation_expected(enrichment_sources, settings),
                 pre_load_count=pre_load_count,
             )
-            prune_outcome = prune_stale_trails(
-                runner, iv, region_id=region.region_id, pre_load_count=pre_load_count
-            )
-            counts["pruned"] = int(prune_outcome.pruned)
-            counts["prune_protected"] = int(prune_outcome.protected)
-            if not prune_outcome.pruned:
-                log.warning(prune_outcome.reason)
+            # Epic 027 finer tier: a per-facet hard breach (a class-specific collapse
+            # the scalar ratio/verify gates above can't see, e.g. one source silently
+            # returning half its trails) blocks the prune EVEN THOUGH the total passed.
+            # This is purely additive above the scalar gates — it can only ever ABORT
+            # a prune they would have allowed, never permit one they'd have blocked
+            # (B1.4): it only runs once verify_before_prune has already passed.
+            facet_rows = diff_facets(pre_facets, post_facets)
+            # First-ever ingest of this region (pre_load_count == 0, mirroring the
+            # scalar guards' own "no denominator" pass-through in verify_before_prune
+            # and prune_stale_trails) has an empty pre_facets snapshot, so EVERY bucket
+            # looks "brand new" (rel_pct=100.0 by get_rel's pre==0 rule) and would
+            # otherwise spuriously hard-breach on every healthy region onboarding —
+            # there is no prior baseline to have collapsed FROM. Still compute/report
+            # facet_rows for stats.json visibility; just never let them block the prune.
+            hard_breaches = breached_hard(facet_rows) if pre_load_count > 0 else []
+            prune_blocked = bool(hard_breaches)
+            if prune_blocked:
+                counts["pruned"] = 0
+                counts["prune_blocked_facets"] = len(hard_breaches)
+                log.warning(
+                    "Facet-diff hard breach for region %r — skipping prune (%d bucket(s)): %s",
+                    region.region_id,
+                    len(hard_breaches),
+                    "; ".join(
+                        f"{r.dimension}={r.value} delta={r.delta} rel_pct={r.rel_pct:.1f}%"
+                        for r in hard_breaches
+                    ),
+                )
+            else:
+                prune_outcome = prune_stale_trails(
+                    runner, iv, region_id=region.region_id, pre_load_count=pre_load_count
+                )
+                counts["pruned"] = int(prune_outcome.pruned)
+                counts["prune_protected"] = int(prune_outcome.protected)
+                if not prune_outcome.pruned:
+                    log.warning(prune_outcome.reason)
+            _write_ingest_stats(region.region_id, iv, facet_rows, prune_blocked=prune_blocked)
     finally:
         gc.close()
 
@@ -891,6 +941,30 @@ def _persist_review_band(review: list[Match], region_id: str, out_dir: str) -> i
         log.warning("Review-band persistence failed for %s, skipping: %s", region_id, exc)
         return 0
     return len(review)
+
+
+def _write_ingest_stats(
+    region_id: str, iv: str, rows: list[FacetRow], *, prune_blocked: bool
+) -> None:
+    """Best-effort persistence of the per-facet ingest diff to `stats.json` (Epic 027
+    S3.6/S3.7), read back by `/health` via the same `ingest_stats_path` resolver.
+    Mirrors `_persist_review_band`: a write failure (e.g. read-only filesystem) is
+    logged and swallowed, never raised — the prune-block decision is computed in
+    memory BEFORE this is called and never depends on the write succeeding."""
+    path = ingest_stats_path(region_id)
+    payload = {
+        "region": region_id,
+        "ingest_version": iv,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "prune_blocked": prune_blocked,
+        "buckets": [r._asdict() for r in sorted_by_abs_delta(rows)],
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            json.dump(payload, f)
+    except OSError as exc:
+        log.warning("Ingest-stats persistence failed for %s, skipping: %s", region_id, exc)
 
 
 def _print_dry_run_summary(

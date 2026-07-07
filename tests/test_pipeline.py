@@ -14,11 +14,13 @@ import json
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from shapely.geometry import LineString
 
+from graph.load import PruneOutcome
 from ingestion import pipeline
 from ingestion.conflate.match import Agreement, Feature, Match
 from ingestion.pipeline import (
@@ -1354,3 +1356,228 @@ def test_run_pipeline_persists_review_band(monkeypatch, tmp_path):
     assert record["agency_name"] == "Old Rag"
     assert record["source"] == "NPS"
     assert record["region"] == _REGION.region_id
+
+
+# ── Epic 027 S3 — facet-diff gate wired into the live (non-dry-run) path ───────
+#
+# run_pipeline's live path imports `graph.client.GraphClient` and several
+# `graph.load` functions LOCALLY (inside the function body), so patching the
+# attributes on the already-imported `graph.client`/`graph.load` modules is
+# picked up by that local `from ... import ...` at call time — no real Neo4j
+# needed. `graph.load.make_runner` is patched to return our fake runner directly
+# (ignoring the fake session), so the fake session/driver/client only need to
+# satisfy the `with gc._ensure_driver().session() as session:` protocol.
+
+
+class _FakeSessionCM:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeDriver:
+    def session(self):
+        return _FakeSessionCM()
+
+
+class _FakeGraphClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def _ensure_driver(self):
+        return _FakeDriver()
+
+    def close(self):
+        pass
+
+
+def _verify_ok_runner():
+    """Answers `verify_before_prune`'s `count_region_versions` queries with counts
+    that clear the (default 0.5) ratio gate, so verify never raises — the facet
+    gate is what these tests exercise."""
+
+    def runner(cypher: str, params: dict):
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 990}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 10}]
+        return []
+
+    return runner
+
+
+def _wire_fake_graph(
+    monkeypatch,
+    *,
+    pre_load_count: int,
+    pre_facets: dict,
+    post_facets: dict,
+    prune_outcome: PruneOutcome | None = None,
+):
+    """Install the fake GraphClient + monkeypatched graph.load functions the live
+    path needs, and return the `prune_stale_trails` MagicMock so a test can assert
+    on whether/how it was called."""
+    monkeypatch.setattr("graph.client.GraphClient", _FakeGraphClient)
+    monkeypatch.setattr("graph.load.make_runner", lambda session: _verify_ok_runner())
+    monkeypatch.setattr(
+        "graph.load.count_region_trails", lambda runner, *, region_id: pre_load_count
+    )
+    monkeypatch.setattr(
+        "graph.load.count_region_facets", lambda runner, *, region_id: dict(pre_facets)
+    )
+    monkeypatch.setattr(
+        "graph.load.count_version_facets",
+        lambda runner, iv, *, region_id: dict(post_facets),
+    )
+    monkeypatch.setattr("graph.load.load_enrichment_facts", lambda runner, facts: 0)
+    prune_mock = MagicMock(
+        return_value=prune_outcome or PruneOutcome(pruned=True, n_cur=990, n_prev=10)
+    )
+    monkeypatch.setattr("graph.load.prune_stale_trails", prune_mock)
+    return prune_mock
+
+
+def _live_region_settings(monkeypatch, tmp_path):
+    """An empty-source live-path run: no spine features to load, so `_load_matches`
+    writes nothing and the test only exercises the facet-gate wiring."""
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[])
+    _inject(monkeypatch, [spine])
+    return replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
+
+
+def test_hard_facet_breach_skips_prune(monkeypatch, tmp_path):
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+    prune_mock = _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=1000,
+        pre_facets={"source=nps": 1000, "source=osm": 1000},
+        # source=nps collapses 1000 -> 100 (delta=-900, rel_pct=90%) -> breaches
+        # 'low' (the coarsest, most severe level) even though source=osm barely
+        # moves — the exact class-specific collapse the scalar ratio guard can't see.
+        post_facets={"source=nps": 100, "source=osm": 990},
+    )
+
+    counts = run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert prune_mock.call_count == 0
+    assert counts["pruned"] == 0
+    assert counts["prune_blocked_facets"] == 1
+
+
+def test_first_ever_ingest_does_not_block_prune_on_appeared_buckets(monkeypatch, tmp_path):
+    """Regression: pre_load_count == 0 (first-ever ingest of this region) must skip
+    the facet hard-gate exactly like the existing scalar guards' own no-denominator
+    pass-through (verify_before_prune, prune_stale_trails' ratio guard) — mirroring
+    Design Decision 3's parity with the scalar gate. Without this, EVERY bucket looks
+    'brand new' (pre=0 -> rel_pct=100.0 by get_rel's rule) and a healthy first-ever
+    region onboarding would spuriously hard-breach on any bucket with >100 trails,
+    even though nothing has collapsed — there is no prior baseline to collapse from."""
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+    prune_mock = _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=0,
+        pre_facets={},
+        post_facets={"source=osm": 500, "way_type=path": 500},
+    )
+
+    counts = run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert prune_mock.call_count == 1
+    assert counts["pruned"] == 1
+    assert "prune_blocked_facets" not in counts
+
+
+def test_healthy_reingest_still_prunes(monkeypatch, tmp_path):
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+    prune_mock = _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=1000,
+        pre_facets={"source=osm": 1000},
+        post_facets={"source=osm": 990},  # tiny, healthy delta -> no breach anywhere
+    )
+
+    counts = run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert prune_mock.call_count == 1
+    assert counts["pruned"] == 1
+    assert "prune_blocked_facets" not in counts
+
+
+def test_facet_ratio_ignores_healthy_scalar_guards(monkeypatch, tmp_path):
+    """AC-3.5: the facet gate is purely additive — a scalar-guard block (ratio/
+    verify) is untouched by it, and a healthy scalar pass with a healthy facet diff
+    still lets prune_stale_trails' own Guards 1/2 run exactly as before (this test
+    just pins that the facet gate itself never overrides prune_stale_trails' own
+    return value)."""
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+    # prune_stale_trails' OWN guard decides not to prune (e.g. its ratio guard) —
+    # the facet gate must not change that outcome when it found no hard breach.
+    prune_mock = _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=1000,
+        pre_facets={"source=osm": 1000},
+        post_facets={"source=osm": 990},
+        prune_outcome=PruneOutcome(pruned=False, n_cur=990, n_prev=10, reason="guard fired"),
+    )
+
+    counts = run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert prune_mock.call_count == 1
+    assert counts["pruned"] == 0
+    assert "prune_blocked_facets" not in counts
+
+
+def test_ingest_stats_write_failure_does_not_raise_or_change_prune_outcome(monkeypatch, tmp_path):
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=1000,
+        pre_facets={"source=osm": 1000},
+        post_facets={"source=osm": 990},
+    )
+    # Force the best-effort stats.json write to fail: point it at a path whose
+    # parent already exists as a FILE, so `path.parent.mkdir(exist_ok=True)` raises
+    # FileExistsError (an OSError) deterministically, no mocking of `open` needed.
+    blocker = tmp_path / "blocked"
+    blocker.write_text("occupies the stats-dir path")
+    monkeypatch.setattr(
+        pipeline, "ingest_stats_path", lambda region_id: blocker / f"{region_id}.json"
+    )
+
+    counts = run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert counts["pruned"] == 1  # unaffected by the write failure
+    assert not (blocker / f"{_REGION.region_id}.json").exists()
+
+
+def test_stats_json_written_with_expected_schema(monkeypatch, tmp_path):
+    settings = _live_region_settings(monkeypatch, tmp_path)
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+    _wire_fake_graph(
+        monkeypatch,
+        pre_load_count=1000,
+        pre_facets={"source=nps": 1000, "source=osm": 1000},
+        post_facets={"source=nps": 100, "source=osm": 990},
+    )
+
+    run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    out = tmp_path / "stats" / f"{_REGION.region_id}.json"
+    assert out.exists()
+    payload = json.loads(out.read_text())
+    assert payload["region"] == _REGION.region_id
+    assert payload["prune_blocked"] is True
+    assert payload["buckets"], "expected at least one bucket row"
+    # Sorted by |delta| descending (AC-3.7): source=nps (|-900|) before source=osm (|-10|).
+    deltas = [abs(b["delta"]) for b in payload["buckets"]]
+    assert deltas == sorted(deltas, reverse=True)
+    top = payload["buckets"][0]
+    assert top["dimension"] == "source"
+    assert top["value"] == "nps"
+    assert top["breached_level"] == "low"
