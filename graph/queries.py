@@ -199,6 +199,30 @@ def trail_source_corroboration(canonical_ids: list[str]) -> tuple[str, dict[str,
     return cypher, {"cids": list(canonical_ids)}
 
 
+def water_sources_near(
+    lat: float, lon: float, radius_m: float, *, limit: int = 50
+) -> tuple[str, dict[str, Any]]:
+    """On-trail water POIs (spring / well / tap / drinking-water fountain) near
+    a point, nearest first (Epic 035). World nodes only -> inherently public,
+    no owner scope. Surfaces location + water type + seasonality only — never
+    a potability claim (rule #1)."""
+    cypher = (
+        "MATCH (w:WaterSource)\n"
+        "WHERE point.distance(w.point, point($origin)) <= $radius_m\n"
+        "RETURN w.water_id AS water_id, w.water_type AS water_type, w.name AS name,\n"
+        "       w.point AS point, w.seasonal AS seasonal, w.source AS source,\n"
+        "       point.distance(w.point, point($origin)) AS distance_m\n"
+        "ORDER BY distance_m ASC\n"
+        "LIMIT $limit"
+    )
+    params: dict[str, Any] = {
+        "origin": {"latitude": lat, "longitude": lon},
+        "radius_m": radius_m,
+        "limit": limit,
+    }
+    return cypher, params
+
+
 # ── Owned-node read builders (owner-scoped; run through ScopedSession.run) ──────
 
 
