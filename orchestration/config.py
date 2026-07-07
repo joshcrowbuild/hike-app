@@ -134,6 +134,14 @@ class Settings:
     # sampling spacing.
     dem_path: str | None = None
     elev_resolution_m: float = 20.0
+    # OpenTopoData fallback transport (Epic 033 — degrade-and-disclose when no local
+    # DEM raster/rasterio is available, e.g. Render). Selected by `usgs_3dep.from_config`
+    # only when `dem_path` is absent (local raster stays primary — never overrides it).
+    # Self-hosted OpenTopoData Docker is the supported ingest path; the public
+    # `api.opentopodata.org` is light-use only (~1 req/s, 1000 calls/day) and will fail
+    # a full re-ingest — do not point a real ingest run at it.
+    opentopodata_url: str | None = None
+    opentopodata_dataset: str = "ned10m"
 
     # Conflation review-band persistence (DQ follow-up). Directory the pipeline
     # writes `{region}.jsonl` review-band matches under; override via
@@ -229,6 +237,8 @@ class Settings:
             # lost). Absent both → None → 3DEP degrades to a no-op (rule #6).
             dem_path=e.get("ADVENTURE_3DEP_DEM") or default_dem_path(region),
             elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
+            opentopodata_url=e.get("ADVENTURE_OPENTOPODATA_URL") or None,
+            opentopodata_dataset=e.get("ADVENTURE_OPENTOPODATA_DATASET", "ned10m"),
             warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
             review_band_dir=e.get("ADVENTURE_REVIEW_BAND_DIR", REVIEW_BAND_DIR),
         )
