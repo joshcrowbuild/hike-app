@@ -16,6 +16,7 @@ Idempotent: all Neo4j writes use MERGE. Safe to re-run monthly.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -81,13 +82,17 @@ def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     if ref:
         clean_ref = ref.replace("/", "_").replace(" ", "-").lower()
         return f"ct:{source.lower()}:{clean_ref}"
+    # Two distinct names can slugify to the same string (e.g. "Blue/Ridge Trail"
+    # and "Blue Ridge Trail" both -> "blue-ridge-trail"), so the hash suffix must
+    # apply unconditionally, not just past some length threshold (mode (a) —
+    # short-slug collision). It must hash the full original `name`, not the lossy
+    # `slug`: hashing the slug would give identically-slugified names the same
+    # suffix and fix nothing. The retained prefix is lengthened from 33 to 50
+    # chars so two names sharing a long common prefix (mode (b) — long
+    # shared-prefix truncation) stay human-distinguishable in the readable part.
     slug = name.lower().replace(" ", "-").replace("/", "-")
-    if len(slug) > 40:
-        # Hash suffix prevents collision when two names share a long common prefix.
-        import hashlib
-
-        suffix = hashlib.sha1(slug.encode()).hexdigest()[:6]
-        slug = f"{slug[:33]}-{suffix}"
+    suffix = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    slug = f"{slug[:50]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
 
@@ -96,8 +101,6 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
         return f"{source}:{ref}"
     key = name.replace(" ", "_").lower()
     if len(key) > 30:
-        import hashlib
-
         suffix = hashlib.sha1(key.encode()).hexdigest()[:6]
         key = f"{key[:23]}_{suffix}"
     return f"{source}:{key}"
