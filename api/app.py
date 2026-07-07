@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -22,9 +23,10 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 
+from api.gpx import build_gpx
 from api.observability import (
     PlanMetrics,
     cache_size,
@@ -788,6 +790,84 @@ def trail_detail(
     if not rows:
         raise HTTPException(status_code=404, detail="Trail not found")
     return _trip_detail_response(canonical_id, rows[0])
+
+
+def _route_coords_for_export(row: dict[str, Any]) -> list[tuple[float, float]] | None:
+    """The route's `(lon, lat)` vertex list for GPX export, reusing
+    `_geometry_and_confidence`'s resolution (prefer `route_geom_wkt`, else
+    assemble the segments) rather than re-deriving it, so the two endpoints can
+    never disagree about which route a trail has. Flattened to one ordered list:
+    a `MultiLineString`'s parts are concatenated in part order since the minimal
+    core emits a single `<trkseg>`. `None` when the trail carries no parseable
+    geometry at all."""
+    geometry, _confidence = _geometry_and_confidence(row)
+    if geometry is None:
+        return None
+    if geometry.type == "LineString":
+        coords = geometry.coordinates
+    else:  # MultiLineString: flatten parts in order
+        coords = [pt for part in geometry.coordinates for pt in part]
+    return [(float(lon), float(lat)) for lon, lat in coords]
+
+
+def _safe_filename_slug(canonical_id: str) -> str:
+    """ASCII stem for `Content-Disposition`'s filename — no path separators,
+    quotes, or control chars, so a canonical_id can never inject header syntax."""
+    return re.sub(r"[^A-Za-z0-9_-]", "-", canonical_id)
+
+
+@app.get("/trail/{canonical_id}/export.gpx")
+@limiter.limit(detail_limit)
+def trail_export_gpx(
+    request: Request,  # required by slowapi for per-IP keying
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
+    viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> Response:
+    """GPX 1.1 download of a trail's WORLD/corpus route (Epic 028 / CoMaps §D4).
+
+    Reads through the same world-only `trail_detail` projection as `GET
+    /trail/{id}` — never a viewer's personal episode/recorded geometry (Rule #5:
+    share the derived conclusion, never the raw substrate). Because it's shared
+    world data, it needs no auth and is anonymous-friendly, mirroring the sibling
+    endpoint's posture exactly. 404 for an unknown trail; 422 for a known trail
+    whose route can't be assembled (never a 200 with an empty/fabricated track —
+    Rule #1). The `<ele>` gate (D4.3) is applied inside `build_gpx`: most current
+    trails have no vertex-aligned elevation profile, so an empty `<ele>` on a real
+    trail is the expected, honest outcome, not a defect.
+    """
+    if _graph_client is None or _settings is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    try:
+        session = _graph_client.scoped_session(viewer_id)
+        rows = session.run(trail_detail_query(canonical_id))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("gpx export failed for canonical_id=%r", canonical_id)
+        raise HTTPException(status_code=500, detail="Internal error") from exc
+    if not rows:
+        raise HTTPException(status_code=404, detail="Trail not found")
+    row = rows[0]
+    coords = _route_coords_for_export(row)
+    if coords is None:
+        raise HTTPException(status_code=422, detail="Trail has no exportable route geometry")
+    trailhead_latlon = _point_latlon(row.get("trailhead_point"))
+    trailhead = (trailhead_latlon[1], trailhead_latlon[0]) if trailhead_latlon else None
+    xml = build_gpx(
+        row.get("name") or canonical_id,
+        coords,
+        elevations=row.get("profile_elevations_m"),
+        elev_source=row.get("elev_source"),
+        trailhead=trailhead,
+    )
+    safe_slug = _safe_filename_slug(canonical_id)
+    return Response(
+        content=xml,
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{safe_slug}.gpx"'},
+    )
 
 
 def _drain_queue_bg(queue, graph_client) -> None:

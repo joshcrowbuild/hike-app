@@ -18,14 +18,17 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiLineString, Point
 
 from graph.load import PruneOutcome
 from ingestion import pipeline
 from ingestion.conflate.match import Agreement, Feature, Match
+from ingestion.elevation import haversine_m
 from ingestion.pipeline import (
+    LENGTH_SOURCE_GEOM,
     _load_matches,
     _persist_review_band,
+    _route_length_mi,
     consolidate_osm_segments,
     load_region,
     run_pipeline,
@@ -41,6 +44,7 @@ from ingestion.sources.echo import EchoSource
 from ingestion.sources.nps import NpsSource
 from ingestion.sources.osm import OsmSource
 from ingestion.sources.usfs import UsfsSource
+from ingestion.transform import to_miles
 from orchestration.config import Settings
 
 _REGION = Region(region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25))
@@ -517,6 +521,137 @@ def test_s5_no_warning_when_one_spine_feature_matches_two_agencies(caplog):
     assert not warnings
 
 
+# ── S1 — per-record validity drop in the load path (Epic 025) ─────────────────
+
+
+def test_s1_empty_geometry_dropped_without_aborting_region(caplog):
+    """An empty LineString (e.g. a degenerate OSM way) must be dropped per-record —
+    never crash the region. This is the exact case that would raise GEOSException
+    from _safe_geom_centroid if geometry were not validated before the centroid."""
+    import logging
+
+    good_a = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    bad = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    good_b = _feat("Salt Pond Road", "OSM", lon=-78.20)
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        counts = _load_matches(runner, [], [good_a, bad, good_b], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+    assert any("osm/broken" in r.message and "geometry" in r.message for r in caplog.records)
+
+
+def test_s1_null_island_centroid_dropped():
+    """A feature with an otherwise-valid geometry whose centroid lands exactly on
+    (0,0) — the classic null-island sentinel for missing/corrupt coordinate data —
+    must be dropped, not persisted. The geometry itself is valid and non-empty
+    (a straight line from (-1,-1) to (1,1)), so this exercises the valid_lonlat
+    branch specifically, distinct from the geometry_valid branch."""
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    null_island = Feature(
+        name="Null Island Way",
+        geom=LineString([[-1.0, -1.0], [1.0, 1.0]]),
+        source="OSM",
+        ref="osm/null",
+    )
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(runner, [], [good, null_island], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 1
+    assert canonical_writes[0]["name"] == "Compton Gap Road"
+
+
+def test_s1_all_valid_batch_skips_nothing():
+    a = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    b = _feat("Salt Pond Road", "OSM", lon=-78.20)
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(runner, [], [a, b], tier_by_name={"osm": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 0
+    assert counts["loaded"] == 2
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+
+
+def test_s1_invalid_features_never_raise():
+    """Per-record drop, never a region abort: a batch mixing an empty geometry and
+    a null-island centroid among valid features must not raise."""
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    empty_geom = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    null_island = Feature(
+        name="Null Island Way",
+        geom=LineString([[-1.0, -1.0], [1.0, 1.0]]),
+        source="OSM",
+        ref="osm/null",
+    )
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    counts = _load_matches(
+        runner, [], [good, empty_geom, null_island], tier_by_name={"osm": 1}, iv="t"
+    )
+
+    assert counts["skipped_hygiene"] == 2
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 1
+
+
+def test_s1_canonical_nodes_also_gated_by_hygiene():
+    """_canonical_nodes (the enrichment-node derivation, run BEFORE _load_matches
+    in run_pipeline — see run_pipeline's `canonical_nodes = _canonical_nodes(...)`
+    call ahead of the dry-run branch) must apply the same hygiene floor as the
+    load loop. It calls _safe_geom_centroid directly on the same Features; if it
+    isn't gated, an empty-geometry feature crashes here — one call site earlier
+    than the load loop's own guard — defeating the point of the hygiene fix."""
+    from ingestion.pipeline import _canonical_nodes
+
+    good = _feat("Compton Gap Road", "OSM", lon=-78.28)
+    empty_geom = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+
+    nodes = _canonical_nodes([], [good, empty_geom])  # must not raise GEOSException
+
+    assert [n.name for n in nodes] == ["Compton Gap Road"]
+
+
+def test_s1_hygiene_drop_on_matched_spine_not_double_counted(caplog):
+    """A hygiene-dropped auto-accept spine feature (m.a) must not be re-processed
+    in the unmatched-spine loop as if it were never seen — it's a matched feature,
+    just an invalid one. Regression: matched_spine_ids must be updated before the
+    hygiene continue, or the feature is double-dropped and double-counted."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    bad_spine = Feature(name="Broken Way", geom=LineString(), source="OSM", ref="osm/broken")
+    agency_feat = Feature(
+        name="Broken Way", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(bad_spine, agency_feat, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        counts = _load_matches(runner, [m], [bad_spine], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    assert counts["skipped_hygiene"] == 1  # not 2 — dropped once, not reprocessed
+    drop_warnings = [r for r in caplog.records if "osm/broken" in r.message]
+    assert len(drop_warnings) == 1
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 0
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 
@@ -823,6 +958,143 @@ def test_unmatched_spine_way_type_flows_to_load():
     assert canonical and canonical[0].get("way_type") == "track"
 
 
+# ── Distance activation: haversine length_mi (task: activate distance) ──────────
+
+
+def test_route_length_mi_matches_known_synthetic_geometry():
+    # A pure north-south line: haversine reduces to an exact R*dlat great-circle
+    # distance, so this is a real analytic oracle, not a hand-typed magic number.
+    coords = [(-78.0, 38.00), (-78.0, 38.01), (-78.0, 38.02)]
+    line = LineString(coords)
+    expected_m = sum(haversine_m(a, b) for a, b in zip(coords, coords[1:]))
+
+    got = _route_length_mi(line)
+
+    assert got == pytest.approx(to_miles(expected_m))
+    assert got == pytest.approx(1.382, rel=1e-2)  # ~1.38 mi sanity anchor
+
+
+def test_route_length_mi_none_geometry_is_none():
+    assert _route_length_mi(None) is None
+
+
+def test_route_length_mi_sums_within_part_not_across_the_gap():
+    # Two disconnected parts (a MultiLineString): length is the sum of each part's
+    # own ground distance — the gap BETWEEN parts is not real trail and must not
+    # be counted (same discipline as the elevation profile's part bridging).
+    part_a = LineString([(-78.00, 38.00), (-78.00, 38.01)])
+    part_b = LineString([(-77.00, 39.00), (-77.00, 39.01)])  # far away, disconnected
+    multi = MultiLineString([part_a, part_b])
+    expected_m = haversine_m((-78.00, 38.00), (-78.00, 38.01)) + haversine_m(
+        (-77.00, 39.00), (-77.00, 39.01)
+    )
+
+    assert _route_length_mi(multi) == pytest.approx(to_miles(expected_m))
+
+
+def test_matched_length_falls_back_to_haversine_when_no_side_states_one():
+    from ingestion.conflate.match import Agreement, Match
+
+    coords = [(-78.00, 38.00), (-78.00, 38.01)]
+    spine = Feature(name="Compton Gap Road", geom=LineString(coords), source="OSM", ref="osm/1")
+    agency = _feat("Compton Gap Road", "USFS")
+    m = Match(spine, agency, 96, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    expected_mi = to_miles(haversine_m(*coords))
+    assert canonical and canonical[0]["length_mi"] == pytest.approx(expected_mi)
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
+
+
+def test_unmatched_spine_length_mi_flows_to_load():
+    coords = [(-78.28, 38.55), (-78.27, 38.56)]
+    spine = Feature(name="Service Access", geom=LineString(coords), source="OSM", ref="way/9")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    expected_mi = to_miles(haversine_m(*coords))
+    assert canonical and canonical[0]["length_mi"] == pytest.approx(expected_mi)
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
+
+
+def test_point_only_spine_feature_gets_no_length_and_does_not_crash():
+    # A point-only trail (no line geometry) must degrade to null length_mi — never
+    # crash, never fabricate a distance (source-or-silence). It's passed through as an
+    # explicit None (not omitted), so a re-ingest that loses geometry actively clears
+    # any length_mi a prior ingest_version had computed, rather than leaving it stale.
+    spine = Feature(name="Trailhead Only", geom=Point(-78.28, 38.55), source="OSM", ref="way/10")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical
+    assert canonical[0]["length_mi"] is None
+    assert canonical[0]["length_source"] == ""
+
+
+# ── classified-tag merge on consolidation (Epic 026 AC-3.4/3.5) ───────────────
+
+
+def test_consolidate_merge_takes_most_severe_path_grade():
+    segs = _chain("Old Rag", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, path_grade=g)
+        for s, g in zip(segs, ["", "difficult"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].path_grade == "difficult"
+
+
+def test_consolidate_merge_takes_most_restrictive_foot_access():
+    segs = _chain("Old Rag", 3)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, foot_access=a)
+        for s, a in zip(segs, ["yes", "private", "permit"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].foot_access == "private"
+
+
+def test_consolidate_merge_takes_worst_quality_psurface():
+    segs = _chain("Old Rag", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, psurface=p)
+        for s, p in zip(segs, ["paved_good", "unpaved_bad"])
+    ]
+    result = consolidate_osm_segments(segs)
+    assert len(result) == 1
+    assert result[0].psurface == "unpaved_bad"
+
+
+def test_end_to_end_classified_tags_flow_to_canonical_trail_load():
+    # Two connected same-named ways — one plain hiking scale (path_grade=""), one
+    # demanding_mountain_hiking (path_grade="difficult") — consolidate into one
+    # Feature carrying the worse grade, then load_canonical_trail persists it.
+    segs = _chain("Difficult Ridge", 2)
+    segs = [
+        Feature(name=s.name, geom=s.geom, source=s.source, ref=s.ref, path_grade=g)
+        for s, g in zip(segs, ["", "difficult"])
+    ]
+    consolidated = consolidate_osm_segments(segs)
+    assert len(consolidated) == 1
+    spine = consolidated[0]
+    assert spine.path_grade == "difficult"
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [spine], tier_by_name={"osm": 2}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical and canonical[0].get("path_grade") == "difficult"
+
+
 # ── length/gain flow-through (Epic 023 S4) — agency-first cross-side copy ─────
 
 
@@ -899,17 +1171,19 @@ def test_unmatched_spine_length_gain_flows_through():
     assert canonical[0]["gain_source"] == "USFS"
 
 
-def test_absent_length_writes_nothing_not_a_fabricated_zero():
-    # AC-4.3/4.4: neither side has a length → no length_mi/length_source key at
-    # all reaches the Cypher params (the loader's None-guard is a no-op, not a
-    # fabricated 0.0).
+def test_absent_stated_length_falls_back_to_geometry_never_a_fabricated_zero():
+    # Supersedes 023's AC-4.3/4.4 "write nothing" once the distance activation
+    # landed: with no stated (agency) length but real line geometry, the honest
+    # geometry-derived haversine fills in — labelled LENGTH_SOURCE_GEOM, never a
+    # fabricated 0.0 and never posing as an agency figure. Gains have no derived
+    # fallback, so absent gains still write nothing (the loader's None-guard).
     feat = _feat("No Length Trail", "OSM")
     calls: list[tuple] = []
     runner = lambda c, p: calls.append((c, p))  # noqa: E731
     _load_matches(runner, [], [feat], tier_by_name={"osm": 2}, iv="t")
     canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
-    assert "length_mi" not in canonical[0]
-    assert "length_source" not in canonical[0]
+    assert canonical[0]["length_mi"] is not None and canonical[0]["length_mi"] > 0
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
     assert "gain_ft" not in canonical[0]
     assert "gain_source" not in canonical[0]
 

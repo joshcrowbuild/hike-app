@@ -25,8 +25,10 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | REVIEW | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | REVIEW | A | — |
 | [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | REVIEW | A | — |
+| [025](epic-025-validity-exclusions.md) | Wire geometry/null-island validity into the load path + externalize trail-filter denylists to config | REVIEW | A | Epics 023 · 030 |
 
 | [024](epic-024-schema-format.md) | Schema-format axis (integer `schema_format` on `:Meta` + API startup gate via /health disclose) | REVIEW | A | — |
+| [028](epic-028-gpx-export.md) | GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail (CoMaps borrow §D4) | IN_PROGRESS | 1 | Epic 022 · 024 |
 
 | [027](epic-027-facet-ingest-diff.md) | Per-facet leveled ingest-diff check (within-run) + stats on /health | REVIEW | A/B | Epic 024 |
 

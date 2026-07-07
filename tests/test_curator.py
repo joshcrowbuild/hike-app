@@ -234,6 +234,39 @@ def test_is_outside_boundary_demoted_never_touches_strong_foot_types() -> None:
     assert is_outside_boundary_demoted(None, "Mystery", True) is False
 
 
+def test_is_over_length_demoted_over_ceiling() -> None:
+    assert is_over_length_demoted(9.5, 8.0) is True
+
+
+def test_is_over_length_demoted_under_or_at_ceiling_kept() -> None:
+    assert is_over_length_demoted(7.9, 8.0) is False
+    assert is_over_length_demoted(8.0, 8.0) is False  # exactly at ceiling → kept
+
+
+def test_is_over_length_demoted_missing_data_never_demoted() -> None:
+    # A candidate with no known length_mi isn't "too long" — never demoted.
+    assert is_over_length_demoted(None, 8.0) is False
+    # No filter requested → nothing is demoted, however long.
+    assert is_over_length_demoted(20.0, None) is False
+    assert is_over_length_demoted(None, None) is False
+
+
+def test_valid_max_length_mi_accepts_positive_numbers() -> None:
+    assert valid_max_length_mi(8) == 8.0
+    assert valid_max_length_mi(8.5) == 8.5
+
+
+def test_valid_max_length_mi_rejects_malformed_values() -> None:
+    # A malformed LLM-parsed value must no-op the filter, never crash it.
+    assert valid_max_length_mi(None) is None
+    assert valid_max_length_mi(True) is None  # bool is an int in Python — excluded
+    assert valid_max_length_mi(False) is None
+    assert valid_max_length_mi("8") is None
+    assert valid_max_length_mi([8]) is None
+    assert valid_max_length_mi(0) is None
+    assert valid_max_length_mi(-3) is None
+
+
 def test_rank_ids_demotes_roadlike_below_real_trails() -> None:
     # The judge orders the roadlike way first; demotion still sinks it below the trails,
     # keeping the trails' relative taste order. Never dropped (still in the result).
@@ -354,20 +387,6 @@ def test_rank_ids_corroboration_rescue_off_by_default_still_demotes() -> None:
         corroboration_sources={"svc": ["osm", "nps"]},
     )
     assert order == ["t1", "t2", "svc"]
-
-
-def test_valid_max_length_mi_accepts_positive_numbers() -> None:
-    assert valid_max_length_mi(8) == 8.0
-    assert valid_max_length_mi(2.5) == 2.5
-
-
-def test_valid_max_length_mi_rejects_malformed_values() -> None:
-    assert valid_max_length_mi(None) is None
-    assert valid_max_length_mi(True) is None  # bool is an int subclass — must not sneak through
-    assert valid_max_length_mi(-3) is None
-    assert valid_max_length_mi(0) is None
-    assert valid_max_length_mi("8") is None
-    assert valid_max_length_mi([8]) is None
 
 
 def test_is_over_length_demoted_over_budget() -> None:

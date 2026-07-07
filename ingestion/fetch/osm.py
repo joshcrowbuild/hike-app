@@ -16,6 +16,7 @@ import logging
 import httpx
 from shapely.geometry import LineString
 
+from ingestion.classify import classify_foot_access, classify_path_grade, classify_surface
 from ingestion.conflate.match import Feature
 from ingestion.trail_filter import is_trail_worthy
 
@@ -87,6 +88,11 @@ def fetch(
                 # later without a re-fetch. Kept even for a `track`, which the
                 # Curator treats by name (fire roads stay; access roads sink).
                 way_type=tags.get("highway") or None,
+                # Classified difficulty/surface/access tags (Epic 026) — persisted
+                # for a later phase; nothing reads them yet.
+                path_grade=classify_path_grade(tags),
+                psurface=classify_surface(tags),
+                foot_access=classify_foot_access(tags),
             )
         )
 

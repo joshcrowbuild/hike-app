@@ -213,6 +213,87 @@ def test_load_canonical_trail_sets_and_clears_outside_boundary():
     assert "outside_boundary" not in params  # omitted → property untouched
 
 
+def test_load_canonical_trail_sets_and_clears_length_mi():
+    # length_mi follows the same sentinel pattern as route_geom_wkt/way_type/
+    # outside_boundary: a value SETs it (with its source), an explicit None SETs null
+    # (clears a stale length when a re-ingest's geometry no longer yields one — Rule
+    # #1), and omission leaves a prior ingest_version's value untouched.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", length_mi=9.1, length_source="geom-haversine")
+    cypher, params = calls[-1]
+    assert "t.length_mi = $length_mi" in cypher
+    assert params["length_mi"] == 9.1
+    assert params["length_source"] == "geom-haversine"
+
+    load_canonical_trail(runner, "ct:1", "T", length_mi=None)
+    _, params = calls[-1]
+    assert "length_mi" in params and params["length_mi"] is None
+    assert params["length_source"] == ""
+
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[-1]
+    assert "length_mi" not in params  # omitted → property untouched
+
+
+def test_load_canonical_trail_sets_and_clears_path_grade():
+    # path_grade follows the same sentinel pattern (Epic 026 AC-3.2): a value SETs
+    # it, an explicit None SETs null (clears a stale grade on re-ingest), omission
+    # leaves it alone.
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", path_grade="expert")
+    cypher, params = calls[-1]
+    assert "t.path_grade = $path_grade" in cypher
+    assert params["path_grade"] == "expert"
+
+    load_canonical_trail(runner, "ct:1", "T", path_grade=None)
+    _, params = calls[-1]
+    assert "path_grade" in params and params["path_grade"] is None
+
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[-1]
+    assert "path_grade" not in params  # omitted → property untouched
+
+
+def test_load_canonical_trail_sets_and_clears_psurface():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", psurface="paved_good")
+    cypher, params = calls[-1]
+    assert "t.psurface = $psurface" in cypher
+    assert params["psurface"] == "paved_good"
+
+    load_canonical_trail(runner, "ct:1", "T", psurface=None)
+    _, params = calls[-1]
+    assert "psurface" in params and params["psurface"] is None
+
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[-1]
+    assert "psurface" not in params
+
+
+def test_load_canonical_trail_sets_and_clears_foot_access():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(runner, "ct:1", "T", foot_access="no")
+    cypher, params = calls[-1]
+    assert "t.foot_access = $foot_access" in cypher
+    assert params["foot_access"] == "no"
+
+    load_canonical_trail(runner, "ct:1", "T", foot_access=None)
+    _, params = calls[-1]
+    assert "foot_access" in params and params["foot_access"] is None
+
+    load_canonical_trail(runner, "ct:1", "T")
+    _, params = calls[-1]
+    assert "foot_access" not in params
+
+
 def test_prune_stale_trails_query_shape():
     # Healthy re-ingest: current count (1400) is well within ratio of the prior corpus
     # total (1500), so both guards clear and the two delete passes fire.

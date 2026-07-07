@@ -1,4 +1,5 @@
-import { Confidence, Signal, Staleness } from '../components'
+import { Confidence, Icon, Signal, Staleness } from '../components'
+import { gpxExportUrl } from '../data/geo'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
 import {
@@ -100,6 +101,17 @@ function DetailBody({ card }: { card: CardVM }) {
         <div className="detail-actions">
           <SaveButton id={card.id} name={card.name} />
           {card.geo ? <DirectionsLink trailhead={card.geo.trailhead} name={card.name} /> : null}
+          {card.geo?.geometry ? (
+            <a
+              className="action-chip"
+              download
+              href={gpxExportUrl(card.id)}
+              aria-label={`Download the ${card.name} route as a GPX file`}
+            >
+              <Icon glyph={glyphs.download} label="Download" className="action-chip-icon" />
+              GPX
+            </a>
+          ) : null}
         </div>
 
         <div className="detail-facts">

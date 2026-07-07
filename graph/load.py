@@ -195,13 +195,16 @@ def load_canonical_trail(
     lat: float | None = None,
     lon: float | None = None,
     is_loop: bool | None = None,
-    length_mi: float | None = None,
+    length_mi: float | None = _UNSET,
     length_source: str | None = None,
     gain_ft: float | None = None,
     gain_source: str | None = None,
     route_geom_wkt: str | None = _UNSET,
     way_type: str | None = _UNSET,
     outside_boundary: bool | None = _UNSET,
+    path_grade: str | None = _UNSET,
+    psurface: str | None = _UNSET,
+    foot_access: str | None = _UNSET,
     ingest_version: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
@@ -234,10 +237,26 @@ def load_canonical_trail(
         # clears a stale flag rather than leaving it standing (source-or-silence).
         params["outside_boundary"] = outside_boundary
         set_clauses.append("t.outside_boundary = $outside_boundary")
+    if path_grade is not _UNSET:
+        # Classified difficulty (Epic 026). As with way_type, an explicit None SETs
+        # null so a re-ingest that loses the source tag clears a stale grade rather
+        # than leaving it standing (source-or-silence).
+        params["path_grade"] = path_grade
+        set_clauses.append("t.path_grade = $path_grade")
+    if psurface is not _UNSET:
+        params["psurface"] = psurface
+        set_clauses.append("t.psurface = $psurface")
+    if foot_access is not _UNSET:
+        params["foot_access"] = foot_access
+        set_clauses.append("t.foot_access = $foot_access")
     if is_loop is not None:
         params["is_loop"] = is_loop
         set_clauses.append("t.is_loop = $is_loop")
-    if length_mi is not None:
+    if length_mi is not _UNSET:
+        # As with route_geom_wkt/way_type/outside_boundary: passing None explicitly
+        # SETs null, so a re-ingest whose geometry degrades (no route -> no computable
+        # length) clears the stale length rather than leaving a prior ingest's value
+        # standing (source-or-silence, Rule #1). Omitting the arg leaves it untouched.
         params["length_mi"] = length_mi
         params["length_source"] = length_source or ""
         set_clauses += ["t.length_mi = $length_mi", "t.length_source = $length_source"]
