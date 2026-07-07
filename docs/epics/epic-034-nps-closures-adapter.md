@@ -1,6 +1,6 @@
 # Epic 034 — NPS closures live adapter (`ConditionKind.closures`)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (live-conditions seam — Epic 013 family)
 **Spec refs:** discovery sweep #1 (`/Users/joshcrow/.hike-lanes/oss-sprint/research/discovery.md` lines 17–22, 95–99) · Epic 013 (LiveAdapter seam) · CLAUDE.md rules #1/#3/#7 · CDP-01 (corroboration locus)
 

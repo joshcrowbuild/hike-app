@@ -1,6 +1,6 @@
 # Epic 038 — Trail-name search + geocoder seam (B001)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** E (Phase-E "dreaming from home" search; spec-complete spike deliverable — downstream build not yet green-lit, no product code lands until a build lane picks this up)
 **Spec refs:** research brief `docs/research/b001-search-geocoder.md` (this epic's SSOT) · `docs/strategy/path-to-complete.md:221` (B001 "search is a finite tool curated *through* the engine, never an infinite-scroll raw list") · `docs/research/comaps-borrow-plan.md:214-217` (E2 — CoMaps `GetNameScores` borrow + verifier corrections) · CLAUDE.md **Rule #1** (source-or-silence), **Rule #2** (confidence = freshness·authority·corroboration; relevance must never fold in), **Rule #4** (access control at the query/data layer) · Open Decision #3 (R7 Aura DB-tier / B002 continental)
 

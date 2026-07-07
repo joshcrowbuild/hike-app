@@ -1,6 +1,6 @@
 # Epic 032 — Grade-aware pedestrian ETA (port Valhalla's MIT grade-speed curve)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (CoMaps/OSS borrow — Wave 1, `valhalla-pedestrian` lane)
 **Spec refs:** CLAUDE.md Rules #1 (source-or-silence), #2 (confidence never penalizes ranking / weight-vs-eta split), #7 (an inference never poses as a stated fact; capability ≠ preference) · research briefs `docs/research/valhalla-pedestrian.md` and `docs/research/brouter-profiles.md` (this sprint) · CoMaps borrow plan item **D2** (per-segment hiking ETA) · builds on Epic 022 (duration-truth wiring) · Epics 016/017 (maps + 3DEP elevation profile)
 
