@@ -108,13 +108,23 @@ def test_manifest_output_paths_under_gitignored_data() -> None:
         assert entry["output"].startswith("data/dem/")  # never committed
 
 
-def test_manifest_bbox_matches_region_geojson() -> None:
-    # The manifest bbox must equal the region's own geojson bbox (the ingest source of
-    # truth) so the DEM is clipped to exactly what gets ingested.
+def test_manifest_bbox_contains_region_geojson() -> None:
+    # The manifest bbox must CONTAIN the region's geojson bbox — equality is too
+    # strict: OSM ways intersecting the region bbox can have centroids outside it,
+    # so the DEM clip may carry a small pad or those trails lose elevation (the
+    # 2026-07-07 peaks-of-otter 78%-coverage gate trip). The pad is bounded so a
+    # typo'd bbox still fails loud.
+    max_pad_deg = 0.25
     manifest = dem.load_manifest(_REPO_ROOT / dem.MANIFEST_PATH)
     for region, entry in manifest["regions"].items():
         geojson = json.loads((_REPO_ROOT / "regions" / f"{region}.geojson").read_text())
-        assert entry["bbox"] == geojson["properties"]["bbox"]
+        mw, ms, me, mn = entry["bbox"]
+        rw, rs, re_, rn = geojson["properties"]["bbox"]
+        assert mw <= rw and ms <= rs and me >= re_ and mn >= rn, (
+            f"{region}: manifest bbox must contain the region bbox"
+        )
+        assert (rw - mw) <= max_pad_deg and (rs - ms) <= max_pad_deg, region
+        assert (me - re_) <= max_pad_deg and (mn - rn) <= max_pad_deg, region
 
 
 def test_region_entry_unknown_fails_loud() -> None:

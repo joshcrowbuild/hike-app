@@ -802,6 +802,52 @@ def load_trailhead(
         )
 
 
+def load_water_source(
+    runner: Runner,
+    water_id: str,
+    *,
+    water_type: str,
+    lat: float,
+    lon: float,
+    name: str | None = None,
+    seasonal: str | None = None,
+    source: str = "OSM",
+    ingest_version: str | None = None,
+) -> None:
+    """Idempotent upsert of an on-trail water POI (Epic 035): spring / well /
+    tap / drinking-water fountain. A static POI — unlike weather/streamflow/AQI
+    it does not move or expire, so persisting it as a world node (rather than a
+    JIT overlay) is on the right side of rule #3. World/public like Trailhead:
+    no `owner_id`, no scope clause. Surfaces location + water type +
+    seasonality only — never a potability claim (rule #1); `water_type` may be
+    the OSM category `"drinking_water"`, which is POI identity, not a "safe to
+    drink" assertion."""
+    params: dict[str, Any] = {
+        "water_id": water_id,
+        "water_type": water_type,
+        "lat": lat,
+        "lon": lon,
+        "source": source,
+        "iv": ingest_version or _today(),
+    }
+    set_clauses = [
+        "w.water_type = $water_type",
+        "w.point = point({latitude: $lat, longitude: $lon})",
+        "w.source = $source",
+        "w.ingest_version = $iv",
+    ]
+    if name is not None:
+        params["name"] = name
+        set_clauses.append("w.name = $name")
+    if seasonal is not None:
+        params["seasonal"] = seasonal
+        set_clauses.append("w.seasonal = $seasonal")
+    runner(
+        f"MERGE (w:WaterSource {{water_id: $water_id}}) SET {', '.join(set_clauses)}",
+        params,
+    )
+
+
 # ── Enrichment loader (Epic 017 S1) — the deferred graph write, now real ───────
 
 
