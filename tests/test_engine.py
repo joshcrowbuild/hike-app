@@ -72,6 +72,38 @@ def _air_probes(fn: Callable[[float, float], Any]) -> dict[ConditionKind, list[L
     return {ConditionKind.air: [_FakeAdapter("a", ConditionKind.air, fn)]}
 
 
+class _SourcedAdapter(LiveAdapter):
+    """Like `_FakeAdapter`, but the fact carries a REAL, multi-word source label
+    (e.g. "EPA AirNow") instead of the generic "t" — needed to exercise the D3
+    short-provider consistency pass on a set-aside reason (`_set_aside`)."""
+
+    def __init__(self, kind: ConditionKind, source: str, fn: Callable[[float, float], Any]) -> None:
+        self.name = "sourced"
+        self.kind = kind
+        self._source = source
+        self._fn = fn
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(True, False, True)
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        value = self._fn(point.lat, point.lon)
+        return (
+            None
+            if value is None
+            else VerifiedFact(
+                value=value, source=self._source, fetched_at=datetime.now(timezone.utc)
+            )
+        )
+
+    def health(self) -> AdapterHealth:
+        return AdapterHealth.OK
+
+    @classmethod
+    def from_config(cls, settings: Any) -> "LiveAdapter | None":
+        return None
+
+
 def _fact(value: Any) -> VerifiedFact:
     return VerifiedFact(value=value, source="t", fetched_at=datetime.now(timezone.utc))
 
@@ -207,6 +239,28 @@ def test_verified_hazardous_aqi_still_sets_the_trail_aside() -> None:
     reason = batch.set_aside[0].reasons[0]
     assert "hazardous" in reason.text
     assert reason.kind == "air"
+
+
+def test_set_aside_reason_wears_the_short_provider_not_the_raw_source() -> None:
+    # D3 consistency pass: a set-aside reason's parenthetical is the SHORT provider
+    # name ("EPA"), never the raw domain-suffixed source ("EPA AirNow") — matching
+    # how a card warning and a condition line already present. `reason.source`
+    # keeps the full label, unshortened, for a future inspectable detail surface.
+    rows = [_row("hazardous-air", 39.0, -79.0, 200)]
+
+    def aqi(lat: float, lon: float) -> Any:
+        return {"aqi": 250}
+
+    batch = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),  # type: ignore[arg-type]
+        {ConditionKind.air: [_SourcedAdapter(ConditionKind.air, "EPA AirNow", aqi)]},
+        k=10,
+    )
+    reason = batch.set_aside[0].reasons[0]
+    assert reason.text == "air quality hazardous (AQI 250) (EPA)"
+    assert reason.source == "EPA AirNow"
 
 
 def test_verified_hazard_warning_rides_the_feed_card() -> None:

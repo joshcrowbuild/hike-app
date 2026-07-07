@@ -46,7 +46,8 @@ def test_verified_alert_warns_instead_of_blocking() -> None:
 
 
 def test_warning_is_source_and_timestamp_stamped() -> None:
-    # The card warning mirrors a feed line: cause + the fact's source + observed-at.
+    # The card warning mirrors a feed line: cause + the fact's SHORT provider name
+    # (D3 consistency pass — never the raw domain-suffixed source) + observed-at.
     fact = VerifiedFact(
         value={"active_alerts": ["Tornado Warning"]},
         source="NWS api.weather.gov",
@@ -55,7 +56,7 @@ def test_warning_is_source_and_timestamp_stamped() -> None:
     v = evaluate_guardrails({ConditionKind.weather: fact})
     (warning,) = v.warnings
     assert warning.kind == "weather"
-    assert warning.source == "NWS api.weather.gov"
+    assert warning.source == "NWS"
     assert warning.observed_at == _NOW
     assert "Tornado" in warning.text
 
