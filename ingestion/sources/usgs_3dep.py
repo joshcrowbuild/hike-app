@@ -21,6 +21,7 @@ gets no facts — the trail's `elevationProfile` is then `null`, never a faked c
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from ingestion.elevation import (
@@ -31,6 +32,7 @@ from ingestion.elevation import (
 )
 
 from .base import CanonicalNode, ConflationRole, CorpusSource, EnrichmentFact, Region, SourceKind
+from .opentopodata import OpenTopoDataSampler
 
 if TYPE_CHECKING:
     from ingestion.conflate.match import Feature
@@ -108,6 +110,7 @@ class UsgsThreeDEPSource(CorpusSource):
         resolution_m: float = 20.0,
         dem_version: str = _DEFAULT_DEM_VERSION,
         min_coverage: float = DEFAULT_MIN_COVERAGE,
+        elev_source: str = ELEV_SOURCE,
     ) -> None:
         if resolution_m <= 0:
             # A non-positive spacing is a misconfiguration — fail loud here rather than
@@ -117,28 +120,46 @@ class UsgsThreeDEPSource(CorpusSource):
         self._resolution_m = resolution_m
         self._dem_version = dem_version
         self._min_coverage = min_coverage
+        self._elev_source = elev_source
         super().__init__()
 
     @classmethod
     def from_config(cls, settings: Settings) -> UsgsThreeDEPSource:
+        # Local-first (NOT primary the other way): a real DEM raster on disk always
+        # wins, even when an OpenTopoData URL is also configured (Epic 033 AC-2.2).
+        if settings.dem_path and os.path.exists(settings.dem_path):
+            return cls(
+                sampler=RasterioDEMSampler(settings.dem_path),
+                resolution_m=settings.elev_resolution_m,
+            )
+        # No local raster (absent, or an explicit override pointing at a file that
+        # hasn't been fetched yet) — degrade to the network fallback when a host is
+        # configured (Epic 033: cloud/Render has no rasterio and no `.tif`).
+        if settings.opentopodata_url:
+            sampler = OpenTopoDataSampler(
+                base_url=settings.opentopodata_url,
+                dataset=settings.opentopodata_dataset,
+            )
+            return cls(
+                sampler=sampler,
+                resolution_m=settings.elev_resolution_m,
+                dem_version=settings.opentopodata_dataset,
+                elev_source=sampler.source,
+            )
         # usgs-3dep is a default corpus source (so a re-ingest always re-applies
         # elevation), but a DEM raster is per-region and most regions don't have
-        # one downloaded yet. A missing ADVENTURE_3DEP_DEM is therefore NOT a
+        # one downloaded yet, and no fallback URL is set either. Neither is a
         # misconfiguration to fail loud over — it degrades to a no-sampler
         # instance, whose `enrich` already returns `[]` (source-or-silence, rule
         # #6): the re-ingest completes normally and leaves elevation untouched
         # rather than erroring or wiping it.
-        if not settings.dem_path:
-            log.warning(
-                "usgs-3dep: no ADVENTURE_3DEP_DEM configured for region %r — skipping "
-                "elevation enrichment (existing elevation, if any, is left untouched)",
-                settings.region,
-            )
-            return cls(sampler=None, resolution_m=settings.elev_resolution_m)
-        return cls(
-            sampler=RasterioDEMSampler(settings.dem_path),
-            resolution_m=settings.elev_resolution_m,
+        log.warning(
+            "usgs-3dep: no ADVENTURE_3DEP_DEM and no ADVENTURE_OPENTOPODATA_URL "
+            "configured for region %r — skipping elevation enrichment (existing "
+            "elevation, if any, is left untouched)",
+            settings.region,
         )
+        return cls(sampler=None, resolution_m=settings.elev_resolution_m)
 
     def fetch(self, region: Region) -> list[Feature]:
         raise NotImplementedError(
@@ -159,7 +180,7 @@ class UsgsThreeDEPSource(CorpusSource):
                 wkt,
                 self._sampler,
                 resolution_m=self._resolution_m,
-                source=ELEV_SOURCE,
+                source=self._elev_source,
                 min_coverage=self._min_coverage,
             )
         except Exception as exc:
