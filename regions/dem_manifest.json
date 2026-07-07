@@ -99,10 +99,10 @@
     "peaks-of-otter": {
       "resolution": "1/3 arc-second (~10 m)",
       "bbox": [
-        -79.75,
-        37.32,
-        -79.5,
-        37.55
+        -79.81,
+        37.26,
+        -79.44,
+        37.61
       ],
       "output": "data/dem/peaks-of-otter.tif",
       "output_sha256": null,
