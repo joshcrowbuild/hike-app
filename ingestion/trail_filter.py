@@ -26,8 +26,10 @@ at fetch, so capturing them is half the fix.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 
 # `access` values that mean "not open to the public" — unless `foot` re-grants it.
 _PRIVATE_ACCESS = {"private", "no", "customers", "permit", "military", "delivery", "agricultural"}
@@ -36,60 +38,45 @@ _FOOT_OK = {"yes", "designated", "permissive", "public", "official"}
 # `footway` sub-types that are pedestrian *infrastructure*, never a recreational trail.
 _NON_TRAIL_FOOTWAY = {"sidewalk", "crossing", "traffic_island", "link"}
 
-# Numbered public-route signal. Census-TIGER mis-imported numbered state/county/US
-# routes as `highway=track`, so they survive the highway gate and pose as "fire roads"
-# ("Little Loop Road" ref=SR 652, "Snake Road" ref=SR 650 — cars drive them). The `ref`
-# carries the route number; matching it drops the route. Deliberately NOT keyed on
-# `tiger:cfcc=A41`: real fire roads (Compton Gap Rd, Mathews Arm Rd) carry A41 too but
-# have no numbered `ref`, so a cfcc rule would drop genuine hikes.
-# `[\s-]*(Route\s*)?` so it catches the space, hyphenated, and spelled-out forms OSM
-# editors normalize TIGER refs into — "SR 652", "US-211", "VA Route 55" — all of which
-# are numbered routes. A digit is always required, so no bare word can false-positive.
-_PUBLIC_ROUTE_REF = re.compile(r"\b(SR|CR|VA|US|State Route|County Route)[\s-]*(Route\s*)?\d", re.I)
-# TIGER also records the route class in `tiger:name_base_1` ("State Route" / "County
-# Route") even when `ref` is absent — a second, name-base signal for the same class.
-_TIGER_ROUTE_BASE = re.compile(r"\b(State|County) Route\b", re.I)
+# The four incident-tuned denylist regexes below (numbered public routes, TIGER route
+# base, residential street suffixes, unambiguous non-trail names) live in
+# `regions/exclusions.json` — the single source of truth (Epic 025) — not as literals
+# here. See that file's `_comment` + `tests/test_trail_filter.py` for the pinned
+# incident behavior each one exists to catch/keep.
+EXCLUSIONS_PATH = "regions/exclusions.json"
 
-# Residential street-name suffixes. On barrier-island / coastal TIGER grids, sand
-# residential streets are tagged `highway=track|footway` (not `residential`), so they
-# clear the highway gate and pose as trails ("Barracuda Street", "Malbon Drive",
-# "Seagull Lane" in the Outer Banks). A name ending in an unambiguous street suffix is a
-# residential road, never a hikeable trail. Deliberately EXCLUDES "Road": real fire / dike
-# roads end in "Road" ("Salt Pond Road", "LORAN Road" — both NPS-corroborated OBX trails),
-# matching the existing "keep fire roads" stance (`highway=track`). Anchored to the end of
-# the name and matched as whole words (OSM spells suffixes out) so it can't fire mid-name
-# (a "Drive"-containing trail name) nor inside a compound ("Greenway"/"Broadway" — no word
-# boundary before the "way", so they don't match).
-_RESIDENTIAL_STREET_SUFFIX = re.compile(
-    r"\b(street|avenue|boulevard|court|drive|lane|way)\s*$", re.I
+_EXCLUSION_KEYS = (
+    "public_route_ref",
+    "tiger_route_base",
+    "residential_street_suffix",
+    "name_deny",
 )
 
-# Unambiguous non-trail name signals. Kept tight so it never matches a real trail
-# (e.g. "Hull School Trail", "Meadows School Trail" are real) or a fire road — it
-# targets the utilitarian-connector / urban-infra class only.
-#
-# The `wellness <institution>` branch is an interim token for the institutional-footway
-# class ("The Andreae Family Wellness and Recreation Trail" — a private hospital/campus
-# path tag-identical to a nature trail, so no clean tag fix exists). It requires
-# `wellness` be followed by an institutional word ("and recreation", "center", "campus",
-# …) so a bare public "Wellness Trail" / "Wellness Loop" — a common, legitimate municipal
-# fitness loop — is NOT dropped. Still a name heuristic, not a real signal.
-#
-# The durable discriminator this token approximates — "is the way inside a managed
-# recreation area?" — now exists as the Phase-2 spatial signal (`ingestion.boundary`):
-# a way OUTSIDE the region's protected-area boundary is soft-demoted by the Curator.
-# This token stays as a high-precision hard drop for the institutional-footway class
-# in regions that ship no boundary polygon yet (the spatial signal degrades to a
-# no-op there); the two are complementary, not a replacement.
-_NAME_DENY = re.compile(
-    r"\b(side ?walk|drive ?way|cross ?walk|wheelchair|colonnade"
-    r"|parking (lot|area)|bus (stop|loop))\b"
-    r"|\bwellness (and recreation|cent(er|re)|campus|clinic|hospital|institute)\b"
-    r"|\bpath to (a |an |the )?"
-    r"(school|store|parking|lot|bus|garage|garden|building|club|gym|colonnade)\b"
-    r"|\b(ramp|stairs?) to\b",
-    re.I,
-)
+
+@lru_cache(maxsize=None)
+def _load_exclusion_patterns(path: str = EXCLUSIONS_PATH) -> dict[str, re.Pattern[str]]:
+    """Load + compile the denylist patterns from `regions/exclusions.json`.
+
+    Fails loud on any malformation (missing file, missing key, non-string value, bad
+    JSON, invalid regex) — a filter driven by a broken config must never silently
+    degrade to an empty denylist and re-pollute the corpus."""
+    with open(path) as f:
+        data = json.load(f)
+    compiled: dict[str, re.Pattern[str]] = {}
+    for key in _EXCLUSION_KEYS:
+        if key not in data:
+            raise KeyError(f"{path} is missing required exclusion pattern {key!r}")
+        pattern = data[key]
+        if not isinstance(pattern, str):
+            raise TypeError(
+                f"{path} exclusion pattern {key!r} must be a string, got {type(pattern).__name__}"
+            )
+        compiled[key] = re.compile(pattern, re.I)
+    return compiled
+
+
+def _pattern(key: str) -> re.Pattern[str]:
+    return _load_exclusion_patterns()[key]
 
 
 def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
@@ -115,21 +102,26 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
     # route class in `tiger:name_base_1`. NOT on tiger:cfcc=A41 — real fire roads share
     # A41 but carry no numbered ref. A digit is always required after the route token, so
     # a real name ("US Life-Saving Station Trail") can't false-positive.
-    if _PUBLIC_ROUTE_REF.search(tags.get("ref", "")) or _PUBLIC_ROUTE_REF.search(name):
+    public_route_ref = _pattern("public_route_ref")
+    if public_route_ref.search(tags.get("ref", "")) or public_route_ref.search(name):
         return False
-    if _TIGER_ROUTE_BASE.search(tags.get("tiger:name_base_1", "")):
+    if _pattern("tiger_route_base").search(tags.get("tiger:name_base_1", "")):
         return False
 
     # Urban pedestrian infrastructure (sidewalks, crossings) → not a trail.
     if tags.get("footway", "") in _NON_TRAIL_FOOTWAY:
         return False
 
-    # Conservative name denylist for utilitarian connectors / urban infra.
-    if _NAME_DENY.search(name):
+    # Conservative name denylist for utilitarian connectors / urban infra — see
+    # `regions/exclusions.json` `name_deny` for the institutional-wellness /
+    # path-to-X / ramp-to-X tokens this catches.
+    if _pattern("name_deny").search(name):
         return False
 
-    # Residential street posing as a track/footway (coastal sand-street grids).
-    if _RESIDENTIAL_STREET_SUFFIX.search(name):
+    # Residential street posing as a track/footway (coastal sand-street grids). The
+    # pattern deliberately excludes "Road": real fire/dike roads end in "Road"
+    # (NPS-corroborated OBX trails), matching the "keep fire roads" stance.
+    if _pattern("residential_street_suffix").search(name):
         return False
 
     # A named footway with exactly two vertices is almost always a driveway / connector
