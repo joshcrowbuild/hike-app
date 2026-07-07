@@ -674,19 +674,111 @@ def _trailhead(row: dict[str, Any]) -> GeoPoint | None:
     return None
 
 
-# Naismith's rule (classic): 5 km/h base pace on flat ground, plus one minute of
-# extra time per 10 m of climbed ascent (the traditional "+1 hour per 600 m ascent",
-# restated per-metre: 60 min / 600 m = 0.1 min/m). A computed ESTIMATE, never a
+# Grade-based speed factor, ported from Valhalla (github.com/valhalla/valhalla),
+# `src/sif/pedestriancost.cc`, `kGradeBasedSpeedFactor` (~lines 201-216). Valhalla
+# is MIT-licensed: Copyright (c) 2018 Valhalla contributors, Copyright (c)
+# 2015-2017 Mapillary AB / Mapzen. Ported here
+# as data (not called over the network — see Epic 032 scope fence) because our
+# 10 m 3DEP profile is finer than the deployed service's tiles and a live
+# pedestrian call there would collapse to the flat grade bucket. The factor is a
+# time multiplier (higher = slower); it derives from DIN 33466 on ascent and a
+# modified Tobler function on descent (fastest a bit below flat, at -3%).
+_GRADE_BREAKPOINTS_PCT: tuple[float, ...] = (
+    -10.0,
+    -8.0,
+    -6.5,
+    -5.0,
+    -3.0,
+    -1.5,
+    0.0,
+    1.5,
+    3.0,
+    5.0,
+    6.5,
+    8.0,
+    10.0,
+    11.5,
+    13.0,
+    15.0,
+)
+_GRADE_TIME_FACTORS: tuple[float, ...] = (
+    1.33,
+    1.22,
+    1.08,
+    0.97,
+    0.88,
+    0.92,
+    1.00,
+    1.10,
+    1.20,
+    1.33,
+    1.43,
+    1.57,
+    1.83,
+    2.03,
+    2.23,
+    2.50,
+)
+
+# Flat-ground pace (km/h) the grade factor multiplies against — a level route
+# (factor 1.00 at 0%) yields exactly this speed. A computed ESTIMATE, never a
 # stated fact (Rule #1/#7) — `estimated_duration_min` names it so the client can
 # disclose it as such rather than presenting it like a verified duration.
-_NAISMITH_PACE_KMH = 5.0
-_NAISMITH_MIN_PER_ASCENT_M = 0.1
+_ETA_FLAT_PACE_KMH = 5.0
+
+# Minimum ground-length per graded segment (m), comfortably above
+# `DEFAULT_NOISE_THRESHOLD_M` (3 m): consecutive samples are accumulated until
+# their run clears this before a single grade is computed for it, so DEM jitter
+# between adjacent 10 m samples can't manufacture a spurious wall or dip (mirrors
+# `ingestion.elevation._max_grade_pct`'s windowing).
+_ETA_MIN_SEGMENT_M = 30.0
 
 
-def _estimated_duration_min(distance_m: float, gain_m: float) -> float:
-    """Naismith's-rule duration estimate from total route distance + ascent."""
-    base_min = (distance_m / 1000.0) / _NAISMITH_PACE_KMH * 60.0
-    return base_min + gain_m * _NAISMITH_MIN_PER_ASCENT_M
+def _grade_time_factor(grade_pct: float) -> float:
+    """Time multiplier for a grade (%) via piecewise-linear interpolation between
+    `_GRADE_BREAKPOINTS_PCT`/`_GRADE_TIME_FACTORS` — our 10 m 3DEP resolves finer
+    than Valhalla's 16 buckets, so we interpolate rather than quantize. Grades
+    outside [-10%, +15%] linearly extrapolate from the nearest endpoint pair
+    rather than clamp: clamping would make a steep descent read as fast as a
+    gentle one, which is wrong (a real descent keeps getting slower)."""
+    breakpoints = _GRADE_BREAKPOINTS_PCT
+    factors = _GRADE_TIME_FACTORS
+    if grade_pct <= breakpoints[0]:
+        slope = (factors[1] - factors[0]) / (breakpoints[1] - breakpoints[0])
+        return factors[0] + slope * (grade_pct - breakpoints[0])
+    if grade_pct >= breakpoints[-1]:
+        slope = (factors[-1] - factors[-2]) / (breakpoints[-1] - breakpoints[-2])
+        return factors[-1] + slope * (grade_pct - breakpoints[-1])
+    for i in range(len(breakpoints) - 1):
+        if breakpoints[i] <= grade_pct <= breakpoints[i + 1]:
+            t = (grade_pct - breakpoints[i]) / (breakpoints[i + 1] - breakpoints[i])
+            return factors[i] + t * (factors[i + 1] - factors[i])
+    return factors[-1]  # unreachable — the two guards above cover the full range
+
+
+def _estimated_duration_min(distances_m: list[float], elevations_m: list[float]) -> float:
+    """Grade-aware duration ESTIMATE: a per-segment integral of `_ETA_FLAT_PACE_KMH`
+    scaled by `_grade_time_factor`, over ground segments coarsened to at least
+    `_ETA_MIN_SEGMENT_M` (see module comment). `distances_m` is cumulative
+    horizontal ground distance (`ingestion/elevation.py`), so `Δelev/Δhoriz-dist`
+    is already planimetric rise/run — no slope-distance correction needed."""
+    n = len(distances_m)
+    if n < 2 or distances_m[-1] - distances_m[0] <= 0:
+        return 0.0
+    total_min = 0.0
+    start_idx = 0
+    i = 1
+    while i < n:
+        while i < n - 1 and distances_m[i] - distances_m[start_idx] < _ETA_MIN_SEGMENT_M:
+            i += 1
+        run = distances_m[i] - distances_m[start_idx]
+        if run > 0:
+            grade_pct = (elevations_m[i] - elevations_m[start_idx]) / run * 100.0
+            factor = _grade_time_factor(grade_pct)
+            total_min += (run / 1000.0) / _ETA_FLAT_PACE_KMH * 60.0 * factor
+        start_idx = i
+        i += 1
+    return total_min
 
 
 def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
@@ -723,7 +815,7 @@ def _elevation_profile(row: dict[str, Any]) -> ElevationProfile | None:
         max_grade_pct=max_grade,
         source=source,
         resolution_m=float(row.get("elev_resolution_m") or 0.0),
-        estimated_duration_min=_estimated_duration_min(distances_f[-1], gain),
+        estimated_duration_min=_estimated_duration_min(distances_f, elevations_f),
     )
 
 

@@ -1,14 +1,16 @@
-"""Tests for `api.app._elevation_profile` / `_estimated_duration_min` — the API-layer
-derivation that fills the empty "Viability" numbers (finding #2 of the 2026-07-02 UX
-eval). Pure/hermetic: no DB, no rasterio — a plain row dict stands in for the graph
-read, matching the shape `graph.queries.trail_detail`'s projection returns.
+"""Tests for `api.app._elevation_profile` — the API-layer derivation that fills the
+empty "Viability" numbers (finding #2 of the 2026-07-02 UX eval). Pure/hermetic: no
+DB, no rasterio — a plain row dict stands in for the graph read, matching the shape
+`graph.queries.trail_detail`'s projection returns.
+
+`_estimated_duration_min` itself (the grade-aware ETA integral, Epic 032) is
+covered in `tests/test_app_eta.py` — this file keeps only the gain/loss/provenance
+derivation tests, which are unaffected by how the duration is computed.
 """
 
 from __future__ import annotations
 
-import pytest
-
-from api.app import _elevation_profile, _estimated_duration_min
+from api.app import _elevation_profile
 
 # A known sample sequence: 600 -> 680 (+80) -> 900 (+220) -> 898 (-2, sub-threshold
 # DEM noise, NOT credited — the hysteresis ref stays at 900) -> 850 (-50 net from the
@@ -53,28 +55,3 @@ def test_mismatched_sample_arrays_yield_null_profile():
 def test_missing_source_yields_null_profile_even_with_samples():
     row = {**_ROW, "elev_source": None}
     assert _elevation_profile(row) is None
-
-
-def test_estimated_duration_min_is_monotonic_with_distance():
-    short = _estimated_duration_min(distance_m=1_000.0, gain_m=0.0)
-    long = _estimated_duration_min(distance_m=5_000.0, gain_m=0.0)
-    assert long > short
-
-
-def test_estimated_duration_min_is_monotonic_with_gain():
-    flat = _estimated_duration_min(distance_m=1_000.0, gain_m=0.0)
-    steep = _estimated_duration_min(distance_m=1_000.0, gain_m=600.0)
-    assert steep > flat
-
-
-def test_estimated_duration_min_matches_naismiths_rule():
-    # Classic Naismith: 5 km/h flat pace + 1 hour per 600 m ascent.
-    # 5 km at 5 km/h = 60 min; 600 m ascent = +60 min. Total 120 min.
-    assert _estimated_duration_min(distance_m=5_000.0, gain_m=600.0) == pytest.approx(120.0)
-
-
-def test_estimated_duration_min_present_on_a_full_profile():
-    profile = _elevation_profile(_ROW)
-    assert profile is not None
-    # distance = 400 m = 0.4 km; base = 0.4/5*60 = 4.8 min; ascent = 300 m * 0.1 = 30 min.
-    assert profile.estimated_duration_min == pytest.approx(34.8)

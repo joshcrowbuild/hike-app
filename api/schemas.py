@@ -122,7 +122,7 @@ class ElevationProfile(BaseModel):
     coverage or no geometry — never an interpolated or faked curve (Rule #1 / D3).
     `total_gain_m`/`total_loss_m`/`max_grade_pct` are derived fresh from `samples` at
     read time (`api.app._elevation_profile`), not trusted from a second stored
-    scalar. `estimated_duration_min` is a computed Naismith's-rule ESTIMATE, not a
+    scalar. `estimated_duration_min` is a computed grade-aware ESTIMATE, not a
     stated fact (Rule #1/#7) — name says so; the client must disclose it as such."""
 
     samples: list[ElevationSample]  # ordered start → end
@@ -131,7 +131,7 @@ class ElevationProfile(BaseModel):
     max_grade_pct: float
     source: str  # provenance, e.g. "usgs-3dep"
     resolution_m: float  # sampling spacing along the route
-    estimated_duration_min: float  # Naismith's-rule ESTIMATE — never a stated fact
+    estimated_duration_min: float  # grade-aware ESTIMATE — never a stated fact
 
 
 class FeedCardResponse(BaseModel):
