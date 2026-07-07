@@ -719,7 +719,8 @@ def test_reingest_with_dem_reenriches(monkeypatch, tmp_path):
     assert counts["enrichment_facts"] == 8
 
 
-def test_reingest_without_dem_does_not_error_or_wipe(monkeypatch):
+def test_reingest_without_dem_does_not_error_or_wipe(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)  # hermetic: dev-box data/dem rasters must not leak in
     # No ADVENTURE_3DEP_DEM configured for this region — the real registry resolves
     # usgs-3dep via `from_config`, which must degrade to a no-op sampler rather than
     # raising (finding: a re-ingest of a DEM-less region must complete cleanly).

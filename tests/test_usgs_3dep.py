@@ -128,7 +128,10 @@ def test_nonpositive_resolution_fails_loud():
         UsgsThreeDEPSource(sampler=_Ramp(), resolution_m=0.0)
 
 
-def test_from_config_without_dem_path_degrades_to_noop(caplog):
+def test_from_config_without_dem_path_degrades_to_noop(caplog, tmp_path, monkeypatch):
+    monkeypatch.chdir(
+        tmp_path
+    )  # hermetic: a real data/dem/{region}.tif on the dev box must not leak in
     # usgs-3dep is a default corpus source (so a re-ingest never forgets it), but
     # most regions have no DEM downloaded yet. from_config must not raise — a
     # region-scoped re-ingest without a DEM must complete normally and leave any
@@ -139,7 +142,8 @@ def test_from_config_without_dem_path_degrades_to_noop(caplog):
     assert src.enrich(CanonicalNode("ct:1", "X", geom_wkt=_WKT)) == []
 
 
-def test_from_config_without_dem_path_logs_a_warning(caplog):
+def test_from_config_without_dem_path_logs_a_warning(caplog, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     with caplog.at_level("WARNING"):
         UsgsThreeDEPSource.from_config(Settings.from_env({}))
     assert any("ADVENTURE_3DEP_DEM" in r.message for r in caplog.records)
