@@ -1,6 +1,6 @@
 # Epic 033 — OpenTopoData fallback ElevationSampler (degrade-and-disclose)
 
-**Status:** IN_PROGRESS
+**Status:** REVIEW
 **Phase:** 1 (Track: elevation durability)
 **Spec refs:** discovery sweep §4 (`/Users/joshcrow/.hike-lanes/oss-sprint/research/discovery.md:38-43`) · Epic 017 (terrain elevation enrichment) · CLAUDE.md rules #1 (source-or-silence), #3 (graph holds slow/structural — elevation is structural corpus data), #6 (degrade-and-disclose), #10 (secrets/paths from config)
 
