@@ -92,6 +92,47 @@ def test_osm_fetch_skips_short_geometry():
     assert osm_fetch.fetch((38.55, -78.45, 38.70, -78.25), client=client) == []
 
 
+# ── OSM fetch: classified tags (Epic 026 AC-1.2/1.3) ───────────────────────────
+
+
+def _osm_element_with_tags(name: str, tags: dict, osm_id: int = 1) -> dict:
+    coords = [[-78.28, 38.55], [-78.27, 38.56]]
+    return {
+        "type": "way",
+        "id": osm_id,
+        "tags": {"name": name, **tags},
+        "geometry": [{"lon": c[0], "lat": c[1]} for c in coords],
+    }
+
+
+def test_osm_fetch_classifies_tags_onto_feature():
+    elements = [
+        _osm_element_with_tags(
+            "Old Rag Ridge", {"highway": "path", "sac_scale": "alpine_hiking"}, osm_id=10
+        ),
+        _osm_element_with_tags("Paved Loop", {"highway": "path", "surface": "asphalt"}, osm_id=11),
+        _osm_element_with_tags("Closed Spur", {"highway": "path", "foot": "no"}, osm_id=12),
+    ]
+    transport = httpx.MockTransport(lambda r: _osm_response(elements))
+    client = httpx.Client(transport=transport)
+    features = {f.name: f for f in osm_fetch.fetch((38.55, -78.45, 38.70, -78.25), client=client)}
+
+    assert features["Old Rag Ridge"].path_grade == "expert"
+    assert features["Paved Loop"].psurface == "paved_good"
+    assert features["Closed Spur"].foot_access == "no"
+
+
+def test_osm_fetch_no_classification_tags_yields_empty_strings():
+    element = _osm_element_with_tags("Plain Trail", {"highway": "path"})
+    transport = httpx.MockTransport(lambda r: _osm_response([element]))
+    client = httpx.Client(transport=transport)
+    features = osm_fetch.fetch((38.55, -78.45, 38.70, -78.25), client=client)
+    assert len(features) == 1
+    assert features[0].path_grade == ""
+    assert features[0].psurface == ""
+    assert features[0].foot_access == ""
+
+
 # ── NPS fetch ─────────────────────────────────────────────────────────────────
 
 
