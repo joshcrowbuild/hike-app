@@ -42,6 +42,7 @@ def test_s1_ac3_condition_kind_members() -> None:
         "fire",
         "water",
         "permits",
+        "closures",
         "drive_time",
     }
 

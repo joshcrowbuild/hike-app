@@ -80,6 +80,7 @@ class Settings:
     airnow_api_key: str | None = field(repr=False, default=None)
     firms_map_key: str | None = field(repr=False, default=None)
     ridb_api_key: str | None = field(repr=False, default=None)
+    nps_api_key: str | None = field(repr=False, default=None)
 
     # LiveAdapter seam (Epic 013). Comma-separated adapter names from
     # ADVENTURE_LIVE_ADAPTERS; position sets primary vs. fallback within a kind.
@@ -215,6 +216,7 @@ class Settings:
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
             firms_map_key=e.get("FIRMS_MAP_KEY") or None,
             ridb_api_key=e.get("RIDB_API_KEY") or None,
+            nps_api_key=e.get("NPS_API_KEY") or None,
             live_adapters=live_adapters,
             live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
             valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,

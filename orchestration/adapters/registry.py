@@ -31,6 +31,7 @@ from orchestration.adapters.base import (
 )
 from orchestration.adapters.echo import EchoAdapter
 from orchestration.adapters.firms import FirmsAdapter
+from orchestration.adapters.nps_alerts import NpsAlertsAdapter
 from orchestration.adapters.nws import NwsAdapter
 from orchestration.adapters.ridb import RidbAdapter
 from orchestration.adapters.usgs_water import UsgsWaterAdapter
@@ -45,6 +46,7 @@ ADAPTER_FACTORIES: dict[str, type[LiveAdapter]] = {
     "firms": FirmsAdapter,
     "usgs_water": UsgsWaterAdapter,
     "ridb": RidbAdapter,
+    "nps_alerts": NpsAlertsAdapter,
     "valhalla": ValhallaAdapter,
     "echo": EchoAdapter,  # proof-of-swap stand-in (Epic 013 S6)
 }

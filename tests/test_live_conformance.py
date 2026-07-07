@@ -26,6 +26,7 @@ from orchestration.adapters.base import (
 )
 from orchestration.adapters.echo import EchoAdapter
 from orchestration.adapters.firms import FirmsAdapter
+from orchestration.adapters.nps_alerts import NpsAlertsAdapter
 from orchestration.adapters.nws import NwsAdapter
 from orchestration.adapters.ridb import RidbAdapter
 from orchestration.adapters.usgs_water import UsgsWaterAdapter
@@ -80,6 +81,19 @@ def _ridb_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"RECDATA": [rec]})
 
 
+def _nps_alerts_ok(request: httpx.Request) -> httpx.Response:
+    u = str(request.url)
+    if "/parks" in u:
+        unit = {
+            "fullName": "Shenandoah National Park",
+            "parkCode": "SHEN",
+            "latLong": f"lat:{_POINT.lat}, long:{_POINT.lon}",
+        }
+        return httpx.Response(200, json={"data": [unit]})
+    alert = {"title": "Trail closed", "category": "Closure", "url": "https://nps.gov/x"}
+    return httpx.Response(200, json={"data": [alert]})
+
+
 def _valhalla_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"sources_to_targets": [[{"time": 1800, "distance": 40}]]})
 
@@ -95,6 +109,7 @@ ADAPTERS: list[tuple[str, Callable[[httpx.Client], LiveAdapter], Callable]] = [
     ("firms", lambda c: FirmsAdapter("key", client=c), _firms_ok),
     ("usgs_water", lambda c: UsgsWaterAdapter(client=c), _usgs_ok),
     ("ridb", lambda c: RidbAdapter("key", client=c), _ridb_ok),
+    ("nps_alerts", lambda c: NpsAlertsAdapter("key", client=c), _nps_alerts_ok),
     (
         "valhalla",
         lambda c: ValhallaAdapter("http://v", origin=(38.5, -78.4), client=c),
@@ -190,5 +205,5 @@ def test_s6_ac4_echo_selected_by_registry() -> None:
 
 
 def test_s6_ac5_all_builtin_adapters_registered() -> None:
-    for name in ("nws", "airnow", "firms", "usgs_water", "ridb", "valhalla"):
+    for name in ("nws", "airnow", "firms", "usgs_water", "ridb", "nps_alerts", "valhalla"):
         assert name in registry.ADAPTER_FACTORIES
