@@ -25,6 +25,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | REVIEW | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | REVIEW | A | — |
 | [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | REVIEW | A | — |
+| [026](epic-026-tag-classification.md) | OSM tag classification at ingest (path_grade/psurface/foot_access) | REVIEW | 1 | Epic 023 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
