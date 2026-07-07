@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Reproducible source for the deterministic OSM PBF spine transport (Epic",
+    "036) — Geofabrik regional .osm.pbf extracts, read directly by",
+    "ingestion/fetch/osm_pbf.py via pyosmium instead of querying live Overpass",
+    "mirrors. `scripts/fetch_osm_pbf.py` downloads the named state extract to",
+    "gitignored data/osm/; this manifest is the durable, checked-in record of",
+    "where it came from (mirrors regions/usfs_manifest.json's role for the USFS",
+    "bulk shapefile). Geofabrik terms: free, attribution required, no",
+    "hammering — download once, cache, refresh on a schedule; the PBF itself is",
+    "NEVER committed or downloaded in CI (a state extract runs ~386-398 MB).",
+    "OSM data via Geofabrik is licensed ODbL — already compliant",
+    "(source=\"OSM\" travels with every Feature). `replication_timestamp` is",
+    "null until an operator runs a real fetch with --write-manifest and",
+    "records the PBF header's osmosis_replication_timestamp back — we do not",
+    "fabricate it (source-or-silence, CLAUDE.md rule #1)."
+  ],
+  "extracts": [
+    {
+      "state": "virginia",
+      "source_url": "https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf",
+      "replication_timestamp": null,
+      "output": "data/osm/virginia-latest.osm.pbf"
+    },
+    {
+      "state": "north-carolina",
+      "source_url": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
+      "replication_timestamp": null,
+      "output": "data/osm/north-carolina-latest.osm.pbf"
+    }
+  ]
+}

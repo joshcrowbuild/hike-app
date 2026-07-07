@@ -19,6 +19,7 @@ import pytest
 from ingestion.conflate.match import Feature as MatchFeature
 from ingestion.fetch import nps as nps_fetch
 from ingestion.fetch import osm as osm_fetch
+from ingestion.fetch import osm_pbf as osm_pbf_fetch
 from ingestion.fetch import usfs as usfs_fetch
 from ingestion.sources.base import (
     CanonicalNode,
@@ -32,8 +33,10 @@ from ingestion.sources.base import (
 from ingestion.sources.echo import EchoSource
 from ingestion.sources.nps import NpsSource
 from ingestion.sources.osm import OsmSource
+from ingestion.sources.osm_pbf import OsmPbfSource
 from ingestion.sources.usfs import UsfsSource
 from orchestration.config import Settings
+from tests.fixtures.build_synthetic_pbf import FIXTURE_PATH as _OSM_PBF_FIXTURE
 
 _REGION = Region(region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25))
 
@@ -317,3 +320,68 @@ def test_ac5_4_enrichment_fact_carries_provenance():
     assert fact.attribute == "gain_ft"
     assert fact.value == 1200.0
     assert fact.recorded_resolution == "10m"
+
+
+# ── Epic 036 S2 — OsmPbfSource (deterministic pyosmium spine) ─────────────────
+# AC-2.1: same role=spine/tier=2 declarations as OsmSource, a drop-in spine.
+
+
+def test_ac2_1_osm_pbf_role_is_spine():
+    src = OsmPbfSource(pbf_path=_OSM_PBF_FIXTURE)
+    assert src.name == "osm-pbf"
+    assert src.role is ConflationRole.spine
+    assert src.authority_tier == 2
+    assert src.kind is SourceKind.geometry
+
+
+# AC-2.2: from_config — blank path fails loud (SS-10), None falls through.
+
+
+def test_ac2_2_osm_pbf_blank_path_raises():
+    s = Settings.from_env({"ADVENTURE_OSM_PBF": "   "})
+    with pytest.raises(ValueError, match="ADVENTURE_OSM_PBF"):
+        OsmPbfSource.from_config(s)
+
+
+def test_ac2_2_osm_pbf_unset_path_constructs():
+    s = Settings.from_env({})
+    src = OsmPbfSource.from_config(s)
+    assert isinstance(src, OsmPbfSource)
+    assert src._pbf_path is None
+
+
+def test_ac2_2_osm_pbf_configured_path_used():
+    s = Settings.from_env({"ADVENTURE_OSM_PBF": str(_OSM_PBF_FIXTURE)})
+    src = OsmPbfSource.from_config(s)
+    assert src.fetch(_REGION)  # reads the configured fixture
+
+
+# AC-2.3 / AC-2.4: fetch degrades to [] on any transport failure; the
+# transport is injectable so the test stays file-free (no real PBF on disk).
+
+
+def test_ac2_3_osm_pbf_degrades_on_raising_transport():
+    def _boom(bbox, *, pbf_path=None, factory=None):
+        raise RuntimeError("corrupt PBF")
+
+    src = OsmPbfSource(transport=_boom)
+    assert src.fetch(_REGION) == []
+
+
+def test_ac2_4_osm_pbf_injected_transport_receives_bbox_and_path():
+    calls = []
+
+    def _fake(bbox, *, pbf_path=None, factory=None):
+        calls.append((bbox, pbf_path))
+        return []
+
+    src = OsmPbfSource(pbf_path="configured.osm.pbf", transport=_fake)
+    assert src.fetch(_REGION) == []
+    assert calls == [(_REGION.bbox, "configured.osm.pbf")]
+
+
+def test_ac3_1_osm_pbf_adapter_matches_transport_over_fixture():
+    old = osm_pbf_fetch.fetch(_REGION.bbox, pbf_path=_OSM_PBF_FIXTURE)
+    new = OsmPbfSource(pbf_path=_OSM_PBF_FIXTURE).fetch(_REGION)
+    assert _norm(old) == _norm(new)
+    assert new and new[0].source == "OSM"

@@ -125,6 +125,11 @@ class Settings:
     # USFS transport's own default path.
     corpus_sources: tuple[str, ...] = ("osm", "nps", "usfs", "usgs-3dep")
     usfs_geojson_path: str | None = None
+    # Deterministic OSM-PBF spine (Epic 036, additive — NOT in the default tuple
+    # above; "osm" (Overpass) stays the default spine this sprint). The local
+    # `.osm.pbf` path a `osm-pbf`-named source reads, from ADVENTURE_OSM_PBF; None
+    # = the transport's own default path (data/osm/region.osm.pbf).
+    osm_pbf_path: str | None = None
     # USGS-3DEP elevation enrichment (Epic 017). `dem_path` is the local 3DEP DEM
     # raster the adapter samples (rule #10: from config, never the repo). A DEM is
     # per-region (only `shenandoah-gwj` has one downloaded as of this writing —
@@ -233,6 +238,10 @@ class Settings:
             # UsfsSource.from_config so it can fail loud (AC-3.2); unset → None →
             # the USFS transport's default path.
             usfs_geojson_path=e.get("ADVENTURE_USFS_GEOJSON"),
+            # Same raw-kept treatment as usfs_geojson_path above, verbatim: a
+            # blank ADVENTURE_OSM_PBF must reach OsmPbfSource.from_config to fail
+            # loud; unset → None → the osm_pbf transport's default path.
+            osm_pbf_path=e.get("ADVENTURE_OSM_PBF"),
             # Explicit env override wins; otherwise fall back to the conventional
             # per-region path so a fetched DEM is applied automatically (durability
             # fix — the DEM no longer has to live in a hand-set env var that gets

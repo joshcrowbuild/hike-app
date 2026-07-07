@@ -29,8 +29,10 @@ from ingestion.sources.base import (
 from ingestion.sources.echo import EchoSource
 from ingestion.sources.nps import NpsSource
 from ingestion.sources.osm import OsmSource
+from ingestion.sources.osm_pbf import OsmPbfSource
 from ingestion.sources.registry import SOURCE_REGISTRY
 from ingestion.sources.usfs import UsfsSource
+from tests.fixtures.build_synthetic_pbf import FIXTURE_PATH as _OSM_PBF_FIXTURE
 
 _REGION = Region(region_id="test-r", bbox=(38.55, -78.45, 38.70, -78.25))
 
@@ -108,6 +110,7 @@ def _valid_sources() -> list[CorpusSource]:
     """Every registered geometry source, each wired with a working fixture."""
     return [
         OsmSource(client=_ok_osm_client()),
+        OsmPbfSource(pbf_path=_OSM_PBF_FIXTURE),
         NpsSource(client=_ok_nps_client()),
         UsfsSource(geojson_path=_USFS_FILE),
         EchoSource(),
@@ -119,6 +122,7 @@ def _failing_sources() -> list[CorpusSource]:
     with no failure mode, so it is exercised only by the valid + idempotency cases)."""
     return [
         OsmSource(client=_fail_client()),
+        OsmPbfSource(pbf_path=Path("nope.osm.pbf")),
         NpsSource(client=_fail_client()),
         UsfsSource(geojson_path=Path("nope.geojson")),
     ]
