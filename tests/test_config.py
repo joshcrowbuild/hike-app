@@ -177,3 +177,30 @@ def test_settings_live_probe_max_workers_default_and_override() -> None:
     assert Settings.from_env({}).live_probe_max_workers == 8
     s = Settings.from_env({"ADVENTURE_LIVE_PROBE_MAX_WORKERS": "4"})
     assert s.live_probe_max_workers == 4
+
+
+# ── Epic 036 AC-3.2/AC-3.3 — osm_pbf_path: additive, blank survives raw ────────
+
+
+def test_osm_pbf_path_none_when_unset() -> None:
+    assert Settings.from_env({}).osm_pbf_path is None
+
+
+def test_osm_pbf_path_read_from_settings() -> None:
+    s = Settings.from_env({"ADVENTURE_OSM_PBF": "/data/virginia-latest.osm.pbf"})
+    assert s.osm_pbf_path == "/data/virginia-latest.osm.pbf"
+
+
+def test_osm_pbf_path_blank_survives_raw_for_from_config_to_reject() -> None:
+    # Kept raw (no `or None`) so OsmPbfSource.from_config can fail loud on an
+    # explicitly-blank value (SS-10), verbatim the usfs_geojson_path treatment.
+    s = Settings.from_env({"ADVENTURE_OSM_PBF": ""})
+    assert s.osm_pbf_path == ""
+
+
+def test_corpus_sources_default_spine_is_still_osm() -> None:
+    # AC-3.3: additive-default-not-flipped — "osm-pbf" is registered but the
+    # default ADVENTURE_CORPUS_SOURCES tuple's geometry spine name is unchanged.
+    s = Settings.from_env({})
+    assert s.corpus_sources == ("osm", "nps", "usfs", "usgs-3dep")
+    assert "osm-pbf" not in s.corpus_sources

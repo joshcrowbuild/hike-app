@@ -19,6 +19,9 @@ data/
 # …but the frontend's data-source seam is source code, not corpus data.
 !frontend/src/data/
 *.osm.pbf
+# …but the Epic 036 parity-test fixture is a tiny (~500B) committed test asset,
+# not a real corpus extract — see tests/fixtures/build_synthetic_pbf.py.
+!tests/fixtures/synthetic_trails.osm.pbf
 *.geojson.gz
 *.fit
 dumps/

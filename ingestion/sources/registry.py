@@ -19,6 +19,7 @@ from .base import ConflationRole, CorpusSource, SourceKind
 from .echo import EchoSource
 from .nps import NpsSource
 from .osm import OsmSource
+from .osm_pbf import OsmPbfSource
 from .usfs import UsfsSource
 from .usgs_3dep import UsgsThreeDEPSource
 
@@ -27,8 +28,14 @@ from .usgs_3dep import UsgsThreeDEPSource
 # first ENRICHMENT source (Epic 017) — a default member of ADVENTURE_CORPUS_SOURCES
 # so a re-ingest always re-applies elevation; regions without a DEM configured
 # (ADVENTURE_3DEP_DEM) degrade to a no-op via `from_config` rather than failing.
+# `osm-pbf` (Epic 036) is a second, deterministic geometry-spine transport
+# (pyosmium over a local Geofabrik extract) — additive: registered here but NOT
+# a member of the default ADVENTURE_CORPUS_SOURCES tuple (orchestration.config),
+# so `"osm"` (Overpass) stays the default spine and nothing in the shipped
+# default pipeline calls it yet.
 SOURCE_REGISTRY: dict[str, type[CorpusSource]] = {
     "osm": OsmSource,
+    "osm-pbf": OsmPbfSource,
     "nps": NpsSource,
     "usfs": UsfsSource,
     "echo": EchoSource,

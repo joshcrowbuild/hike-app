@@ -14,6 +14,7 @@ from ingestion.sources.echo import EchoSource
 from ingestion.sources.nps import NpsSource
 from ingestion.sources.osm import OsmSource
 from ingestion.sources.registry import (
+    SOURCE_REGISTRY,
     enabled_sources,
     known_source_names,
     spine,
@@ -110,3 +111,23 @@ def test_ac4_4_default_config_has_exactly_one_spine():
     srcs = enabled_sources(Settings.from_env({}))
     spines = [s for s in srcs if s.kind is SourceKind.geometry and s.role is ConflationRole.spine]
     assert len(spines) == 1
+
+
+# ── Epic 036 AC-3.1 — "osm-pbf" registered alongside "osm"; default unchanged ──
+
+
+def test_ac3_1_osm_pbf_registered_alongside_osm():
+    assert "osm" in SOURCE_REGISTRY
+    assert "osm-pbf" in SOURCE_REGISTRY
+    assert "osm-pbf" in known_source_names()
+
+
+def test_ac3_1_osm_pbf_resolves_via_from_config():
+    s = Settings.from_env({})
+    srcs = enabled_sources(s, names=["osm-pbf"])
+    assert [x.name for x in srcs] == ["osm-pbf"]
+
+
+def test_ac3_3_default_spine_still_osm_not_osm_pbf():
+    srcs = enabled_sources(Settings.from_env({}))
+    assert spine(srcs).name == "osm"
