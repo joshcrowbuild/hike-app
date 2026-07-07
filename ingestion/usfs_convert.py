@@ -59,6 +59,19 @@ def _pick_trail_no(props: dict[str, Any]) -> str | None:
     return None
 
 
+def _pick_gis_miles(props: dict[str, Any]) -> float | None:
+    """Parse `GIS_MILES` to a positive float, else None — never fabricate a 0.0
+    length for a missing/blank/non-numeric/non-positive value (Rule #1)."""
+    v = props.get("GIS_MILES")
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        miles = float(v)
+    except (TypeError, ValueError):
+        return None
+    return miles if miles > 0 else None
+
+
 def _line_parts(geom: Any) -> list[LineString]:
     if isinstance(geom, MultiLineString):
         return [seg for seg in geom.geoms if not seg.is_empty]
@@ -102,10 +115,22 @@ def consolidate_by_trail_no(features: list[dict[str, Any]]) -> list[dict[str, An
         merged = unary_union(lines)
         # All segments of one trail should share a name; prefer whichever segment's
         # properties carry a usable one, falling back to the first segment's.
-        props = next(
-            (f["properties"] for f in group if _pick_name(f.get("properties") or {})),
-            group[0]["properties"],
+        props = dict(
+            next(
+                (f["properties"] for f in group if _pick_name(f.get("properties") or {})),
+                group[0]["properties"],
+            )
         )
+        # GIS_MILES is per-segment (verified against raw S_USA.TrailNFS_Publish), so
+        # a trail split into N maintenance segments must SUM to report the whole-trail
+        # length — never just the representative segment's own value.
+        miles_values = [
+            m for f in group if (m := _pick_gis_miles(f.get("properties") or {})) is not None
+        ]
+        if miles_values:
+            props["GIS_MILES"] = sum(miles_values)
+        else:
+            props.pop("GIS_MILES", None)
         consolidated.append(
             {
                 "type": "Feature",

@@ -101,6 +101,15 @@ Saturday, 6:40am. Josh opens the app from his kitchen with the dog at his feet. 
 
 Nothing nags him, nothing streaks, nothing scrolls forever. He reads the whole thing in under a minute, trusts it because he can see its work, picks the early start, closes the app, and drives to the trailhead. That evening he taps the trip he took, logs "loved it, finished strong," and the app — privately, on his device — files that as one more outcome that will tighten next Saturday's answer. No leaderboard, no audience, no manufactured reason to come back: just a calm utility that was right when it mattered and got quietly smarter for having helped.
 
+## Far horizon — the on-trail companion *(north star, not commitment)*
+
+Today the product deliberately ends at the trailhead: plan, decide, close the app. The far bet — explicitly Phase-G-and-beyond, recorded here so nearer decisions keep the door open rather than quietly close it — is that the same discipline can walk onto the trail:
+
+1. **An on-trail offline guide.** The decided trip becomes a carried artifact that grows from a GPX export into an offline on-trail surface: the route, the verdict-as-of-departure with its sources and timestamps, and loud staleness — offline is the ultimate degrade-and-disclose, and a snapshot must never pose as live truth. Full offline navigation stays a live option for the native era (decision-log §15's remaining native advantage), not a refusal; CoMaps/Organic Maps proves both the feasibility and the appetite, and also the size of that build — which is why the export bridge ships first.
+2. **A local, on-device LLM companion.** Questions answered and guidance given mid-hike — "how much climbing is left," "is the ford ahead the one that read marginal," "water sources within two miles" — run **entirely on-device** against the carried snapshot plus the private overlay. The provider-agnostic, local-first model seam was built for exactly this shape: the private substrate never leaves the device, and no connectivity is assumed. Every refusal still applies on the trail: inference reads hedged, facts carry their fetched-at from departure (source-or-silence against the snapshot), and there are no engagement mechanics at 3,000 feet.
+
+What this does **not** change: the planner surface stays finite and calm; on-trail never becomes tracking-for-its-own-sake; watch data remains enrichment, never dependency; and the success state is still the phone going back in the pocket.
+
 ## How we'll know it's working (non-engagement success)
 
 Success is measured in **honest decisions, not engagement.**

@@ -23,6 +23,8 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | IN_PROGRESS | 1 | Epic 012 · `geom_wkt` |
 | [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced weather/water/air/fire/permits + four-state silence) | DEFINED | 1 | Epic 013 · #53/#54 |
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | REVIEW | 1 | Epic 016 · 017 |
+| [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | REVIEW | A | — |
+| [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | REVIEW | A | — |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >

@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
+from orchestration.present import provider_short
 from orchestration.providers.base import LLMRequest, ModelProvider, _strip_fences
 
 AQI_BLOCK = 201  # "Very Unhealthy" and above
@@ -68,13 +69,15 @@ class ConditionUnavailable:
 class CardWarning:
     """One prominent, source-stamped warning a card wears (decision of 2026-07-01):
     a VERIFIED hazard shows on the trail's card, never hides it. Mirrors how a feed
-    line carries source/confidence — `text` is the cause, `source` the live fact's
-    provenance, `observed_at` the fact's fetch timestamp. Presentation only: a
-    warning never feeds ranking or confidence (Rule #2)."""
+    line carries source/confidence — `text` is the cause, `source` the fact's short
+    provider name (`present.provider_short`, D3 consistency pass — a warning wears
+    the same calm "NWS"/"USGS" label a condition line does, never the raw
+    domain-suffixed source), `observed_at` the fact's fetch timestamp. Presentation
+    only: a warning never feeds ranking or confidence (Rule #2)."""
 
     kind: str  # ConditionKind.value the warning came from, e.g. "weather"
     text: str  # the cause alone, e.g. "weather alert: Extreme Heat Warning"
-    source: str  # the fact's provenance, e.g. "NWS api.weather.gov"
+    source: str  # the fact's short provider name, e.g. "NWS"
     observed_at: datetime  # when the fact was fetched (the alert's observation time)
 
 
@@ -166,7 +169,10 @@ def evaluate_guardrails(
                 # never a ranking penalty — rule #2).
                 warnings.append(
                     CardWarning(
-                        "weather", f"weather alert: {event}", weather.source, weather.fetched_at
+                        "weather",
+                        f"weather alert: {event}",
+                        provider_short(weather.source),
+                        weather.fetched_at,
                     )
                 )
 
@@ -177,7 +183,12 @@ def evaluate_guardrails(
             blocks.append(BlockReason("air", f"air quality hazardous (AQI {aqi})", air.source))
         elif aqi is not None and aqi >= AQI_WARN:
             warnings.append(
-                CardWarning("air", f"air quality elevated (AQI {aqi})", air.source, air.fetched_at)
+                CardWarning(
+                    "air",
+                    f"air quality elevated (AQI {aqi})",
+                    provider_short(air.source),
+                    air.fetched_at,
+                )
             )
 
     fire = facts.get(ConditionKind.fire)
@@ -188,7 +199,7 @@ def evaluate_guardrails(
                 CardWarning(
                     "fire",
                     f"{count} active-fire detection(s) nearby (thermal anomalies)",
-                    fire.source,
+                    provider_short(fire.source),
                     fire.fetched_at,
                 )
             )
