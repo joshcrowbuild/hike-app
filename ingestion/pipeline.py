@@ -530,6 +530,40 @@ def _load_matches(
         tier = tier_by_name.get(source.lower())
         return {"authority_tier": tier} if tier is not None else None
 
+    # CDP-14 flag-on-ambiguous merge (S5): after the S1/S2 fix, two *distinct*
+    # names always get distinct canonical_ids, so a repeat (canonical_id, source)
+    # within this run means two ref-less same-source features share a
+    # byte-identical name — the only same-source fusion the fix can't
+    # distinguish. Cross-source SAME_AS (osm+nps on one trail) keys to two
+    # different tuples and never repeats, so it stays silent (degree-guarded).
+    # Log-only: never raises, deletes, or overwrites (additive + reversible).
+    #
+    # A single spine Feature can legitimately appear as `m.a` in >1 auto-accept
+    # Match (matched against two different agency sources, e.g. NPS and USFS,
+    # by two independent match() calls) — that is corroboration, not ambiguity,
+    # so re-seeing the SAME Feature object must not self-trigger. `id(feature)`
+    # (not any persisted field) tracks "already considered this exact feature";
+    # a genuinely distinct feature that happens to share a name is a different
+    # object and still triggers the warning.
+    seen_cid_source: set[tuple[str, str]] = set()
+    seen_feature_ids: set[int] = set()
+
+    def _flag_if_ambiguous(feature: Feature, canonical_id: str) -> None:
+        if id(feature) in seen_feature_ids:
+            return
+        seen_feature_ids.add(id(feature))
+        key = (canonical_id, feature.source)
+        if key in seen_cid_source:
+            log.warning(
+                "Ambiguous same-source merge: canonical_id=%s source=%s name=%r "
+                "already loaded this run — two ref-less features share this name.",
+                canonical_id,
+                feature.source,
+                feature.name,
+            )
+            return
+        seen_cid_source.add(key)
+
     counts = {"loaded": 0, "skipped_hygiene": 0}
     matched_spine_ids: set[str] = set()
 
@@ -550,6 +584,7 @@ def _load_matches(
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(m.a, canonical_id)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
         load_source_record(
             runner,
@@ -569,6 +604,7 @@ def _load_matches(
             match_score=1.0,
             ingest_version=iv,
         )
+        _flag_if_ambiguous(m.b, canonical_id)
         sr_b = _sr_uid(m.b.source, m.b.ref, m.b.name)
         load_source_record(
             runner,
@@ -615,6 +651,7 @@ def _load_matches(
             ingest_version=iv,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(feat, canonical_id)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
         load_source_record(
             runner,
