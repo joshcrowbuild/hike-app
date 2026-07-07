@@ -1,6 +1,6 @@
 # Epic 036 — Deterministic OSM PBF transport (pyosmium; additive, default not flipped)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** A (corpus / ingestion — same phase family as Epics 023–027)
 **Spec refs:** `/Users/joshcrow/.hike-lanes/oss-sprint/research/pyosmium-extracts.md` (the binding research brief — read end-to-end) ·
 CLAUDE.md **Rule #1** (source-or-silence) · **Rule #3** (graph holds slow/structural only) ·

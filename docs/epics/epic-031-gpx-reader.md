@@ -1,6 +1,6 @@
 # Epic 031 — GPX reader-tolerance module (dedupe · <2pt-drop · timestamp-derived-flag)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** C (Phase-C history import — C1; built pre-Phase-C as an additive, DB-free module)
 **Spec refs:** CoMaps borrow plan §C1 (`docs/research/comaps-borrow-plan.md` wave C) · research brief `gpx-import-patterns.md` · `docs/strategy/path-to-complete.md` (C1 reader tolerance; Open Decision #10 map-matching) · CLAUDE.md Rule #1 (source-or-silence), Rule #3 (graph holds slow/structural only), Rule #5 (private-by-default; strip raw substrate)
 

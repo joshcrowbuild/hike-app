@@ -1,6 +1,6 @@
 # Epic 037 — Open-Meteo weather availability-failover (reshaped: NO corroboration)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** Spike (docs-only; downstream build BLOCKED on a commercial-license PO decision)
 **Spec refs:** `docs/research/open-meteo-failover.md` · `docs/research/source-seams-corpus-and-live.md` (SS-6/SS-11) · vision.md principle 9 (line 74) · Epic 013 (LiveAdapter seam) · Epic 018 (live conditions on the card) · C6 (NWS-outage = no weather, no swap)
 
