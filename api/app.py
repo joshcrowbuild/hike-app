@@ -11,6 +11,7 @@ Run dev server: uvicorn api.app:app --reload --port 8000
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -55,6 +56,8 @@ from api.schemas import (
     GeoPoint,
     GraphStats,
     HealthResponse,
+    IngestDiffBucket,
+    IngestDiffResponse,
     OriginResponse,
     OutcomeBody,
     OutcomeResponse,
@@ -69,6 +72,7 @@ from api.schemas import (
 from graph.client import GraphClient
 from graph.queries import trail_detail as trail_detail_query
 from graph.queries import trails_detail as trails_detail_query
+from ingestion.checks.facet_diff import LEVELS, ingest_stats_path, sorted_by_abs_delta
 from ingestion.elevation import DEFAULT_NOISE_THRESHOLD_M, compute_gain_loss_grade
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
@@ -394,6 +398,36 @@ def _graph_stats() -> GraphStats | None:
         return None
 
 
+def _ingest_diff_stats() -> IngestDiffResponse | None:
+    """Read this host's region's `stats.json` (Epic 027), written best-effort by the
+    ingestion pipeline via the SAME `ingest_stats_path` resolver (AC-4.1) — so writer
+    and reader always agree on the path. Degrades to `None` on any absence/read/parse
+    failure (Rule #1): a single small-JSON read, no graph query added to `/health`
+    (AC-4.5)."""
+    if _settings is None:
+        return None
+    try:
+        path = ingest_stats_path(_settings.region)
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        buckets = sorted_by_abs_delta([IngestDiffBucket(**b) for b in data.get("buckets", [])])
+        worst_breached_level = next(
+            (level for level in LEVELS if any(b.breached_level == level for b in buckets)),
+            None,
+        )
+        return IngestDiffResponse(
+            region=data["region"],
+            generated_at=data["generated_at"],
+            prune_blocked=bool(data.get("prune_blocked", False)),
+            worst_breached_level=worst_breached_level,
+            top_deltas=buckets[:5],
+        )
+    except Exception:
+        logger.exception("ingest-diff stats read failed; reporting ingest_diff=null")
+        return None
+
+
 def _iso_or_none(value: Any) -> str | None:
     """Render a graph temporal value as an ISO-8601 string. neo4j's DateTime carries
     iso_format(); anything else falls back to str(); None stays None (Rule #1)."""
@@ -457,6 +491,7 @@ def health(request: Request) -> HealthResponse:
         region=_settings.region,
         probes_available=_warmup.probe_keys,
         graph=_graph_stats(),
+        ingest_diff=_ingest_diff_stats(),
     )
 
 

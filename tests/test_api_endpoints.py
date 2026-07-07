@@ -23,6 +23,7 @@ files don't — none of it needs the `neo4j` marker.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -198,12 +199,16 @@ _PLAN_BODY = {"query": "something mellow with good views", "lat": 38.5, "lon": -
 
 
 @pytest.fixture
-def client(monkeypatch: Any) -> Any:
+def client(monkeypatch: Any, tmp_path: Any) -> Any:
     """A TestClient with the engine, the maps read, and the graph all stubbed so both
     endpoints answer hermetically with no live call."""
     monkeypatch.setattr(app_mod, "build_runtime", lambda *a, **k: _Runtime())
     monkeypatch.setattr("orchestration.engine.plan", _canned_feed)
     monkeypatch.setattr(app_mod, "_fetch_maps_by_canonical", lambda session, ids: {})
+    # Epic 027: point /health's ingest_diff read at an empty tmp dir by default —
+    # otherwise a real data/ingest_stats/ left by a local pipeline run (cwd-relative,
+    # gitignored) would leak into hermetic /health tests that don't care about it.
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "ingest_stats"))
     c = TestClient(app_mod.app)
     c.__enter__()
     # Override the lifespan-wired singletons with test doubles (no live Aura).
@@ -266,6 +271,133 @@ def test_health_query_uses_count_subquery_not_pattern_comprehension(monkeypatch:
     assert "COUNT {" in cypher  # the Cypher-5/25-valid subquery form
     assert "size(" not in cypher.lower()  # not the rejected pattern-comprehension form
     assert "|" not in cypher  # the exact 42I06 trigger (Invalid input '|')
+
+
+# ── /health ingest_diff (Epic 027 S4) ──────────────────────────────────────────
+
+
+def _write_ingest_stats(tmp_path: Any, region: str, payload: dict[str, Any]) -> None:
+    (tmp_path / f"{region}.json").write_text(json.dumps(payload))
+
+
+def test_health_ingest_diff_null_when_no_stats_file(
+    client: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
+    """AC-4.3: absent stats.json degrades to ingest_diff=null, never a 500 — status
+    stays ok."""
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path))
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "ok"
+    assert payload["ingest_diff"] is None
+
+
+def test_health_ingest_diff_populated_with_sorted_top_deltas(
+    client: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
+    """AC-4.2/4.4: a present stats.json populates ingest_diff, top_deltas sorted by
+    |delta| descending, and worst_breached_level reports the coarsest breach."""
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path))
+    _write_ingest_stats(
+        tmp_path,
+        "shenandoah-gwj",
+        {
+            "region": "shenandoah-gwj",
+            "ingest_version": "shenandoah-gwj-2026-07",
+            "generated_at": "2026-07-07T00:00:00+00:00",
+            "prune_blocked": True,
+            "buckets": [
+                # Deliberately NOT pre-sorted, to prove /health sorts defensively.
+                {
+                    "dimension": "source",
+                    "value": "osm",
+                    "pre": 1000,
+                    "post": 990,
+                    "delta": -10,
+                    "rel_pct": 1.0,
+                    "breached_level": None,
+                },
+                {
+                    "dimension": "source",
+                    "value": "nps",
+                    "pre": 1000,
+                    "post": 100,
+                    "delta": -900,
+                    "rel_pct": 90.0,
+                    "breached_level": "low",
+                },
+                {
+                    "dimension": "way_type",
+                    "value": "path",
+                    "pre": 1000,
+                    "post": 850,
+                    "delta": -150,
+                    "rel_pct": 15.0,
+                    "breached_level": "strict",
+                },
+            ],
+        },
+    )
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "ok"
+    diff = payload["ingest_diff"]
+    assert diff is not None
+    assert diff["region"] == "shenandoah-gwj"
+    assert diff["prune_blocked"] is True
+    assert diff["worst_breached_level"] == "low"  # coarsest across ALL buckets, not just top-5
+    top = diff["top_deltas"]
+    deltas = [abs(b["delta"]) for b in top]
+    assert deltas == sorted(deltas, reverse=True)
+    assert top[0]["value"] == "nps"
+    assert len(top) <= 5
+
+
+def test_health_ingest_diff_worst_level_none_when_nothing_breached(
+    client: Any, tmp_path: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path))
+    _write_ingest_stats(
+        tmp_path,
+        "shenandoah-gwj",
+        {
+            "region": "shenandoah-gwj",
+            "ingest_version": "shenandoah-gwj-2026-07",
+            "generated_at": "2026-07-07T00:00:00+00:00",
+            "prune_blocked": False,
+            "buckets": [
+                {
+                    "dimension": "source",
+                    "value": "osm",
+                    "pre": 1000,
+                    "post": 995,
+                    "delta": -5,
+                    "rel_pct": 0.5,
+                    "breached_level": None,
+                }
+            ],
+        },
+    )
+
+    resp = client.get("/health")
+
+    diff = resp.json()["ingest_diff"]
+    assert diff["prune_blocked"] is False
+    assert diff["worst_breached_level"] is None
+
+
+def test_health_and_pipeline_share_ingest_stats_path_resolver() -> None:
+    """AC-4.1: writer (pipeline) and reader (/health) import the SAME resolver
+    function — not merely equivalent logic — so they can never drift apart."""
+    import ingestion.pipeline as pipeline_mod
+    from ingestion.checks.facet_diff import ingest_stats_path
+
+    assert app_mod.ingest_stats_path is ingest_stats_path
+    assert pipeline_mod.ingest_stats_path is ingest_stats_path
 
 
 # ── /plan: happy-path contract ─────────────────────────────────────────────────

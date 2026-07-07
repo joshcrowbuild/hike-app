@@ -256,12 +256,39 @@ class RegionsResponse(BaseModel):
     regions: list[RegionResponse]
 
 
+class IngestDiffBucket(BaseModel):
+    """One per-facet bucket delta (Epic 027) — a single `"{dimension}={value}"` row
+    from the within-run pre-load-vs-this-run `stats.json`."""
+
+    dimension: str
+    value: str
+    pre: int
+    post: int
+    delta: int
+    rel_pct: float
+    breached_level: str | None = None
+
+
+class IngestDiffResponse(BaseModel):
+    """Compact per-facet ingest-diff summary (Epic 027) surfaced on `/health`: the
+    top ≤5 buckets by `|delta|`, whether the hard-breach gate blocked this run's
+    prune, and the coarsest (most severe) level any bucket breached. `None` on
+    `/health` when no `stats.json` is present for this host's region (Rule #1)."""
+
+    region: str
+    generated_at: str
+    prune_blocked: bool
+    worst_breached_level: str | None = None
+    top_deltas: list[IngestDiffBucket] = []
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
     region: str
     probes_available: list[str]
     graph: GraphStats | None = None  # None if Neo4j unreachable
+    ingest_diff: IngestDiffResponse | None = None  # None if no stats.json for this region
 
 
 class StatusResponse(BaseModel):
