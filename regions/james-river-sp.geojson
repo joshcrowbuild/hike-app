@@ -4,29 +4,72 @@
     "region_id": "james-river-sp",
     "name": "James River State Park (Central Piedmont)",
     "region_label": "James River SP",
-    "description": "James River State Park near Gladstone in Buckingham County, central Virginia — a ~1,500-acre park along three miles of James River frontage with roughly 20 miles of hiking, biking and equestrian trails (Running Creek, Tye River Overlook, Cabell) through floodplain, meadow and piedmont forest. Distinct from the urban James River Park System in Richmond (which the richmond region already covers); this is the rural upstream state park, well west of the richmond bbox.",
-    "bbox": [-78.86, 37.55, -78.7, 37.68],
-    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
-    "sources": ["OSM", "USGS"],
-    "area_ids": ["va:james-river-sp"],
-    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven — adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
-    "origins": [
-      {"key": "jamesRiverSP", "label": "James River State Park", "lat": 37.6178, "lon": -78.7772},
-      {"key": "gladstone", "label": "Gladstone", "lat": 37.5626, "lon": -78.8028},
-      {"key": "wingina", "label": "Wingina", "lat": 37.6501, "lon": -78.72}
+    "description": "James River State Park near Gladstone in Buckingham County, central Virginia \u2014 a ~1,500-acre park along three miles of James River frontage with roughly 20 miles of hiking, biking and equestrian trails (Running Creek, Tye River Overlook, Cabell) through floodplain, meadow and piedmont forest. Distinct from the urban James River Park System in Richmond (which the richmond region already covers); this is the rural upstream state park, well west of the richmond bbox.",
+    "bbox": [
+      -78.86,
+      37.55,
+      -78.7,
+      37.68
     ],
-    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune — a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane — set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
-    "min_fetch_counts": {"osm": 20}
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "USGS",
+      "USFS"
+    ],
+    "area_ids": [
+      "va:james-river-sp"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "jamesRiverSP",
+        "label": "James River State Park",
+        "lat": 37.6178,
+        "lon": -78.7772
+      },
+      {
+        "key": "gladstone",
+        "label": "Gladstone",
+        "lat": 37.5626,
+        "lon": -78.8028
+      },
+      {
+        "key": "wingina",
+        "label": "Wingina",
+        "lat": 37.6501,
+        "lon": -78.72
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 20
+    }
   },
   "geometry": {
     "type": "Polygon",
     "coordinates": [
       [
-        [-78.86, 37.55],
-        [-78.7, 37.55],
-        [-78.7, 37.68],
-        [-78.86, 37.68],
-        [-78.86, 37.55]
+        [
+          -78.86,
+          37.55
+        ],
+        [
+          -78.7,
+          37.55
+        ],
+        [
+          -78.7,
+          37.68
+        ],
+        [
+          -78.86,
+          37.68
+        ],
+        [
+          -78.86,
+          37.55
+        ]
       ]
     ]
   }

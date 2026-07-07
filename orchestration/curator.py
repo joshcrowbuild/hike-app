@@ -23,12 +23,14 @@ Thresholds are module constants so they're easy to tune against real conditions.
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
+from orchestration.present import provider_short
 from orchestration.providers.base import LLMRequest, ModelProvider, _strip_fences
 
 AQI_BLOCK = 201  # "Very Unhealthy" and above
@@ -67,13 +69,15 @@ class ConditionUnavailable:
 class CardWarning:
     """One prominent, source-stamped warning a card wears (decision of 2026-07-01):
     a VERIFIED hazard shows on the trail's card, never hides it. Mirrors how a feed
-    line carries source/confidence — `text` is the cause, `source` the live fact's
-    provenance, `observed_at` the fact's fetch timestamp. Presentation only: a
-    warning never feeds ranking or confidence (Rule #2)."""
+    line carries source/confidence — `text` is the cause, `source` the fact's short
+    provider name (`present.provider_short`, D3 consistency pass — a warning wears
+    the same calm "NWS"/"USGS" label a condition line does, never the raw
+    domain-suffixed source), `observed_at` the fact's fetch timestamp. Presentation
+    only: a warning never feeds ranking or confidence (Rule #2)."""
 
     kind: str  # ConditionKind.value the warning came from, e.g. "weather"
     text: str  # the cause alone, e.g. "weather alert: Extreme Heat Warning"
-    source: str  # the fact's provenance, e.g. "NWS api.weather.gov"
+    source: str  # the fact's short provider name, e.g. "NWS"
     observed_at: datetime  # when the fact was fetched (the alert's observation time)
 
 
@@ -165,7 +169,10 @@ def evaluate_guardrails(
                 # never a ranking penalty — rule #2).
                 warnings.append(
                     CardWarning(
-                        "weather", f"weather alert: {event}", weather.source, weather.fetched_at
+                        "weather",
+                        f"weather alert: {event}",
+                        provider_short(weather.source),
+                        weather.fetched_at,
                     )
                 )
 
@@ -176,7 +183,12 @@ def evaluate_guardrails(
             blocks.append(BlockReason("air", f"air quality hazardous (AQI {aqi})", air.source))
         elif aqi is not None and aqi >= AQI_WARN:
             warnings.append(
-                CardWarning("air", f"air quality elevated (AQI {aqi})", air.source, air.fetched_at)
+                CardWarning(
+                    "air",
+                    f"air quality elevated (AQI {aqi})",
+                    provider_short(air.source),
+                    air.fetched_at,
+                )
             )
 
     fire = facts.get(ConditionKind.fire)
@@ -187,7 +199,7 @@ def evaluate_guardrails(
                 CardWarning(
                     "fire",
                     f"{count} active-fire detection(s) nearby (thermal anomalies)",
-                    fire.source,
+                    provider_short(fire.source),
                     fire.fetched_at,
                 )
             )
@@ -294,32 +306,163 @@ def is_roadlike_demoted(way_type: str | None, name: str) -> bool:
     return bool(_ACCESS_NAME.search(text))
 
 
-# ── Length preference de-rank (Intent.filters.max_length_mi) ─────────────────
-# A hiker's requested length ceiling is a taste preference, not a safety guardrail
-# (rule #2): it sinks an over-length candidate, never drops it — same soft-demote
-# discipline as the roadlike/boundary signals above.
+# ── Corroboration rescue (Lane C — data-quality demote, default-off) ────────
+# The roadlike/access and outside-boundary demotions above are OSM-tag heuristics
+# (a name pattern, a boundary flag) — cheap, but occasionally wrong about a real
+# trail that just happens to carry an access-y name or sit near a boundary. CDP-01
+# (`graph.queries.trail_source_corroboration`) is the one place genuine multi-
+# origin agreement lives: when an authoritative agency inventory (NPS/USFS/
+# USGS_NTD/RIDB — a government source, not another echo of the same OSM tags)
+# independently agrees the way exists, that is real corroborating evidence the
+# name/boundary heuristic doesn't have.
+#
+# RESCUE-ONLY (Rule #2: confidence/corroboration never penalizes ranking — so it
+# must never *manufacture* a demotion either): this can only LIFT a way OUT of a
+# demote set some other signal already put it in. A way that isn't demoted is
+# never touched here, and a single-source way (corroboration == 1, or every
+# distinct source is non-authoritative) is never rescued — the original heuristic
+# stands because there's no independent evidence to override it with.
+#
+# Default OFF (`ADVENTURE_CORROBORATION_RESCUE`) — first cut from the 2026-07
+# spike, not yet bake-off validated.
+
+CORROBORATION_RESCUE_ENV = "ADVENTURE_CORROBORATION_RESCUE"
+
+# Government/agency inventories — genuine independent agreement. OSM (and any
+# non-agency echo) doesn't count: two OSM-derived records agreeing is still one
+# origin's tagging, not cross-source corroboration (the "authoritative coverage
+# present" gate — a region with no agency ingest at all can never clear this,
+# however many times a way is counted).
+_AUTHORITATIVE_SOURCES = frozenset({"nps", "usfs", "usgs_ntd", "usgs-ntd", "ridb"})
+
+# Below this distinct-origin count, there's no second opinion to rescue with —
+# corroboration == 1 means the demoted way's own OSM tags are the only evidence
+# either way, so the heuristic that demoted it stands.
+_MIN_RESCUE_CORROBORATION = 2
+
+
+def corroboration_rescue_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """True when the corroboration-rescue mechanism is switched on. Default OFF —
+    an unset or unrecognized value degrades to off, never silently on (a bad knob
+    must never turn on an unvalidated rescue path)."""
+    e = os.environ if env is None else env
+    raw = (e.get(CORROBORATION_RESCUE_ENV) or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def is_corroboration_rescued(
+    name: str,
+    *,
+    sources: Collection[str] = (),
+    corroboration: int = 1,
+) -> bool:
+    """True if a way already in a demote set should be RESCUED back to normal
+    position. Never a reason to demote on its own (Rule #2) — this predicate only
+    answers "does this one need rescuing", for a caller to apply against an
+    existing demote set. Carries the same fire/dike/forest-road guard as the
+    demote checks above (belt-and-suspenders: those already never reach the
+    demote set, but a rescue predicate must never treat a legit fire road as
+    needing a corroboration gate either). Requires BOTH real multi-origin
+    agreement (>= `_MIN_RESCUE_CORROBORATION` distinct origins) AND at least one
+    of them authoritative — a cluster of OSM-only echoes never clears this."""
+    if _FIRE_ROAD_KEEP.search(name or ""):
+        return True  # fire/dike/forest road — never gated on corroboration
+    if corroboration < _MIN_RESCUE_CORROBORATION:
+        return False
+    normalized = {s.strip().lower() for s in sources if isinstance(s, str)}
+    return bool(normalized & _AUTHORITATIVE_SOURCES)
+
+
+def apply_corroboration_rescue(
+    demote_ids: Collection[str],
+    names: Mapping[str, str],
+    *,
+    corroboration: Mapping[str, int] | None = None,
+    sources: Mapping[str, Collection[str]] | None = None,
+    enabled: bool,
+) -> set[str]:
+    """Rescue-only pass over an already-computed demote set. Can only REMOVE ids
+    from `demote_ids`; never adds one — a way no other signal demoted is never
+    touched (Rule #2). A no-op (returns `demote_ids` unchanged) when `enabled` is
+    False, so the default-off flag is a single, obvious branch rather than
+    threaded through every call site."""
+    demoted = set(demote_ids)
+    if not enabled or not demoted:
+        return demoted
+    corroboration = corroboration or {}
+    sources = sources or {}
+    return {
+        cid
+        for cid in demoted
+        if not is_corroboration_rescued(
+            names.get(cid, ""),
+            sources=sources.get(cid, ()),
+            corroboration=corroboration.get(cid, 1),
+        )
+    }
+
+
+# ── Length de-rank (intent.filters.max_length_mi) ────────────────────────────
+# The mechanical-tier parser (orchestration/intent.py) extracts a hiker's requested
+# max trail length from free text ("something under 8 miles"), but the engine used
+# to discard `Intent.filters` entirely after parsing. Same soft-demotion discipline
+# as the roadlike/boundary de-ranks above (Rule #2 — demote, never hard-drop): a
+# trail over budget sinks below the rest, it is never dropped — still worth
+# showing, just not first.
+
+
+def valid_max_length_mi(value: object) -> float | None:
+    """Validate an intent-filter max_length_mi value: a positive real number, not a
+    bool (JSON booleans are also ints in Python — `isinstance(True, int)` is True).
+    Any other shape (missing, string, negative, zero, list) degrades to None — no
+    filter applied — rather than raising, since this reads a mechanical-tier LLM's
+    parsed JSON (a malformed model output must no-op, never crash)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value > 0 else None
 
 
 def is_over_length_demoted(length_mi: float | None, max_length_mi: float | None) -> bool:
-    """True if a candidate should be SOFT-demoted for exceeding `max_length_mi`. A
-    candidate with no known `length_mi` is never demoted — a missing measurement
-    isn't "too long" (same missing-data discipline as `is_outside_boundary_demoted`).
-    `None` `max_length_mi` (no filter requested) never demotes anything."""
+    """True if a candidate should be SOFT-demoted (never dropped) for exceeding the
+    hiker's requested max_length_mi. No filter set, or an unknown candidate
+    `length_mi` (a corpus that hasn't backfilled the field yet), never demotes —
+    absence of data is not evidence a trail is too long (mirrors AC-5.3's "absence
+    of a drive time is never treated as far")."""
     if max_length_mi is None or length_mi is None:
         return False
     return length_mi > max_length_mi
 
 
-def valid_max_length_mi(raw: object) -> float | None:
-    """Coerce an `Intent.filters["max_length_mi"]` value to a usable positive float,
-    or `None` if absent/malformed. The filter arrives via LLM-parsed free-text JSON,
-    so a bool, string, list, zero, or negative value must no-op rather than crash or
-    demote every candidate (`bool` is excluded explicitly — `isinstance(True, int)`
-    is `True` in Python)."""
-    if raw is None or isinstance(raw, bool) or not isinstance(raw, (int, float)):
+# ── Preference hints (dog / difficulty) — soft, until real graph props exist ──
+# Neither `dog` (dog-friendliness) nor `difficulty` is a persisted corpus property
+# yet — no ingest source populates them — so there is nothing to filter or demote
+# per-candidate against. Until that lands, both ride as a documented hint in the
+# judge's free-text profile: a soft nudge the judgment-tier ranker can weigh,
+# never a hard drop (Rule #2) and never dressed up as a verified fact (Rule #1 in
+# spirit — the hint is honest about being an unverified preference).
+
+_KNOWN_DIFFICULTIES = frozenset({"easy", "moderate", "hard", "strenuous"})
+
+
+def filter_preference_hints(filters: Mapping[str, object]) -> str | None:
+    """Build a hint string from `intent.filters` (dog / difficulty) for the judge's
+    profile text. Validates each value (dog: bool; difficulty: one of
+    `_KNOWN_DIFFICULTIES`, case-insensitive) and silently omits anything malformed
+    — a bad LLM-parsed filter value no-ops rather than crashing or misleading the
+    judge. Returns None when neither filter is present/valid."""
+    parts: list[str] = []
+    dog = filters.get("dog")
+    if isinstance(dog, bool):
+        parts.append("dog-friendly trail preferred" if dog else "hiker is not bringing a dog")
+    difficulty = filters.get("difficulty")
+    if isinstance(difficulty, str) and difficulty.strip().lower() in _KNOWN_DIFFICULTIES:
+        parts.append(f"preferred difficulty: {difficulty.strip().lower()}")
+    if not parts:
         return None
-    value = float(raw)
-    return value if value > 0 else None
+    return (
+        "Soft preference (not yet a verified corpus property — weigh gently, "
+        "never as a hard requirement): " + "; ".join(parts)
+    )
 
 
 # ── Taste ranking (judgment tier, via the provider seam) ────────────────────
@@ -371,13 +514,19 @@ def rank_ids(
     profile: str | None = None,
     hints: dict[str, str] | None = None,
     demote_ids: Collection[str] = (),
+    corroboration: Mapping[str, int] | None = None,
+    corroboration_sources: Mapping[str, Collection[str]] | None = None,
 ) -> list[str]:
     """Ask the judgment-tier model to order candidate (canonical_id, name) pairs.
     `hints` surfaces a per-candidate ordering input (e.g. drive minutes) into the
     payload — an explicit, legible ranking term, never a confidence input (rule #2).
     `demote_ids` (roadlike/access ways — see `is_roadlike_demoted`) are stably sunk
     below the rest of the order afterward: a transparent, reversible feed-quality
-    demotion, never a drop."""
+    demotion, never a drop. `corroboration`/`corroboration_sources` (CDP-01
+    distinct-origin counts + names, keyed by canonical_id) feed the rescue-only
+    pass (`apply_corroboration_rescue`, default OFF) that can lift a demoted way
+    back out when it's genuinely corroborated by an authoritative source — it
+    never adds a demotion of its own."""
     if not items:
         return []
     known = [cid for cid, _ in items]
@@ -395,4 +544,11 @@ def rank_ids(
         max_tokens=512,
     )
     ordered = _parse_ids(provider.complete(request).text, known)
-    return _apply_demotion(ordered, demote_ids)
+    rescued_demote_ids = apply_corroboration_rescue(
+        demote_ids,
+        dict(items),
+        corroboration=corroboration,
+        sources=corroboration_sources,
+        enabled=corroboration_rescue_enabled(),
+    )
+    return _apply_demotion(ordered, rescued_demote_ids)

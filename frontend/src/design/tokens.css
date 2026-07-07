@@ -6,7 +6,7 @@
   --color-neutral-25: #fbfaf7;
   --color-neutral-50: #f4f3ef;
   --color-neutral-100: #ecebe4;
-  --color-neutral-500: #6b7178;
+  --color-neutral-500: #5e636a;
   --color-neutral-700: #3c424a;
   --color-neutral-900: #16191d;
   --color-neutral-alpha-14: rgba(22, 25, 29, 0.14);
@@ -24,10 +24,16 @@
   --space-8: 32px;
   --size-data-micro: 0.625rem;
   --size-label: 0.6875rem;
+  --size-fact-label: 0.7rem;
+  --size-supporting: 0.72rem;
   --size-meta: 0.8125rem;
+  --size-condition: 0.9rem;
   --size-body: 0.9375rem;
+  --size-verdict: 0.95rem;
   --size-emphasis: 1rem;
+  --size-fact-value: 1rem;
   --size-place-lead: 1.1875rem;
+  --size-name: 1.3rem;
   --size-title: 1.5rem;
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -56,4 +62,16 @@
   --signal-caution-fg: var(--color-terracotta-600);
   --signal-caution-bg: var(--color-terracotta-alpha-10);
   --focus-ring: var(--color-neutral-900);
+  --type-name-size: var(--size-name);
+  --type-name-weight: var(--font-weight-semibold);
+  --type-verdict-size: var(--size-verdict);
+  --type-verdict-weight: var(--font-weight-semibold);
+  --type-fact-value-size: var(--size-fact-value);
+  --type-fact-value-weight: var(--font-weight-semibold);
+  --type-fact-label-size: var(--size-fact-label);
+  --type-fact-label-weight: var(--font-weight-medium);
+  --type-condition-size: var(--size-condition);
+  --type-condition-weight: var(--font-weight-regular);
+  --type-supporting-size: var(--size-supporting);
+  --type-supporting-weight: var(--font-weight-regular);
 }

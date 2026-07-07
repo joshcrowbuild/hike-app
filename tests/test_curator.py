@@ -14,7 +14,11 @@ from typing import Any
 
 from orchestration.adapters.base import ConditionKind, VerifiedFact
 from orchestration.curator import (
+    apply_corroboration_rescue,
+    corroboration_rescue_enabled,
     evaluate_guardrails,
+    filter_preference_hints,
+    is_corroboration_rescued,
     is_outside_boundary_demoted,
     is_over_length_demoted,
     is_roadlike_demoted,
@@ -42,7 +46,8 @@ def test_verified_alert_warns_instead_of_blocking() -> None:
 
 
 def test_warning_is_source_and_timestamp_stamped() -> None:
-    # The card warning mirrors a feed line: cause + the fact's source + observed-at.
+    # The card warning mirrors a feed line: cause + the fact's SHORT provider name
+    # (D3 consistency pass — never the raw domain-suffixed source) + observed-at.
     fact = VerifiedFact(
         value={"active_alerts": ["Tornado Warning"]},
         source="NWS api.weather.gov",
@@ -51,7 +56,7 @@ def test_warning_is_source_and_timestamp_stamped() -> None:
     v = evaluate_guardrails({ConditionKind.weather: fact})
     (warning,) = v.warnings
     assert warning.kind == "weather"
-    assert warning.source == "NWS api.weather.gov"
+    assert warning.source == "NWS"
     assert warning.observed_at == _NOW
     assert "Tornado" in warning.text
 
@@ -273,3 +278,152 @@ def test_rank_ids_demotes_roadlike_below_real_trails() -> None:
 def test_rank_ids_no_demotion_when_empty() -> None:
     items = [("a", "A"), ("b", "B")]
     assert rank_ids(items, _FakeJudge('["b","a"]'), "m", demote_ids=set()) == ["b", "a"]
+
+
+# ── Corroboration rescue (Lane C, default-off) ───────────────────────────────
+
+
+def test_corroboration_rescue_enabled_default_off() -> None:
+    # Unset, garbage, and explicit "off" all resolve to disabled — the mechanism
+    # never silently switches on.
+    assert corroboration_rescue_enabled({}) is False
+    assert corroboration_rescue_enabled({"ADVENTURE_CORROBORATION_RESCUE": "nonsense"}) is False
+    assert corroboration_rescue_enabled({"ADVENTURE_CORROBORATION_RESCUE": "0"}) is False
+    assert corroboration_rescue_enabled({"ADVENTURE_CORROBORATION_RESCUE": "true"}) is True
+
+
+def test_is_corroboration_rescued_lifts_osm_only_demote_with_authoritative_corroboration() -> None:
+    # The demote signal is an OSM-tag heuristic (an access-y name); an authoritative
+    # agency source (NPS) independently agreeing the way exists is real corroborating
+    # evidence the heuristic didn't have — rescued.
+    assert (
+        is_corroboration_rescued("Utility Access", sources=["osm", "nps"], corroboration=2) is True
+    )
+
+
+def test_is_corroboration_rescued_single_source_never_rescued() -> None:
+    # corroboration == 1 (or every source is OSM-only) → no second opinion exists to
+    # override the original demote heuristic with — never rescued by this mechanism.
+    assert is_corroboration_rescued("Utility Access", sources=["osm"], corroboration=1) is False
+    assert is_corroboration_rescued("Utility Access", sources=[], corroboration=1) is False
+
+
+def test_is_corroboration_rescued_requires_an_authoritative_source() -> None:
+    # Two distinct origins, neither authoritative — an OSM-only cluster (or an echo
+    # source) never clears the "authoritative coverage present" gate.
+    assert (
+        is_corroboration_rescued("Utility Access", sources=["osm", "echo"], corroboration=2)
+        is False
+    )
+
+
+def test_apply_corroboration_rescue_disabled_by_default_leaves_demote_set_untouched() -> None:
+    demote_ids = {"svc"}
+    names = {"svc": "Utility Access"}
+    rescued = apply_corroboration_rescue(
+        demote_ids,
+        names,
+        corroboration={"svc": 5},
+        sources={"svc": ["osm", "nps"]},
+        enabled=False,
+    )
+    assert rescued == demote_ids
+
+
+def test_apply_corroboration_rescue_lifts_only_the_corroborated_member() -> None:
+    # Two ways in the demote set: one corroborated by an authoritative source (rescued
+    # out), one single-source (stays demoted) — this mechanism only ever removes, and
+    # only the ones with real corroborating evidence.
+    demote_ids = {"svc", "solo"}
+    names = {"svc": "Utility Access", "solo": "Powerline Cut"}
+    rescued = apply_corroboration_rescue(
+        demote_ids,
+        names,
+        corroboration={"svc": 2, "solo": 1},
+        sources={"svc": ["osm", "usfs"], "solo": ["osm"]},
+        enabled=True,
+    )
+    assert rescued == {"solo"}
+
+
+def test_apply_corroboration_rescue_never_adds_a_demotion() -> None:
+    # "clean" was never in demote_ids — however well (or poorly) it corroborates, it
+    # can never appear in the output. This mechanism only ever removes members of an
+    # existing demote set, never adds one (Rule #2).
+    rescued = apply_corroboration_rescue(
+        {"svc"},
+        {"svc": "Utility Access", "clean": "Old Rag"},
+        corroboration={"svc": 2, "clean": 1},
+        sources={"svc": ["osm", "usfs"], "clean": ["osm"]},
+        enabled=True,
+    )
+    assert rescued == set()  # "svc" rescued (real corroboration); "clean" never entered
+
+
+def test_rank_ids_corroboration_rescue_lifts_way_back_to_normal_order(monkeypatch: Any) -> None:
+    monkeypatch.setenv("ADVENTURE_CORROBORATION_RESCUE", "true")
+    items = [("svc", "Utility Access"), ("t1", "Old Rag"), ("t2", "Whiteoak Canyon")]
+    order = rank_ids(
+        items,
+        _FakeJudge('["svc","t1","t2"]'),
+        "m",
+        demote_ids={"svc"},
+        corroboration={"svc": 2},
+        corroboration_sources={"svc": ["osm", "nps"]},
+    )
+    assert order == ["svc", "t1", "t2"]  # rescued — judge's order stands, un-demoted
+
+
+def test_rank_ids_corroboration_rescue_off_by_default_still_demotes() -> None:
+    # Same inputs as above but the env flag is unset — the default-off path still
+    # demotes exactly as before this feature existed.
+    items = [("svc", "Utility Access"), ("t1", "Old Rag"), ("t2", "Whiteoak Canyon")]
+    order = rank_ids(
+        items,
+        _FakeJudge('["svc","t1","t2"]'),
+        "m",
+        demote_ids={"svc"},
+        corroboration={"svc": 2},
+        corroboration_sources={"svc": ["osm", "nps"]},
+    )
+    assert order == ["t1", "t2", "svc"]
+
+
+def test_is_over_length_demoted_over_budget() -> None:
+    assert is_over_length_demoted(9.0, 8.0) is True
+
+
+def test_is_over_length_demoted_under_or_equal_budget_kept() -> None:
+    assert is_over_length_demoted(8.0, 8.0) is False
+    assert is_over_length_demoted(5.0, 8.0) is False
+
+
+def test_is_over_length_demoted_null_safe() -> None:
+    # No filter set, or unknown candidate length (pre-backfill corpus) — never demoted.
+    assert is_over_length_demoted(9.0, None) is False
+    assert is_over_length_demoted(None, 8.0) is False
+    assert is_over_length_demoted(None, None) is False
+
+
+def test_filter_preference_hints_dog_and_difficulty() -> None:
+    hint = filter_preference_hints({"dog": True, "difficulty": "Easy"})
+    assert hint is not None
+    assert "dog-friendly trail preferred" in hint
+    assert "preferred difficulty: easy" in hint
+
+
+def test_filter_preference_hints_dog_false() -> None:
+    hint = filter_preference_hints({"dog": False})
+    assert hint is not None
+    assert "not bringing a dog" in hint
+
+
+def test_filter_preference_hints_ignores_malformed_and_unknown_values() -> None:
+    assert filter_preference_hints({"dog": "yes", "difficulty": "extreme"}) is None
+    assert filter_preference_hints({}) is None
+
+
+def test_rank_ids_demotes_over_length_below_real_trails() -> None:
+    items = [("long", "Long Trail"), ("t1", "Old Rag"), ("t2", "Whiteoak Canyon")]
+    order = rank_ids(items, _FakeJudge('["long","t1","t2"]'), "m", demote_ids={"long"})
+    assert order == ["t1", "t2", "long"]

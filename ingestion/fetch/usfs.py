@@ -5,12 +5,15 @@ Authority: tier-1 for existence + allowed_use (Decision Log §27).
 License: public domain (US federal government).
 
 The USFS EDW ArcGIS REST service requires network authentication (returns 403
-from non-USFS IPs). Use the bulk shapefile download and convert to GeoJSON:
+from non-USFS IPs). Use the bulk shapefile download instead, reproducibly obtained
+via `scripts/fetch_usfs.py` (source URL + checksum + vintage tracked in
+`regions/usfs_manifest.json`, DEM-manifest-style):
 
-  curl -L -o data/usfs/S_USA.TrailNFS_Publish.zip \\
-    https://data.fs.usda.gov/geodata/edw/edw_resources/shp/S_USA.TrailNFS_Publish.zip
-  cd data/usfs && unzip S_USA.TrailNFS_Publish.zip
-  ogr2ogr -f GeoJSON trails.geojson S_USA.TrailNFS_Publish.shp -t_srs EPSG:4326
+  python scripts/fetch_usfs.py --region shenandoah-gwj
+
+That downloads the national NFS Trails shapefile, converts to WGS84 GeoJSON with
+geopandas, consolidates the raw per-segment export into whole trails keyed by
+TRAIL_NO, clips to the region bbox, and writes data/usfs/trails.geojson.
 
 Then run: python -m ingestion.pipeline --region shenandoah-gwj
 
@@ -25,6 +28,7 @@ import logging
 from pathlib import Path
 
 from shapely.geometry import LineString, MultiLineString, shape
+from shapely.ops import unary_union
 
 from ingestion.conflate.match import Feature
 
@@ -42,10 +46,29 @@ def _pick_name(props: dict) -> str | None:
     return None
 
 
+def _pick_gis_miles(props: dict) -> float | None:
+    """Parse `GIS_MILES` to a positive float, else None — never fabricate a 0.0
+    length for a missing/blank/non-numeric/non-positive value (Rule #1)."""
+    v = props.get("GIS_MILES")
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        miles = float(v)
+    except (TypeError, ValueError):
+        return None
+    return miles if miles > 0 else None
+
+
 def _in_bbox(coords: list[tuple[float, float]], bbox: tuple[float, float, float, float]) -> bool:
     """True if any coord falls within bbox (south, west, north, east)."""
     south, west, north, east = bbox
     return any(west <= x <= east and south <= y <= north for x, y in coords)
+
+
+def _line_parts(geom: LineString | MultiLineString) -> list[LineString]:
+    if isinstance(geom, MultiLineString):
+        return list(geom.geoms)
+    return [geom]
 
 
 def fetch(
@@ -62,8 +85,7 @@ def fetch(
     if not path.exists():
         log.warning(
             "USFS trail file not found at %s — skipping USFS source.\n"
-            "  Download: curl -L -o data/usfs/S_USA.TrailNFS_Publish.zip \\\n"
-            "    https://data.fs.usda.gov/geodata/edw/edw_resources/shp/S_USA.TrailNFS_Publish.zip",
+            "  Fetch it: python scripts/fetch_usfs.py --region <region>",
             path,
         )
         return []
@@ -90,18 +112,31 @@ def fetch(
             continue
 
         ref = str(props.get("TRAIL_NO") or props.get("TRAIL_NUMBER") or "")
-
-        def _add(line: LineString) -> None:
-            if line.is_empty:
-                return
-            if _in_bbox(list(line.coords), bbox):
-                features.append(Feature(name=name, geom=line, source="USFS", ref=ref or None))
+        length_mi = _pick_gis_miles(props)
 
         if isinstance(geom, MultiLineString):
-            for seg in geom.geoms:
-                _add(seg)
-        elif isinstance(geom, LineString):
-            _add(geom)
+            parts = [seg for seg in geom.geoms if not seg.is_empty]
+            if not parts:
+                continue
+            merged = unary_union(parts) if len(parts) > 1 else parts[0]
+        elif isinstance(geom, LineString) and not geom.is_empty:
+            merged = geom
+        else:
+            continue
+
+        all_coords = [c for line in _line_parts(merged) for c in line.coords]
+        if not _in_bbox(all_coords, bbox):
+            continue
+        features.append(
+            Feature(
+                name=name,
+                geom=merged,
+                source="USFS",
+                ref=ref or None,
+                length_mi=length_mi,
+                length_source="USFS" if length_mi is not None else None,
+            )
+        )
 
     log.info("USFS file load: %d features clipped to bbox %s", len(features), bbox)
     return features

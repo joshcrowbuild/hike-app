@@ -48,6 +48,88 @@ async function renderDetail(vm: CardVM) {
   return result
 }
 
+describe('Detail is the commitment view — it renders the fields relocated off the lean card (Epic 019 AC-19.1.1)', () => {
+  const enriched = card({
+    conditionLines: [
+      { text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' },
+      { text: 'AQI 32 · good', source: 'AirNow', confidence: 'stated', provenance: 'live' },
+    ],
+    enrichment: {
+      placeCue: 'the granite dome above the valley',
+      area: 'Shenandoah',
+      routeShape: 'Loop',
+      distanceMiles: 3.7,
+      ascentFeet: 1050,
+      driveMinutes: 28,
+      durationHours: '3–4 hr',
+      fitLine: 'Matches your taste for open summits.',
+      practicalNote: 'Arrive early; the lot fills by 9.',
+      provenance: 'live',
+    },
+  })
+
+  it('renders placeCue, fitLine, practicalNote, duration and the FULL condition list', async () => {
+    await renderDetail(enriched)
+    expect(screen.getByText('the granite dome above the valley')).toBeInTheDocument() // placeCue
+    expect(screen.getByText('Matches your taste for open summits.')).toBeInTheDocument() // fitLine
+    expect(screen.getByText('Arrive early; the lot fills by 9.')).toBeInTheDocument() // practicalNote
+    expect(screen.getByText('3–4 hr')).toBeInTheDocument() // duration fact
+    // The full multi-line condition list (both lines), not just the card's single slot.
+    expect(screen.getByText('54°F · clear')).toBeInTheDocument()
+    expect(screen.getByText('AQI 32 · good')).toBeInTheDocument()
+  })
+})
+
+describe('Card + Detail read the SAME CardVM (Epic 019 AC-19.1.2 — no VM/DTO change)', () => {
+  it('one object: the card omits the relocated fields, Detail includes them', async () => {
+    const shared = card({
+      enrichment: {
+        placeCue: 'the granite dome above the valley',
+        area: 'Shenandoah',
+        distanceMiles: 3.7,
+        driveMinutes: 28,
+        fitLine: 'Matches your taste for open summits.',
+        provenance: 'live',
+      },
+    })
+    // Detail (this file's harness) reads placeCue + fitLine off the shared object…
+    await renderDetail(shared)
+    expect(screen.getByText('the granite dome above the valley')).toBeInTheDocument()
+    expect(screen.getByText('Matches your taste for open summits.')).toBeInTheDocument()
+    // …and the card, given the identical object, renders neither (asserted in
+    // RecommendationCard.test.tsx). Same shape, two presentations — no adapter fork.
+  })
+})
+
+describe('Detail Duration — live estimate disclosed as such (Epic 022)', () => {
+  it('renders the Naismith estimate with an "est." disclosure when no mock duration string is present', async () => {
+    await renderDetail(
+      card({
+        geo: {
+          geometry: null,
+          trailhead: { lat: 38.5, lon: -78.4 },
+          quality: 'confident',
+          elevationProfile: {
+            samples: [],
+            totalGainMeters: 200,
+            totalLossMeters: 0,
+            maxGradePercent: 40,
+            source: 'USGS 3DEP',
+            resolutionMeters: 10,
+            estimatedDurationMin: 26,
+          },
+        },
+      }),
+    )
+    expect(screen.getByText(/~25 min · est\./)).toBeInTheDocument()
+  })
+
+  it('renders no Duration fact when neither a mock duration nor a live estimate is present', async () => {
+    await renderDetail(card({ geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null } }))
+    expect(screen.queryByText(/Duration/)).not.toBeInTheDocument()
+  })
+})
+
 describe('Detail Directions (prominent, no longer buried in the map controls)', () => {
   it('renders a Directions link near the top when the trail has geo', async () => {
     await renderDetail(card())
@@ -85,5 +167,13 @@ describe('Detail Save (client-side, localStorage, anonymous-friendly)', () => {
       'aria-pressed',
       'true',
     )
+  })
+})
+
+describe('Detail uses a real screen title, not the quiet .wordmark slot (Epic 020, AC-20.4.1)', () => {
+  it('renders .screen-title instead of .wordmark', async () => {
+    const { container } = await renderDetail(card())
+    expect(container.querySelector('.wordmark')).not.toBeInTheDocument()
+    expect(container.querySelector('.screen-title')).toBeInTheDocument()
   })
 })

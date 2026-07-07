@@ -44,6 +44,7 @@ _HEALTH_ROW = {
     "sv": "epic008-test",
     "trails": 42,
     "with_elev": 30,
+    "with_multi_source": 18,
     "srs": 100,
     "ths": 7,
     "edges": 12,
@@ -80,6 +81,7 @@ class _Line:
     text: str
     source: str
     presentation: str = "stated"
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -145,8 +147,18 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                 name="Mellow Loop",
                 distance_mi=4.2,
                 lines=[
-                    _Line(text="Stream is flowing", source="usgs", presentation="stated"),
-                    _Line(text="AQI may be elevated", source="airnow", presentation="hedged"),
+                    _Line(
+                        text="Stream is flowing",
+                        source="usgs",
+                        presentation="stated",
+                        sources=["USGS"],
+                    ),
+                    _Line(
+                        text="AQI may be elevated",
+                        source="airnow",
+                        presentation="hedged",
+                        sources=["AirNow"],
+                    ),
                 ],
                 warnings=[
                     _Warning(
@@ -231,6 +243,9 @@ def test_health_returns_ok_with_typed_graph_stats(client: Any) -> None:
     # Elevation-presence gauge (Epic 017 durability): count + derived coverage %.
     assert graph["trails_with_elevation"] == 30
     assert graph["elevation_coverage_pct"] == round(30 / 42 * 100, 1)
+    # Corroboration-presence gauge (CDP-01 / Epic 026a): count + derived coverage %.
+    assert graph["trails_multi_source"] == 18
+    assert graph["corroboration_pct"] == round(18 / 42 * 100, 1)
 
 
 def test_health_query_uses_count_subquery_not_pattern_comprehension(monkeypatch: Any) -> None:
@@ -287,6 +302,9 @@ def test_plan_happy_path_contract(client: Any) -> None:
     assert [line["confidence_level"] for line in card["lines"]] == ["stated", "hedged"]
     assert card["lines"][0]["text"] == "Stream is flowing"
     assert card["lines"][0]["source"] == "usgs"
+    # Per-fact live sources (Epic 026a) — carried straight through, honest single-entry.
+    assert card["lines"][0]["sources"] == ["USGS"]
+    assert card["lines"][1]["sources"] == ["AirNow"]
 
     # An UNVERIFIABLE condition rides the CARD as a disclosed note (decision of
     # 2026-07-02, rule #6) — it never causes the trail to be set aside.

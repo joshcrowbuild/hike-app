@@ -38,6 +38,13 @@ class FeedLineResponse(BaseModel):
     text: str
     source: str
     confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
+    # Distinct live-source names backing this fact (Epic 026a). Populated only for a
+    # line built from a live probe (every line the engine emits qualifies — the feed
+    # carries no non-live lines); never backfilled from a card-level enrichment/mock
+    # source list, which would fabricate per-fact provenance (Rule #2/#11). Always a
+    # single-entry list today (CDP-01: live facts are single-source by construction),
+    # carried honestly rather than padded — the corpus-level count lives elsewhere.
+    sources: list[str] = []
 
 
 class CardWarningResponse(BaseModel):
@@ -185,6 +192,12 @@ class GraphStats(BaseModel):
     # trails). Makes a corpus-wide elevation lag/wipe visible instead of silent.
     trails_with_elevation: int = 0
     elevation_coverage_pct: float | None = None
+    # Corroboration gauge (CDP-01 / Epic 026a): how many CanonicalTrails are joined by
+    # SAME_AS to ≥2 distinct upstream SourceRecord.source values, and that as a % of all
+    # trails (null when there are no trails). Makes the trust gradient visible on the
+    # dashboard the same way elevation coverage is.
+    trails_multi_source: int = 0
+    corroboration_pct: float | None = None
     source_records: int
     trailheads: int
     same_as_edges: int

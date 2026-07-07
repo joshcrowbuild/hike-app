@@ -1,3 +1,5 @@
+export { Icon } from './Icon'
+export type { IconProps } from './Icon'
 export { Signal } from './Signal'
 export type { SignalProps } from './Signal'
 export { Confidence } from './Confidence'

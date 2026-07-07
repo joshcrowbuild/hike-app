@@ -4,7 +4,7 @@
       "25": { "$value": "#fbfaf7", "$type": "color" },
       "50": { "$value": "#f4f3ef", "$type": "color" },
       "100": { "$value": "#ecebe4", "$type": "color" },
-      "500": { "$value": "#6b7178", "$type": "color" },
+      "500": { "$value": "#5e636a", "$type": "color" },
       "700": { "$value": "#3c424a", "$type": "color" },
       "900": { "$value": "#16191d", "$type": "color" },
       "alpha": {
@@ -33,10 +33,16 @@
   "size": {
     "data-micro": { "$value": "0.625rem", "$type": "dimension" },
     "label": { "$value": "0.6875rem", "$type": "dimension" },
+    "fact-label": { "$value": "0.7rem", "$type": "dimension" },
+    "supporting": { "$value": "0.72rem", "$type": "dimension" },
     "meta": { "$value": "0.8125rem", "$type": "dimension" },
+    "condition": { "$value": "0.9rem", "$type": "dimension" },
     "body": { "$value": "0.9375rem", "$type": "dimension" },
+    "verdict": { "$value": "0.95rem", "$type": "dimension" },
     "emphasis": { "$value": "1rem", "$type": "dimension" },
+    "fact-value": { "$value": "1rem", "$type": "dimension" },
     "place-lead": { "$value": "1.1875rem", "$type": "dimension" },
+    "name": { "$value": "1.3rem", "$type": "dimension" },
     "title": { "$value": "1.5rem", "$type": "dimension" }
   },
   "radius": {

@@ -46,13 +46,18 @@ describe('RecommendationCard feed glyph (S4)', () => {
     expect(container.querySelector('svg.glyph')).toBeInTheDocument()
   })
 
-  it('degrades to the ascent figure with no glyph when there is no profile (AC-4.2)', () => {
+  it('drops the glyph with no profile — ascent is a Detail-only fact now (DD1)', () => {
     const { container } = render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
-    // The ascent figure still reads the shape of the day in the decision row.
-    // (The derived summary also names the climb in prose, hence scope to the stat.)
-    const stats = [...container.querySelectorAll('.decision-value')].map((el) => el.textContent ?? '')
-    expect(stats.some((t) => /1,050 ft/.test(t))).toBe(true)
+    // The lean card owns ascent through the glyph only; with no glyph there is no
+    // separate Ascent fact (it lives on Detail). Distance + Drive remain.
+    // Each label now carries a leading icon whose sr-only text echoes the word
+    // (Epic 021), so a label's textContent reads the word twice — assert the word
+    // is present rather than an exact string match.
+    const labels = [...container.querySelectorAll('.decision-label')].map((el) => el.textContent ?? '')
+    expect(labels.every((l) => !l.includes('Ascent'))).toBe(true)
+    expect(labels.some((l) => l.includes('Distance'))).toBe(true)
+    expect(labels.some((l) => l.includes('Drive'))).toBe(true)
   })
 
   it('opens Detail on tap, with no in-card map (AC-4.3)', async () => {
@@ -64,31 +69,72 @@ describe('RecommendationCard feed glyph (S4)', () => {
   })
 })
 
-describe('RecommendationCard derived summary + difficulty (2026-07-03)', () => {
-  it('renders the derived one-line character in the card', () => {
-    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
-    // The card's open geometry reads as out-and-back, so the stated mileage is
-    // the ROUND TRIP (2 × the curated 3.7 mi one-way figure) — what the hiker
-    // actually walks (Josh, 2026-07-03).
-    expect(container.querySelector('.trail-summary')?.textContent).toMatch(/7\.4-mile out-and-back, climbing 1,050 ft\./)
+describe('RecommendationCard is lean — Detail-only fields are relocated off it (Epic 019 AC-19.1.1)', () => {
+  const enriched = card({
+    enrichment: {
+      placeCue: 'the granite dome above the valley',
+      area: 'Shenandoah',
+      routeShape: 'Loop',
+      distanceMiles: 3.7,
+      ascentFeet: 1050,
+      driveMinutes: 28,
+      durationHours: '3–4 hr',
+      fitLine: 'Matches your taste for open summits.',
+      practicalNote: 'Arrive early; the lot fills by 9.',
+      caution: 'Verify the creek crossing before you commit.',
+      conditionValue: '54°F · clear',
+      freshness: 'NWS · 12m ago',
+      provenance: 'mock',
+    },
   })
 
-  it('renders the difficulty estimate, tagged as an estimate (never a rank)', () => {
-    const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
-    const badge = container.querySelector('.difficulty')
-    // Banded off the round-trip 7.4 mi (not the one-way 3.7 mi), so this reads
-    // Strenuous rather than Moderate.
-    expect(badge?.textContent).toMatch(/Strenuous/)
-    expect(badge?.textContent).toMatch(/est\./)
-    // Sample data wears the sample tag, mirroring <Confidence>.
-    expect(container.querySelector('.difficulty--sample')).toBeInTheDocument()
+  it('renders none of {placeCue, fitLine, practicalNote, caution Signal, duration, character, difficulty}', () => {
+    const { container } = render(<RecommendationCard card={enriched} onOpen={vi.fn()} />)
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('the granite dome above the valley') // placeCue
+    expect(text).not.toContain('Matches your taste') // fitLine
+    expect(text).not.toContain('Arrive early') // practicalNote
+    expect(text).not.toContain('Verify the creek crossing') // caution Signal
+    expect(text).not.toContain('3–4 hr') // duration
+    // Character (derived summary) and the difficulty badge are Detail-only now.
+    expect(container.querySelector('.trail-summary')).not.toBeInTheDocument()
+    expect(container.querySelector('.difficulty')).not.toBeInTheDocument()
+    // What DOES stay: name, the two decision facts, and the single Now value.
+    expect(container.querySelector('.card-name')?.textContent).toBe('Stony Man Loop')
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+  })
+
+  it('still carries a freshness/age stamp in the foot (AC-19.1.3, non-relocatable)', () => {
+    const { container } = render(<RecommendationCard card={enriched} onOpen={vi.fn()} />)
+    expect(container.querySelector('.card-foot')?.textContent).toContain('12m ago')
+  })
+
+  it('never renders the multi-line condition LIST — only one Now value (DD1 line 6)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          conditionLines: [
+            { text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' },
+            { text: 'AQI 32 · good', source: 'AirNow', confidence: 'stated', provenance: 'live' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.condition-lines')).not.toBeInTheDocument()
+    // The primary line shows as the single Now value; the second is Detail-only.
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+    expect(container.textContent).not.toContain('AQI 32')
   })
 })
 
 describe('RecommendationCard verified hazard warnings (2026-07-01: show, never hide)', () => {
   const warning = {
     text: 'weather alert: Extreme Heat Warning',
-    source: 'NWS api.weather.gov',
+    // Short provider name (D3 consistency pass, backend `provider_short`) — never
+    // the raw domain-suffixed "NWS api.weather.gov" (that stays out of the card).
+    source: 'NWS',
     observedAgo: '2h ago',
     kind: 'weather',
     provenance: 'live' as const,
@@ -104,7 +150,8 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
     const block = container.querySelector('.card-warnings')
     expect(block).toBeInTheDocument()
     expect(block?.textContent).not.toContain('weather alert: Extreme Heat Warning')
-    expect(block?.textContent).toContain('NWS api.weather.gov') // source-stamped …
+    expect(block?.textContent).toContain('NWS') // source-stamped …
+    expect(block?.textContent).not.toContain('api.weather.gov') // never the raw domain-suffixed source
     expect(block?.textContent).toContain('2h ago') // … and aged (§7.2)
     // Assistive tech gets the same "Warning" framing sighted users read from the
     // accent treatment — colour is never the only cue.
@@ -120,7 +167,9 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
 describe('RecommendationCard accessible name carries the warning state (report #4/#7)', () => {
   const warning = {
     text: 'weather alert: Extreme Heat Warning',
-    source: 'NWS api.weather.gov',
+    // Short provider name (D3 consistency pass, backend `provider_short`) — never
+    // the raw domain-suffixed "NWS api.weather.gov" (that stays out of the card).
+    source: 'NWS',
     observedAgo: '2h ago',
     kind: 'weather',
     provenance: 'live' as const,
@@ -141,9 +190,9 @@ describe('RecommendationCard accessible name carries the warning state (report #
   })
 })
 
-describe('RecommendationCard ascent renders from the live elevation profile when enrichment has none (report #2)', () => {
-  it('shows an Ascent figure from the geo profile total gain, null-safe when absent', () => {
-    render(
+describe('RecommendationCard ascent is owned by the glyph, never a separate fact (DD1)', () => {
+  it('shows the glyph and the Distance fact, but no Ascent decision fact', () => {
+    const { container } = render(
       <RecommendationCard
         card={card({
           enrichment: undefined,
@@ -152,9 +201,14 @@ describe('RecommendationCard ascent renders from the live elevation profile when
         onOpen={vi.fn()}
       />,
     )
-    // The fixture's profile climbs from 1000m to 1200m — 200m ≈ 656 ft.
-    expect(screen.getByText('656 ft')).toBeInTheDocument()
-    expect(screen.getByText('Ascent')).toBeInTheDocument()
+    // The profile drives the elevation glyph (which owns ascent); there is no
+    // separate Ascent fact on the lean card — that figure lives on Detail.
+    expect(container.querySelector('svg.glyph')).toBeInTheDocument()
+    expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
+    // The Distance label's icon (Epic 021) adds a second, sr-only "Distance"
+    // node, so match one-or-more rather than exactly one.
+    expect(screen.getAllByText('Distance').length).toBeGreaterThan(0)
+    expect(screen.getByText('3.2 mi')).toBeInTheDocument()
   })
 
   it('renders no Ascent figure when there is no elevation profile at all', () => {
@@ -198,7 +252,14 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
     expect(screen.getByText('4h ago')).toBeInTheDocument()
   })
 
-  it('shows present lines AND a residual silence so the set is not implied exhaustive (AC-4.3)', () => {
+  it('stale-degraded wears a `history` glyph, never the `!` hazard mark (Epic 020, AC-20.3.1)', () => {
+    const { container } = silence({ conditionSilence: { state: 'stale-degraded' } })
+    const glyph = container.querySelector('.condition-silence-glyph')
+    expect(glyph?.textContent).not.toBe('!')
+    expect(glyph?.querySelector('svg')).toBeInTheDocument()
+  })
+
+  it('shows the primary line as the single Now value; the residual-silence note is Detail-only (DD1)', () => {
     const { container } = render(
       <RecommendationCard
         card={card({
@@ -209,11 +270,10 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
         onOpen={vi.fn()}
       />,
     )
-    expect(container.querySelector('.condition-line')).toBeInTheDocument()
-    const note = container.querySelector('.condition-silence--partial')
-    expect(note).toBeInTheDocument()
-    expect(note?.textContent).toMatch(/other conditions/i)
-    expect(note?.textContent).toMatch(/streamflow, air/)
+    // One Now value, not the multi-line list; the "other conditions" residual
+    // note moves to Detail so the lean card stays a single condition slot.
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+    expect(container.querySelector('.condition-silence--partial')).not.toBeInTheDocument()
   })
 })
 
@@ -254,7 +314,9 @@ describe('RecommendationCard Save (client-side, localStorage, anonymous-friendly
       'aria-pressed',
       'true',
     )
-    expect(screen.getByText('Saved')).toBeInTheDocument()
+    // The bookmark-check icon's sr-only label echoes "Saved", so the word now
+    // appears in two nodes (accent + chip caption).
+    expect(screen.getAllByText('Saved').length).toBeGreaterThan(0)
   })
 
   it('toggles back to unsaved on a second tap', async () => {

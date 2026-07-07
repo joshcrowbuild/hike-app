@@ -1,12 +1,21 @@
 /** Small presentational pieces shared by the card and the detail screen. Each
  *  is typed against the view-model, not the legacy Trail. */
+import type { LucideIcon } from 'lucide-react'
 import { ToggleButton } from 'react-aria-components'
 
-import { Signal, Staleness } from '../components'
+import { Icon, Signal, Staleness } from '../components'
+import { glyphs } from './glyphs'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
 import { deriveDifficulty, deriveSummary } from '../data/summary'
-import type { CardVM, GeoPosition, TrailGeo, WarningVM } from '../data/vm'
+import type {
+  CardVM,
+  ConditionSilence as ConditionSilenceVM,
+  GeoPosition,
+  SilenceState,
+  TrailGeo,
+  WarningVM,
+} from '../data/vm'
 import { deriveVerdict } from '../data/verdict'
 
 /**
@@ -164,10 +173,22 @@ export function geoAscentFeet(geo: TrailGeo | undefined): number | undefined {
   return gain != null ? Math.round(metersToFeet(gain)) : undefined
 }
 
-export function DecisionItem({ label, value }: { label: string; value: string }) {
+/**
+ * One decision fact — icon + LABEL WORD + value (Epic 021 · AC-21.2.1). The
+ * glyph is a small LEADING ACCENT beside the word, never a replacement: the word
+ * always stays, so a fact is never label-less. `glyph` is optional so a caller
+ * that has no assigned DD2 glyph degrades to the word alone rather than reaching
+ * for a stand-in. The icon's sr-only label carries the word to assistive tech;
+ * the visible word is a sighted-only echo of it (`aria-hidden`), so the fact
+ * reads once, not twice.
+ */
+export function DecisionItem({ label, value, glyph }: { label: string; value: string; glyph?: LucideIcon }) {
   return (
     <div className="decision-item">
-      <span className="decision-label">{label}</span>
+      <span className="decision-label">
+        {glyph ? <Icon glyph={glyph} label={label} className="decision-icon" /> : null}
+        <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
+      </span>
       <span className="decision-value">{value}</span>
     </div>
   )
@@ -194,7 +215,7 @@ export function DirectionsLink({ trailhead, name, className }: { trailhead: GeoP
       rel="noreferrer"
       aria-label={`Directions to the ${name} trailhead (opens Google Maps in a new tab)`}
     >
-      <DirectionsIcon />
+      <Icon glyph={glyphs.directions} label="Directions" className="action-chip-icon" />
       Directions
     </a>
   )
@@ -216,41 +237,64 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
       onChange={() => toggleTrailSaved(id)}
       aria-label={saved ? `Remove ${name} from saved trails` : `Save ${name}`}
     >
-      <BookmarkIcon filled={saved} />
+      <Icon glyph={saved ? glyphs.saved : glyphs.save} label={saved ? 'Saved' : 'Save'} className="action-chip-icon" />
       {saved ? 'Saved' : 'Save'}
     </ToggleButton>
   )
 }
 
-function DirectionsIcon() {
+/**
+ * The four silence states (CDP-02), shared by the card's single condition slot
+ * and Detail's condition block. Each carries its own copy, a leading glyph, and
+ * its own treatment — meaning is never colour-only (glyph + copy differ per
+ * state, §4.3 colour-blind safe), and no two look like the same gray (AC-4.2).
+ * `stale-degraded` routes its age through the <Staleness> primitive so a
+ * last-known value wears its age honestly (§7.2).
+ *
+ * `stale-degraded`'s glyph is the real Lucide `History` mark, not a bare `glyph`
+ * character (Epic 020, AC-20.3.1) — kept off the caution hue, its own entry in
+ * the DD2 registry (`glyphs.history`, Epic 021), never the hazard glyph.
+ */
+const SILENCE_COPY: Record<SilenceState, { glyph: string | null; announce: string; label: string }> = {
+  'not-fetched': { glyph: '○', announce: 'Not checked yet', label: 'Conditions not checked — open to verify' },
+  'checked-clear': { glyph: '✓', announce: 'Checked, clear', label: 'Checked — nothing to flag' },
+  'no-data': { glyph: '–', announce: 'No source', label: 'No live source covers this spot' },
+  'stale-degraded': { glyph: null, announce: 'Stale, may have changed', label: 'Last known conditions' },
+}
+
+export function ConditionSilence({ silence, partial }: { silence: ConditionSilenceVM; partial?: boolean }) {
+  const { state, detail } = silence
+  const copy = SILENCE_COPY[state]
   return (
-    <svg
-      className="action-chip-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-      strokeLinecap="round"
-    >
-      <path d="M8 1.5 13.5 14 8 11 2.5 14 8 1.5Z" />
-    </svg>
+    <p className={`condition-silence condition-silence--${state}${partial ? ' condition-silence--partial' : ''}`}>
+      <span className="sr-only">{copy.announce}: </span>
+      <span className="condition-silence-glyph" aria-hidden="true">
+        {copy.glyph ?? <HistoryIcon />}
+      </span>
+      <span className="condition-silence-text">
+        {partial ? 'Other conditions: ' : ''}
+        {copy.label}
+        {detail ? (
+          state === 'stale-degraded' ? (
+            <>
+              {' — '}
+              <Staleness stale>{detail}</Staleness>
+            </>
+          ) : (
+            ` — ${detail}`
+          )
+        ) : null}
+      </span>
+    </p>
   )
 }
 
-function BookmarkIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      className="action-chip-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    >
-      <path d="M4 2.75a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 .75.75v10.6l-4-2.35-4 2.35V2.75Z" />
-    </svg>
-  )
+/**
+ * `history` — reserved solely for the stale-degraded silence state (never the
+ * hazard glyph; `triangle-alert` stays reserved for a live warning, DD2). The
+ * wrapping `.condition-silence-glyph` span is already `aria-hidden` (its sr-only
+ * announce lives one level up), so this rides bare — no second `<Icon>` label.
+ */
+function HistoryIcon() {
+  return <glyphs.history size={10} aria-hidden="true" focusable={false} />
 }

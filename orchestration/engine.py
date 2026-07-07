@@ -43,6 +43,7 @@ from orchestration.curator import (
     ConditionUnavailable,
     GuardrailVerdict,
     evaluate_guardrails,
+    filter_preference_hints,
     is_outside_boundary_demoted,
     is_over_length_demoted,
     is_roadlike_demoted,
@@ -51,7 +52,7 @@ from orchestration.curator import (
 )
 from orchestration.drive_time import prefilter, time_budget_s
 from orchestration.intent import Intent, parse_intent
-from orchestration.present import FeedLine, summarize_fact
+from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
 from orchestration.scout import Candidate, scout
@@ -231,10 +232,15 @@ def _corpus_corroboration(
 
 def _set_aside(candidate: Candidate, verdict: GuardrailVerdict) -> SetAsideTrail:
     """Build the disclosed set-aside record for a hard-blocked candidate (Epic 018 S5).
-    Each block becomes a source-stamped reason line — the cause, then its source in
-    parens — mirroring how `present.py` stamps a surfaced fact (AC-5.1/5.2)."""
+    Each block becomes a source-stamped reason line — the cause, then its short
+    provider name in parens (D3 consistency pass: the same calm label a condition
+    line or a card warning wears, never the raw domain-suffixed source) — mirroring
+    how `present.py` stamps a surfaced fact (AC-5.1/5.2). `source` itself stays the
+    fact's full provenance, preserved for a future inspectable detail surface."""
     reasons = tuple(
-        SetAsideReason(text=f"{b.reason} ({b.source})", source=b.source, kind=b.kind)
+        SetAsideReason(
+            text=f"{b.reason} ({provider_short(b.source)})", source=b.source, kind=b.kind
+        )
         for b in verdict.blocks
     )
     return SetAsideTrail(canonical_id=candidate.canonical_id, name=candidate.name, reasons=reasons)
@@ -359,16 +365,22 @@ def rank_plan(
     model: str,
     *,
     profile: str | None = None,
-    max_length_mi: float | None = None,
+    filters: dict[str, object] | None = None,
 ) -> list[PlannedTrail]:
     """Reorder guardrail-passing trails by the judgment-tier taste ranking. Drive time
     enters ordering as an explicit term (a deterministic closer-by-road pre-order when
     every candidate has a time, plus a per-card hint to the judge) — never via
     confidence (rule #2): a long drive lowers position, not trust. Absence of a time is
-    never treated as 'far' (AC-5.3). `max_length_mi` (Intent.filters, already validated
-    by the caller) SOFT-demotes over-length candidates alongside the roadlike/boundary
-    signals — never a hard drop (rule #2); a candidate with no known length_mi is
-    never demoted."""
+    never treated as 'far' (AC-5.3).
+
+    `filters` is the mechanical-tier parser's `Intent.filters` (dog/difficulty/
+    max_length_mi). All three are SOFT signals only (Rule #2 — demote, never hard-
+    drop): `max_length_mi` sinks over-budget candidates via `is_over_length_demoted`
+    (same stable-partition demotion as the roadlike/boundary de-ranks); `dog` and
+    `difficulty` have no persisted corpus property yet, so they ride as a documented
+    hint in the judge's profile text instead (`filter_preference_hints`) until real
+    graph props exist. Values are validated defensively — a malformed mechanical-
+    tier parse (bool/str/negative/missing) no-ops rather than crashing."""
     if not planned:
         return []
     drive_secs = {
@@ -386,11 +398,15 @@ def rank_plan(
     # real trails — soft + reversible, never a drop, fire/dike roads kept (see
     # `is_roadlike_demoted`). A no-op until a re-ingest persists `way_type` (older
     # nodes carry None → never demoted).
-    # Two soft, reversible de-rank signals feed the same demotion set: the roadlike/
-    # access name signal (persisted way-type) and the Phase-2 spatial signal (the
-    # trail's point outside the region's protected-area boundary). Either sinks an
-    # ambiguous way below real trails; neither drops it. Both are no-ops until a
-    # re-ingest persists the respective flag (older nodes carry None).
+    # Three soft, reversible de-rank signals feed the same demotion set: the roadlike/
+    # access name signal (persisted way-type), the Phase-2 spatial signal (the
+    # trail's point outside the region's protected-area boundary), and the hiker's
+    # requested max_length_mi (Intent.filters). Any of the three sinks a candidate
+    # below the rest; none of them drops it. All are no-ops absent the backing data
+    # (way_type/outside_boundary/length_mi all default to None on an un-backfilled
+    # corpus → never demoted).
+    filters = filters or {}
+    max_length_mi = valid_max_length_mi(filters.get("max_length_mi"))
     demote_ids = {
         p.candidate.canonical_id
         for p in ordered
@@ -401,8 +417,29 @@ def rank_plan(
         or is_over_length_demoted(p.candidate.length_mi, max_length_mi)
     }
     if demote_ids:
-        log.debug("rank_plan: de-ranking %d roadlike/access way(s)", len(demote_ids))
-    order = rank_ids(items, provider, model, profile=profile, hints=hints, demote_ids=demote_ids)
+        log.debug("rank_plan: de-ranking %d roadlike/access/over-length way(s)", len(demote_ids))
+    # dog/difficulty have no corpus property to demote against yet — surfaced as a
+    # documented soft hint on the judge's profile text instead (Rule #2).
+    hint = filter_preference_hints(filters)
+    if hint:
+        profile = f"{profile}\n{hint}" if profile else hint
+    # CDP-01 corroboration, carried per-trail on PlannedTrail already (Epic 026a) —
+    # handed to the Curator's rescue-only pass (default OFF; see
+    # `curator.apply_corroboration_rescue`), which can lift a demoted way back out
+    # when an authoritative source independently corroborates it. Never adds a
+    # demotion of its own.
+    corroboration = {p.candidate.canonical_id: p.corpus_corroboration for p in ordered}
+    corroboration_sources = {p.candidate.canonical_id: p.corpus_sources for p in ordered}
+    order = rank_ids(
+        items,
+        provider,
+        model,
+        profile=profile,
+        hints=hints,
+        demote_ids=demote_ids,
+        corroboration=corroboration,
+        corroboration_sources=corroboration_sources,
+    )
     return [by_id[cid] for cid in order if cid in by_id]
 
 
@@ -502,17 +539,10 @@ def plan(
     # combined_profile is at most user free-text (intent.profile), never overlay.
     use_personal_judge = viewer_id != "anonymous" or bool(personal_context)
     judge = runtime.personalized_judge if use_personal_judge else runtime.judge
-    # Validated once, up front: a malformed LLM-parsed value (bool/str/list/negative)
-    # no-ops the filter instead of crashing either rank_plan call below.
-    max_length_mi = valid_max_length_mi(intent.filters.get("max_length_mi"))
     if judge:
         try:
             planned = rank_plan(
-                planned,
-                judge[0],
-                judge[1],
-                profile=combined_profile,
-                max_length_mi=max_length_mi,
+                planned, judge[0], judge[1], profile=combined_profile, filters=intent.filters
             )
         except Exception:
             if not use_personal_judge:
@@ -529,7 +559,7 @@ def plan(
                     runtime.judge[0],
                     runtime.judge[1],
                     profile=intent.profile or None,
-                    max_length_mi=max_length_mi,
+                    filters=intent.filters,
                 )
     notices = batch.notices
     if context_degraded:

@@ -16,6 +16,7 @@ Idempotent: all Neo4j writes use MERGE. Safe to re-run monthly.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -83,13 +84,17 @@ def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     if ref:
         clean_ref = ref.replace("/", "_").replace(" ", "-").lower()
         return f"ct:{source.lower()}:{clean_ref}"
+    # Two distinct names can slugify to the same string (e.g. "Blue/Ridge Trail"
+    # and "Blue Ridge Trail" both -> "blue-ridge-trail"), so the hash suffix must
+    # apply unconditionally, not just past some length threshold (mode (a) —
+    # short-slug collision). It must hash the full original `name`, not the lossy
+    # `slug`: hashing the slug would give identically-slugified names the same
+    # suffix and fix nothing. The retained prefix is lengthened from 33 to 50
+    # chars so two names sharing a long common prefix (mode (b) — long
+    # shared-prefix truncation) stay human-distinguishable in the readable part.
     slug = name.lower().replace(" ", "-").replace("/", "-")
-    if len(slug) > 40:
-        # Hash suffix prevents collision when two names share a long common prefix.
-        import hashlib
-
-        suffix = hashlib.sha1(slug.encode()).hexdigest()[:6]
-        slug = f"{slug[:33]}-{suffix}"
+    suffix = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    slug = f"{slug[:50]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
 
@@ -98,8 +103,6 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
         return f"{source}:{ref}"
     key = name.replace(" ", "_").lower()
     if len(key) > 30:
-        import hashlib
-
         suffix = hashlib.sha1(key.encode()).hexdigest()[:6]
         key = f"{key[:23]}_{suffix}"
     return f"{source}:{key}"
@@ -557,6 +560,40 @@ def _load_matches(
         tier = tier_by_name.get(source.lower())
         return {"authority_tier": tier} if tier is not None else None
 
+    # CDP-14 flag-on-ambiguous merge (S5): after the S1/S2 fix, two *distinct*
+    # names always get distinct canonical_ids, so a repeat (canonical_id, source)
+    # within this run means two ref-less same-source features share a
+    # byte-identical name — the only same-source fusion the fix can't
+    # distinguish. Cross-source SAME_AS (osm+nps on one trail) keys to two
+    # different tuples and never repeats, so it stays silent (degree-guarded).
+    # Log-only: never raises, deletes, or overwrites (additive + reversible).
+    #
+    # A single spine Feature can legitimately appear as `m.a` in >1 auto-accept
+    # Match (matched against two different agency sources, e.g. NPS and USFS,
+    # by two independent match() calls) — that is corroboration, not ambiguity,
+    # so re-seeing the SAME Feature object must not self-trigger. `id(feature)`
+    # (not any persisted field) tracks "already considered this exact feature";
+    # a genuinely distinct feature that happens to share a name is a different
+    # object and still triggers the warning.
+    seen_cid_source: set[tuple[str, str]] = set()
+    seen_feature_ids: set[int] = set()
+
+    def _flag_if_ambiguous(feature: Feature, canonical_id: str) -> None:
+        if id(feature) in seen_feature_ids:
+            return
+        seen_feature_ids.add(id(feature))
+        key = (canonical_id, feature.source)
+        if key in seen_cid_source:
+            log.warning(
+                "Ambiguous same-source merge: canonical_id=%s source=%s name=%r "
+                "already loaded this run — two ref-less features share this name.",
+                canonical_id,
+                feature.source,
+                feature.name,
+            )
+            return
+        seen_cid_source.add(key)
+
     counts = {"loaded": 0, "skipped_hygiene": 0}
     matched_spine_ids: set[str] = set()
 
@@ -565,7 +602,20 @@ def _load_matches(
         lat, lon = _safe_geom_centroid(m.a)
         assembled = assemble_geometry(m.a.geom)
         route_wkt = assembled.wkt if assembled is not None else None
-        length_mi = _route_length_mi(assembled)
+        # Agency-first: the authoritative length usually lives on the agency side
+        # (m.b) since today's spine is always OSM (m.a) — but an agency source CAN
+        # be the spine (m.a) in a latent config, so prefer whichever side carries it
+        # rather than assuming m.b (Correction 3 / AC-4.1). Only when NEITHER side
+        # states a length does the geometry-derived haversine fill in, honestly
+        # labelled LENGTH_SOURCE_GEOM (authority > derived; a stated agency length
+        # is never overwritten by a derived one).
+        length_mi = m.b.length_mi if m.b.length_mi is not None else m.a.length_mi
+        length_source = m.b.length_source if m.b.length_mi is not None else m.a.length_source
+        gain_ft = m.b.gain_ft if m.b.gain_ft is not None else m.a.gain_ft
+        gain_source = m.b.gain_source if m.b.gain_ft is not None else m.a.gain_source
+        if length_mi is None:
+            length_mi = _route_length_mi(assembled)
+            length_source = LENGTH_SOURCE_GEOM if length_mi is not None else None
         load_canonical_trail(
             runner,
             canonical_id,
@@ -575,11 +625,14 @@ def _load_matches(
             route_geom_wkt=route_wkt,
             way_type=m.a.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
-            length_mi=length_mi,
-            length_source=LENGTH_SOURCE_GEOM if length_mi is not None else None,
             ingest_version=iv,
+            length_mi=length_mi,
+            length_source=length_source,
+            gain_ft=gain_ft,
+            gain_source=gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(m.a, canonical_id)
         sr_a = _sr_uid(m.a.source, m.a.ref, m.a.name)
         load_source_record(
             runner,
@@ -599,6 +652,7 @@ def _load_matches(
             match_score=1.0,
             ingest_version=iv,
         )
+        _flag_if_ambiguous(m.b, canonical_id)
         sr_b = _sr_uid(m.b.source, m.b.ref, m.b.name)
         load_source_record(
             runner,
@@ -633,7 +687,13 @@ def _load_matches(
         lat, lon = _safe_geom_centroid(feat)
         assembled = assemble_geometry(feat.geom)
         route_wkt = assembled.wkt if assembled is not None else None
-        length_mi = _route_length_mi(assembled)
+        # Same authority-first rule as the matched path: a stated source length
+        # wins; the haversine over the assembled route is the labelled fallback.
+        length_mi = feat.length_mi
+        length_source = feat.length_source
+        if length_mi is None:
+            length_mi = _route_length_mi(assembled)
+            length_source = LENGTH_SOURCE_GEOM if length_mi is not None else None
         load_canonical_trail(
             runner,
             canonical_id,
@@ -643,11 +703,14 @@ def _load_matches(
             route_geom_wkt=route_wkt,
             way_type=feat.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
-            length_mi=length_mi,
-            length_source=LENGTH_SOURCE_GEOM if length_mi is not None else None,
             ingest_version=iv,
+            length_mi=length_mi,
+            length_source=length_source,
+            gain_ft=feat.gain_ft,
+            gain_source=feat.gain_source,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
+        _flag_if_ambiguous(feat, canonical_id)
         sr_uid_val = _sr_uid(feat.source, feat.ref, feat.name)
         load_source_record(
             runner,
@@ -732,6 +795,9 @@ def run_pipeline(
     counts["auto_accept"] = len(auto_accept)
     counts["review"] = len(review)
     log.info("Conflation: %d auto-accept, %d review", len(auto_accept), len(review))
+    counts["review_persisted"] = _persist_review_band(
+        review, region.region_id, settings.review_band_dir
+    )
 
     canonical_nodes = _canonical_nodes(auto_accept, spine_features)
 
@@ -832,6 +898,42 @@ def run_pipeline(
         counts["review"],
     )
     return counts
+
+
+def _persist_review_band(review: list[Match], region_id: str, out_dir: str) -> int:
+    """Write the conflation review band (auto-accept < name_score < no-match, per
+    `classify`) to a reviewable `{out_dir}/{region_id}.jsonl` — one line per OSM×agency
+    pair the matcher flagged for a human to adjudicate later, NOT a graph node (rule #3:
+    fast/derived data never persists as structural graph state). Overwrites the region's
+    file each run so it always reflects the latest ingest rather than growing unbounded
+    across re-runs of an idempotent pipeline.
+
+    Best-effort: a write failure (e.g. read-only filesystem) is logged and swallowed —
+    this is a triage aid, never a pipeline dependency (rule #6's degrade-and-disclose
+    spirit)."""
+    if not review:
+        return 0
+    path = Path(out_dir) / f"{region_id}.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            for m in review:
+                f.write(
+                    json.dumps(
+                        {
+                            "osm_name": m.a.name,
+                            "agency_name": m.b.name,
+                            "name_score": m.name_score,
+                            "source": m.b.source,
+                            "region": region_id,
+                        }
+                    )
+                    + "\n"
+                )
+    except OSError as exc:
+        log.warning("Review-band persistence failed for %s, skipping: %s", region_id, exc)
+        return 0
+    return len(review)
 
 
 def _print_dry_run_summary(

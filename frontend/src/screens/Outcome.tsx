@@ -94,7 +94,7 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
             Done
           </button>
         )}
-        <span className="wordmark">After the hike</span>
+        <span className="screen-title">After the hike</span>
       </header>
 
       {status === 'loading' ? <p className="state-note">Loading…</p> : null}

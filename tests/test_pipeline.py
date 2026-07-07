@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -19,11 +20,12 @@ import pytest
 from shapely.geometry import LineString, MultiLineString, Point
 
 from ingestion import pipeline
-from ingestion.conflate.match import Feature
+from ingestion.conflate.match import Agreement, Feature, Match
 from ingestion.elevation import haversine_m
 from ingestion.pipeline import (
     LENGTH_SOURCE_GEOM,
     _load_matches,
+    _persist_review_band,
     _route_length_mi,
     consolidate_osm_segments,
     load_region,
@@ -156,12 +158,13 @@ def test_load_region_rejects_path_traversal(tmp_path, monkeypatch, region_id):
 # ── Pipeline counts: per-source keys derive from source.name (no literals) ────
 
 
-def test_pipeline_dry_run_returns_counts(monkeypatch):
+def test_pipeline_dry_run_returns_counts(monkeypatch, tmp_path):
     spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
     agency = _StubSource("nps", features=[_feat("Old Rag", "NPS")])
     _inject(monkeypatch, [spine, agency])
+    settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-    counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+    counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
     assert counts["osm"] == 1
     assert counts["osm_consolidated"] == 1
@@ -280,12 +283,12 @@ def _e2e_usfs_file() -> Path:
     return Path(f.name)
 
 
-def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
+def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch, tmp_path):
     """End-to-end behavior-preservation golden: the real OsmSource/NpsSource/
     UsfsSource (only their transports mocked) flow through the reworked
     fetch→consolidate→conflate→count glue under the default config, producing the
-    counts the pre-epic pipeline produced for this fixture (one OSM×NPS
-    auto-accept; USFS present but unmatched)."""
+    expected counts for this fixture (the OSM×NPS pair routes to REVIEW because their
+    names differ by a discriminating "loop" suffix; USFS present but unmatched)."""
     usfs_path = _e2e_usfs_file()
     try:
         real_sources = [
@@ -294,15 +297,22 @@ def test_ac5_2_default_config_counts_through_real_adapters(monkeypatch):
             UsfsSource(geojson_path=usfs_path),
         ]
         _inject(monkeypatch, real_sources)
+        settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+        counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
         assert counts["osm"] == 1
         assert counts["osm_consolidated"] == 1
         assert counts["nps"] == 1
         assert counts["usfs"] == 1
-        assert counts["auto_accept"] == 1  # OSM 'Old Rag Loop' × NPS 'Old Rag'
-        assert counts["review"] == 0
+        # Matcher redesign: OSM 'Old Rag Loop' × NPS 'Old Rag' share geometry but their
+        # names differ by a DISCRIMINATING suffix ("loop"), which the matcher keeps distinct
+        # (a loop is a distinct route from its base name). Geometry is strong, so the pair is
+        # not dropped — it routes to REVIEW rather than auto-stamping the loop's name. (Under
+        # the old suffix-stripping scorer this auto-accepted; the redesign trades that recall
+        # for precision by design — see ingestion/conflate/match.py note #1.)
+        assert counts["auto_accept"] == 0
+        assert counts["review"] == 1
         assert counts["skipped_hygiene"] == 0
     finally:
         usfs_path.unlink(missing_ok=True)
@@ -409,6 +419,104 @@ def test_load_no_boundary_degrades_flag_to_none():
     _load_matches(runner, [], [feat], tier_by_name={"osm": 1}, iv="t", boundary=None)
     flags = [p.get("outside_boundary") for c, p in calls if "MERGE (t:CanonicalTrail" in c]
     assert flags == [None]
+
+
+# ── S5 — flag-on-ambiguous merge at load (CDP-14) ──────────────────────────────
+
+
+def test_s5_warns_on_same_source_same_name_reflless_features(caplog):
+    import logging
+
+    a = Feature(
+        name="Ridge Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    b = Feature(
+        name="Ridge Trail", geom=LineString([[-78.30, 38.60], [-78.29, 38.61]]), source="OSM"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [a, b], tier_by_name={"osm": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Ridge Trail" in r.message and "osm" in r.message for r in warnings)
+    # Non-destructive: both features still loaded, nothing raised.
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+
+
+def test_s5_no_warning_on_cross_source_same_trail(caplog):
+    import logging
+
+    osm_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [osm_feat, nps_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_on_auto_accept_cross_source_match(caplog):
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    agency_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(spine_feat, agency_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [m], [spine_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_when_one_spine_feature_matches_two_agencies(caplog):
+    """A single OSM spine feature legitimately corroborated by two different
+    agencies (NPS and USFS) produces two auto-accept Matches sharing the same
+    `m.a` Feature object — that is corroboration, not an ambiguous same-source
+    merge, and must stay silent (regression for the id(feature) dedup)."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    usfs_feat = Feature(
+        name="Old Rag Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="USFS"
+    )
+    m1 = Match(spine_feat, nps_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    m2 = Match(spine_feat, usfs_feat, 85, Agreement(0.85, 12.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(
+            runner, [m1, m2], [spine_feat], tier_by_name={"osm": 1, "nps": 1, "usfs": 1}, iv="t"
+        )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
 
 
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
@@ -751,7 +859,7 @@ def test_route_length_mi_sums_within_part_not_across_the_gap():
     assert _route_length_mi(multi) == pytest.approx(to_miles(expected_m))
 
 
-def test_length_mi_flows_to_canonical_trail_load():
+def test_matched_length_falls_back_to_haversine_when_no_side_states_one():
     from ingestion.conflate.match import Agreement, Match
 
     coords = [(-78.00, 38.00), (-78.00, 38.01)]
@@ -794,6 +902,132 @@ def test_point_only_spine_feature_gets_no_length_and_does_not_crash():
     assert canonical
     assert canonical[0]["length_mi"] is None
     assert canonical[0]["length_source"] == ""
+
+
+# ── length/gain flow-through (Epic 023 S4) — agency-first cross-side copy ─────
+
+
+def test_matched_length_gain_copied_from_agency_side_m_b():
+    from ingestion.conflate.match import Agreement, Match
+
+    spine = _feat("Old Rag Trail", "OSM")  # m.a — today's spine, carries no length
+    agency = Feature(
+        name="Old Rag",
+        geom=spine.geom,
+        source="USFS",
+        ref="usfs/1",
+        length_mi=4.2,
+        length_source="USFS",
+        gain_ft=1200.0,
+        gain_source="USFS",
+    )
+    m = Match(spine, agency, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(4.2)
+    assert canonical[0]["length_source"] == "USFS"
+    assert canonical[0]["gain_ft"] == pytest.approx(1200.0)
+    assert canonical[0]["gain_source"] == "USFS"
+
+
+def test_matched_length_prefers_m_a_when_agency_is_the_spine():
+    # Latent case (AC-4.2): an agency source IS the region spine (m.a), so its
+    # length must not be silently dropped by a bare m.b read.
+    from ingestion.conflate.match import Agreement, Match
+
+    agency_spine = Feature(
+        name="Old Rag Trail",
+        geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+        source="USFS",
+        ref="usfs/1",
+        length_mi=3.0,
+        length_source="USFS",
+    )
+    osm_side = _feat("Old Rag", "OSM")  # m.b — no length
+    m = Match(agency_spine, osm_side, 95, Agreement(0.9, 10.0), "auto-accept")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [m], [agency_spine], tier_by_name={"osm": 2, "usfs": 1}, iv="t")
+
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(3.0)
+    assert canonical[0]["length_source"] == "USFS"
+
+
+def test_unmatched_spine_length_gain_flows_through():
+    feat = Feature(
+        name="Solo Trail",
+        geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]),
+        source="USFS",
+        ref="usfs/2",
+        length_mi=5.5,
+        length_source="USFS",
+        gain_ft=800.0,
+        gain_source="USFS",
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"usfs": 1}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] == pytest.approx(5.5)
+    assert canonical[0]["length_source"] == "USFS"
+    assert canonical[0]["gain_ft"] == pytest.approx(800.0)
+    assert canonical[0]["gain_source"] == "USFS"
+
+
+def test_absent_stated_length_falls_back_to_geometry_never_a_fabricated_zero():
+    # Supersedes 023's AC-4.3/4.4 "write nothing" once the distance activation
+    # landed: with no stated (agency) length but real line geometry, the honest
+    # geometry-derived haversine fills in — labelled LENGTH_SOURCE_GEOM, never a
+    # fabricated 0.0 and never posing as an agency figure. Gains have no derived
+    # fallback, so absent gains still write nothing (the loader's None-guard).
+    feat = _feat("No Length Trail", "OSM")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"osm": 2}, iv="t")
+    canonical = [p for c, p in calls if "CanonicalTrail" in c and "SET" in c]
+    assert canonical[0]["length_mi"] is not None and canonical[0]["length_mi"] > 0
+    assert canonical[0]["length_source"] == LENGTH_SOURCE_GEOM
+    assert "gain_ft" not in canonical[0]
+    assert "gain_source" not in canonical[0]
+
+
+# ── multipart collapse (Epic 023 S3) — one canonical node, full geometry ──────
+
+
+def test_multipart_feature_yields_one_canonical_node_with_full_geometry():
+    from shapely.geometry import MultiLineString
+
+    from ingestion.route import line_parts, parse_wkt
+
+    # Two disconnected parts sharing one source identity (mirrors a collapsed NPS
+    # MultiLineString Feature) — must load as ONE canonical node with BOTH parts,
+    # not the last-fragment-wins overwrite this epic fixes.
+    parts = MultiLineString(
+        [
+            [(-78.30, 38.60), (-78.29, 38.61)],
+            [(-78.10, 38.80), (-78.09, 38.81)],
+        ]
+    )
+    feat = Feature(name="Fragmented Trail", geom=parts, source="NPS", ref="42")
+
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+    _load_matches(runner, [], [feat], tier_by_name={"nps": 1}, iv="t")
+
+    canonical_calls = [(c, p) for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_calls) == 1  # one canonical node, not N
+
+    route_wkt = canonical_calls[0][1].get("route_geom_wkt")
+    assert route_wkt is not None
+    parsed_lines = line_parts(parse_wkt(route_wkt))
+    total_coords = sum(len(list(line.coords)) for line in parsed_lines)
+    assert total_coords == 4  # both 2-point parts survived, not just one
 
 
 # ── Per-source fetch sanity (task 3): a truncated/partial fetch aborts pre-load ──
@@ -1077,17 +1311,131 @@ def test_golden_region_regression(monkeypatch, tmp_path):
             UsgsThreeDEPSource(sampler=RasterioDEMSampler(str(dem)), resolution_m=50.0),
         ]
         _inject(monkeypatch, real_sources)
+        settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
 
-        counts = run_pipeline(_REGION, dry_run=True, settings=_SETTINGS)
+        counts = run_pipeline(_REGION, dry_run=True, settings=settings)
 
         # Trail count + junk ABSENT: only the real trail survives; "Snake Road" (SR 650)
         # is dropped by the trail_filter. If a regression lets the junk through this is 2.
         assert counts["osm"] == 1
         assert counts["osm_consolidated"] == 1
-        # A known real trail PRESENT and conflated with its NPS record.
-        assert counts["auto_accept"] == 1
-        assert counts["review"] == 0
+        # A known real trail PRESENT and conflated with its NPS record. The OSM name
+        # ('Old Rag Loop') differs from the NPS name ('Old Rag') by a DISCRIMINATING
+        # "loop" suffix, so the redesigned matcher routes the pair to REVIEW rather than
+        # auto-stamping the loop's name — precision over recall by design (matcher note #1).
+        assert counts["auto_accept"] == 0
+        assert counts["review"] == 1
         # Elevation PRESENT for the DEM'd region: 8 profile facts for the one trail.
         assert counts["enrichment_facts"] == 8
     finally:
         usfs_path.unlink(missing_ok=True)
+
+
+# ── Review-band persistence (DQ follow-up: adjudicate the middle tier later) ──
+
+
+def _review_match(osm_name: str, agency_name: str, agency_source: str, score: int = 70) -> Match:
+    return Match(
+        a=_feat(osm_name, "osm"),
+        b=_feat(agency_name, agency_source),
+        name_score=score,
+        agreement=Agreement(overlap=0.1, hausdorff_m=120.0),
+        verdict="review",
+    )
+
+
+def test_persist_review_band_writes_one_line_per_match_with_expected_fields(tmp_path):
+    review = [
+        _review_match("Old Rag Loop", "Old Rag", "nps", score=72),
+        _review_match("Snake Hollow Trail", "Snake Hollow", "usfs", score=65),
+    ]
+
+    written = _persist_review_band(review, "test-r", str(tmp_path))
+
+    assert written == 2
+    out = tmp_path / "test-r.jsonl"
+    lines = [json.loads(line) for line in out.read_text().splitlines()]
+    assert lines == [
+        {
+            "osm_name": "Old Rag Loop",
+            "agency_name": "Old Rag",
+            "name_score": 72,
+            "source": "nps",
+            "region": "test-r",
+        },
+        {
+            "osm_name": "Snake Hollow Trail",
+            "agency_name": "Snake Hollow",
+            "name_score": 65,
+            "source": "usfs",
+            "region": "test-r",
+        },
+    ]
+
+
+def test_persist_review_band_noop_on_empty_review(tmp_path):
+    written = _persist_review_band([], "test-r", str(tmp_path))
+
+    assert written == 0
+    assert not (tmp_path / "test-r.jsonl").exists()
+
+
+def test_persist_review_band_creates_missing_dir(tmp_path):
+    out_dir = tmp_path / "nested" / "review"
+
+    written = _persist_review_band([_review_match("A", "B", "nps")], "test-r", str(out_dir))
+
+    assert written == 1
+    assert (out_dir / "test-r.jsonl").exists()
+
+
+def test_persist_review_band_overwrites_rather_than_appends(tmp_path):
+    _persist_review_band([_review_match("A", "B", "nps")], "test-r", str(tmp_path))
+    _persist_review_band([_review_match("C", "D", "usfs")], "test-r", str(tmp_path))
+
+    lines = (tmp_path / "test-r.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["osm_name"] == "C"
+
+
+def test_persist_review_band_scopes_file_by_region(tmp_path):
+    _persist_review_band([_review_match("A", "B", "nps")], "region-a", str(tmp_path))
+    _persist_review_band([_review_match("C", "D", "usfs")], "region-b", str(tmp_path))
+
+    assert (tmp_path / "region-a.jsonl").exists()
+    assert (tmp_path / "region-b.jsonl").exists()
+
+
+def test_persist_review_band_degrades_on_write_failure(tmp_path, caplog):
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")  # a file, not a dir — mkdir under it must fail
+
+    with caplog.at_level("WARNING"):
+        written = _persist_review_band(
+            [_review_match("A", "B", "nps")], "test-r", str(blocked / "review")
+        )
+
+    assert written == 0
+    assert "Review-band persistence failed" in caplog.text
+
+
+def test_run_pipeline_persists_review_band(monkeypatch, tmp_path):
+    """Integration: run_pipeline wires the review list it already computes (line ~695)
+    through to disk — the file exists, matches counts['review'], and never touches
+    the graph (dry_run means no Neo4j import even happens)."""
+    a = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
+    b = _StubSource("nps", features=[_feat("Old Rag", "NPS")])
+    _inject(monkeypatch, [a, b])
+    settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
+
+    counts = run_pipeline(_REGION, dry_run=True, settings=settings)
+
+    assert counts["review"] == 1
+    assert counts["review_persisted"] == 1
+    out = tmp_path / "review" / f"{_REGION.region_id}.jsonl"
+    assert out.exists()
+    record = json.loads(out.read_text().splitlines()[0])
+    assert record["osm_name"] == "Old Rag Loop"
+    assert record["agency_name"] == "Old Rag"
+    assert record["source"] == "NPS"
+    assert record["region"] == _REGION.region_id

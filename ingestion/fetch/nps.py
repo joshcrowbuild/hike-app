@@ -13,6 +13,7 @@ import logging
 
 import httpx
 from shapely.geometry import LineString, MultiLineString, shape
+from shapely.ops import unary_union
 
 from ingestion.conflate.match import Feature
 
@@ -83,13 +84,19 @@ def fetch(
                 geom = shape(geom_raw)
             except Exception:
                 continue
+
             if isinstance(geom, MultiLineString):
-                for line in geom.geoms:
-                    ref = str(props.get("OBJECTID") or "")
-                    features.append(Feature(name=name, geom=line, source="NPS", ref=ref or None))
+                parts = [seg for seg in geom.geoms if not seg.is_empty]
+                if not parts:
+                    continue
+                merged = unary_union(parts) if len(parts) > 1 else parts[0]
             elif isinstance(geom, LineString) and not geom.is_empty:
-                ref = str(props.get("OBJECTID") or "")
-                features.append(Feature(name=name, geom=geom, source="NPS", ref=ref or None))
+                merged = geom
+            else:
+                continue
+
+            ref = str(props.get("OBJECTID") or "")
+            features.append(Feature(name=name, geom=merged, source="NPS", ref=ref or None))
 
         if len(page_features) < _PAGE_SIZE:
             break

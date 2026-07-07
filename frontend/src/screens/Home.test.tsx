@@ -164,6 +164,111 @@ describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)'
   })
 })
 
+describe('Home disclosure tiering (Epic 025 — safety ≠ housekeeping ≠ build note)', () => {
+  const heldBackFixture = [
+    {
+      id: 'a',
+      name: 'Foggy Hollow',
+      reasons: [
+        {
+          text: "weather alerts couldn't be verified (NWS api.weather.gov)",
+          source: 'NWS api.weather.gov',
+          kind: 'weather',
+        },
+      ],
+    },
+  ]
+
+  it('groups the held-back/set-aside/notices housekeeping disclosures into one recessive, open-by-default <details>', async () => {
+    const { container } = await renderHomeWith(
+      feedWith({
+        heldBack: heldBackFixture,
+        setAside: [{ id: 'x', name: 'Old Rag', reason: 'party gate', kind: 'party', restorable: true }],
+        notices: ['Drive times unavailable this run'],
+      }),
+    )
+
+    const details = container.querySelector('.housekeeping') as HTMLDetailsElement
+    expect(details).toBeInTheDocument()
+    expect(details.tagName).toBe('DETAILS')
+    // Open by default — nothing is hidden un-inspectably (AC-25.1.2).
+    expect(details.open).toBe(true)
+
+    // All three still reachable within the same group, not removed.
+    expect(details.textContent).toMatch(/held back/)
+    expect(details.textContent).toMatch(/Old Rag set aside/)
+    expect(details.textContent).toMatch(/Drive times unavailable this run/)
+
+    // A real, accessible expand control (native <summary>), not a bare div.
+    const summary = details.querySelector('summary')
+    expect(summary).toBeInTheDocument()
+  })
+
+  it('renders no housekeeping disclosure when the frame has nothing to disclose', async () => {
+    // Two cards (not one) so the sparse note doesn't fire on the default fixture.
+    const cards = [
+      { id: 'a', name: 'A', distanceMi: 1, conditionLines: [], warnings: [] },
+      { id: 'b', name: 'B', distanceMi: 2, conditionLines: [], warnings: [] },
+    ]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+    expect(container.querySelector('.housekeeping')).not.toBeInTheDocument()
+  })
+
+  it('is keyboard-focusable and, once activated, collapses the group without deleting its content (Rule 1)', async () => {
+    const { container } = await renderHomeWith(feedWith({ heldBack: heldBackFixture }))
+    const details = container.querySelector('.housekeeping') as HTMLDetailsElement
+    expect(details.open).toBe(true)
+
+    const summary = details.querySelector('summary') as HTMLElement
+    // Native <summary> is keyboard-focusable and Enter/Space-activatable by
+    // default — no tabindex or key handler needed for AC-25.1.2 to hold.
+    summary.focus()
+    expect(summary).toHaveFocus()
+
+    await userEvent.click(summary)
+    expect(details.open).toBe(false)
+    // Collapsed, not deleted — still inspectable, still in the DOM (Rule 1).
+    expect(details.textContent).toMatch(/held back/)
+  })
+
+  it('keeps the readiness disclosure in its own recessive, collapsible housekeeping shell', async () => {
+    const { container } = await renderHomeWith(
+      feedWith({ readiness: { on: true, state: 'applied', rationale: 'Trimmed for wet-trail risk today.' } }),
+    )
+    const readinessText = screen.getByText('Trimmed for wet-trail risk today.')
+    const details = readinessText.closest('details')
+    expect(details).toHaveClass('housekeeping')
+    expect(details).toHaveAttribute('open')
+  })
+
+  it('never nests the safety banner inside the housekeeping tier — it stands apart, always shown', async () => {
+    const shared = {
+      text: 'weather alert: Extreme Heat Warning — NWS',
+      source: 'NWS api.weather.gov',
+      observedAgo: '2h ago',
+      kind: 'weather',
+      provenance: 'live' as const,
+    }
+    const cards = [
+      { id: 'a', name: 'a', distanceMi: 2, conditionLines: [], warnings: [shared] },
+      { id: 'b', name: 'b', distanceMi: 2, conditionLines: [], warnings: [shared] },
+    ]
+    const { container } = await renderHomeWith(feedWith({ cards, heldBack: heldBackFixture }))
+
+    const banner = container.querySelector('.feed-alert-banner')
+    expect(banner).toBeInTheDocument()
+    expect(banner?.closest('.housekeeping')).toBeNull()
+  })
+
+  it('renders the sample-data note as a plain, unboxed line, never inside the collapsible housekeeping tier', async () => {
+    const { container } = await renderHomeWith(feedWith({ dataSource: 'mock', heldBack: heldBackFixture }))
+    const strip = container.querySelector('.sample-strip')
+    expect(strip).toBeInTheDocument()
+    expect(strip?.closest('.housekeeping')).toBeNull()
+    expect(strip?.closest('details')).toBeNull()
+  })
+})
+
 describe('Home region label reflects the actually served trails, never the picker\'s assumption (report #3)', () => {
   const cardAt = (id: string, lat: number, lon: number) => ({
     id,
@@ -403,5 +508,12 @@ describe('Home Saved filter (client-side, localStorage, no backend/auth)', () =>
 
     await userEvent.click(screen.getByRole('button', { name: /show all/i }))
     expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
+  })
+})
+
+describe('Home keeps the persistent quiet .wordmark (Epic 020, AC-20.4.1)', () => {
+  it('renders .wordmark — the only screen that should', async () => {
+    const { container } = await renderHomeWith(feedWith({}))
+    expect(container.querySelector('.wordmark')).toBeInTheDocument()
   })
 })

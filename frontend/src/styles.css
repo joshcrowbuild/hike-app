@@ -61,7 +61,8 @@ button {
 .open-detail,
 .back,
 .facet-value,
-.refine-label {
+.refine-label,
+.housekeeping-summary {
   font-family: var(--font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -83,7 +84,23 @@ button {
   color: var(--text-muted);
 }
 
+/* A real page title (Epic 020, AC-20.4.1) — Detail/Outcome name what screen
+   you're on in legible primary ink, never the quiet `.wordmark` mono-caps
+   treatment. `.wordmark` itself stays reserved for Home's persistent, quiet
+   brand mark — the only screen that should ever wear it. */
+.screen-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
 .back {
+  position: relative;
   font-size: 0.7rem;
   color: var(--text-primary);
   padding: 0.3rem 0;
@@ -204,15 +221,6 @@ button {
   background: var(--surface-press);
 }
 
-.card-place {
-  margin: 0;
-  font-size: 1.16rem;
-  line-height: 1.28;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
 .card-id {
   display: flex;
   flex-wrap: wrap;
@@ -220,17 +228,21 @@ button {
   gap: 0.35rem 0.6rem;
 }
 
+/* The name is the DOMINANT type on the lean card (Epic 019 · DD1) — the largest
+   text present, so the card reads name-first at a glance. */
 .card-name {
   margin: 0;
-  font-size: 0.98rem;
-  font-weight: 600;
+  font-size: var(--type-name-size);
+  line-height: 1.2;
+  font-weight: var(--type-name-weight);
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
 .card-area {
   margin: 0;
   font-family: var(--font-family-mono);
-  font-size: 0.72rem;
+  font-size: var(--type-supporting-size);
   letter-spacing: 0.04em;
   color: var(--text-muted);
 }
@@ -245,12 +257,10 @@ button {
 
 .card-warning-meta {
   font-size: 0.74rem;
-  /* The <Staleness> child reads its color from --text-muted; on the signal's
-     terracotta-tinted field that resolves to ~4.1:1, below WCAG AA (4.5:1) for
-     small text. Re-point the custom property to the higher-contrast secondary
-     tier for this subtree only — Staleness elsewhere sits on plain surfaces,
-     where muted already clears AA. */
-  --text-muted: var(--text-secondary);
+  /* Epic 020 (AC-20.2.1): --text-muted itself was darkened to clear 4.5:1 AA
+     against every surface app-wide, including this signal's terracotta-tinted
+     field (~5:1) — the local re-point to --text-secondary this subtree used to
+     need is gone; the base token now carries the guarantee everywhere. */
 }
 
 /* ---- go/no-go verdict (the glanceable headline — product voice 2026-07-03) ----
@@ -261,7 +271,7 @@ button {
    stoplight — the calm-utility palette holds. */
 .verdict {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: var(--type-verdict-size);
   line-height: 1.4;
 }
 
@@ -347,8 +357,19 @@ button {
 }
 
 .decision-label {
-  font-size: var(--size-label);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--type-fact-label-size);
+  font-weight: var(--type-fact-label-weight);
   color: var(--text-muted);
+}
+
+/* The fact's leading glyph is an accent, one step up from the muted label text
+   so it reads as an icon without competing with the value. It inherits colour
+   from the label (currentColor), so it demotes with it in both themes. */
+.decision-icon {
+  font-size: 1.15em;
 }
 
 .condition-label {
@@ -356,9 +377,11 @@ button {
   color: var(--text-muted);
 }
 
+/* A decision fact's value is a legible figure, not a caption (DD1). */
 .decision-value {
   font-family: var(--font-family-mono);
-  font-size: var(--size-emphasis);
+  font-size: var(--type-fact-value-size);
+  font-weight: var(--type-fact-value-weight);
   color: var(--text-primary);
 }
 
@@ -370,7 +393,7 @@ button {
 
 .condition-value {
   font-family: var(--font-family-mono);
-  font-size: 0.85rem;
+  font-size: var(--type-condition-size);
   color: var(--text-primary);
 }
 
@@ -380,29 +403,15 @@ button {
    here (see .signal--detail below), consistent with the other *--detail
    spacing utilities. */
 
-/* ---- fit line ---- */
-.fit {
-  margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  max-width: 40ch;
-}
-
 /* ---- derived trail summary (the one-line character — product voice 2026-07-03) ----
-   A summary of the card's own verified figures (R1); presentation only. Reads as
-   quiet subtitle prose, a step below the name. */
+   A summary of the card's own verified figures (R1); presentation only. Now a
+   Detail-only line (Epic 019) — reads as quiet subtitle prose. */
 .trail-summary {
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.4;
   color: var(--text-secondary);
   max-width: 46ch;
-}
-
-.trail-summary--card {
-  margin-top: -0.15rem;
-  margin-bottom: 0.6rem;
 }
 
 /* ---- derived difficulty estimate (Rule #2: presentation only, never ranking) ----
@@ -492,6 +501,7 @@ button {
 }
 
 .action-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -525,10 +535,11 @@ button {
   outline-offset: 2px;
 }
 
+/* The chip's leading glyph, sized a touch larger than the mono caption beside
+   it so the accent reads. The <Icon> wrapper strokes currentColor, so it tracks
+   the chip's ink (incl. the selected/hover treatments) in both themes. */
 .action-chip-icon {
-  width: 13px;
-  height: 13px;
-  flex: none;
+  font-size: 1.25em;
 }
 
 /* ---- detail ---- */
@@ -566,6 +577,17 @@ button {
   font-size: 0.74rem;
   letter-spacing: 0.04em;
   color: var(--text-muted);
+}
+
+/* The poetic place cue, relocated off the lean card to the commitment view
+   (Epic 019). Reads as a quiet lead line under the name/area. */
+.detail-place {
+  margin: 0.55rem 0 0;
+  font-size: var(--size-place-lead);
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
 .detail-facts {
@@ -766,6 +788,10 @@ button {
 }
 
 .map-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-family-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -956,6 +982,7 @@ button {
 }
 
 .facet-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -973,9 +1000,18 @@ button {
 }
 
 .facet-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+/* A facet's leading glyph rides at the label's own size, inheriting its primary
+   ink so it reads as a quiet accent, never a second focal point. */
+.facet-icon {
+  color: var(--text-secondary);
 }
 
 .facet-value {
@@ -1039,6 +1075,7 @@ button {
 .context:focus-visible,
 .pending-nod:focus-visible,
 .facet-row:focus-visible,
+.housekeeping-summary:focus-visible,
 .back:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -1050,25 +1087,63 @@ button {
   outline-offset: -2px;
 }
 
-/* The sample-data disclosure: calm, unmissable, never alarmist. It is how the
-   mock stays honest — the layout is real, the conditions are not yet live. */
+/* The sample-data disclosure: the quietest thing on screen (Epic 025) — a
+   build-time note, not a user concern. Never boxed or alarmed; it stays
+   honest through the words alone, not a container that competes for
+   attention with the safety banner or the housekeeping tier below it. */
 .sample-strip {
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.74rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.7rem;
   line-height: 1.4;
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
 }
 
-/* Readiness disclosure (R2): effect-first, fails open, never a number. */
+/* Readiness disclosure (R2): effect-first, fails open, never a number.
+   Housekeeping-tier (Epic 025) — rendered inside `.housekeeping`. */
 .readiness-line {
-  margin: 0 0 1rem;
+  margin: 0;
   font-size: 0.85rem;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+/* ---- housekeeping disclosures (Epic 025): the recessive + collapsible tier
+   between the safety banner (the sole accent-hue element, always shown) and
+   the sample-strip build note (the quietest thing on screen). Native
+   <details>/<summary> gives a keyboard-operable, self-announcing expand
+   control for free; open by default so nothing here is hidden
+   un-inspectably (AC-25.1.2) — collapsing is an option, not the default. */
+.housekeeping {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-faint);
+}
+
+.housekeeping-summary {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.housekeeping-body {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.housekeeping-body > .readiness-line {
+  margin: 0;
+}
+
+.housekeeping-body > .sparse-block {
+  margin-top: 0;
+}
+
+.housekeeping-body > .set-aside {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
 }
 
 /* ---- async states: loading / empty / error / not-found (R8) ---- */
@@ -1103,18 +1178,21 @@ button {
   height: 0.8em;
 }
 
-.skeleton-line--place {
-  width: 60%;
-  height: 1.1em;
+/* Mirrors the new lean silhouette (Epic 019): verdict → name → area → decision
+   → glyph → condition → foot, so the real card never reflows on swap. */
+.skeleton-line--verdict {
+  width: 55%;
+  height: 0.95em;
 }
 
 .skeleton-line--name {
-  width: 42%;
+  width: 55%;
+  height: 1.3em;
 }
 
 .skeleton-line--area {
   width: 26%;
-  height: 0.65em;
+  height: 0.7em;
 }
 
 .skeleton-glyph {
@@ -1154,6 +1232,7 @@ button {
 /* A quiet text button for recovery + reversible actions (retry / widen /
    show anyway). Never the accent hue — that stays reserved for the signal. */
 .text-action {
+  position: relative;
   font-family: var(--font-family-mono);
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -1167,6 +1246,25 @@ button {
 .text-action:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
+}
+
+/* ---- 44px minimum hit area (Epic 020, AC-20.1.1) ----
+   A centered, invisible hit-zone extension: the visible chrome (underline,
+   pill, row) renders exactly as designed today; only the tappable area grows
+   to the platform minimum. Applied to every compact text/chip/row control —
+   the card's own whole-tap button is already well past 44px and stays
+   untouched (AC-20.1.1 "card whole-tap unchanged"). */
+.text-action::before,
+.back::before,
+.action-chip::before,
+.map-chip::before,
+.facet-row::before {
+  content: '';
+  position: absolute;
+  inset: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }
 
 /* ---- sparse + set-aside (constraint disclosure, R6/R9) ---- */
@@ -1267,13 +1365,17 @@ button {
   color: var(--text-muted);
 }
 
-/* stale-degraded — the only cautionary one: the signal hue, "may have changed". */
+/* stale-degraded — a neutral note ("may have changed"), never colour-coded as
+   a hazard (Epic 020, AC-20.3.1 / DD2): the terracotta signal hue is reserved
+   for a LIVE warning (`triangle-alert`), never a merely-old timestamp. A solid
+   ring (vs. not-fetched's dashed one) plus its own `history` glyph — never `!`
+   — carry the meaning instead. */
 .condition-silence--stale-degraded {
-  color: var(--signal-caution-fg);
+  color: var(--text-secondary);
 }
 .condition-silence--stale-degraded .condition-silence-glyph {
-  background: var(--signal-caution-bg);
-  color: var(--signal-caution-fg);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
 }
 
 /* When shown beside present lines, it's a quieter footnote (AC-4.3). */

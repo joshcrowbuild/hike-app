@@ -47,3 +47,12 @@ describe('Outcome', () => {
     expect(await screen.findByText(/Sign in to log your hikes/)).toBeInTheDocument()
   })
 })
+
+describe('Outcome uses a real screen title, not the quiet .wordmark slot (Epic 020, AC-20.4.1)', () => {
+  it('renders .screen-title instead of .wordmark', async () => {
+    const { container } = renderOutcome('ep-hawksbill')
+    await screen.findByText(/You hiked Hawksbill Summit/)
+    expect(container.querySelector('.wordmark')).not.toBeInTheDocument()
+    expect(container.querySelector('.screen-title')).toBeInTheDocument()
+  })
+})

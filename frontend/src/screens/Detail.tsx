@@ -2,6 +2,7 @@ import { Confidence, Signal, Staleness } from '../components'
 import { useCard } from '../data/PlannerProvider'
 import type { CardVM } from '../data/vm'
 import {
+  ConditionSilence,
   DecisionItem,
   DifficultyBadge,
   DirectionsLink,
@@ -13,6 +14,8 @@ import {
   WarningBlock,
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
+import { formatEstimatedDuration } from '../data/duration'
+import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
 
 export interface DetailProps {
@@ -36,7 +39,7 @@ export function Detail({ id, onBack, onReplan }: DetailProps) {
         <button className="back" type="button" onClick={onBack}>
           Back
         </button>
-        <span className="wordmark">Detail</span>
+        <span className="screen-title">Detail</span>
       </header>
 
       {status === 'loading' ? <p className="state-note">Loading…</p> : null}
@@ -86,6 +89,10 @@ function DetailBody({ card }: { card: CardVM }) {
           <p className="detail-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
         ) : null}
 
+        {/* The poetic place cue lives on the commitment view now, not the lean
+            feed card (Epic 019). */}
+        {e?.placeCue ? <p className="detail-place">{e.placeCue}</p> : null}
+
         <Verdict card={card} className="verdict--detail" />
 
         <WarningBlock warnings={card.warnings} collapsed />
@@ -96,16 +103,26 @@ function DetailBody({ card }: { card: CardVM }) {
         </div>
 
         <div className="detail-facts">
-          {e?.driveMinutes != null ? <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} /> : null}
+          {e?.driveMinutes != null ? (
+            <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
+          ) : null}
           {e?.distanceMiles != null ? (
-            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : card.distanceMi != null ? (
-            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} />
+            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} glyph={glyphs.distance} />
           ) : null}
           {ascentFeet != null ? (
-            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} />
+            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
           ) : null}
-          {e?.durationHours ? <DecisionItem label="Duration" value={e.durationHours} /> : null}
+          {e?.durationHours ? (
+            <DecisionItem label="Duration" value={e.durationHours} glyph={glyphs.duration} />
+          ) : card.geo?.elevationProfile?.estimatedDurationMin != null ? (
+            <DecisionItem
+              label="Duration"
+              value={formatEstimatedDuration(card.geo.elevationProfile.estimatedDurationMin)}
+              glyph={glyphs.duration}
+            />
+          ) : null}
         </div>
 
         {/* A derived difficulty estimate (R2: presentation only, never ranking). */}
@@ -145,7 +162,12 @@ function DetailBody({ card }: { card: CardVM }) {
   )
 }
 
-/** The "Now" conditions, each carrying its own source + confidence tier. */
+/**
+ * The full "Now" conditions, each carrying its own source + confidence tier —
+ * the commitment view (Epic 019) shows every line, not just the card's single
+ * slot. The empty case and the residual-silence note (the shown set isn't
+ * exhaustive, AC-4.3) render here through the shared <ConditionSilence>.
+ */
 function ConditionLines({ card }: { card: CardVM }) {
   const e = card.enrichment
   if (e?.conditionValue) {
@@ -160,17 +182,22 @@ function ConditionLines({ card }: { card: CardVM }) {
       </div>
     )
   }
-  if (card.conditionLines.length === 0) return null
+  if (card.conditionLines.length === 0) {
+    return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
+  }
   return (
-    <ul className="condition-lines condition-lines--detail">
-      {card.conditionLines.map((line, i) => (
-        <li key={i} className="condition-line">
-          <Confidence level={line.confidence} provenance={line.provenance}>
-            {line.text}
-          </Confidence>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="condition-lines condition-lines--detail">
+        {card.conditionLines.map((line, i) => (
+          <li key={i} className="condition-line">
+            <Confidence level={line.confidence} provenance={line.provenance}>
+              {line.text}
+            </Confidence>
+          </li>
+        ))}
+      </ul>
+      {card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null}
+    </>
   )
 }
 

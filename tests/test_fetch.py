@@ -7,7 +7,8 @@ import tempfile
 from pathlib import Path
 
 import httpx
-from shapely.geometry import LineString
+import pytest
+from shapely.geometry import LineString, MultiLineString
 
 from ingestion.fetch import nps as nps_fetch
 from ingestion.fetch import osm as osm_fetch
@@ -111,6 +112,42 @@ def test_nps_fetch_returns_features():
     assert features[0].source == "NPS"
 
 
+def test_nps_fetch_collapses_multipart_into_one_feature():
+    # A MultiLineString with 2 parts sharing one OBJECTID must yield ONE Feature
+    # whose geometry contains both parts, never two Features (Epic 023 S3).
+    multi = {
+        "type": "Feature",
+        "properties": {"TRLNAME": "Fragmented Trail", "OBJECTID": 42},
+        "geometry": {
+            "type": "MultiLineString",
+            "coordinates": [
+                [[-78.28, 38.55], [-78.27, 38.56]],
+                [[-78.27, 38.56], [-78.26, 38.57]],
+            ],
+        },
+    }
+    responses = [_arcgis_response([multi]), _arcgis_response([])]
+    call_count = [0]
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        resp = responses[min(call_count[0], len(responses) - 1)]
+        call_count[0] += 1
+        return resp
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    features = nps_fetch.fetch((38.55, -78.45, 38.70, -78.25), client=client)
+    assert len(features) == 1
+    assert features[0].name == "Fragmented Trail"
+    assert features[0].ref == "42"
+    all_coords = (
+        list(features[0].geom.coords)
+        if not isinstance(features[0].geom, MultiLineString)
+        else [c for line in features[0].geom.geoms for c in line.coords]
+    )
+    assert (-78.28, 38.55) in all_coords
+    assert (-78.26, 38.57) in all_coords
+
+
 def test_nps_fetch_skips_null_names():
     feats = [_arcgis_feature("NULL", name_field="TRLNAME")]
     responses = [_arcgis_response(feats), _arcgis_response([])]
@@ -161,6 +198,97 @@ def test_usfs_fetch_absent_file_returns_empty():
         (37.8, -79.4, 39.1, -78.0), geojson_path=Path("nonexistent.geojson")
     )
     assert features == []
+
+
+def test_usfs_fetch_captures_gis_miles():
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "TRAIL_NAME": "Jones Run Trail",
+                    "TRAIL_NO": "1",
+                    "GIS_MILES": 4.2,
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[-78.30, 38.60], [-78.29, 38.61]],
+                },
+            }
+        ],
+    }
+    with tempfile.NamedTemporaryFile(suffix=".geojson", mode="w", delete=False) as f:
+        json.dump(geojson, f)
+        tmp = Path(f.name)
+
+    try:
+        features = usfs_fetch.fetch((37.8, -79.4, 39.1, -78.0), geojson_path=tmp)
+        assert len(features) == 1
+        assert features[0].length_mi == pytest.approx(4.2)
+        assert features[0].length_source == "USFS"
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("bad_value", [None, "", "not-a-number", 0, -1.5])
+def test_usfs_fetch_never_fabricates_length_for_unusable_gis_miles(bad_value):
+    props = {"TRAIL_NAME": "No Length Trail", "TRAIL_NO": "2"}
+    if bad_value is not None:
+        props["GIS_MILES"] = bad_value
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": props,
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[-78.30, 38.60], [-78.29, 38.61]],
+                },
+            }
+        ],
+    }
+    with tempfile.NamedTemporaryFile(suffix=".geojson", mode="w", delete=False) as f:
+        json.dump(geojson, f)
+        tmp = Path(f.name)
+
+    try:
+        features = usfs_fetch.fetch((37.8, -79.4, 39.1, -78.0), geojson_path=tmp)
+        assert len(features) == 1
+        assert features[0].length_mi is None
+        assert features[0].length_source is None
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def test_usfs_fetch_collapses_multipart_into_one_feature():
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"TRAIL_NAME": "Split Trail", "TRAIL_NO": "9"},
+                "geometry": {
+                    "type": "MultiLineString",
+                    "coordinates": [
+                        [[-78.30, 38.60], [-78.29, 38.61]],
+                        [[-78.29, 38.61], [-78.28, 38.62]],
+                    ],
+                },
+            }
+        ],
+    }
+    with tempfile.NamedTemporaryFile(suffix=".geojson", mode="w", delete=False) as f:
+        json.dump(geojson, f)
+        tmp = Path(f.name)
+
+    try:
+        features = usfs_fetch.fetch((37.8, -79.4, 39.1, -78.0), geojson_path=tmp)
+        assert len(features) == 1
+        assert features[0].name == "Split Trail"
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def test_usfs_fetch_clips_to_bbox():
