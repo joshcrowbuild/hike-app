@@ -75,10 +75,6 @@ def _load_exclusion_patterns(path: str = EXCLUSIONS_PATH) -> dict[str, re.Patter
     return compiled
 
 
-def _pattern(key: str) -> re.Pattern[str]:
-    return _load_exclusion_patterns()[key]
-
-
 def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
     """True if an OSM way looks like a real hikeable trail, not urban/private infra.
 
@@ -91,6 +87,7 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
     highway = tags.get("highway", "")
     access = tags.get("access", "")
     foot = tags.get("foot", "")
+    patterns = _load_exclusion_patterns()
 
     # Private / no public foot access → not a hikeable trail (e.g. "Leach Road").
     if access in _PRIVATE_ACCESS and foot not in _FOOT_OK:
@@ -102,10 +99,10 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
     # route class in `tiger:name_base_1`. NOT on tiger:cfcc=A41 — real fire roads share
     # A41 but carry no numbered ref. A digit is always required after the route token, so
     # a real name ("US Life-Saving Station Trail") can't false-positive.
-    public_route_ref = _pattern("public_route_ref")
+    public_route_ref = patterns["public_route_ref"]
     if public_route_ref.search(tags.get("ref", "")) or public_route_ref.search(name):
         return False
-    if _pattern("tiger_route_base").search(tags.get("tiger:name_base_1", "")):
+    if patterns["tiger_route_base"].search(tags.get("tiger:name_base_1", "")):
         return False
 
     # Urban pedestrian infrastructure (sidewalks, crossings) → not a trail.
@@ -115,13 +112,13 @@ def is_trail_worthy(tags: Mapping[str, str], coords: Sequence[object]) -> bool:
     # Conservative name denylist for utilitarian connectors / urban infra — see
     # `regions/exclusions.json` `name_deny` for the institutional-wellness /
     # path-to-X / ramp-to-X tokens this catches.
-    if _pattern("name_deny").search(name):
+    if patterns["name_deny"].search(name):
         return False
 
     # Residential street posing as a track/footway (coastal sand-street grids). The
     # pattern deliberately excludes "Road": real fire/dike roads end in "Road"
     # (NPS-corroborated OBX trails), matching the "keep fire roads" stance.
-    if _pattern("residential_street_suffix").search(name):
+    if patterns["residential_street_suffix"].search(name):
         return False
 
     # A named footway with exactly two vertices is almost always a driveway / connector
