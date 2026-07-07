@@ -20,8 +20,8 @@
 
 // ── 0. Schema meta ──────────────────────────────────────────────────────
 MERGE (m:Meta {id: "schema"})
-  ON CREATE SET m.schema_version = "0.1.0", m.created_at = datetime()
-  ON MATCH  SET m.schema_version = "0.2.0", m.updated_at = datetime();
+  ON CREATE SET m.schema_version = "0.1.0", m.schema_format = 1, m.created_at = datetime()
+  ON MATCH  SET m.schema_version = "0.2.0", m.schema_format = 1, m.updated_at = datetime();
 
 // ── 1. Constraints (uniqueness / integrity) ─────────────────────────────
 CREATE CONSTRAINT area_id          IF NOT EXISTS FOR (a:Area)           REQUIRE a.area_id        IS UNIQUE;
