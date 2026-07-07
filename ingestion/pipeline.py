@@ -133,6 +133,37 @@ def _dominant_way_type(features: list[Feature]) -> str | None:
     return max(order, key=lambda wt: counts[wt])
 
 
+# Merge-rank tables for the three classified fields (Epic 026 AC-3.4). Each merge
+# takes the MOST SEVERE/RESTRICTIVE member across a connected component — a merged
+# trail is never reported easier/smoother/more open than its worst segment (Rules
+# #2/#7: degrade toward more caution, never under-report).
+_PATH_GRADE_RANK = {"expert": 2, "difficult": 1, "": 0}
+_FOOT_ACCESS_RANK = {"no": 5, "private": 4, "permit": 3, "discouraged": 2, "yes": 1, "": 0}
+_PSURFACE_RANK = {
+    "unpaved_bad": 3,
+    "paved_bad": 2,
+    "unpaved_good": 1,
+    "paved_good": 0,
+    "": -1,
+}
+
+
+def _worst_path_grade(features: list[Feature]) -> str:
+    """Most-severe `path_grade` wins: expert > difficult > "" ."""
+    return max((f.path_grade for f in features), key=lambda v: _PATH_GRADE_RANK.get(v, 0))
+
+
+def _worst_foot_access(features: list[Feature]) -> str:
+    """Most-restrictive `foot_access` wins: no > private > permit > discouraged > yes > "" ."""
+    return max((f.foot_access for f in features), key=lambda v: _FOOT_ACCESS_RANK.get(v, 0))
+
+
+def _worst_psurface(features: list[Feature]) -> str:
+    """Worst-quality `psurface` wins: any *_bad outranks any *_good; among equal
+    quality unpaved_* outranks paved_*; both outrank "" ."""
+    return max((f.psurface for f in features), key=lambda v: _PSURFACE_RANK.get(v, -1))
+
+
 def _connected_components(features: list[Feature], gap_deg: float) -> list[list[Feature]]:
     """Cluster features into spatially-connected components (union-find): two ways join
     when their geometries are within `gap_deg` of each other. O(n²) in the group size —
@@ -208,7 +239,16 @@ def consolidate_osm_segments(
             # take the most common (ties → first seen) as the component's type.
             way_type = _dominant_way_type(comp)
             consolidated.append(
-                Feature(name=name, geom=combined, source=comp[0].source, ref=ref, way_type=way_type)
+                Feature(
+                    name=name,
+                    geom=combined,
+                    source=comp[0].source,
+                    ref=ref,
+                    way_type=way_type,
+                    path_grade=_worst_path_grade(comp),
+                    psurface=_worst_psurface(comp),
+                    foot_access=_worst_foot_access(comp),
+                )
             )
 
     if split_groups:
@@ -594,6 +634,9 @@ def _load_matches(
             length_source=length_source,
             gain_ft=gain_ft,
             gain_source=gain_source,
+            path_grade=m.a.path_grade,
+            psurface=m.a.psurface,
+            foot_access=m.a.foot_access,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
         _flag_if_ambiguous(m.a, canonical_id)
@@ -665,6 +708,9 @@ def _load_matches(
             length_source=feat.length_source,
             gain_ft=feat.gain_ft,
             gain_source=feat.gain_source,
+            path_grade=feat.path_grade,
+            psurface=feat.psurface,
+            foot_access=feat.foot_access,
         )
         _replace_segments(runner, canonical_id, assembled, iv)
         _flag_if_ambiguous(feat, canonical_id)
