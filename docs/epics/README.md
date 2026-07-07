@@ -31,6 +31,9 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [028](epic-028-gpx-export.md) | GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail (CoMaps borrow §D4) | IN_PROGRESS | 1 | Epic 022 · 024 |
 
 | [027](epic-027-facet-ingest-diff.md) | Per-facet leveled ingest-diff check (within-run) + stats on /health | DONE ✅ | A/B | Epic 024 |
+| [038](epic-038-trail-search-geocoder.md) | Trail-name search + geocoder seam (B001) — spec-complete spike, no product code | REVIEW | E | — |
+
+| [037](epic-037-openmeteo-failover.md) | Open-Meteo weather availability-failover (reshaped: refuses corroboration as feed-counting; specs failover + spread-disclosure) | REVIEW | Spike | Epic 013 · downstream build BLOCKED on commercial-license PO decision |
 
 | [033](epic-033-opentopodata-fallback-sampler.md) | OpenTopoData fallback ElevationSampler (degrade-and-disclose network elevation transport) | REVIEW | 1 | Epic 017 |
 
