@@ -54,7 +54,9 @@ def ingest_water(region_id: str, *, dry_run: bool = False) -> dict[str, int]:
     if dry_run:
         log.info("DRY-RUN — would load %d water sources", len(sources))
         for w in sources[:5]:
-            log.info("  %s (%s) lat=%.4f lon=%.4f", w.name or "(unnamed)", w.water_type, w.lat, w.lon)
+            log.info(
+                "  %s (%s) lat=%.4f lon=%.4f", w.name or "(unnamed)", w.water_type, w.lat, w.lon
+            )
         return counts
 
     try:
