@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
+import pytest
 from shapely.geometry import LineString
 
 from ingestion.conflate.match import (
@@ -129,3 +132,34 @@ def test_contained_subsegment_is_kept_not_rejected() -> None:
     )
     assert len(results) == 1
     assert results[0].verdict == "auto-accept"
+
+
+# ── Epic 023 S1 — Feature carries length/gain, positional construction unaffected ──
+
+
+def test_feature_positional_construction_defaults_length_gain_to_none() -> None:
+    # Existing positional call sites (e.g. this exact call, test_match_end_to_end above)
+    # must keep working — the four new fields are keyword-only-by-default and None.
+    feat = Feature("Old Rag Trail", LINE, "osm")
+    assert feat.length_mi is None
+    assert feat.length_source is None
+    assert feat.gain_ft is None
+    assert feat.gain_source is None
+
+
+def test_feature_length_gain_fields_settable_and_frozen() -> None:
+    feat = Feature(
+        "Old Rag Trail",
+        LINE,
+        "USFS",
+        length_mi=4.2,
+        length_source="USFS",
+        gain_ft=1200.0,
+        gain_source="USFS",
+    )
+    assert feat.length_mi == 4.2
+    assert feat.length_source == "USFS"
+    assert feat.gain_ft == 1200.0
+    assert feat.gain_source == "USFS"
+    with pytest.raises(FrozenInstanceError):
+        feat.length_mi = 5.0  # type: ignore[misc]
