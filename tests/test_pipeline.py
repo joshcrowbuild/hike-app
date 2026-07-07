@@ -417,6 +417,104 @@ def test_load_no_boundary_degrades_flag_to_none():
     assert flags == [None]
 
 
+# ── S5 — flag-on-ambiguous merge at load (CDP-14) ──────────────────────────────
+
+
+def test_s5_warns_on_same_source_same_name_reflless_features(caplog):
+    import logging
+
+    a = Feature(
+        name="Ridge Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    b = Feature(
+        name="Ridge Trail", geom=LineString([[-78.30, 38.60], [-78.29, 38.61]]), source="OSM"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [a, b], tier_by_name={"osm": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("Ridge Trail" in r.message and "osm" in r.message for r in warnings)
+    # Non-destructive: both features still loaded, nothing raised.
+    canonical_writes = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    assert len(canonical_writes) == 2
+
+
+def test_s5_no_warning_on_cross_source_same_trail(caplog):
+    import logging
+
+    osm_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [], [osm_feat, nps_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_on_auto_accept_cross_source_match(caplog):
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    agency_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    m = Match(spine_feat, agency_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(runner, [m], [spine_feat], tier_by_name={"osm": 1, "nps": 1}, iv="t")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
+def test_s5_no_warning_when_one_spine_feature_matches_two_agencies(caplog):
+    """A single OSM spine feature legitimately corroborated by two different
+    agencies (NPS and USFS) produces two auto-accept Matches sharing the same
+    `m.a` Feature object — that is corroboration, not an ambiguous same-source
+    merge, and must stay silent (regression for the id(feature) dedup)."""
+    import logging
+
+    from ingestion.conflate.match import Agreement, Match
+
+    spine_feat = Feature(
+        name="Old Rag Loop", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="OSM"
+    )
+    nps_feat = Feature(
+        name="Old Rag", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="NPS"
+    )
+    usfs_feat = Feature(
+        name="Old Rag Trail", geom=LineString([[-78.28, 38.55], [-78.27, 38.56]]), source="USFS"
+    )
+    m1 = Match(spine_feat, nps_feat, 90, Agreement(0.9, 10.0), "auto-accept")
+    m2 = Match(spine_feat, usfs_feat, 85, Agreement(0.85, 12.0), "auto-accept")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    with caplog.at_level(logging.WARNING, logger="ingestion.pipeline"):
+        _load_matches(
+            runner, [m1, m2], [spine_feat], tier_by_name={"osm": 1, "nps": 1, "usfs": 1}, iv="t"
+        )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert not warnings
+
+
 # ── AC-5.2 / AC-5.3 — enrichment join point: post-conflation, never the matcher ─
 
 
