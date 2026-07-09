@@ -32,6 +32,7 @@
 
 | Doc | Status | Purpose · read when |
 |---|---|---|
+| [feed-first-paint-latency-wave1.md](feed-first-paint-latency-wave1.md) | `ACTIVE` (Epic 039 Wave-1 build in flight) | Measured `/plan` latency baseline (8.8s cold / 3.7s warm, attributed) + adversarially-judged Wave-1 designs: S1 anonymous fast-path · S2 engine-layer anon plan cache (freshness re-rendered per serve — never cache rendered strings) · S3 honesty-first stale-while-revalidate (stale paint neutralizes live facts → `stale-degraded`) · S4 rank-skip DEFERRED verdict · probe-workers operator note. **Read when** working feed latency, caching, or perceived-performance UX — the builder-notes sections are binding. |
 | [t6-licensing-consent.md](t6-licensing-consent.md) | `ACTIVE` (commons write + source seams built; public-release gate future) | OSM/ODbL obligations, source-swappability discipline, commons consent, the Stage-9 public-release gate. **Read when** working licensing, consent, or source swappability. |
 | [device-integration-seam.md](device-integration-seam.md) | `IMPLEMENTED (Epic 004)` | Config-driven device-provider seam (Garmin/Coros + future vendors). **Read when** adding a device-vendor adapter. |
 | [source-seams-corpus-and-live.md](source-seams-corpus-and-live.md) | `IMPLEMENTED (Epics 012/013)` | CorpusSource + LiveAdapter contracts, registries, conformance suites. **Read when** adding a corpus source or live-condition adapter. |
