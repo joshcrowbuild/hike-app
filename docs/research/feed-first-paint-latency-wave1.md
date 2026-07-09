@@ -18,6 +18,44 @@
 3. Two-phase render: future epic; Wave-1 designs must not preclude it (both judges verified non-preclusion).
 4. Operator lever (no code): `ADVENTURE_LIVE_PROBE_MAX_WORKERS` 8 → 16 on Render.
 
+## Latency SLOs & the mitigation ladder (PO, 2026-07-08)
+
+**Two metrics, deliberately decoupled — the production posture.** *Perceived first paint* (usable cards on screen) and *fresh-data time* (today's verified conditions present). No production app serves live-verified third-party data sub-second on a cold path; the honest architecture paints instantly and verifies visibly behind (exactly rule #3's "fetched JIT and overlaid"). Chasing sub-1s on the fresh path would mean faking freshness — refused. Chasing it on the perceived path is the roadmap.
+
+**SLOs (measured at p75 unless noted; "fail" = missing any of these post-deploy):**
+
+| Metric | Wave-1 target | End-state target |
+|---|---|---|
+| Perceived first paint, returning anonymous visitor | **< 1.0s** (S3 stale paint) | < 0.5s |
+| `POST /plan`, cache hit | **< 1.0s** | < 0.7s |
+| `POST /plan`, cache miss (fresh key) | < 4.0s | **< 1.5s to cards** (two-phase; conditions stream in ≤ 4s) |
+| First-ever visit, cold everything | < 8s with honest progress copy | < 2.5s to cards (CWV "good" LCP) |
+| p99 blank-screen time | never > 10s without staged copy (already built) | same |
+| Cold-start (instance spin-up) visible to users | tolerated on hobby tier | **eliminated** (paid keep-warm — table stakes for production) |
+
+**Verdict protocol:** post-merge measurement (same origin/query/k as baseline, plus browser time-to-cards). Each SLO judged pass/fail in the epic doc. A miss engages the ladder below at the lowest tier that plausibly closes the gap — one tier at a time, re-measure between tiers.
+
+**Mitigation ladder:**
+
+*Tier A — config only (hours, no PRs):*
+- A1. `ADVENTURE_LIVE_PROBE_MAX_WORKERS` 8→16 (queued).
+- A2. **Fast judge model for the `curate` tier** (`ADVENTURE_MODEL_CURATE` is already config): ranking 10 short names is not a hard task; a Haiku-class model cuts the ~1.5–2.5s rank to ~0.5–0.8s on every miss. Gate: spot-check ordering quality vs the current model on a handful of frames before adopting.
+- A3. Raise `ADVENTURE_ANON_FEED_CACHE_TTL_S` toward 600 (the min adapter TTL) — higher hit rate, staleness still bounded by the probe cache's own floor.
+- A4. Verify Render ↔ Aura region alignment (cross-region RTT multiplies every sequential graph read) and the Render plan tier (spin-down cold starts are disqualifying for production; keep-warm is the fix, not code).
+
+*Tier B — engine work (the Wave-2 epic, days):*
+- B1. **Two-phase render** — the architectural fix and the only route to sub-1.5s *fresh-key* cards: `/plan` returns corpus-backed, ranked cards immediately (graph-only), live conditions patch in per-card behind (second call or SSE), wearing the existing silence/hedge primitives while pending. Kills the cold-path number for first-time visitors and every retune.
+- B2. Rank-order cache keyed by (candidate-id set, profile hash): LLM re-ranks only when the candidate set actually changes, not on every TTL expiry.
+- B3. Structured facets on the wire (the `buildQuery.ts` lossy-seam backend ask): tuning-built queries skip the intent-parse LLM entirely (~0.3s every miss, plus one fewer failure mode); the LLM parses only free-text prompts.
+- B4. Overlap the remaining graph reads (corroboration/maps) with the probe fan-out; they are independent of it.
+- B5. Default-frame warmer: after deploy and on a TTL cadence, self-request each region's default frame so the in-process cache is never cold for the common path (primes S2; no persistence, rule #3 intact).
+
+*Tier C — platform (only if A+B still miss):*
+- C1. Payload diet on `/plan` (geometry/elevation arrays dominate; simplify polylines for feed cards, full fidelity stays on Detail).
+- C2. Edge caching is **refused** for rendered `/plan` responses (frozen ages = rule #1 violation). Post-two-phase, the corpus-cards half is slow data and MAY be edge-cached; the conditions half never is.
+
+**Standing decision:** if Wave-1 measurement passes its targets, Wave 2 (Tier B) is still the path to the end-state column — sequenced as its own designed epic, not an emergency.
+
 ---
 
 ## S1 — Anonymous fast-path (merged design)
