@@ -5,12 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Home } from './Home'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { ANON_SCOPE } from '../data/api'
+import { feedKey, resetFeedCacheForTests, writeFeedCache } from '../data/feedCache'
 import { resetSavedTrailsForTests, toggleTrailSaved } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
 import type { FeedVM } from '../data/vm'
 import type { TuningState } from '../types'
 
 afterEach(() => resetSavedTrailsForTests())
+// A successful anonymous resolve now write-throughs to the feed cache (Epic
+// 039 S3) — clear it after every test so one test's write (many share the
+// same TUNING/ANON_SCOPE key) can never seed a stale paint in the next.
+afterEach(() => resetFeedCacheForTests())
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -515,5 +520,53 @@ describe('Home keeps the persistent quiet .wordmark (Epic 020, AC-20.4.1)', () =
   it('renders .wordmark — the only screen that should', async () => {
     const { container } = await renderHomeWith(feedWith({}))
     expect(container.querySelector('.wordmark')).toBeInTheDocument()
+  })
+})
+
+describe('Home stale-while-revalidate disclosure (AC-3.8, Epic 039 S3)', () => {
+  function seedAnonCache(feed: FeedVM, tuning: TuningState = TUNING) {
+    writeFeedCache(feedKey({ tuning }, ANON_SCOPE), feed)
+  }
+
+  it('shows a calm role=status aria-live=polite note while revalidating, and does not mark the results busy', () => {
+    seedAnonCache(feedWith({}))
+    // hangingClient's plan() never resolves — revalidation stays in flight.
+    const { container } = renderHome()
+
+    const note = screen.getByText(/Showing your last visit/)
+    expect(note).toHaveAttribute('role', 'status')
+    expect(note).toHaveAttribute('aria-live', 'polite')
+    expect(note.textContent).toMatch(/checking current conditions/)
+
+    // A usable stale feed is perceivable content, not a busy wait.
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument()
+  })
+
+  it('clears the disclosure once the fresh feed resolves', async () => {
+    seedAnonCache(feedWith({}))
+    const freshFeed = feedWith({
+      cards: [{ id: 'old-rag', name: 'Old Rag', distanceMi: 3, conditionLines: [], warnings: [] }],
+    })
+    render(
+      <PlannerProvider scope={ANON_SCOPE} client={readyClient(freshFeed)}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+
+    expect(screen.queryByText(/Showing your last visit/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
+  })
+
+  it('is absent on a cold load with empty storage (no cache entry to seed a stale paint)', () => {
+    renderHome()
+    expect(screen.queryByText(/Showing your last visit/)).not.toBeInTheDocument()
   })
 })

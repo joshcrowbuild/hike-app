@@ -1,0 +1,261 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ANON_SCOPE } from './api'
+import type { PlanInput } from './source'
+import type { CardVM, FeedVM, WarningVM } from './vm'
+import type { TuningState } from '../types'
+
+const STORAGE_KEY = 'adventure-planner:anon-feed-cache'
+
+const TUNING: TuningState = {
+  origin: 'frontRoyal',
+  when: 'weekendMorning',
+  effort: 'moderate',
+  party: 'solo',
+  today: 'standard',
+  readinessOn: false,
+  prompt: '',
+}
+const INPUT: PlanInput = { tuning: TUNING }
+
+function feedWith(overrides: Partial<FeedVM> = {}): FeedVM {
+  return {
+    query: 'test',
+    cards: [{ id: 'compton-peak', name: 'Compton Peak', distanceMi: 2.1, conditionLines: [], warnings: [] }],
+    notices: [],
+    setAside: [],
+    heldBack: [],
+    readiness: { on: false, state: 'off' },
+    dataSource: 'live',
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  vi.resetModules()
+  vi.unstubAllEnvs()
+})
+
+describe('feedKey (single source of truth, shared with useFeed effect dep)', () => {
+  it('is stable for the same input/scope and differs on tuning, k, viewer, or grants', async () => {
+    const { feedKey } = await import('./feedCache')
+    const base = feedKey(INPUT, ANON_SCOPE)
+    expect(feedKey(INPUT, ANON_SCOPE)).toBe(base)
+    expect(feedKey({ tuning: { ...TUNING, party: 'friends' } }, ANON_SCOPE)).not.toBe(base)
+    expect(feedKey({ ...INPUT, k: 5 }, ANON_SCOPE)).not.toBe(base)
+    expect(feedKey(INPUT, { viewerId: 'josh', grantedIds: [] })).not.toBe(base)
+    expect(feedKey(INPUT, { viewerId: 'anonymous', grantedIds: ['ruby'] })).not.toBe(base)
+  })
+
+  it('yields a distinct key when originCoords differs (a "near me" fix)', async () => {
+    const { feedKey } = await import('./feedCache')
+    const here: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 38.9, lon: -78.2 } } }
+    const there: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 35.9, lon: -75.6 } } }
+    expect(feedKey(here, ANON_SCOPE)).not.toBe(feedKey(INPUT, ANON_SCOPE))
+    expect(feedKey(here, ANON_SCOPE)).not.toBe(feedKey(there, ANON_SCOPE))
+  })
+})
+
+describe('readFeedCache / writeFeedCache (round trip, single slot, reset)', () => {
+  it('returns null on an empty store', async () => {
+    const { readFeedCache, feedKey } = await import('./feedCache')
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now())).toBeNull()
+  })
+
+  it('round-trips a written feed under a matching key', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    const feed = feedWith()
+    writeFeedCache(key, feed)
+    const hit = readFeedCache(key, Date.now())
+    expect(hit).not.toBeNull()
+    expect(hit?.feed).toEqual(feed)
+    expect(typeof hit?.savedAt).toBe('number')
+  })
+
+  it('a new write overwrites the single slot rather than accumulating entries', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key1 = feedKey(INPUT, ANON_SCOPE)
+    const key2 = feedKey({ tuning: { ...TUNING, party: 'friends' } }, ANON_SCOPE)
+    writeFeedCache(key1, feedWith({ query: 'first' }))
+    writeFeedCache(key2, feedWith({ query: 'second' }))
+    // The first key's entry is gone — the new key's write overwrote the slot.
+    expect(readFeedCache(key1, Date.now())).toBeNull()
+    expect(readFeedCache(key2, Date.now())?.feed.query).toBe('second')
+  })
+
+  it('resetFeedCacheForTests clears the stored entry', async () => {
+    const { readFeedCache, writeFeedCache, feedKey, resetFeedCacheForTests } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    resetFeedCacheForTests()
+    expect(readFeedCache(key, Date.now())).toBeNull()
+  })
+})
+
+describe('AC-3.4 age cap / kill switch', () => {
+  it('drops an entry older than MAX_STALE_MS (default 6h)', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    // Rewrite savedAt directly — writeFeedCache always stamps "now", so this
+    // simulates a visit that happened at a known past instant.
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) as string)
+    const savedAt = 1_000_000
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...raw, savedAt }))
+    expect(readFeedCache(key, savedAt + 21_600_000)).not.toBeNull()
+    expect(readFeedCache(key, savedAt + 21_600_000 + 1)).toBeNull()
+  })
+
+  it('VITE_ANON_FEED_STALE_MAX_MS=0 disables both read and write', async () => {
+    vi.stubEnv('VITE_ANON_FEED_STALE_MAX_MS', '0')
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    expect(readFeedCache(key, Date.now())).toBeNull()
+  })
+
+  it('an unset env value defaults to a 6h cap', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    const now = Date.now()
+    writeFeedCache(key, feedWith())
+    expect(readFeedCache(key, now + 21_600_000 - 1)).not.toBeNull()
+    expect(readFeedCache(key, now + 21_600_000 + 60_000)).toBeNull()
+  })
+
+  it('a blank env value counts as unset (6h cap), not the 0 kill switch', async () => {
+    // Number('') === 0, so an empty-but-present env line must not disable the cache.
+    vi.stubEnv('VITE_ANON_FEED_STALE_MAX_MS', '  ')
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
+    expect(readFeedCache(key, Date.now())).not.toBeNull()
+  })
+})
+
+describe('AC-3.5 invalidation / degrade matrix (conservative drop-on-any-doubt)', () => {
+  it('drops on a SCHEMA_VERSION mismatch', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) as string)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...raw, v: 999 }))
+    expect(readFeedCache(key, Date.now())).toBeNull()
+  })
+
+  it('drops on a changed tuning (party)', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
+    const changedKey = feedKey({ tuning: { ...TUNING, party: 'friends' } }, ANON_SCOPE)
+    expect(readFeedCache(changedKey, Date.now())).toBeNull()
+  })
+
+  it('drops on a changed originCoords (a moved "near me" fix)', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const here: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 38.9, lon: -78.2 } } }
+    writeFeedCache(feedKey(here, ANON_SCOPE), feedWith())
+    const there: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 35.9, lon: -75.6 } } }
+    expect(readFeedCache(feedKey(there, ANON_SCOPE), Date.now())).toBeNull()
+  })
+
+  it('drops on a changed k', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
+    expect(readFeedCache(feedKey({ ...INPUT, k: 5 }, ANON_SCOPE), Date.now())).toBeNull()
+  })
+
+  it('drops on a changed viewer/grants', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
+    const differentScope = { viewerId: 'anonymous', grantedIds: ['ruby'] }
+    expect(readFeedCache(feedKey(INPUT, differentScope), Date.now())).toBeNull()
+  })
+
+  it('degrades to a miss on a corrupt non-JSON value', async () => {
+    localStorage.setItem(STORAGE_KEY, 'not valid json')
+    const { readFeedCache, feedKey } = await import('./feedCache')
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now())).toBeNull()
+  })
+
+  it('degrades to a miss on a shape-invalid value (feed.cards not an array)', async () => {
+    const { readFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ v: 1, key, savedAt: Date.now(), feed: { cards: 'nope' } }),
+    )
+    expect(readFeedCache(key, Date.now())).toBeNull()
+  })
+
+  it('a quota-throwing setItem is swallowed by writeFeedCache, never thrown', async () => {
+    const { writeFeedCache, feedKey } = await import('./feedCache')
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError')
+    })
+    expect(() => writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())).not.toThrow()
+    spy.mockRestore()
+  })
+})
+
+describe('toStalePaint (AC-3.3 — honesty is the transform, not a banner)', () => {
+  it('strips every live/ephemeral fact per card and at feed level, preserving structural fields + card count/order', async () => {
+    const { toStalePaint } = await import('./feedCache')
+    const warning: WarningVM = {
+      text: 'flash flood warning',
+      source: 'NWS',
+      observedAgo: '2h ago',
+      kind: 'weather',
+      provenance: 'live',
+    }
+    const cardA: CardVM = {
+      id: 'a',
+      name: 'A',
+      distanceMi: 2.1,
+      conditionLines: [{ text: 'Clear', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+      warnings: [warning],
+      enrichment: { conditionValue: 'Clear', provenance: 'live' },
+      geo: { geometry: null, trailhead: { lat: 1, lon: 2 }, quality: 'confident', elevationProfile: null },
+    }
+    const cardB: CardVM = { id: 'b', name: 'B', distanceMi: 3, conditionLines: [], warnings: [] }
+    const feed = feedWith({
+      cards: [cardA, cardB],
+      notices: ['Drive times unavailable this run'],
+      setAside: [{ id: 'x', name: 'X', reason: 'party gate', kind: 'party', restorable: true }],
+      heldBack: [{ id: 'y', name: 'Y', reasons: [{ text: 't', source: 's', kind: 'weather' }] }],
+      readiness: { on: true, state: 'applied', rationale: 'because' },
+    })
+
+    const painted = toStalePaint(feed, '3h ago')
+
+    expect(painted.cards.map((c) => c.id)).toEqual(['a', 'b']) // count/order preserved
+    for (const card of painted.cards) {
+      expect(card.warnings).toEqual([])
+      expect(card.conditionLines).toEqual([])
+      expect(card.enrichment).toBeUndefined()
+      expect(card.conditionSilence).toEqual({ state: 'stale-degraded', detail: '3h ago' })
+    }
+    // Structural fields preserved.
+    expect(painted.cards[0].name).toBe('A')
+    expect(painted.cards[0].distanceMi).toBe(2.1)
+    expect(painted.cards[0].geo).toEqual(cardA.geo)
+
+    expect(painted.notices).toEqual([])
+    expect(painted.setAside).toEqual([])
+    expect(painted.heldBack).toEqual([])
+    expect(painted.readiness).toEqual({ on: false, state: 'off' })
+    expect(painted.query).toBe(feed.query)
+    expect(painted.dataSource).toBe('live')
+  })
+})
+
+describe('staleAgeLabel (honest — derived from the real fetch timestamp)', () => {
+  it('reuses relativeAge on the stored savedAt', async () => {
+    const { staleAgeLabel } = await import('./feedCache')
+    const savedAt = Date.now() - 2 * 60 * 60 * 1000
+    expect(staleAgeLabel(savedAt)).toBe('2h ago')
+  })
+})

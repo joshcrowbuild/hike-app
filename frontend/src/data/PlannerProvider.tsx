@@ -10,6 +10,7 @@ import type { MutableRefObject } from 'react'
 
 import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
+import { feedKey, readFeedCache, staleAgeLabel, toStalePaint, writeFeedCache } from './feedCache'
 import { HttpPlannerClient } from './http/httpPlanner'
 import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
@@ -166,41 +167,116 @@ export interface FeedState {
   error?: FeedError
   /** {@link LoadingStage} while `status === 'loading'`; `'initial'` otherwise. */
   loadingStage: LoadingStage
+  /** `true` while `feed` is a repainted last-visit cache entry (Epic 039 S3),
+   *  not the current fetch's result — the VM itself stays honest via each
+   *  card's `stale-degraded` silence; this is the state signal the surface
+   *  reads to render the disclosure line. */
+  stale: boolean
+  /** `true` while a fresh fetch is in flight behind a stale paint. */
+  revalidating: boolean
+  /** Relative age of the stale paint ("2h ago"), present only while `stale`. */
+  staleAsOf?: string
+  /** Set when a revalidation attempt fails WHILE a stale feed is showing — the
+   *  stale feed stays up (never blanked to the full error screen); absent once
+   *  revalidation succeeds or on a fresh retry. */
+  revalidateError?: FeedError
   /** Re-run the request (idempotent retry — H9 recovery). */
   reload: () => void
 }
 
+interface FeedInternalState {
+  status: FeedStatus
+  feed?: FeedVM
+  error?: FeedError
+  stale: boolean
+  revalidating: boolean
+  staleAsOf?: string
+  revalidateError?: FeedError
+}
+
+/** Shared by the lazy mount seed and the retune re-hydrate effect so both
+ *  behave identically (one helper — see the binding builder note on
+ *  `feedKey`). Anonymous-only (Rule #5): a signed-in viewer's feed never
+ *  enters `localStorage`, so this returns null before ever touching it. */
+function hydrateStale(input: PlanInput, scope: ScopeContext): { feed: FeedVM; staleAsOf: string } | null {
+  if (scope.viewerId !== 'anonymous') return null
+  const hit = readFeedCache(feedKey(input, scope), Date.now())
+  if (!hit || hit.feed.cards.length === 0) return null
+  const staleAsOf = staleAgeLabel(hit.savedAt, Date.now())
+  return { feed: toStalePaint(hit.feed, staleAsOf), staleAsOf }
+}
+
 export function useFeed(input: PlanInput): FeedState {
   const { client, scope, feedSnapshot } = usePlanner()
-  const [state, setState] = useState<{ status: FeedStatus; feed?: FeedVM; error?: FeedError }>({
-    status: 'loading',
+  // Lazy initializer, not an effect-only seed (FLASH IS REAL): an effect runs
+  // AFTER the first commit, so seeding only there would still paint one
+  // skeleton frame first. This runs once, synchronously, before that first
+  // commit — so an anonymous viewer with a fresh cache entry never sees the
+  // skeleton at all (AC-3.1).
+  const [state, setState] = useState<FeedInternalState>(() => {
+    const seed = hydrateStale(input, scope)
+    return seed
+      ? { status: 'ready', feed: seed.feed, stale: true, revalidating: true, staleAsOf: seed.staleAsOf }
+      : { status: 'loading', stale: false, revalidating: false }
   })
   const [loadingStage, setLoadingStage] = useState<LoadingStage>('initial')
   // Re-run when the tuning frame, k, viewer, or a manual reload nonce changes.
+  // Shared with feedCache's storage key (feedKey) so the two can never diverge
+  // — a cache entry could otherwise repaint under the wrong frame.
   const [nonce, setNonce] = useState(0)
-  const key = JSON.stringify({ t: input.tuning, k: input.k, v: scope.viewerId, g: scope.grantedIds })
+  const key = feedKey(input, scope)
 
   useEffect(() => {
     let live = true
-    setState({ status: 'loading' })
-    setLoadingStage('initial')
-    // Step the copy forward only if the request is still in flight past each
-    // mark; cleared on resolve, unmount, or re-key so a retune never leaves
-    // stale reassurance copy stuck under the new frame.
-    const reassureTimer = setTimeout(() => live && setLoadingStage('reassure'), REASSURE_MS)
-    const coldstartTimer = setTimeout(() => live && setLoadingStage('coldstart'), COLDSTART_MS)
+    // Re-hydrate on every key change too (a retune), not just on mount — the
+    // same helper the lazy initializer used, so mount and retune behave
+    // identically.
+    const seed = hydrateStale(input, scope)
+    let reassureTimer: ReturnType<typeof setTimeout> | undefined
+    let coldstartTimer: ReturnType<typeof setTimeout> | undefined
+    if (seed) {
+      // Cards are already on screen — skip the loading-copy ladder entirely
+      // (no reassure/coldstart timers to arm).
+      setState({ status: 'ready', feed: seed.feed, stale: true, revalidating: true, staleAsOf: seed.staleAsOf })
+    } else {
+      setState({ status: 'loading', stale: false, revalidating: false })
+      setLoadingStage('initial')
+      // Step the copy forward only if the request is still in flight past each
+      // mark; cleared on resolve, unmount, or re-key so a retune never leaves
+      // stale reassurance copy stuck under the new frame.
+      reassureTimer = setTimeout(() => live && setLoadingStage('reassure'), REASSURE_MS)
+      coldstartTimer = setTimeout(() => live && setLoadingStage('coldstart'), COLDSTART_MS)
+    }
     client
       .plan(input, scope)
       .then((feed) => {
         if (!live) return
-        if (feed.error) setState({ status: 'error', feed, error: feed.error })
-        else {
+        if (feed.error) {
+          if (seed) {
+            // A revalidation failure while a stale feed is showing — the good
+            // cards stay up; never blank a usable view to the error screen
+            // (Rule #6: enrichment degrades, it's never a dependency).
+            setState({
+              status: 'ready',
+              feed: seed.feed,
+              stale: true,
+              revalidating: false,
+              staleAsOf: seed.staleAsOf,
+              revalidateError: feed.error,
+            })
+          } else {
+            setState({ status: 'error', feed, error: feed.error, stale: false, revalidating: false })
+          }
+        } else {
           // Record the frame that produced this feed so `useCard` can resolve a
           // tapped card in-memory, and — failing that — refetch with THIS
-          // tuning rather than a rebuilt default.
+          // tuning rather than a rebuilt default. Written ONLY on a fresh
+          // resolve, never from the stale seed, so a stripped-condition card
+          // can never be handed to Detail as authoritative.
           feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
-          if (feed.cards.length === 0) setState({ status: 'empty', feed })
-          else setState({ status: 'ready', feed })
+          if (scope.viewerId === 'anonymous' && feed.cards.length > 0) writeFeedCache(key, feed)
+          if (feed.cards.length === 0) setState({ status: 'empty', feed, stale: false, revalidating: false })
+          else setState({ status: 'ready', feed, stale: false, revalidating: false })
         }
       })
       .catch(() => {
@@ -209,10 +285,19 @@ export function useFeed(input: PlanInput): FeedState {
         // or "TypeError: Failed to fetch" reads as alarming and tells the user
         // nothing actionable (NNG error-message guidance: say what happened,
         // never the implementation detail).
-        setState({
-          status: 'error',
-          error: { kind: 'offline', message: 'Couldn’t reach the planner. Try again.' },
-        })
+        const error: FeedError = { kind: 'offline', message: 'Couldn’t reach the planner. Try again.' }
+        if (seed) {
+          setState({
+            status: 'ready',
+            feed: seed.feed,
+            stale: true,
+            revalidating: false,
+            staleAsOf: seed.staleAsOf,
+            revalidateError: error,
+          })
+        } else {
+          setState({ status: 'error', error, stale: false, revalidating: false })
+        }
       })
       .finally(() => {
         if (live) setLoadingStage('initial')
