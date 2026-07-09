@@ -1,6 +1,6 @@
 # Epic 039 — Feed first-paint latency (Wave 1)
 
-**Status:** REVIEW (2026-07-08 · PRs #151 S1 · #152 S2 · #153 S3; adversarial review done, 3/3 confirmed findings fixed; measurement gate pending post-merge)
+**Status:** DONE ✅ (2026-07-08 · PRs #150–#153 merged; measured live: returning-visitor paint 0.385s, /plan hit 0.22–0.73s, retune 3.5–3.9s — verdict table in the design record)
 **Phase:** A
 **Spec refs:** roadmap R5 (cost/latency — first measured baseline) · CLAUDE.md rules #1/#3/#5/#6 · design record [`../research/feed-first-paint-latency-wave1.md`](../research/feed-first-paint-latency-wave1.md)
 

@@ -2,7 +2,7 @@
 
 *Recon + adversarial design output, 2026-07-08. Produced by an ultracode round: 5 read-only recon agents over the seams, then per-story design panels (2 independent proposals each, adversarially judged with in-repo verification). This document is the builders' spec; the epic's ACs are extracted verbatim into [`../epics/epic-039-feed-first-paint-latency.md`](../epics/epic-039-feed-first-paint-latency.md).*
 
-**Status:** ACTIVE (Wave-1 build in flight) · **Owner:** PO session
+**Status:** IMPLEMENTED (Epic 039 — measured verdict below) · **Owner:** PO session
 
 ## Measured baseline (live API, 2026-07-08)
 
@@ -330,3 +330,22 @@ Defer stands; the PO prior is correct and no strong counter-argument survives. (
 ## Operator note — probe fan-out concurrency
 
 Env var: ADVENTURE_LIVE_PROBE_MAX_WORKERS (orchestration/config.py:102 default 8, read at config.py:229; flows via build_runtime -> runtime.probe_max_workers -> plan_from_origin -> verify_batch's ThreadPoolExecutor at verifier.py:148-149, which caps TOTAL in-flight (point,kind) probes for one /plan). Current default: 8. Recommended Render value: 16 (pure env change, no code). Per-source sanity: verify_batch fans out over 6 non-drive condition kinds — nws, airnow, firms, usgs_water, ridb, nps_alerts (valhalla/drive_time is excluded from the fan-out). At k=10 with distinct rounded trailhead points that is up to ~60 (point,kind) tasks. The task list is POINT-MAJOR ordered ([(key,kind) for key in groups for kind in kinds], verifier.py:137-139), so at any instant the in-flight window spans consecutive tasks and per-single-source concurrency is bounded by ~ceil(workers/6): 8 workers -> ~2 concurrent hits to any one source; 16 workers -> ~3. Three concurrent requests to a single third-party source is polite and well under any of these sources' rate limits. Benefit: ~60 tasks drain in ~4 waves instead of ~8, roughly halving the cold probe fan-out (measured ~3-5s cold). This is a COLD-ONLY win — the registry TTLCache (orchestration/adapters/registry.py) short-circuits repeats so warm /plan calls are unaffected; it pairs with the S2 anonymous feed cache rather than replacing it. Do not go far past 16 on the free-tier single instance: gains flatten (fewer waves left to cut) and per-source concurrency creeps up (24 workers -> ~4). Set ADVENTURE_LIVE_PROBE_MAX_WORKERS=16 in the Render service env; tune down if any source starts rate-limiting.
+
+
+---
+
+## Measurement verdict (2026-07-08, post-merge, live production)
+
+Method: curl timings against the deployed API (same origin/query/k discipline as the baseline) + page-local timing on hike-app.vercel.app (same-origin iframe + MutationObserver — tool-driven polling was shown to inflate readings and was discarded).
+
+| SLO (p75 targets) | Target | Measured | Verdict |
+|---|---|---|---|
+| Perceived first paint, returning anonymous visitor | < 1.0s | **0.385s** (stale paint, disclosure "Showing your last visit (3m ago) — checking current conditions…" shown at paint, cleared exactly at fresh swap) | **PASS** (already near the 0.5s end-state target) |
+| `POST /plan`, cache hit | < 1.0s | **0.22–0.73s** (n=4, two keys; hit/miss card order byte-identical) | **PASS** |
+| `POST /plan`, fresh-key miss, warm probes (retune) | < 4.0s | **3.53–3.93s** (n=3; ~0.3–0.5s under baseline via S1; LLM rank dominates as predicted) | **PASS** (thin margin — Tier A2/B1 are the next levers) |
+| First-ever visit, cold everything | < 8s w/ staged copy | 7.0–9.4s API (2 regions) · 8.9s browser time-to-cards | **MARGINAL** — unchanged from baseline by design (Wave 1 never targeted it; the staged progress copy covers it; Wave 2 two-phase render is the fix) |
+| Cold-start spin-down visible | tolerated (hobby tier) | unchanged | hosting decision, open |
+
+Baseline for comparison: 8.77s cold / 3.67–3.95s warm floor on every load. **Typical returning-visitor experience: ~8.8s → ~0.3–0.4s (≈25×).** TTL behavior verified live: a revalidate that landed just past the 300s server TTL recomputed in 3.7s and re-warmed the key — exactly the designed degrade.
+
+Residual gaps feeding the ladder: (A1) `ADVENTURE_LIVE_PROBE_MAX_WORKERS=16` on Render — operator click, pending; (A2) fast `curate`-tier model — cuts the retune path ~1.5–2s, needs a quality spot-check first; (B1) two-phase render — the only honest fix for the cold-everything row; to be designed as its own epic.
