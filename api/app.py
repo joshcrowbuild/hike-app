@@ -561,11 +561,6 @@ def plan(
 
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)
-        # Engine-layer anonymous plan cache (Epic 039 S2): snapshot the hit counter
-        # before/after, same before/after-delta idiom as the live-probe cache above,
-        # so a hit is detected without engine.plan() changing its return type.
-        _feed_cache = getattr(runtime, "feed_cache", None)
-        feed_cache_hits_before = _feed_cache.stats.hits if _feed_cache else 0
         feed = engine_plan(
             body.query,
             (body.lat, body.lon),
@@ -573,6 +568,11 @@ def plan(
             k=body.k,
             viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
         )
+        # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
+        # request-local on Runtime (set by plan()), never a before/after delta on
+        # the shared FeedCacheStats counter — under threadpool concurrency a delta
+        # attributes another request's hit to this one and zeroes real spend.
+        feed_cache_hit = getattr(runtime, "feed_cache_hit", False)
         # Attach per-card maps/terrain fields (Epic 016 S1 / Epic 017 S4). World data
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
         session = _graph_client.scoped_session(body.viewer_id)
@@ -580,8 +580,6 @@ def plan(
         response = _feed_response(feed, maps_by_cid)
         cache_after = cache_size(runtime.cache)
         stats_after = probe_stats_snapshot(runtime.cache)
-        feed_cache_hits_after = _feed_cache.stats.hits if _feed_cache else 0
-        feed_cache_hit = feed_cache_hits_after > feed_cache_hits_before
     except HTTPException:
         raise
     except Exception as exc:

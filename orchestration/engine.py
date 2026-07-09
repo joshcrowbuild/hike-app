@@ -181,6 +181,12 @@ class Runtime:
     # feed_cache_ttl_s==0 kill switch) → plan() is a byte-identical no-op vs. before
     # this story. Never read/written for a non-anonymous viewer_id (Rule #5).
     feed_cache: FeedCache | None = None
+    # Whether THIS request's plan() was served from the feed cache — set by plan(),
+    # read by the api layer for metrics honesty (AC-2.9). Lives on the per-request
+    # Runtime (not FeedCache.stats) because a shared-counter before/after delta
+    # misattributes a concurrent request's hit to a request that actually computed
+    # and spent tokens (adversarial-review finding, 2026-07-08).
+    feed_cache_hit: bool = False
 
 
 @dataclass(frozen=True)
@@ -645,13 +651,25 @@ def plan(
     cache entry — accepted (Epic 039 S2 design: the intent-parse cost is small)."""
     fc = runtime.feed_cache
     key = _anon_key(query, origin, k) if (fc is not None and viewer_id == "anonymous") else None
+    runtime.feed_cache_hit = False
     if key is None:
         cached = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
         return _render_feed(query, cached)
     assert fc is not None  # narrows for mypy; implied by `key is not None` above
-    cached = fc.get_or_compute(
-        key, lambda: _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
-    )
+
+    computed = False
+
+    def _compute() -> CachedPlan:
+        nonlocal computed
+        computed = True
+        return _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
+
+    cached = fc.get_or_compute(key, _compute)
+    # Request-local hit disposition: `computed` flips only if THIS thread ran the
+    # pipeline, so a hit-after-wait (another thread filled the gate) still counts as
+    # a hit — this request spent no tokens/probes. Runtime is per-request, so the
+    # flag can't race the way a shared FeedCacheStats counter delta does.
+    runtime.feed_cache_hit = not computed
     return _render_feed(query, cached)
 
 

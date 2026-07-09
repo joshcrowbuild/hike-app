@@ -994,3 +994,32 @@ def test_s2_ac1_extends_max_length_mi_test_second_call_is_cache_hit_order_preser
     assert mech.calls == 1
     assert judge.calls == 1
     assert fc.stats.hits >= 1
+
+
+def test_s2_runtime_feed_cache_hit_flag_is_request_local_disposition() -> None:
+    # api/app.py reads runtime.feed_cache_hit for AC-2.9 metrics honesty. It must be
+    # THIS call's disposition — a shared FeedCacheStats counter delta misattributes a
+    # concurrent request's hit to a request that computed and spent tokens
+    # (adversarial-review finding, 2026-07-08).
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime, _mech, _judge = _cached_runtime(feed_cache=fc)
+
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)
+    assert runtime.feed_cache_hit is False  # miss: this call ran the pipeline
+
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)
+    assert runtime.feed_cache_hit is True  # hit: this call spent nothing
+
+
+def test_s2_feed_cache_hit_flag_false_for_non_anonymous_and_disabled_cache() -> None:
+    personalized = _CountingJudge('["a","b"]', name="local")
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime, _mech, _judge = _cached_runtime(feed_cache=fc, personalized_judge=(personalized, "m"))
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)  # anonymous → warms the cache
+    plan("mellow loop", (38.5, -78.4), runtime, k=5, viewer_id="mem:josh")
+    assert runtime.feed_cache_hit is False  # non-anonymous never reads the cache
+
+    runtime2, _mech2, _judge2 = _cached_runtime(feed_cache=None)
+    plan("mellow loop", (38.5, -78.4), runtime2, k=5)
+    plan("mellow loop", (38.5, -78.4), runtime2, k=5)
+    assert runtime2.feed_cache_hit is False  # disabled cache → never reports a hit

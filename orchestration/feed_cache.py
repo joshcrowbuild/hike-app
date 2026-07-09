@@ -91,7 +91,11 @@ class FeedCache:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._ttl_s = ttl_s
-        self._max_entries = max_entries
+        # An operator misconfig (0/negative via env) degrades to a 1-entry cache
+        # rather than crashing every anonymous /plan: put()'s FIFO evict pops from
+        # an EMPTY store when the cap is 0 (StopIteration → 500). TTL=0 is the
+        # documented kill switch; the size knob never is.
+        self._max_entries = max(1, max_entries)
         self._clock = clock
         self._lock = threading.Lock()
         self._store: dict[FeedCacheKey, tuple[CachedPlan, float]] = {}

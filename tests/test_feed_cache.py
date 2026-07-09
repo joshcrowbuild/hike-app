@@ -209,3 +209,19 @@ def test_distinct_keys_never_serialize_behind_one_slow_compute() -> None:
 
     release.set()
     t.join(timeout=2.0)
+
+
+# ── operator-misconfig guard: max_entries <= 0 degrades, never crashes ──
+
+
+def test_max_entries_zero_or_negative_degrades_to_one_never_crashes() -> None:
+    # ADVENTURE_ANON_FEED_CACHE_MAX_ENTRIES=0/-5 must degrade to a 1-entry cache:
+    # unguarded, put()'s FIFO evict pops from an EMPTY store (StopIteration) and
+    # every anonymous /plan 500s. TTL=0 is the kill switch; the size knob never is.
+    for bad_cap in (0, -5):
+        cache = FeedCache(ttl_s=100.0, max_entries=bad_cap, clock=lambda: 0.0)
+        cache.put(("q", 38.5, -78.4, 10), _plan("a"))
+        cache.put(("r", 38.5, -78.4, 10), _plan("b"))  # FIFO-evicts at the clamped cap
+        hit = cache.get(("r", 38.5, -78.4, 10))
+        assert hit is not None and _tag(hit) == "b"
+        assert cache.get(("q", 38.5, -78.4, 10)) is None
