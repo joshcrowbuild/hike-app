@@ -162,6 +162,14 @@ class Settings:
     # past it the failure is surfaced in /health instead.
     warmup_deadline_s: float = 30.0
 
+    # Engine-layer anonymous ranked-plan cache (Epic 039 S2). Caches `CachedPlan`
+    # (facts + absolute `fetched_at`), re-rendering freshness per serve — never the
+    # rendered Feed (see `orchestration/feed_cache.py`'s module docstring). Gated to
+    # `viewer_id == "anonymous"` at the engine (Rule #5). 0 disables the cache
+    # entirely (`Runtime.feed_cache` stays None) — a full, reversible kill switch.
+    feed_cache_ttl_s: float = 300.0
+    feed_cache_max_entries: int = 512
+
     def for_region(self, region_id: str, env: Mapping[str, str] | None = None) -> "Settings":
         """A copy of these settings bound to the region actually being ingested.
 
@@ -252,4 +260,6 @@ class Settings:
             opentopodata_dataset=e.get("ADVENTURE_OPENTOPODATA_DATASET", "ned10m"),
             warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
             review_band_dir=e.get("ADVENTURE_REVIEW_BAND_DIR", REVIEW_BAND_DIR),
+            feed_cache_ttl_s=float(e.get("ADVENTURE_ANON_FEED_CACHE_TTL_S", "300")),
+            feed_cache_max_entries=int(e.get("ADVENTURE_ANON_FEED_CACHE_MAX_ENTRIES", "512")),
         )

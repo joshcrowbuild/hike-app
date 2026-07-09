@@ -204,3 +204,30 @@ def test_corpus_sources_default_spine_is_still_osm() -> None:
     s = Settings.from_env({})
     assert s.corpus_sources == ("osm", "nps", "usfs", "usgs-3dep")
     assert "osm-pbf" not in s.corpus_sources
+
+
+# ── Epic 039 S2: engine-layer anonymous plan cache ──
+
+
+def test_s2_ac10_feed_cache_settings_default() -> None:
+    s = Settings.from_env({})
+    assert s.feed_cache_ttl_s == 300.0
+    assert s.feed_cache_max_entries == 512
+
+
+def test_s2_ac10_feed_cache_settings_env_override() -> None:
+    s = Settings.from_env(
+        {
+            "ADVENTURE_ANON_FEED_CACHE_TTL_S": "120",
+            "ADVENTURE_ANON_FEED_CACHE_MAX_ENTRIES": "64",
+        }
+    )
+    assert s.feed_cache_ttl_s == 120.0
+    assert s.feed_cache_max_entries == 64
+
+
+def test_s2_ac10_feed_cache_ttl_zero_disables() -> None:
+    # 0 is the operator kill switch — engine.build_runtime reads this to leave
+    # Runtime.feed_cache at None (a byte-identical no-op).
+    s = Settings.from_env({"ADVENTURE_ANON_FEED_CACHE_TTL_S": "0"})
+    assert s.feed_cache_ttl_s == 0.0

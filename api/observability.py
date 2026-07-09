@@ -101,6 +101,14 @@ class PlanMetrics:
     # in tests). `Any` to avoid a hard import cycle back into the adapter registry here.
     probe_stats_before: Any = None
     probe_stats_after: Any = None
+    # Engine-layer anonymous plan cache (Epic 039 S2): True when this /plan was served
+    # from `FeedCache` — no intent-parse or taste-rank LLM call ran and no live probe
+    # fired. The caller (api/app.py) is responsible for zeroing `est_tokens` on a hit
+    # rather than estimating it from the (still rendered) cached card text, or the
+    # log would fabricate spend that was never spent. `live_calls`/`cache_hits`/
+    # `cache_misses` below already read as zero on a hit without any special-casing,
+    # since `probe_stats_before`/`_after` are unchanged when no probe ran.
+    feed_cache_hit: bool = False
 
     @property
     def cache_misses(self) -> int:
@@ -152,7 +160,8 @@ class PlanMetrics:
     def emit(self) -> None:
         logger.info(
             "plan viewer=%s latency_ms=%.1f cards=%d cache=%d->%d miss=%d warm=%s "
-            "live_calls=%d cache_hits=%d wall_by_kind=%s est_tokens=%d est_cost_usd=%.6f",
+            "live_calls=%d cache_hits=%d wall_by_kind=%s est_tokens=%d est_cost_usd=%.6f "
+            "feed_cache_hit=%s",
             self.viewer_tag,
             self.latency_ms,
             self.card_count,
@@ -165,4 +174,5 @@ class PlanMetrics:
             self.wall_ms_by_kind,
             self.est_tokens,
             self.est_cost_usd,
+            self.feed_cache_hit,
         )

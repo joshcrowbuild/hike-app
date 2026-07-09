@@ -568,6 +568,11 @@ def plan(
             k=body.k,
             viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
         )
+        # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
+        # request-local on Runtime (set by plan()), never a before/after delta on
+        # the shared FeedCacheStats counter — under threadpool concurrency a delta
+        # attributes another request's hit to this one and zeroes real spend.
+        feed_cache_hit = getattr(runtime, "feed_cache_hit", False)
         # Attach per-card maps/terrain fields (Epic 016 S1 / Epic 017 S4). World data
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
         session = _graph_client.scoped_session(body.viewer_id)
@@ -601,16 +606,24 @@ def plan(
     # already succeeded and its cost is already spent, so a metrics bug must never discard a
     # good response and bill the user for a 500 (degrade gracefully at the surface).
     try:
-        line_texts = [line.text for card in feed.cards for line in card.lines]
+        # A feed-cache hit ran no intent-parse/taste-rank LLM call and no live probe —
+        # est_tokens must be 0, NOT estimated from the (still rendered) cached card
+        # text, or the log fabricates spend that was never spent (Rule #1).
+        if feed_cache_hit:
+            est_tokens = 0
+        else:
+            line_texts = [line.text for card in feed.cards for line in card.lines]
+            est_tokens = estimate_tokens(body.query, *line_texts)
         PlanMetrics(
             viewer_tag=scrub_viewer(body.viewer_id),
             latency_ms=(time.perf_counter() - started) * 1000,
             card_count=len(feed.cards),
             cache_entries_before=cache_before,
             cache_entries_after=cache_after,
-            est_tokens=estimate_tokens(body.query, *line_texts),
+            est_tokens=est_tokens,
             probe_stats_before=stats_before,
             probe_stats_after=stats_after,
+            feed_cache_hit=feed_cache_hit,
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")

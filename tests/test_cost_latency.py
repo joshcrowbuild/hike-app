@@ -239,6 +239,50 @@ def test_ac61_plan_metrics_degrade_without_stats() -> None:
     assert m.wall_ms_by_kind == {}
 
 
+# ── Epic 039 S2 AC-2.9 — a feed-cache hit never fabricates spend ──
+
+
+def test_s2_ac9_feed_cache_hit_reports_zero_spend_and_the_hit_flag() -> None:
+    """A feed-cache hit ran no intent-parse/taste-rank LLM call and no live probe:
+    api/app.py must pass est_tokens=0 (never estimated from the still-rendered cached
+    card text) and probe_stats_before==probe_stats_after (no probe fired), so
+    live_calls/cache_hits/cache_misses/est_cost_usd all read zero alongside
+    feed_cache_hit=True."""
+    stats = registry.ProbeStats(hits=2, misses=3, wall_ms_by_kind={"weather": 10.0})
+    m = PlanMetrics(
+        viewer_tag="anon",
+        latency_ms=4.2,  # a cache-hit response is fast — not asserted here, just plausible
+        card_count=3,
+        cache_entries_before=6,  # unchanged before/after: no probe ran on a hit
+        cache_entries_after=6,
+        est_tokens=0,  # the caller (api/app.py) zeroes this on a hit — never estimated
+        probe_stats_before=stats.snapshot(),
+        probe_stats_after=stats.snapshot(),
+        feed_cache_hit=True,
+    )
+    assert m.feed_cache_hit is True
+    assert m.est_tokens == 0
+    assert m.est_cost_usd == 0.0
+    assert m.live_calls == 0
+    assert m.cache_hits == 0
+    assert m.cache_misses == 0
+
+
+def test_s2_ac9_feed_cache_miss_defaults_hit_flag_false() -> None:
+    """A normal (miss) call's PlanMetrics must default feed_cache_hit=False — every
+    call site that predates Epic 039 S2 (and any that never sets it) reports a miss,
+    never a silently-wrong hit."""
+    m = PlanMetrics(
+        viewer_tag="anon",
+        latency_ms=250.0,
+        card_count=3,
+        cache_entries_before=0,
+        cache_entries_after=5,
+        est_tokens=120,
+    )
+    assert m.feed_cache_hit is False
+
+
 # ── AC-6.3 — slow/rate-limited source degrades-and-discloses; path stays bounded ──
 
 
