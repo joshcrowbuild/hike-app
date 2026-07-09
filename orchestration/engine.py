@@ -515,14 +515,20 @@ def plan(
     candidate_ids = [p.candidate.canonical_id for p in planned]
     personal_context = ""
     context_degraded = False
-    try:
-        beliefs = fetch_beliefs(viewer_id, runtime.session.run)
-        profile = fetch_profile(viewer_id, runtime.session.run)
-        episodes = fetch_relevant_episodes(viewer_id, candidate_ids, runtime.session.run)
-        personal_context = assemble_context(beliefs, profile, episodes)
-    except Exception:
-        log.exception("personal-context assembly failed; serving the anonymous-quality feed")
-        context_degraded = True
+    # Anonymous viewers have no private overlay to assemble — skip the three
+    # owner-scoped Neo4j reads entirely (they return empty for
+    # owner_id=="anonymous" anyway). A deliberate skip is NOT a degrade:
+    # context_degraded stays False so PERSONAL_CONTEXT_UNAVAILABLE_NOTICE is
+    # never emitted (Rule #6 enrichment-skip vs. Rule #1 disclosure distinction).
+    if viewer_id != "anonymous":
+        try:
+            beliefs = fetch_beliefs(viewer_id, runtime.session.run)
+            profile = fetch_profile(viewer_id, runtime.session.run)
+            episodes = fetch_relevant_episodes(viewer_id, candidate_ids, runtime.session.run)
+            personal_context = assemble_context(beliefs, profile, episodes)
+        except Exception:
+            log.exception("personal-context assembly failed; serving the anonymous-quality feed")
+            context_degraded = True
 
     # Merge intent profile with personal context (intent.profile wins if both set)
     combined_profile = intent.profile or (personal_context or None)

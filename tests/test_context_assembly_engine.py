@@ -113,6 +113,59 @@ def test_s5_ac3_context_uses_post_pipeline_candidates_and_rides_only_the_rank() 
     assert local.calls and "PERSONAL CONTEXT" in local.calls[0].messages[0]["content"]
 
 
+class _SpySession:
+    """Fake ScopedSession that records every query string it sees, so tests can
+    assert on which Cypher statements did/didn't run (Epic 039 S1)."""
+
+    def __init__(self, trail_rows: list[dict]) -> None:
+        self.trail_rows = trail_rows
+        self.queries: list[str] = []
+
+    def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        cypher, _params = query
+        self.queries.append(cypher)
+        if "Belief" in cypher or "PhysicalProfile" in cypher or "Episode" in cypher:
+            return []
+        return self.trail_rows
+
+
+def _spy_runtime(session: _SpySession) -> Runtime:
+    cloud = _SpyJudge("anthropic")
+    local = _SpyJudge("local")
+    return Runtime(
+        session=session,  # type: ignore[arg-type]
+        probes={},
+        judge=(cloud, "claude"),  # type: ignore[arg-type]
+        personalized_judge=(local, "local-llama"),  # type: ignore[arg-type]
+    )
+
+
+def test_s1_ac1_anonymous_skips_personal_reads() -> None:
+    """AC-1.1: for viewer_id=="anonymous", plan() issues ZERO belief/profile/episode
+    Cypher reads — the three owner-scoped overlay queries never run."""
+    session = _SpySession(list(_TRAILS))
+    rt = _spy_runtime(session)
+
+    plan("mellow views", _ORIGIN, rt, viewer_id="anonymous")
+
+    assert not any(
+        "Belief" in q or "PhysicalProfile" in q or "Episode" in q for q in session.queries
+    )
+
+
+def test_s1_ac3_authenticated_still_reads() -> None:
+    """AC-1.3 (regression guard): the skip is anonymous-only — a non-anonymous viewer
+    still triggers all three overlay reads and context assembly still runs."""
+    session = _SpySession(list(_TRAILS))
+    rt = _spy_runtime(session)
+
+    plan("mellow views", _ORIGIN, rt, viewer_id="mem:josh")
+
+    assert any("Belief" in q for q in session.queries)
+    assert any("PhysicalProfile" in q for q in session.queries)
+    assert any("Episode" in q for q in session.queries)
+
+
 def test_s6_ac2_feed_structure_identical_with_or_without_context() -> None:
     """AC-6.2: the feed is identical in structure whether or not personal context exists —
     a seeded (overlay) viewer and an anonymous viewer get the same cards in the same shape,
