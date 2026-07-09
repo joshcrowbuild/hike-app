@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, cast
 
 from graph import queries
@@ -51,6 +52,7 @@ from orchestration.curator import (
     valid_max_length_mi,
 )
 from orchestration.drive_time import prefilter, time_budget_s
+from orchestration.feed_cache import CachedPlan, FeedCache, FeedCacheKey, default_feed_cache
 from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
@@ -175,6 +177,10 @@ class Runtime:
     # 018 S6) — bounds how hard one /plan can hit a rate-limited third-party source
     # regardless of k. Config-driven via Settings.live_probe_max_workers.
     probe_max_workers: int = DEFAULT_MAX_WORKERS
+    # Engine-layer anonymous ranked-plan cache (Epic 039 S2). None = disabled (the
+    # feed_cache_ttl_s==0 kill switch) → plan() is a byte-identical no-op vs. before
+    # this story. Never read/written for a non-anonymous viewer_id (Rule #5).
+    feed_cache: FeedCache | None = None
 
 
 @dataclass(frozen=True)
@@ -449,9 +455,13 @@ def _unavailable_condition(u: ConditionUnavailable) -> UnavailableCondition:
     return UnavailableCondition(text=f"{u.reason} ({u.source})", source=u.source, kind=u.kind)
 
 
-def feed_card(planned: PlannedTrail) -> FeedCard:
+def feed_card(planned: PlannedTrail, *, now: datetime | None = None) -> FeedCard:
+    """Render one card's condition lines. `now` is threaded to `summarize_fact` so a
+    cache hit can re-render freshness against serve-time rather than capture-time
+    (`_render_feed` below is the only caller that ever passes a non-None `now`);
+    `None` here means "real wall-clock now", identical to today's behavior."""
     lines = [
-        summarize_fact(kind.value, fact, planned.confidences.get(kind) or compute())
+        summarize_fact(kind.value, fact, planned.confidences.get(kind) or compute(), now=now)
         for kind, fact in planned.facts.items()
     ]
     dist = planned.candidate.distance_m
@@ -465,19 +475,46 @@ def feed_card(planned: PlannedTrail) -> FeedCard:
     )
 
 
-def plan(
+def _anon_key(query: str, origin: tuple[float, float], k: int) -> FeedCacheKey:
+    """Cache key for the anonymous plan cache (Epic 039 S2). The caller gates this to
+    `viewer_id == "anonymous"` (Rule #5) — no private identity can ever enter this key.
+
+    3-decimal point rounding (~111m) deliberately MATCHES the probe TTLCache's own
+    `_key` rounding (`adapters/registry.py`), not a finer one: within one 3-decimal
+    cell the probe layer already returns identical facts and drive-time, so the
+    ranked order is already identical there — this adds no aliasing beyond what the
+    probe layer already permits, and a finer rounding would only lower the hit rate.
+
+    Region is intentionally NOT in the key: `FeedCache` is a per-process singleton
+    that serves exactly one fixed `settings.region`/`live_region` for the process's
+    whole life (it dies empty on redeploy/restart), so region is a process-level
+    invariant here, not a per-request one. (Open question if multi-region-per-process
+    is ever built — would need region threaded through `Runtime`.)
+    """
+    lat, lon = origin
+    return (query, round(lat, 3), round(lon, 3), k)
+
+
+def _compute_plan(
     query: str,
     origin: tuple[float, float],
     runtime: Runtime,
     *,
     k: int = 10,
     viewer_id: str = "anonymous",
-) -> Feed:
+) -> CachedPlan:
     """Full pipeline: parse intent -> scout+drive-prefilter+verify+guardrail-filter ->
-    context assembly -> taste-rank -> templated feed cards.
+    context assembly -> taste-rank. Returns the cacheable `CachedPlan` rather than a
+    rendered `Feed` — `_render_feed` below does the (re-)rendering.
 
     viewer_id is used for personal context assembly (AC-5.3: assembled AFTER guardrail
     filtering, BEFORE taste ranking; AC-5.4: assembled once, passed to one rank_ids call).
+
+    MERGE-SENSITIVE (Epic 039 S2): the anonymous outcome must stay byte-identical to
+    before this split — `context_degraded` stays False and `use_personal_judge` stays
+    False on that path, and the anonymous judge-failure re-raise below is load-
+    bearing: because it raises from inside this function, `plan()`'s cache `put` is
+    never reached, so a failed run is never cached (AC-2.5).
     """
     from orchestration.context_assembly import (
         assemble_context,
@@ -570,15 +607,52 @@ def plan(
     notices = batch.notices
     if context_degraded:
         notices = notices + (PERSONAL_CONTEXT_UNAVAILABLE_NOTICE,)
-    # AC-5.2/5.3: set-aside trails ride the feed as a disclosed, cause+source list —
-    # kept off `cards` (ranking never sees them; a hazard is a safety gate, not a
-    # taste demotion). Ranking above operates only on the guardrail-passing `planned`.
+    # AC-5.2/5.3: set-aside trails ride the CachedPlan as a disclosed, cause+source
+    # list — kept off `planned` (ranking never sees them; a hazard is a safety gate,
+    # not a taste demotion). Ranking above operates only on the guardrail-passing
+    # `planned`. Rendering into `FeedCard`s happens in `_render_feed`, never here —
+    # this is the one boundary a cache sits below (see feed_cache.py).
+    return CachedPlan(planned=tuple(planned), notices=notices, set_aside=batch.set_aside)
+
+
+def _render_feed(query: str, cached: CachedPlan, *, now: datetime | None = None) -> Feed:
+    """The ONLY place `feed_card` runs — so a live-condition line's freshness is
+    always rendered against serve-time `now`, cache hit or not. Caching the rendered
+    `Feed` instead of `CachedPlan` would freeze the relative-age copy at capture time
+    (see feed_cache.py's module docstring); this function is what keeps that from
+    ever happening."""
     return Feed(
         query=query,
-        cards=[feed_card(p) for p in planned],
-        notices=notices,
-        set_aside=batch.set_aside,
+        cards=[feed_card(p, now=now) for p in cached.planned],
+        notices=cached.notices,
+        set_aside=cached.set_aside,
     )
+
+
+def plan(
+    query: str,
+    origin: tuple[float, float],
+    runtime: Runtime,
+    *,
+    k: int = 10,
+    viewer_id: str = "anonymous",
+) -> Feed:
+    """Thin wrapper: on a cache hit, skip `_compute_plan` entirely (including the
+    ~0.3s intent parse) and re-render the cached plan against serve-time freshness;
+    on a miss, compute once (single-flight collapses concurrent identical misses),
+    cache only on success, then render. Keying on the raw `query` string (not the
+    parsed intent) means two queries that happen to parse identically won't share a
+    cache entry — accepted (Epic 039 S2 design: the intent-parse cost is small)."""
+    fc = runtime.feed_cache
+    key = _anon_key(query, origin, k) if (fc is not None and viewer_id == "anonymous") else None
+    if key is None:
+        cached = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
+        return _render_feed(query, cached)
+    assert fc is not None  # narrows for mypy; implied by `key is not None` above
+    cached = fc.get_or_compute(
+        key, lambda: _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
+    )
+    return _render_feed(query, cached)
 
 
 def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str) -> Runtime:
@@ -609,6 +683,13 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
     probes = probes_for(settings.live_region, settings)
     dt_adapters = probes.get(ConditionKind.drive_time)
     drive = cast(DriveTimeComputer, dt_adapters[0]) if dt_adapters else None
+    # feed_cache_ttl_s == 0 disables the cache entirely (None → plan() is a
+    # byte-identical no-op vs. before Epic 039 S2) — the operator kill switch.
+    feed_cache = (
+        default_feed_cache(settings.feed_cache_ttl_s, settings.feed_cache_max_entries)
+        if settings.feed_cache_ttl_s > 0
+        else None
+    )
     return Runtime(
         session=graph_client.scoped_session(viewer_id),
         probes=probes,
@@ -619,4 +700,5 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
         drive_time=drive,
         drive_speed_kmh=settings.drive_speed_kmh,
         probe_max_workers=settings.live_probe_max_workers,
+        feed_cache=feed_cache,
     )

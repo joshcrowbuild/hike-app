@@ -10,7 +10,7 @@ verified hard threshold (hazardous AQI) is set aside.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from orchestration.adapters.base import (
@@ -23,7 +23,18 @@ from orchestration.adapters.base import (
 )
 from orchestration.confidence import compute, for_fact
 from orchestration.curator import GuardrailVerdict
-from orchestration.engine import PlannedTrail, Runtime, plan, plan_from_origin, rank_plan
+from orchestration.engine import (
+    CachedPlan,
+    PlannedTrail,
+    Runtime,
+    _anon_key,
+    _compute_plan,
+    _render_feed,
+    plan,
+    plan_from_origin,
+    rank_plan,
+)
+from orchestration.feed_cache import FeedCache
 from orchestration.providers.base import LLMResponse
 from orchestration.scout import Candidate
 
@@ -789,3 +800,197 @@ def test_plan_threads_max_length_mi_on_personalized_judge_failure_fallback() -> 
     # raises here, exercising the fallback that re-ranks with the plain judge.
     feed = plan("a short loop", (38.5, -78.4), runtime, k=5, viewer_id="mem:josh")
     assert [c.canonical_id for c in feed.cards] == ["short", "long"]
+
+
+# ── Epic 039 S2: engine-layer anonymous plan cache ──
+
+
+class _CountingMechanical:
+    name = "mech"
+
+    def __init__(self, json_text: str) -> None:
+        self.json_text = json_text
+        self.calls = 0
+
+    def complete(self, request: Any) -> LLMResponse:
+        self.calls += 1
+        return LLMResponse(text=self.json_text, model=request.model, provider=self.name)
+
+
+class _CountingJudge:
+    def __init__(self, text: str, name: str = "fake") -> None:
+        self.text = text
+        self.name = name
+        self.calls = 0
+
+    def complete(self, request: Any) -> LLMResponse:
+        self.calls += 1
+        return LLMResponse(text=self.text, model=request.model, provider=self.name)
+
+
+class _RaisingJudge:
+    name = "fake"
+
+    def complete(self, request: Any) -> LLMResponse:
+        raise ConnectionError("judge unavailable")
+
+
+def _cached_runtime(
+    *, feed_cache: FeedCache | None, personalized_judge: Any = None
+) -> tuple[Runtime, _CountingMechanical, _CountingJudge]:
+    rows = [_row("a", 38.5, -78.4, 100.0), _row("b", 38.6, -78.5, 200.0)]
+    mech = _CountingMechanical("{}")
+    judge = _CountingJudge('["a","b"]')
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        mechanical=(mech, "m"),  # type: ignore[arg-type]
+        judge=(judge, "m"),  # type: ignore[arg-type]
+        personalized_judge=personalized_judge,
+        feed_cache=feed_cache,
+    )
+    return runtime, mech, judge
+
+
+def test_s2_ac1_second_identical_anonymous_call_is_a_cache_hit_compute_once() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime, mech, judge = _cached_runtime(feed_cache=fc)
+
+    feed1 = plan("mellow loop", (38.5, -78.4), runtime, k=5)
+    feed2 = plan("mellow loop", (38.5, -78.4), runtime, k=5)
+
+    assert mech.calls == 1  # the ~0.3s intent parse ran once, not twice
+    assert judge.calls == 1  # the taste-rank LLM call ran once, not twice
+    assert fc.stats.hits >= 1
+    assert [c.canonical_id for c in feed1.cards] == [c.canonical_id for c in feed2.cards]
+
+
+def test_s2_ac3_non_anonymous_viewer_never_reads_or_writes_feed_cache() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    personalized = _CountingJudge('["a","b"]', name="local")
+    runtime, mech, judge = _cached_runtime(feed_cache=fc, personalized_judge=(personalized, "m"))
+
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)  # anonymous → populates the cache
+    hits_after_anon = fc.stats.hits
+
+    # Same query/origin/k, but a real viewer — must bypass the cache entirely (Rule #5).
+    plan("mellow loop", (38.5, -78.4), runtime, k=5, viewer_id="mem:josh")
+
+    assert fc.stats.hits == hits_after_anon  # the non-anonymous call never touched it
+    assert personalized.calls == 1  # it genuinely recomputed via the personalized judge
+    assert mech.calls == 2  # intent parsed again — not served from cache
+
+
+def test_s2_ac4_ttl_disabled_feed_cache_is_none_and_plan_always_recomputes() -> None:
+    # feed_cache=None (the ADVENTURE_ANON_FEED_CACHE_TTL_S=0 wiring in build_runtime)
+    # must be a byte-identical no-op: every call recomputes.
+    runtime, mech, judge = _cached_runtime(feed_cache=None)
+
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)
+    plan("mellow loop", (38.5, -78.4), runtime, k=5)
+
+    assert mech.calls == 2
+    assert judge.calls == 2
+
+
+def test_s2_ac5_failed_compute_is_never_cached_and_next_call_retries() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    rows = [_row("a", 38.5, -78.4, 100.0)]
+    mech = _CountingMechanical("{}")
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        mechanical=(mech, "m"),  # type: ignore[arg-type]
+        judge=(_RaisingJudge(), "m"),  # type: ignore[arg-type]
+        feed_cache=fc,
+    )
+
+    for _ in range(2):  # every call must re-raise — nothing was ever stored
+        try:
+            plan("mellow loop", (38.5, -78.4), runtime, k=5)
+            raise AssertionError("expected ConnectionError to propagate")
+        except ConnectionError:
+            pass
+
+    assert mech.calls == 2  # both calls actually recomputed (no cached failure served)
+    assert fc.stats.hits == 0
+
+
+def test_s2_ac7_cache_hit_feed_matches_fresh_feed_in_structure() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime, _mech, _judge = _cached_runtime(feed_cache=fc)
+
+    def shape(feed: Any) -> list[tuple]:
+        return [(c.canonical_id, c.name, c.distance_mi, len(c.lines)) for c in feed.cards]
+
+    feed1 = plan("mellow loop", (38.5, -78.4), runtime, k=5)  # miss → computes + caches
+    feed2 = plan("mellow loop", (38.5, -78.4), runtime, k=5)  # hit → re-rendered from cache
+
+    assert shape(feed1) == shape(feed2)
+    assert feed1.notices == feed2.notices
+    assert feed1.set_aside == feed2.set_aside
+
+
+def test_s2_ac2_render_feed_reflects_serve_time_not_capture_time() -> None:
+    """The cached path re-renders freshness per serve: a fact captured at t0 and served
+    at t0+42m must show "42m ago", never the frozen capture-time age."""
+    captured_at = datetime(2026, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
+    fact = VerifiedFact(
+        value={"short_forecast": "Clear"}, source="NWS test", fetched_at=captured_at
+    )
+    planned = (
+        PlannedTrail(
+            Candidate("a", "A", "th", 0.0),
+            {ConditionKind.weather: fact},
+            {ConditionKind.weather: for_fact(fact)},
+            GuardrailVerdict(False),
+        ),
+    )
+    cached = CachedPlan(planned=planned, notices=(), set_aside=())
+
+    serve_time = captured_at + timedelta(minutes=42)
+    feed = _render_feed("q", cached, now=serve_time)
+
+    line = feed.cards[0].lines[0]
+    assert "42m ago" in line.text
+
+
+def test_s2_anon_key_rounds_to_3_decimals_matching_probe_cache() -> None:
+    # Matches TTLCache._key's own point rounding (registry.py) — same spatial cell.
+    assert _anon_key("q", (38.53211, -78.41199), 10) == ("q", 38.532, -78.412, 10)
+
+
+def test_s2_anon_key_distinguishes_k() -> None:
+    assert _anon_key("q", (38.5, -78.4), 5) != _anon_key("q", (38.5, -78.4), 10)
+
+
+def test_s2_compute_plan_returns_cached_plan_not_feed() -> None:
+    runtime, _mech, _judge = _cached_runtime(feed_cache=None)
+    cached = _compute_plan("mellow loop", (38.5, -78.4), runtime, k=5)
+    assert isinstance(cached, CachedPlan)
+    assert [p.candidate.canonical_id for p in cached.planned] == ["a", "b"]
+
+
+def test_s2_ac1_extends_max_length_mi_test_second_call_is_cache_hit_order_preserved() -> None:
+    """Extends test_plan_threads_max_length_mi_filter_from_parsed_intent: a second
+    identical anonymous call is served from the feed cache with the ranked order
+    (post length-demotion) preserved, and the mechanical/judge tier ran only once."""
+    rows = [_row_with_length("long", 100.0, 12.0), _row_with_length("short", 200.0, 3.0)]
+    mech = _CountingMechanical('{"filters": {"max_length_mi": 8}}')
+    judge = _CountingJudge('["long","short"]')
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        mechanical=(mech, "m"),  # type: ignore[arg-type]
+        judge=(judge, "m"),  # type: ignore[arg-type]
+        feed_cache=fc,
+    )
+    feed1 = plan("a short loop", (38.5, -78.4), runtime, k=5)
+    feed2 = plan("a short loop", (38.5, -78.4), runtime, k=5)
+
+    assert [c.canonical_id for c in feed1.cards] == ["short", "long"]
+    assert [c.canonical_id for c in feed2.cards] == ["short", "long"]
+    assert mech.calls == 1
+    assert judge.calls == 1
+    assert fc.stats.hits >= 1

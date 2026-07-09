@@ -561,6 +561,11 @@ def plan(
 
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)
+        # Engine-layer anonymous plan cache (Epic 039 S2): snapshot the hit counter
+        # before/after, same before/after-delta idiom as the live-probe cache above,
+        # so a hit is detected without engine.plan() changing its return type.
+        _feed_cache = getattr(runtime, "feed_cache", None)
+        feed_cache_hits_before = _feed_cache.stats.hits if _feed_cache else 0
         feed = engine_plan(
             body.query,
             (body.lat, body.lon),
@@ -575,6 +580,8 @@ def plan(
         response = _feed_response(feed, maps_by_cid)
         cache_after = cache_size(runtime.cache)
         stats_after = probe_stats_snapshot(runtime.cache)
+        feed_cache_hits_after = _feed_cache.stats.hits if _feed_cache else 0
+        feed_cache_hit = feed_cache_hits_after > feed_cache_hits_before
     except HTTPException:
         raise
     except Exception as exc:
@@ -601,16 +608,24 @@ def plan(
     # already succeeded and its cost is already spent, so a metrics bug must never discard a
     # good response and bill the user for a 500 (degrade gracefully at the surface).
     try:
-        line_texts = [line.text for card in feed.cards for line in card.lines]
+        # A feed-cache hit ran no intent-parse/taste-rank LLM call and no live probe —
+        # est_tokens must be 0, NOT estimated from the (still rendered) cached card
+        # text, or the log fabricates spend that was never spent (Rule #1).
+        if feed_cache_hit:
+            est_tokens = 0
+        else:
+            line_texts = [line.text for card in feed.cards for line in card.lines]
+            est_tokens = estimate_tokens(body.query, *line_texts)
         PlanMetrics(
             viewer_tag=scrub_viewer(body.viewer_id),
             latency_ms=(time.perf_counter() - started) * 1000,
             card_count=len(feed.cards),
             cache_entries_before=cache_before,
             cache_entries_after=cache_after,
-            est_tokens=estimate_tokens(body.query, *line_texts),
+            est_tokens=est_tokens,
             probe_stats_before=stats_before,
             probe_stats_after=stats_after,
+            feed_cache_hit=feed_cache_hit,
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")
