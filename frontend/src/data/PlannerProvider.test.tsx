@@ -4,9 +4,17 @@ import type { ReactNode } from 'react'
 
 import { PlannerProvider, useCard, useFeed } from './PlannerProvider'
 import { ANON_SCOPE } from './api'
+import type { ScopeContext } from './api'
+import { feedKey, readFeedCache, resetFeedCacheForTests, writeFeedCache } from './feedCache'
 import type { PlanInput, PlannerClient } from './source'
 import type { CardVM, FeedVM } from './vm'
 import type { TuningState } from '../types'
+
+// A successful anonymous resolve now write-throughs to the feed cache
+// (Epic 039 S3) — clear it after every test so one test's write can never
+// leak into another's (e.g. a later test's hydrateStale seeing a stale hit
+// under the same PLAN_INPUT/ANON_SCOPE key).
+afterEach(() => resetFeedCacheForTests())
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -254,5 +262,169 @@ describe('useCard resolves the tapped card from the in-memory feed (OBX "not in 
     expect(getCard).toHaveBeenCalledWith('hidden-trail', ANON_SCOPE, friendsBigDay)
     expect(result.current.card.status).toBe('ready')
     expect(result.current.card.card?.id).toBe('hidden-trail')
+  })
+})
+
+describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
+  function seedCache(input: PlanInput, feed: FeedVM, scope: ScopeContext = ANON_SCOPE) {
+    writeFeedCache(feedKey(input, scope), feed)
+  }
+
+  it('AC-3.1: a matching stale cache paints on the FIRST committed render — ready/stale/revalidating, never loading', () => {
+    seedCache(PLAN_INPUT, feedWithCard('compton-peak'))
+    const { client } = deferredClient()
+    const statuses: string[] = []
+    const { result } = renderHook(
+      () => {
+        const state = useFeed(PLAN_INPUT)
+        statuses.push(state.status)
+        return state
+      },
+      { wrapper: wrapperWith(client) },
+    )
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.stale).toBe(true)
+    expect(result.current.revalidating).toBe(true)
+    expect(result.current.feed?.cards[0].id).toBe('compton-peak')
+    expect(statuses).not.toContain('loading')
+  })
+
+  it('AC-3.3: the stale paint is honest — no warnings/lines, every card stale-degraded, feed-level disclosures emptied', () => {
+    const richFeed: FeedVM = {
+      query: '',
+      cards: [
+        {
+          id: 'compton-peak',
+          name: 'Compton Peak',
+          distanceMi: 2.1,
+          conditionLines: [{ text: 'Clear', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+          warnings: [
+            {
+              text: 'flash flood warning',
+              source: 'NWS',
+              observedAgo: '2h ago',
+              kind: 'weather',
+              provenance: 'live',
+            },
+          ],
+        },
+      ],
+      notices: ['Drive times unavailable this run'],
+      setAside: [],
+      heldBack: [],
+      readiness: { on: true, state: 'applied', rationale: 'because' },
+      dataSource: 'live',
+    }
+    seedCache(PLAN_INPUT, richFeed)
+    const { client } = deferredClient()
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    const card = result.current.feed?.cards[0]
+    expect(card?.warnings).toEqual([])
+    expect(card?.conditionLines).toEqual([])
+    expect(card?.conditionSilence?.state).toBe('stale-degraded')
+    expect(result.current.feed?.notices).toEqual([])
+    expect(result.current.feed?.readiness).toEqual({ on: false, state: 'off' })
+  })
+
+  it('AC-3.2: revalidates behind the stale paint and writes the fresh feed through on a successful resolve', async () => {
+    seedCache(PLAN_INPUT, feedWithCard('compton-peak'))
+    const { client, resolve, pending } = deferredClient()
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+    expect(result.current.stale).toBe(true)
+
+    const freshFeed = feedWithCard('old-rag')
+    await act(async () => {
+      resolve(freshFeed)
+      await pending
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.stale).toBe(false)
+    expect(result.current.revalidating).toBe(false)
+    expect(result.current.feed?.cards[0].id).toBe('old-rag')
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())?.feed.cards[0].id).toBe('old-rag')
+  })
+
+  it('AC-3.5b: a non-anonymous viewer neither reads nor writes the cache', async () => {
+    // Seed under the anonymous key so a leak into josh's read would show up as a hit.
+    seedCache(PLAN_INPUT, feedWithCard('compton-peak'))
+    const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+    const { client, resolve, pending } = deferredClient()
+    function wrapperFor(scope: ScopeContext, c: PlannerClient) {
+      return ({ children }: { children: ReactNode }) => (
+        <PlannerProvider scope={scope} client={c}>
+          {children}
+        </PlannerProvider>
+      )
+    }
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperFor(josh, client) })
+
+    // No stale paint for a non-anonymous viewer — starts loading, same as today.
+    expect(result.current.status).toBe('loading')
+    expect(result.current.stale).toBe(false)
+
+    await act(async () => {
+      resolve(feedWithCard('old-rag'))
+      await pending
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(readFeedCache(feedKey(PLAN_INPUT, josh), Date.now())).toBeNull()
+  })
+
+  it('AC-3.6: an empty or errored resolve is never persisted', async () => {
+    const emptyFeed: FeedVM = { ...feedWithCard('x'), cards: [] }
+    const client1 = { plan: vi.fn().mockResolvedValue(emptyFeed) } as unknown as PlannerClient
+    const { result: r1 } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client1) })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(r1.current.status).toBe('empty')
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+
+    const erroredFeed: FeedVM = { ...feedWithCard('y'), error: { kind: 'partial', message: 'partial' } }
+    const client2 = { plan: vi.fn().mockResolvedValue(erroredFeed) } as unknown as PlannerClient
+    const { result: r2 } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client2) })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(r2.current.status).toBe('error')
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+  })
+
+  it('AC-3.7: a revalidation rejection keeps the stale feed usable; a cold rejection (no seed) still errors', async () => {
+    seedCache(PLAN_INPUT, feedWithCard('compton-peak'))
+    const client = { plan: vi.fn().mockRejectedValue(new Error('offline')) } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+    expect(result.current.stale).toBe(true)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.stale).toBe(true)
+    expect(result.current.revalidating).toBe(false)
+    expect(result.current.revalidateError).toBeDefined()
+    expect(result.current.feed?.cards[0].id).toBe('compton-peak')
+
+    // A cold rejection with no stale seed still yields the full error state.
+    resetFeedCacheForTests()
+    const coldClient = { plan: vi.fn().mockRejectedValue(new Error('offline')) } as unknown as PlannerClient
+    const { result: coldResult } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(coldClient) })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(coldResult.current.status).toBe('error')
+    expect(coldResult.current.stale).toBe(false)
   })
 })

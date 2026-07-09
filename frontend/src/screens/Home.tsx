@@ -85,7 +85,9 @@ export function Home({
   onOpenOutcome,
   onApplyTuning,
 }: HomeProps) {
-  const { status, feed, error, loadingStage, reload } = useFeed({ tuning })
+  const { status, feed, error, loadingStage, reload, stale, revalidating, staleAsOf, revalidateError } = useFeed({
+    tuning,
+  })
   const { episodes } = useRecentEpisodes()
   const { origins } = useOrigins()
   // The post-hike nod FINDS the user on Home (R4) — a single pending hike, not a
@@ -138,6 +140,10 @@ export function Home({
 
       {feed ? <ReadinessLine feed={feed} /> : null}
 
+      {/* aria-busy stays tied to status==='loading' only — a stale-painted
+          feed (Epic 039 S3) is usable, perceivable content, not a busy wait;
+          the "still checking" signal is carried by the polite status line
+          above the card stack instead. */}
       <div aria-busy={status === 'loading'}>
         {status === 'loading' ? (
           <>
@@ -173,6 +179,30 @@ export function Home({
 
         {(status === 'ready' || status === 'empty') && feed ? (
           <section className="stack">
+            {/* Stale-while-revalidate disclosure (Epic 039 S3): a repainted
+                last-visit feed is perceivable content, not a busy wait — the
+                "loading" aria-busy above stays tied to status==='loading'
+                only, and this polite status line carries the "still
+                checking" signal instead. Neither line duplicates a live fact:
+                the only age shown is `staleAsOf`, the honest fetch-time
+                stamp — every card's own condition is already silenced to
+                `stale-degraded` (toStalePaint), never repainted as current. */}
+            {stale && revalidating ? (
+              <p className="state-note" role="status" aria-live="polite">
+                Showing your last visit ({staleAsOf}) — checking current conditions…
+              </p>
+            ) : null}
+            {stale && revalidateError ? (
+              <div className="state-block">
+                <p className="state-note" role="status">
+                  Couldn’t refresh — showing your last visit. Conditions may have changed.
+                </p>
+                <button className="text-action" type="button" onClick={reload}>
+                  Try again
+                </button>
+              </div>
+            ) : null}
+
             {feed.cards.length > 0 || savedIds.size > 0 ? (
               <div className="stack-controls">
                 <ToggleButton className="action-chip" isSelected={savedOnly} onChange={setSavedOnly}>
