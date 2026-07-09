@@ -33,7 +33,9 @@ const SCHEMA_VERSION = 1
  */
 const MAX_STALE_MS = ((): number => {
   const raw = import.meta.env.VITE_ANON_FEED_STALE_MAX_MS
-  if (raw === undefined) return 21_600_000 // 6h default
+  // Blank counts as unset: Number('') is 0, so an empty-but-present env line
+  // would otherwise silently engage the 0-disables kill switch.
+  if (raw === undefined || raw.trim() === '') return 21_600_000 // 6h default
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : 21_600_000
 })()

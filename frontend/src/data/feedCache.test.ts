@@ -125,6 +125,16 @@ describe('AC-3.4 age cap / kill switch', () => {
     expect(readFeedCache(key, now + 21_600_000 - 1)).not.toBeNull()
     expect(readFeedCache(key, now + 21_600_000 + 60_000)).toBeNull()
   })
+
+  it('a blank env value counts as unset (6h cap), not the 0 kill switch', async () => {
+    // Number('') === 0, so an empty-but-present env line must not disable the cache.
+    vi.stubEnv('VITE_ANON_FEED_STALE_MAX_MS', '  ')
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const key = feedKey(INPUT, ANON_SCOPE)
+    writeFeedCache(key, feedWith())
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
+    expect(readFeedCache(key, Date.now())).not.toBeNull()
+  })
 })
 
 describe('AC-3.5 invalidation / degrade matrix (conservative drop-on-any-doubt)', () => {
