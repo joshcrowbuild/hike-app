@@ -125,8 +125,14 @@ OTHER OPEN
   Watch-poller host       ── the one still-deferred piece of R7 (Garmin sync; not needed to browse)
 ```
 
+**Owner manual queue (Josh — things only you can do, in order):**
+1. **Branch protection (2 min, laptop browser — GitHub mobile can't):** Settings → Branches → edit the `main` rule → add `eval-replay (source-or-silence)` and `frontend (vitest)` to required checks. Until then the gate doesn't block a bad merge.
+2. **Vercel check (1 min):** confirm the production env has `VITE_USE_MOCK=false` (the code-side gate landed in #157; this confirms the deploy side).
+3. **R5 cost read (5 min, Render dashboard):** skim recent logs for `PlanMetrics` lines (`feed_cache_hit`, `est_tokens`) and paste a representative chunk into any Claude session — it can compute the cost picture from there.
+4. **Decisions when ready (no dashboard needed):** ① Supabase auth sign-off (gates Phase C) · ② Open-Meteo commercial license (gates Epic 037 downstream) · ③ 15-min ToS/privacy policy-positions chat (gates the last big Phase-B lane) · ④ readiness (007) design session (Phase D).
+5. **Optional/later:** Sentry + uptime accounts (observability's external half).
+
 **Next-up by lane (v13):**
-- **Admin (Josh, 2 min, web UI):** add `eval-replay (source-or-silence)` + `frontend (vitest)` to branch-protection required checks — until then the new gate is advisory in effect.
 - **Build lane:** ① **ToS/privacy/consent + data export/deletion** (last big Phase-B item; hard blocker for Phase-C history import — needs Josh's policy positions, then a Builder drafts around them); ② **Epic 018 reconcile + finish** (silence states + remaining condition kinds on the card); ③ small: a11y baseline gate · R5 cost read from Render logs · bandit-High triage → flip security jobs blocking · verify/close the plan-reliability thread.
 - **PO decisions (Josh, in unlock order):** ① **auth provider sign-off** (Supabase brief on `main` — unlocks the Phase-C pivot); ② **Open-Meteo commercial license** (unblocks Epic 037's downstream build); ③ **readiness (007) design session** (safety-adjacent, Phase D).
 - **Parked, on purpose:** B010 connectivity (`ready`, Phase E) · B001 search build (spike done, Phase E) · B005 route drawing (Phase E) · commons read half (Stage 9, gated on T6/R1) · Epic 009's deferred halves (LLM-judge, Brier hook, N-run tiers — after 006/007 exist to evaluate).
