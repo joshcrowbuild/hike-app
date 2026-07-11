@@ -13,19 +13,17 @@ concurrency:
 permissions:
   contents: read
 
-# Phase B CI security scanning (path-to-complete §Phase B). All three jobs are
-# ADVISORY (continue-on-error) because the repo has pre-existing findings:
-# bandit reports 33 issues (3 High: sha1 in ingestion/pipeline.py + audit
-# script — non-security dedup hashing), pip-audit flags unpinned transitive
-# deps, and secret scanners flag dummy test credentials (e.g. the literal
-# "testpassword" in ci.yml's Neo4j service). Flip a job to blocking by
-# removing its continue-on-error once its findings are triaged to zero.
+# Phase B CI security scanning (path-to-complete §Phase B). bandit and
+# secret-scan are BLOCKING: their historical findings are triaged to zero
+# (B324 sha1 call sites carry usedforsecurity=False, the B310 urlopen sites
+# carry audited nosec markers, and .gitleaks.toml value-pins the known dummy
+# test credentials). pip-audit stays ADVISORY (continue-on-error): it flags
+# unpinned transitive deps we don't control release timing for.
 jobs:
   bandit:
-    name: bandit (advisory)
+    name: bandit
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -34,7 +32,9 @@ jobs:
       - run: python -m pip install --upgrade pip bandit
       # Same package set as `make typecheck`, plus scripts/. Tests are
       # excluded: bandit's assert/hardcoded-password rules are noise there.
-      - run: bandit -r api graph ingestion orchestration evals scripts
+      # Blocking at medium+ severity; the remaining LOW findings (asserts,
+      # subprocess-with-fixed-argv in scripts/) are accepted as noise.
+      - run: bandit -r api graph ingestion orchestration evals scripts --severity-level medium
 
   pip-audit:
     name: pip-audit (advisory)
@@ -56,15 +56,17 @@ jobs:
       - run: pip-audit --skip-editable
 
   secret-scan:
-    name: secret-scan (advisory)
+    name: secret-scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
           # Full history so gitleaks scans past commits, not just the tip.
           fetch-depth: 0
+      # Blocking: gitleaks picks up .gitleaks.toml at the repo root, which
+      # value-pins the known dummy test credentials (verified clean over the
+      # full 336-commit history at flip time).
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

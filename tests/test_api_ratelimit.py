@@ -40,6 +40,7 @@ class _Card:
     lines: list[_Line]
     warnings: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
+    conditions: list[object] = field(default_factory=list)
 
 
 @dataclass

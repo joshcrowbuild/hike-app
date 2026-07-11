@@ -352,6 +352,7 @@ def test_feed_card_surfaces_derived_access_point_for_trailless_trail():
             lines=[],
             warnings=[],
             unavailable=[],
+            conditions=[],
         ),
         maps_by_cid["ct:segs"],
     ).model_dump()
@@ -385,6 +386,7 @@ def test_feed_card_carries_maps_fields():
             lines=[],
             warnings=[],
             unavailable=[],
+            conditions=[],
         ),
         maps_by_cid["ct:has"],
     ).model_dump()
@@ -406,6 +408,7 @@ def test_feed_card_carries_maps_fields():
             lines=[],
             warnings=[],
             unavailable=[],
+            conditions=[],
         ),
         maps_by_cid["ct:bare"],
     ).model_dump()

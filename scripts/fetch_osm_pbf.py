@@ -59,7 +59,8 @@ def _find_extract(manifest: dict, state: str) -> dict:
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  downloading {url}")
-    with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # noqa: S310 (trusted Geofabrik)
+    # B310-audited: fixed https:// Geofabrik URL from the checked-in manifest.
+    with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # nosec B310
         while chunk := resp.read(1 << 20):
             out.write(chunk)
 

@@ -51,6 +51,7 @@ EXPECTED: dict[str, set[str]] = {
         "lines",
         "warnings",
         "unavailable",
+        "conditions",
         "geometry",
         "trailhead",
         "geometry_confidence",

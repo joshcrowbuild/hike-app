@@ -61,7 +61,8 @@ def _region_bbox(region: str) -> list[float]:
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  downloading {url}")
-    with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # noqa: S310 (trusted USDA)
+    # B310-audited: fixed https:// USDA download URL, no user-supplied scheme.
+    with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # nosec B310
         while chunk := resp.read(1 << 20):
             out.write(chunk)
 
