@@ -98,10 +98,14 @@ jobs:
       - run: npm run tokens
       - run: npm run test:coverage
       - name: Upload coverage report
+        # always(): a red test run is exactly when the partial coverage report is
+        # most useful; if-no-files-found keeps a pre-coverage crash from double-failing.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
           path: frontend/coverage/lcov.info
+          if-no-files-found: ignore
 
   integration:
     name: integration (neo4j)

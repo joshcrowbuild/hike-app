@@ -125,6 +125,28 @@ def test_missing_expected_card_is_caught() -> None:
     assert "surfaced_expected" in result.failures
 
 
+def test_typoed_expectation_key_is_rejected_not_vacuously_green() -> None:
+    # Self-review MODERATE (2026-07-11): a misspelled expected.json key must abort
+    # loudly, never default to an empty expectation that passes every criterion.
+    nominal = _by_name("nominal-old-rag")
+    hard = dict(nominal.expected["hard"])
+    hard["must_blocked"] = hard.pop("must_be_blocked")  # the typo
+    tampered = dataclasses.replace(nominal, expected={**nominal.expected, "hard": hard})
+    with pytest.raises(ValueError, match="must_be_blocked"):
+        evaluate_scenario(tampered, n=1)
+
+
+def test_unknown_condition_kind_reds_fidelity_not_a_traceback() -> None:
+    # Self-review MINOR: a bad kind name in expected facts is a red criterion with a
+    # named violation, not an uncaught ValueError killing the scenario walk.
+    nominal = _by_name("nominal-old-rag")
+    hard = {**nominal.expected["hard"], "facts": {"wether": {"source_prefix": "NWS"}}}
+    tampered = dataclasses.replace(nominal, expected={**nominal.expected, "hard": hard})
+    result = evaluate_scenario(tampered, n=1)
+    assert not result.passed
+    assert any("wether" in v for v in result.failures.get("fact_fidelity", []))
+
+
 # ── fixture hygiene (mirrors tests/test_adapter_cassettes.py) ─────────────────
 
 

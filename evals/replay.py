@@ -183,9 +183,36 @@ def run_scenario(scenario: ReplayScenario) -> PlannedBatch:
 # ── hard-expectation checks: each returns violation strings (empty == pass) ───
 
 
+# Every scenario must state EVERY expectation explicitly — an omitted or typo'd key
+# would otherwise default to its empty expectation and pass vacuously, the exact
+# quiet-green this gate exists to prevent (self-review finding, 2026-07-11).
+_REQUIRED_HARD_KEYS = frozenset(
+    {
+        "min_cards",
+        "must_be_blocked",
+        "allowed_kinds",
+        "facts",
+        "corpus_corroboration",
+        "expected_warnings",
+        "expected_unavailable_kinds",
+    }
+)
+
+
 def _hard(scenario: ReplayScenario) -> dict[str, Any]:
-    hard = scenario.expected.get("hard", {})
-    assert isinstance(hard, dict)
+    hard = scenario.expected.get("hard")
+    if not isinstance(hard, dict):
+        raise ValueError(f"scenario {scenario.name!r}: expected.json has no 'hard' object")
+    keys = set(hard.keys())
+    if keys != _REQUIRED_HARD_KEYS:
+        missing = sorted(_REQUIRED_HARD_KEYS - keys)
+        unknown = sorted(keys - _REQUIRED_HARD_KEYS)
+        raise ValueError(
+            f"scenario {scenario.name!r}: expected.json hard block is malformed —"
+            f" missing keys {missing}, unknown keys {unknown}. Every expectation must"
+            " be stated explicitly (an explicit empty value is a deliberate choice;"
+            " an absent key would pass vacuously)."
+        )
     return hard
 
 
@@ -221,7 +248,14 @@ def check_fact_fidelity(batch: PlannedBatch, hard: dict[str, Any]) -> list[str]:
     At least one trail must carry the kind, or the check would pass vacuously."""
     out: list[str] = []
     for kind_name, spec in hard.get("facts", {}).items():
-        kind = ConditionKind(kind_name)
+        try:
+            kind = ConditionKind(kind_name)
+        except ValueError:
+            # A fixture typo ("wether") reds this criterion with a named violation
+            # rather than aborting the whole scenario walk with a traceback.
+            known = ", ".join(k.value for k in ConditionKind)
+            out.append(f"expected.json names unknown condition kind {kind_name!r} ({known})")
+            continue
         carriers = [t for t in batch.trails if kind in t.facts]
         if not carriers:
             out.append(f"no surfaced trail carries expected kind {kind_name!r}")
