@@ -59,6 +59,25 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: make ${{ matrix.target }}
 
+  eval-replay:
+    # The source-or-silence regression gate (Epic 009, golden-trip + cassette half):
+    # runs the REAL engine against recorded corpus + condition cassettes — hermetic
+    # (no network, no Neo4j, no API key) — and reds the build if any truthfulness
+    # invariant's pass rate drops below 1.0.
+    name: eval-replay (source-or-silence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: make eval-replay
+
   frontend:
     name: frontend (vitest)
     runs-on: ubuntu-latest

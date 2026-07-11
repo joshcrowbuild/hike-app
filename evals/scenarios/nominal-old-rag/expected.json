@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-11",
+    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "water",
+      "permits"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "air": {
+        "source_prefix": "EPA AirNow",
+        "value": {
+          "aqi": 45,
+          "parameter": "PM2.5"
+        }
+      },
+      "fire": {
+        "source_prefix": "NASA FIRMS",
+        "value": {
+          "hotspot_count": 0
+        }
+      },
+      "water": {
+        "source_prefix": "USGS",
+        "value": {
+          "site_id": "01628500",
+          "latest_discharge_cfs": 123.0
+        }
+      },
+      "permits": {
+        "source_prefix": "Recreation.gov",
+        "value": {
+          "count": 2
+        }
+      }
+    },
+    "corpus_corroboration": {
+      "osm:old-rag-mountain-loop": 3,
+      "osm:whiteoak-canyon": 2,
+      "osm:cedar-run": 1,
+      "osm:rose-river-loop": 2,
+      "osm:corbin-hollow": 1
+    },
+    "expected_warnings": [],
+    "expected_unavailable_kinds": []
+  }
+}

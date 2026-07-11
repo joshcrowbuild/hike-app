@@ -1,0 +1,33 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "Observation-list shape; the key travels in the query string, never the body.",
+  "interactions": [
+    {
+      "match": "airnowapi.org",
+      "status": 200,
+      "json": [
+        {
+          "DateObserved": "2026-07-01",
+          "ParameterName": "O3",
+          "AQI": 38,
+          "Category": {
+            "Number": 1,
+            "Name": "Good"
+          },
+          "ReportingArea": "Shenandoah Valley"
+        },
+        {
+          "DateObserved": "2026-07-01",
+          "ParameterName": "PM2.5",
+          "AQI": 45,
+          "Category": {
+            "Number": 1,
+            "Name": "Good"
+          },
+          "ReportingArea": "Shenandoah Valley"
+        }
+      ]
+    }
+  ]
+}

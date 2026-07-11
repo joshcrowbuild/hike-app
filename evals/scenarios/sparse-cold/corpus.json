@@ -1,0 +1,26 @@
+{
+  "note": "Thin-corpus scenario: no Trailhead nodes (the scout's direct-point fallback path) and no SAME_AS rows (corroboration floors at 1).",
+  "trailhead_rows": [],
+  "direct_rows": [
+    {
+      "canonical_id": "osm:hazel-mountain",
+      "name": "Hazel Mountain Trail",
+      "trailhead_id": null,
+      "distance_m": 4200.0,
+      "is_loop": false,
+      "length_mi": 5.3,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.6089,
+        "longitude": -78.2764
+      },
+      "trailhead_point": {
+        "latitude": 38.6089,
+        "longitude": -78.2764
+      },
+      "area_id": null
+    }
+  ],
+  "corroboration": []
+}

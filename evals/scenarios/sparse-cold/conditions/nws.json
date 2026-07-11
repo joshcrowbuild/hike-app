@@ -1,0 +1,44 @@
+{
+  "adapter": "nws",
+  "source": "api.weather.gov",
+  "note": "Clear-day recorded shape (keyless; no secret).",
+  "interactions": [
+    {
+      "match": "/points/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "forecast": "https://api.weather.gov/gridpoints/LWX/96,70/forecast",
+          "gridId": "LWX",
+          "cwa": "LWX",
+          "gridX": 96,
+          "gridY": 70
+        }
+      }
+    },
+    {
+      "match": "/gridpoints/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "periods": [
+            {
+              "number": 1,
+              "name": "This Afternoon",
+              "shortForecast": "Partly Sunny",
+              "temperature": 68,
+              "temperatureUnit": "F"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "match": "/alerts/active",
+      "status": 200,
+      "json": {
+        "features": []
+      }
+    }
+  ]
+}

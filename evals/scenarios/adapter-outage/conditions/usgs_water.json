@@ -1,0 +1,21 @@
+{
+  "adapter": "usgs_water",
+  "source": "USGS Water Data",
+  "note": "Full outage: both sub-calls 500 \u2014 the water fact must be ABSENT, never fabricated.",
+  "interactions": [
+    {
+      "match": "monitoring-locations",
+      "status": 500,
+      "json": {
+        "detail": "down"
+      }
+    },
+    {
+      "match": "waterservices",
+      "status": 500,
+      "json": {
+        "detail": "down"
+      }
+    }
+  ]
+}
