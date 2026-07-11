@@ -209,3 +209,18 @@ These are candidate sources for future epics (notably a Rule #1 Verifier-freshne
 - **CDP-12** → the deferred **auth provider (R3)** on Zanzibar-style tuples + grant-as-stop-point.
 
 Build-state caveat the review flags: Confidence/Staleness are *not yet built* as components (only the verify/Signal primitive ships), and corroboration currently = a raw edge count (the exact thing CDP-01 says to replace) — so several CDPs are net-new builds, not extensions.
+
+---
+
+## Dump 004 — 2026-07-09
+
+### B010 · Trail connectivity & loop composition (credit: Carter)
+**Essence:** AllTrails links trails/segments together — Whiteoak Canyon can be an out-and-back *or* close into the Cedar Run loop via two connectors. We model trails as isolated nodes; a *hike* (a composition over the trail network) isn't a thing yet.
+
+**Expansion:** fully explored in **`docs/research/trail-connectivity-loops.md`** — three-layer problem split (topology · composition · judgment), gap audit (the Stage-2 schema designed `:Junction`/`CONNECTS_TO`/`:Route` and deferred all three; geometry is stored but never noded), open-source landscape (AllTrails' documented OSM-derivative junction-cut segment DB; GraphHopper round-trip; NP-hardness of loop-finding → enumerate-screen-curate, not generate), the bad-loop screen (TSI tags; the AllTrails-AI SAR backlash as the cautionary tale), the "worth recommending" rubric (Naismith bands · anchor quality · connector fraction · loop premium), and sustainability (topology as deterministic derivation + staleness propagation to dependent routes).
+
+**Collisions / synergy:** hard-gated on **Phase A identity stability** (same collision as CoMaps E1 — noding re-cuts segment identity); companions: E1 (OSM relations = tier-2 named routes), E3 (POI anchors), **B005** (same junction substrate — topology-first makes B005 mostly UI), B001/B002 (the spatial-query axis).
+
+**Open questions:** ~~are unnamed connectors even in the corpus?~~ (answered — spike §9: flagship connectors are named and already ingested; unnamed in-boundary ways should join as connector-class network edges) · `:Route` in the feed vs. Detail-screen "extensions & loops" tray first · route identity per (trailhead, direction) vs. variants-on-one.
+
+**Ripeness:** `ready` — spike executed 2026-07-11 and **falsification target passed** (enumerator rediscovered the NPS Cedar Run–Whiteoak Circuit from structure alone, ranked #1; 38 total cycles in 0.1 s — no explosion). PO decisions logged: Layer-1 topology is the first slice, built at Phase E alongside E1. Next step: write the Layer-1 epic when Phase E opens.
