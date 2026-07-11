@@ -95,8 +95,8 @@ def fetch(
     bbox = f"{lon - radius_deg},{lat - radius_deg},{lon + radius_deg},{lat + radius_deg}"
     doc = _http.get_json(c, ITEMS_URL, params={"bbox": bbox, "limit": 50, "f": "json"})
     features = doc.get("features") if isinstance(doc, dict) else None
-    if features is None:
-        return None  # transport/parse failure — couldn't verify (source-or-silence)
+    if not isinstance(features, list):
+        return None  # transport/parse/shape failure — couldn't verify (source-or-silence)
     if not features:
         # The source ANSWERED: no monitoring location inside the search box. A real,
         # sourced "no coverage here" — the CDP-02 `no-data` silence state — kept

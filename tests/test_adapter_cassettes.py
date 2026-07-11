@@ -210,6 +210,12 @@ def test_usgs_no_nearby_gauge_is_a_sourced_no_data_answer_not_an_outage() -> Non
     assert fact.value["gauge_available"] is False
     assert any("No USGS gauge" in d for d in fact.disclosures)
 
+    # A non-list `features` (shape drift) is a parse failure, never an answered empty.
+    bad_shape = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"features": {}}))
+    )
+    assert UsgsWaterAdapter(client=bad_shape).probe(_POINT) is None
+
 
 @pytest.mark.parametrize("name,make,_check", CASSETTE_CASES, ids=_IDS)
 def test_transport_error_never_raises_past_the_adapter(name, make, _check) -> None:  # type: ignore[no-untyped-def]

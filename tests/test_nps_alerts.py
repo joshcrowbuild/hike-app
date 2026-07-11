@@ -90,6 +90,19 @@ def test_no_park_within_radius_returns_sourced_no_data_fact() -> None:
     assert any("No NPS unit within" in d for d in fact.disclosures)
 
 
+def test_catalog_wide_unparseable_latlong_is_a_failure_not_no_data() -> None:
+    # Self-review 2026-07-11: a catalog whose EVERY unit latLong fails to parse (an
+    # NPS format drift) is a parse FAILURE — it must degrade to None (couldn't
+    # verify), never a sourced "no NPS unit within 50 mi" that would mask a real
+    # closure as calm no-data silence for the TTL window.
+    parks = [
+        {"fullName": "Shenandoah National Park", "parkCode": "SHEN", "latLong": {"lat": 38.5}},
+        {"fullName": "Other Park", "parkCode": "OTHR", "latLong": ""},
+    ]
+    adapter = NpsAlertsAdapter("key", client=_client(_handler(parks, [_alert("Closure")])))
+    assert adapter.probe(_POINT) is None
+
+
 # ── (c) alerts present but all Caution/Information → answered clear ──
 
 

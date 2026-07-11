@@ -75,24 +75,28 @@ def _parse_lat_long(raw: object) -> tuple[float, float] | None:
     return lat, lon
 
 
-def _nearest_park(units: list[object], lat: float, lon: float) -> dict | None:
-    """The nearest unit with a parseable `latLong` within `RADIUS_MILES`, or None —
-    both "no unit close enough" and "everything unparseable" degrade to None
-    (source-or-silence), never a best-effort guess past the cap."""
+def _nearest_park(units: list[object], lat: float, lon: float) -> tuple[dict | None, int]:
+    """`(nearest_unit_within_RADIUS_MILES or None, parseable_unit_count)`. The count
+    lets the caller tell a genuine "nothing within the cap" (parsed real coordinates,
+    all far away — an answered no-data) apart from "parsed nothing" (a catalog-wide
+    `latLong` format drift — a parse FAILURE that must stay None/couldn't-verify,
+    never a fabricated coverage claim; self-review 2026-07-11)."""
     best: dict | None = None
     best_dist = float("inf")
+    parseable = 0
     for unit in units:
         if not isinstance(unit, dict):
             continue
         coords = _parse_lat_long(unit.get("latLong"))
         if coords is None:
             continue
+        parseable += 1
         dist = _haversine_miles(lat, lon, coords[0], coords[1])
         if dist < best_dist:
             best_dist, best = dist, unit
     if best is None or best_dist > RADIUS_MILES:
-        return None
-    return best
+        return None, parseable
+    return best, parseable
 
 
 def fetch(
@@ -109,8 +113,12 @@ def fetch(
     units = parks_doc.get("data") if isinstance(parks_doc, dict) else None
     if not units:
         return None  # transport/parse failure (or an empty catalog) — couldn't verify
-    nearest = _nearest_park(units, lat, lon)
+    nearest, parseable = _nearest_park(units, lat, lon)
     if nearest is None:
+        if parseable == 0:
+            # Every unit's latLong failed to parse: a catalog-wide format drift, not
+            # an answer. Couldn't verify (rule #1) — never a sourced "no coverage".
+            return None
         # The parks catalog ANSWERED and no unit centroid sits within the radius cap:
         # a real, sourced "NPS doesn't cover this spot" — the CDP-02 `no-data` silence
         # state, distinguishable from a failed probe (None above). The engine renders
