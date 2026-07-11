@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:a11y": "vitest run src/test/a11y.axe.test.tsx",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "prestorybook": "npm run tokens",

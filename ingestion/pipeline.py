@@ -140,7 +140,7 @@ def _build_canonical_id(source: str, ref: str | None, name: str) -> str:
     # chars so two names sharing a long common prefix (mode (b) — long
     # shared-prefix truncation) stay human-distinguishable in the readable part.
     slug = name.lower().replace(" ", "-").replace("/", "-")
-    suffix = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    suffix = hashlib.sha1(name.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
     slug = f"{slug[:50]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
@@ -150,7 +150,7 @@ def _sr_uid(source: str, ref: str | None, name: str) -> str:
         return f"{source}:{ref}"
     key = name.replace(" ", "_").lower()
     if len(key) > 30:
-        suffix = hashlib.sha1(key.encode()).hexdigest()[:6]
+        suffix = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:6]
         key = f"{key[:23]}_{suffix}"
     return f"{source}:{key}"
 

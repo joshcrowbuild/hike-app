@@ -4,7 +4,10 @@ Uses the OGC API (api.waterdata.usgs.gov/ogcapi) for site discovery and the
 legacy waterservices endpoint for the latest discharge reading. The legacy
 endpoint is authoritative until the OGC API's time-series collections stabilise
 (target: Q1 2027 per Stage 1 §27). Discloses that the nearest gauge may be
-miles away. TTL ~15 min. Source-or-silence: failure -> None.
+miles away. TTL ~15 min. Source-or-silence, two-way (Epic 018 S4 / CDP-02):
+a transport failure -> None (couldn't verify); a successful query with zero
+monitoring locations in the box -> a sourced `gauge_available: False` fact
+(the `no-data` silence state), never conflated with an outage.
 
 Field names confirmed against live API 2026-06-23:
   monitoring_location_name, monitoring_location_number (from monitoring-locations collection)
@@ -92,8 +95,20 @@ def fetch(
     bbox = f"{lon - radius_deg},{lat - radius_deg},{lon + radius_deg},{lat + radius_deg}"
     doc = _http.get_json(c, ITEMS_URL, params={"bbox": bbox, "limit": 50, "f": "json"})
     features = doc.get("features") if isinstance(doc, dict) else None
+    if not isinstance(features, list):
+        return None  # transport/parse/shape failure — couldn't verify (source-or-silence)
     if not features:
-        return None
+        # The source ANSWERED: no monitoring location inside the search box. A real,
+        # sourced "no coverage here" — the CDP-02 `no-data` silence state — kept
+        # distinguishable from a failed probe (None above). The engine renders it as
+        # legible silence, never as a feed line (Epic 018 S4).
+        return VerifiedFact(
+            value={"gauge_available": False, "search_radius_deg": radius_deg},
+            source=SOURCE,
+            fetched_at=now or datetime.now(timezone.utc),
+            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            disclosures=("No USGS gauge within the search radius of this point.",),
+        )
 
     def planar_dist(feature: Any) -> float:
         coords = (feature.get("geometry") or {}).get("coordinates") or [lon, lat]

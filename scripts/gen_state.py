@@ -66,7 +66,8 @@ def _fetch_health() -> dict[str, Any] | None:
     """GET the API /health (the live corpus + region source). Best-effort."""
     try:
         req = urllib.request.Request(f"{API_URL}/health", headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()) as resp:  # noqa: S310
+        # B310-audited: https:// API_URL constant, not user input.
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()) as resp:  # nosec B310
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None

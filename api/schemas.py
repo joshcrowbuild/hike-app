@@ -134,6 +134,21 @@ class ElevationProfile(BaseModel):
     estimated_duration_min: float  # grade-aware ESTIMATE — never a stated fact
 
 
+class ConditionStatusResponse(BaseModel):
+    """One kind's disposition on one card (Epic 018 S4 / CDP-02): the per-kind
+    condition summary that makes absence legible, distinct silence on the wire.
+    `state` is one of present | stale_degraded | no_hazard | no_data | unavailable |
+    not_fetched (see `orchestration.engine.ConditionStatus`); `source`/`checked_at`
+    are set exactly when a source actually answered. Presentation only — never a
+    ranking input (Rule #2)."""
+
+    kind: str  # the condition kind, e.g. "weather" | "water" | "closures"
+    state: str
+    source: str = ""
+    checked_at: str | None = None  # ISO-8601 fetch timestamp when a source answered
+    detail: str = ""  # adapter disclosure, e.g. the no-gauge radius note
+
+
 class FeedCardResponse(BaseModel):
     canonical_id: str
     name: str
@@ -143,6 +158,9 @@ class FeedCardResponse(BaseModel):
     # Conditions that couldn't be verified, disclosed here rather than causing the
     # trail to be set aside (decision of 2026-07-02; rule #6).
     unavailable: list[ConditionUnavailableResponse] = []
+    # Per-kind condition disposition (Epic 018 S4 / CDP-02) — one entry per point
+    # kind, canonical order. Additive: an older client ignores it.
+    conditions: list[ConditionStatusResponse] = []
     # Maps & terrain (Epic 016 S1 / Epic 017 S4). All optional/nullable: a card with no
     # mapped route omits/nulls them and the client degrades honestly (Rule #1).
     geometry: GeoJsonGeometry | None = None

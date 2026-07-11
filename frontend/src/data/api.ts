@@ -73,6 +73,21 @@ export interface ConditionUnavailableResponse {
   kind: string
 }
 
+/**
+ * One kind's disposition on one card (Epic 018 S4 / CDP-02): the per-kind condition
+ * summary that makes absence legible, distinct silence — never a blank the client
+ * must guess about. `state` is one of present | stale_degraded | no_hazard |
+ * no_data | unavailable | not_fetched; `source`/`checked_at` are set exactly when a
+ * source actually answered. Presentation only — never a ranking input (Rule #2).
+ */
+export interface ConditionStatusResponse {
+  kind: string
+  state: string
+  source: string
+  checked_at: string | null
+  detail: string
+}
+
 export interface FeedCardResponse {
   canonical_id: string
   name: string
@@ -80,6 +95,8 @@ export interface FeedCardResponse {
   lines: FeedLineResponse[]
   warnings: CardWarningResponse[]
   unavailable: ConditionUnavailableResponse[]
+  /** Per-kind condition disposition (Epic 018 S4 / CDP-02) — additive; older payloads omit it. */
+  conditions?: ConditionStatusResponse[]
   /**
    * Maps & terrain (Epic 016 S1). Optional: the current `/plan` omits them, so
    * the adapter degrades; once the geometry/detail endpoint lands these arrive

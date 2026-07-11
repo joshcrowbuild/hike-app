@@ -1,0 +1,18 @@
+# Gitleaks config — extends the default ruleset (secret-scan CI job).
+# Allowlist is value-pinned to known DUMMY credentials only (never real ones):
+#   - the 32-char FIRMS-style MAP_KEY fixture in tests/test_http.py
+#   - the throwaway Neo4j service-container password in .github/workflows/ci.yml
+# Real secrets live in the deploy platforms' secret stores, never in the repo
+# (CLAUDE.md rule 10) — do not allowlist paths or whole files here.
+
+title = "adventure-planner gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known dummy test credentials (exact values, checked in on purpose)"
+regexes = [
+  '''abc123def456abc123def456abc12345''',
+  '''testpassword''',
+]

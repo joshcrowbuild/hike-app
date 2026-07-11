@@ -46,6 +46,7 @@ from api.schemas import (
     CANONICAL_ID_PATTERN,
     VIEWER_ID_PATTERN,
     CardWarningResponse,
+    ConditionStatusResponse,
     ConditionUnavailableResponse,
     ElevationProfile,
     ElevationSample,
@@ -317,6 +318,16 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
         unavailable=[
             ConditionUnavailableResponse(text=u.text, source=u.source, kind=u.kind)
             for u in card.unavailable
+        ],
+        conditions=[
+            ConditionStatusResponse(
+                kind=s.kind,
+                state=s.state,
+                source=s.source,
+                checked_at=s.checked_at.isoformat() if s.checked_at else None,
+                detail=s.detail,
+            )
+            for s in card.conditions
         ],
         **maps,  # geometry / trailhead / geometry_confidence / summit / elevation_profile
     )
