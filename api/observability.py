@@ -19,33 +19,29 @@ logs (Rule #5: the private overlay's identity is substrate, not telemetry).
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from dataclasses import dataclass
 from typing import Any
+
+# Canonical home is orchestration.logsafe (importable by every layer without a
+# layering inversion); re-exported here so existing `api.observability` call
+# sites keep working.
+from orchestration.logsafe import scrub_viewer
+
+__all__ = [
+    "PlanMetrics",
+    "cache_size",
+    "estimate_tokens",
+    "probe_stats_snapshot",
+    "scrub_viewer",
+]
 
 logger = logging.getLogger("api.observability")
 
 # Rough blended (input+output) USD per 1K tokens for the cloud yardstick model. Estimate
 # only; overridable via `ADVENTURE_LLM_USD_PER_1K` so a price change isn't a code change.
 _DEFAULT_USD_PER_1K = 0.009
-
-
-def scrub_viewer(viewer_id: str) -> str:
-    """A short, stable, non-reversible tag for a viewer (Rule #5). `anonymous` stays
-    legible as `anon`; any real identity becomes an 8-hex digest, enough to correlate a
-    session's calls in the logs without carrying the identity itself.
-
-    A bare SHA-256 of a low-entropy identifier (e.g. an email) is *confirmable* — anyone
-    who guesses the value can verify it by re-hashing. Mixing in a deployment-private salt
-    (`ADVENTURE_LOG_HASH_SALT`) defeats that while keeping the tag stable within a deploy.
-    The salt is optional: absent it, the digest is still non-reversible and adequate for
-    log correlation."""
-    if viewer_id == "anonymous":
-        return "anon"
-    salt = os.environ.get("ADVENTURE_LOG_HASH_SALT", "")
-    return "vh:" + hashlib.sha256((salt + viewer_id).encode("utf-8")).hexdigest()[:8]
 
 
 def estimate_tokens(*texts: str) -> int:

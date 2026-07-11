@@ -78,6 +78,7 @@ from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime
+from orchestration.logsafe import scrub_episode, setup_logging
 from orchestration.providers.registry import resolve
 from orchestration.regions import list_regions
 
@@ -215,6 +216,11 @@ def _start_warmup(settings: Settings, graph_client: GraphClient) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
     global _settings, _graph_client
+    # Coherent process logging (Phase B): without this, the API process has no
+    # logging config at all and INFO lines (the /plan cost metrics, warm-up
+    # completion) never reach the deploy's log stream — only WARNING+ escapes
+    # via Python's last-resort handler. Level: ADVENTURE_LOG_LEVEL, default INFO.
+    setup_logging()
     _settings = Settings.from_env()
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
     _start_warmup(_settings, _graph_client)
@@ -1046,7 +1052,7 @@ def record_outcome(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("record outcome failed for episode_id=%r", episode_id)
+        logger.exception("record outcome failed for episode_id=%s", scrub_episode(episode_id))
         raise HTTPException(status_code=500, detail="Internal error") from exc
 
 
