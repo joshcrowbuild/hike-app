@@ -40,7 +40,7 @@ def _prefix_id_legacy(source: str, source_id: str | None, raw_name: str) -> str:
         return f"ct:{source.lower()}:{clean_ref}"
     slug = raw_name.lower().replace(" ", "-").replace("/", "-")
     if len(slug) > 40:
-        suffix = hashlib.sha1(slug.encode()).hexdigest()[:6]
+        suffix = hashlib.sha1(slug.encode(), usedforsecurity=False).hexdigest()[:6]
         slug = f"{slug[:33]}-{suffix}"
     return f"ct:{source.lower()}:{slug}"
 
