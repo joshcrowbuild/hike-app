@@ -1,0 +1,70 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Phase B CI security scanning (path-to-complete §Phase B). All three jobs are
+# ADVISORY (continue-on-error) because the repo has pre-existing findings:
+# bandit reports 33 issues (3 High: sha1 in ingestion/pipeline.py + audit
+# script — non-security dedup hashing), pip-audit flags unpinned transitive
+# deps, and secret scanners flag dummy test credentials (e.g. the literal
+# "testpassword" in ci.yml's Neo4j service). Flip a job to blocking by
+# removing its continue-on-error once its findings are triaged to zero.
+jobs:
+  bandit:
+    name: bandit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip bandit
+      # Same package set as `make typecheck`, plus scripts/. Tests are
+      # excluded: bandit's assert/hardcoded-password rules are noise there.
+      - run: bandit -r api graph ingestion orchestration evals scripts
+
+  pip-audit:
+    name: pip-audit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip pip-audit
+      # Audit the full resolved environment (all extras) so serve-time and
+      # ingestion dependencies are both covered. --skip-editable skips the
+      # local adventure-planner package itself (not on PyPI).
+      - run: python -m pip install -e ".[all]"
+      - run: pip-audit --skip-editable
+
+  secret-scan:
+    name: secret-scan (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so gitleaks scans past commits, not just the tip.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
