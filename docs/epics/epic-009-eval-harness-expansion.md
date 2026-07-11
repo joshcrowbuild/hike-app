@@ -1,6 +1,16 @@
 # Epic 009 — Stage-7 Evaluation Harness Expansion
 
-**Status:** DEFINED
+**Status:** IN_PROGRESS — partial (Phase-B wave 1, 2026-07-11): the **golden-trip +
+cassette replay half is built** — `evals/replay.py` + `evals/run_replay.py` run the
+REAL engine (`plan_from_origin`) against five committed scenarios under
+`evals/scenarios/` (recorded adapter cassettes + pinned corpus fixtures + hard
+`expected.json`), wired as the required `eval-replay (source-or-silence)` CI job
+(`make eval-replay`; hermetic — no network/Neo4j/API key) with falsifiability
+tests in `tests/test_eval_replay.py`. **Deliberately deferred, not dropped:** the
+LLM-judge (S5), the Brier/reliability calibration hook, the S1 criteria-registry
+generalization of `truthfulness.py` (the replay gate is additive alongside it),
+N-run tiering/Wilson intervals (S6), and everything the build-prerequisite note
+below marks blocked. Do **not** flip this to DONE until those land.
 **Phase:** 1→2 bridge (deep eval — Stage 7)
 **Spec refs:** `docs/research/stage-7-eval-methodology.md` (source of truth) · Stage 4 §6 (Curator/guardrails) · §7 (T4 thin eval) · decision-log §17 (testing & data hygiene) · §28 (property-based access test + reserved `:CommonsObservation` label) · §29 (cost spike → bake-off; route-by-data-sensitivity) · §30 (capability ≠ preference) · §31 (Stage 6 watch + sensitivity routing) · §11 (multiplayer / grant-stop) · §12 (commons) · cross-cutting thread T4. **Audit corrections this epic must hold to:** `docs/research/decision-log-additions-proposed.md` §40 C1 (commons fork unbuilt), C2 (write-path unscoped), C3 (`viewer_id` unauthenticated), C4 (overlay can egress to cloud judge).
 

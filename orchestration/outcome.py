@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from graph import queries
+from orchestration.logsafe import scrub_episode, scrub_viewer
 
 log = logging.getLogger(__name__)
 
@@ -92,13 +93,12 @@ def write_outcome(
         )
     )
     if not rows:
-        # viewer_id is never logged in the clear (rule #5) — reuse the same digest the
-        # API layer uses for /plan so a session's log lines stay correlatable.
-        from api.observability import scrub_viewer
-
+        # Neither identifier is logged in the clear (rule #5): the viewer digest keeps
+        # a session's log lines correlatable, and the episode id embeds the owner id
+        # so it gets the same treatment.
         log.warning(
             "Outcome rejected: episode %s not found for viewer %s",
-            episode_id,
+            scrub_episode(episode_id),
             scrub_viewer(viewer_id),
         )
         return None

@@ -46,6 +46,7 @@ venv/
 # ── Node / JS ────────────────────────────────────────────────
 node_modules/
 dist/
+coverage/
 build/
 storybook-static/
 .next/

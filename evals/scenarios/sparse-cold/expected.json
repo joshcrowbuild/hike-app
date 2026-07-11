@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-11",
+    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory."
+  },
+  "hard": {
+    "min_cards": 1,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68
+        }
+      }
+    },
+    "corpus_corroboration": {
+      "osm:hazel-mountain": 1
+    },
+    "expected_warnings": [],
+    "expected_unavailable_kinds": []
+  }
+}

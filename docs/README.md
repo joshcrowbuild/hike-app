@@ -20,6 +20,7 @@
 | Know how to commit / review / run CI | [`process/development-process.md`](process/development-process.md) + [`process/github-repo-hygiene.md`](process/github-repo-hygiene.md) |
 | Know who does what across the claude fleet / avoid stale state | [`process/agent-operating-model.md`](process/agent-operating-model.md) — the persona + grounding charter |
 | Deploy / operate the live app (API on Render, etc.) | [`runbooks/`](runbooks/) → [`runbooks/deploy-api-render.md`](runbooks/deploy-api-render.md) |
+| Back up / recover the personal overlay | [`runbooks/backup-dr-personal-overlay.md`](runbooks/backup-dr-personal-overlay.md) (Phase-B stub) |
 | Understand a stage's design (sources, engine, watch, commons…) | [`research/README.md`](research/README.md) → the stage's doc |
 | Build/refactor frontend UI | [`research/design-system-v0.1.md`](research/design-system-v0.1.md) + [`research/home-curation-prototype-spec-v0.3.md`](research/home-curation-prototype-spec-v0.3.md) |
 
@@ -37,7 +38,7 @@
 - [`workplan.md`](workplan.md) — for stage order / threads.
 - [`research/README.md`](research/README.md) → a stage/seam/UX doc — for design detail.
 - [`process/development-process.md`](process/development-process.md) — epic→story→AC→test→review workflow.
-- [`runbooks/`](runbooks/) — operational runbooks (e.g. [`runbooks/deploy-api-render.md`](runbooks/deploy-api-render.md)) — read when deploying or operating the live app.
+- [`runbooks/`](runbooks/) — operational runbooks (e.g. [`runbooks/deploy-api-render.md`](runbooks/deploy-api-render.md), [`runbooks/backup-dr-personal-overlay.md`](runbooks/backup-dr-personal-overlay.md)) — read when deploying or operating the live app.
 
 ## Single sources of truth (don't restate — link)
 

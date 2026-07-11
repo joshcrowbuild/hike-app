@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from graph import queries
+from orchestration.logsafe import scrub_episode, scrub_viewer
 
 if TYPE_CHECKING:
     from graph.client import ScopedSession
@@ -231,7 +232,10 @@ def create_episode(
         )
         writes.append(queries.create_commons_observation(obs))
     else:
-        log.warning("Commons fork skipped for %s: no writer salt configured", episode_id)
+        log.warning(
+            "Commons fork skipped for %s: no writer salt configured",
+            scrub_episode(episode_id),
+        )
 
     session.execute_write(writes)  # atomic — all commit or none (AC-2.0 / AC-2.5)
 
@@ -264,17 +268,21 @@ def ingest_episode(fit_path: Path, owner_id: str, *, dry_run: bool = False) -> d
     summary = parse_fit(fit_path)
     pace = compute_pace_on_grade(summary)
 
+    # Heart rate is a biometric — private-overlay substrate, never telemetry
+    # (rule #5/#7) — so the summary line discloses only whether HR was present,
+    # not its value. Distance/ascent/pace stay: they describe the trail effort,
+    # not the body, and the CLI operator needs them to sanity-check the parse.
     log.info(
         "FIT summary: dist=%.1fkm ascent=%.0fm moving=%.0fmin pace=%.1f min/km hr=%s",
         (summary.total_distance_m or 0) / 1000,
         summary.total_ascent_m or 0,
         (summary.moving_time_s or 0) / 60,
         pace or 0,
-        summary.avg_heart_rate or "n/a",
+        "present" if summary.avg_heart_rate else "n/a",
     )
 
     if dry_run:
-        log.info("DRY-RUN — would create Episode for owner=%s", owner_id)
+        log.info("DRY-RUN — would create Episode for owner=%s", scrub_viewer(owner_id))
         return {"watch_activity_id": summary.watch_activity_id, "pace_on_grade": pace}
 
     from graph.client import GraphClient
@@ -300,7 +308,9 @@ def ingest_episode(fit_path: Path, owner_id: str, *, dry_run: bool = False) -> d
         # Drain synchronously through the scoped-write seam (Epic 011), scoped per
         # task owner (Phase 1; async in Phase 2). Replaces the bare make_runner drain.
         belief_queue.drain(gc.scoped_session)
-        log.info("Created Episode %s (trail=%s)", episode_id, trail_id or "unmatched")
+        log.info(
+            "Created Episode %s (trail=%s)", scrub_episode(episode_id), trail_id or "unmatched"
+        )
         return {"episode_id": episode_id, "canonical_id": trail_id, "pace_on_grade": pace}
     finally:
         gc.close()

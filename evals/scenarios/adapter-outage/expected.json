@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-11",
+    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "permits"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "active_alerts": null
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [],
+    "expected_unavailable_kinds": [
+      "weather"
+    ]
+  }
+}

@@ -59,6 +59,54 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: make ${{ matrix.target }}
 
+  eval-replay:
+    # The source-or-silence regression gate (Epic 009, golden-trip + cassette half):
+    # runs the REAL engine against recorded corpus + condition cassettes — hermetic
+    # (no network, no Neo4j, no API key) — and reds the build if any truthfulness
+    # invariant's pass rate drops below 1.0.
+    name: eval-replay (source-or-silence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: make eval-replay
+
+  frontend:
+    name: frontend (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Design tokens are generated (Style Dictionary) — the vanilla-extract
+      # styles import them, so tests can't collect without this step.
+      - run: npm run tokens
+      - run: npm run test:coverage
+      - name: Upload coverage report
+        # always(): a red test run is exactly when the partial coverage report is
+        # most useful; if-no-files-found keeps a pre-coverage crash from double-failing.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/lcov.info
+          if-no-files-found: ignore
+
   integration:
     name: integration (neo4j)
     runs-on: ubuntu-latest

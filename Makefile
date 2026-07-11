@@ -1,6 +1,6 @@
 .PHONY: help install install-dev fmt lint typecheck test check \
         format-check db-up db-down schema schema-aura fetch-dem ingest ingest-dry preflight api-dev eval \
-        ground state docs-lint
+        eval-replay ground state docs-lint
 
 # Python interpreter. Defaults to python3; override with `make PYTHON=python` if needed.
 PYTHON ?= python3
@@ -24,7 +24,8 @@ help:
 	@echo "  ingest       run Stage-3 ingestion for ADVENTURE_REGION"
 	@echo "  ingest-dry   dry-run ingestion (fetch + conflate, no DB writes)"
 	@echo "  api-dev      start FastAPI dev server on :8000"
-	@echo "  eval         truthfulness eval / provider bake-off"
+	@echo "  eval         truthfulness eval / provider bake-off (live: needs keys + Neo4j)"
+	@echo "  eval-replay  hermetic source-or-silence regression gate (no network/keys)"
 	@echo "  ground       print the current-state grounding report (git/corpus/PRs)"
 	@echo "  state        refresh the generated state.json + STATUS.md snapshot"
 	@echo "  docs-lint    run the doc-lint gate (links, stale markers, generated-doc sync)"
@@ -93,6 +94,9 @@ api-dev:
 eval:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	$(PYTHON) -m evals.run_bakeoff
+
+eval-replay:
+	$(PYTHON) -m evals.run_replay
 
 ground:
 	@$(PYTHON) scripts/ground.py

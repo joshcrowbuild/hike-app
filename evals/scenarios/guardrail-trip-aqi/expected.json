@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-11",
+    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory."
+  },
+  "hard": {
+    "min_cards": 0,
+    "must_be_blocked": [
+      "osm:old-rag-mountain-loop",
+      "osm:whiteoak-canyon",
+      "osm:cedar-run",
+      "osm:rose-river-loop",
+      "osm:corbin-hollow"
+    ],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "water",
+      "permits"
+    ],
+    "facts": {},
+    "corpus_corroboration": {},
+    "expected_warnings": [],
+    "expected_unavailable_kinds": []
+  }
+}

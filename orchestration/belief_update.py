@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from graph import queries
+from orchestration.logsafe import scrub_episode, scrub_viewer
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +98,11 @@ class BeliefUpdateQueue:
                 update_beliefs(task, session_factory(task.owner_id))
                 count += 1
             except Exception as exc:
-                log.error("Belief update failed for episode %s: %s", task.episode_id, exc)
+                log.error(
+                    "Belief update failed for episode %s: %s",
+                    scrub_episode(task.episode_id),
+                    exc,
+                )
         return count
 
 
@@ -177,7 +182,11 @@ def process_episode(episode_id: str, owner_id: str, session: ScopedWriter) -> No
     """
     rows = session.run(queries.episode_fields_read(episode_id))
     if not rows:
-        log.warning("process_episode: Episode %s not found for owner %s", episode_id, owner_id)
+        log.warning(
+            "process_episode: Episode %s not found for owner %s",
+            scrub_episode(episode_id),
+            scrub_viewer(owner_id),
+        )
         return
     row = rows[0]
     task = UpdateTask(
