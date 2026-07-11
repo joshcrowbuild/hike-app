@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from graph import queries
@@ -89,6 +89,92 @@ class PlannedTrail:
     corpus_corroboration: int = 1
     corpus_sources: tuple[str, ...] = ()
     corpus_confidence: Confidence | None = None
+    # The point kinds the Verifier actually attempted for this plan (Epic 018 S4):
+    # lets the card tell "probed but no source answered" (unavailable) apart from
+    # "not probed in this deployment" (not_fetched). Additive default keeps every
+    # existing constructor call valid.
+    probed_kinds: frozenset[ConditionKind] = frozenset()
+
+
+# ── Per-kind condition disposition (Epic 018 S4 / CDP-02) ────────────────────
+# The card's per-kind condition summary: every point kind gets a disposition so an
+# absent condition is legible, distinct silence — never a blank or a false-clear.
+# Canonical order keeps the wire (and the rendered card) deterministic.
+_CONDITION_KIND_ORDER = (
+    ConditionKind.weather,
+    ConditionKind.air,
+    ConditionKind.fire,
+    ConditionKind.water,
+    ConditionKind.closures,
+    ConditionKind.permits,
+)
+
+# Per-kind freshness horizons (seconds) for the `stale_degraded` state: a fact older
+# than this at SERVE time is still shown (with its age — honesty is relocation, not
+# deletion) but flagged "last known — may have changed". Set to 2x each adapter's TTL
+# (nws/airnow/firms/nps 1h · usgs_water 30m · ridb 1d — CDP-08 volatility windows):
+# inside 2xTTL a fact is at worst one refresh stale; beyond it the value is past its
+# rate-of-change horizon. Only an engine-layer cache re-render (Epic 039 S2) can
+# normally age a fact this far.
+_STALE_HORIZON_S: dict[ConditionKind, float] = {
+    ConditionKind.weather: 7200.0,
+    ConditionKind.air: 7200.0,
+    ConditionKind.fire: 7200.0,
+    ConditionKind.water: 3600.0,
+    ConditionKind.closures: 7200.0,
+    ConditionKind.permits: 172_800.0,
+}
+
+
+@dataclass(frozen=True)
+class ConditionStatus:
+    """One kind's disposition on one card (Epic 018 S4 / CDP-02). `state` vocabulary:
+
+      present         — a sourced fact renders as a feed line
+      stale_degraded  — a sourced fact renders, but is past its freshness horizon
+      no_hazard       — the source answered "nothing to flag" (fire 0 detections,
+                        closures 0 relevant alerts) — checked-clear, never assumed
+      no_data         — the source answered "nothing covers this spot" (no gauge in
+                        range, no NPS unit in range)
+      unavailable     — the kind was probed and no source answered (couldn't verify —
+                        never "clear", rule #1)
+      not_fetched     — the kind is not probed in this deployment (no signal either way)
+
+    `source`/`checked_at` are set exactly when a source actually answered; `detail`
+    carries the adapter's own disclosure for the no_data case. Presentation only —
+    never feeds ranking or confidence (Rule #2)."""
+
+    kind: str  # ConditionKind.value, e.g. "weather"
+    state: str
+    source: str = ""  # short provider name when a source backs this state
+    checked_at: datetime | None = None  # the answering fact's fetch time
+    detail: str = ""  # adapter disclosure, e.g. the no-gauge radius note
+
+
+def _is_coverage_gap(kind: ConditionKind, value: Any) -> bool:
+    """True for a fact that is a sourced "nothing covers this spot" answer (the
+    CDP-02 `no_data` state) rather than a reading — see usgs_water/nps_alerts."""
+    if not isinstance(value, dict):
+        return False
+    if kind is ConditionKind.water:
+        return value.get("gauge_available") is False
+    if kind is ConditionKind.closures:
+        return value.get("in_range") is False
+    return False
+
+
+def _is_checked_clear(kind: ConditionKind, value: Any) -> bool:
+    """True for a hazard-shaped kind whose source answered "nothing to flag" (the
+    CDP-02 `no_hazard` state). Only fire/closures are hazard-shaped — a zero count IS
+    the all-clear; value kinds (weather/air/water/permits) always carry a reading and
+    are never "clear"."""
+    if not isinstance(value, dict):
+        return False
+    if kind is ConditionKind.fire:
+        return value.get("hotspot_count") == 0
+    if kind is ConditionKind.closures:
+        return value.get("count") == 0
+    return False
 
 
 @dataclass(frozen=True)
@@ -115,6 +201,10 @@ class FeedCard:
     # Conditions that couldn't be verified — disclosed here, never a reason the
     # trail was held back (decision of 2026-07-02; rule #6). Presentation only.
     unavailable: tuple[UnavailableCondition, ...] = ()
+    # Per-kind condition disposition (Epic 018 S4 / CDP-02): one entry per point
+    # kind in `_CONDITION_KIND_ORDER`, so absent conditions are legible, distinct
+    # silence on the wire — never a blank the client must guess about.
+    conditions: tuple[ConditionStatus, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -366,6 +456,7 @@ def plan_from_origin(
                 corpus_corroboration=corr,
                 corpus_sources=srcs,
                 corpus_confidence=corpus_confidence,
+                probed_kinds=probed_kinds,
             )
         )
     return PlannedBatch(trails=planned, notices=notices, set_aside=tuple(set_aside))
@@ -461,15 +552,86 @@ def _unavailable_condition(u: ConditionUnavailable) -> UnavailableCondition:
     return UnavailableCondition(text=f"{u.reason} ({u.source})", source=u.source, kind=u.kind)
 
 
+def _condition_summary(
+    planned: PlannedTrail, render_now: datetime
+) -> tuple[tuple[ConditionStatus, ...], list[ConditionKind]]:
+    """Classify every point kind for one card (Epic 018 S4 / CDP-02) and name which
+    kinds render as feed lines. Pure presentation — never feeds ranking (Rule #2):
+
+      fact is a coverage-gap answer  → no_data   (silence, no line)
+      fact is a checked-clear answer → no_hazard (silence, no line)
+      fact past its horizon          → stale_degraded (the line still renders, aged)
+      fact fresh                     → present   (renders as a line)
+      probed, no fact                → unavailable (couldn't verify — never "clear")
+      not probed in this deployment  → not_fetched
+    """
+    statuses: list[ConditionStatus] = []
+    line_kinds: list[ConditionKind] = []
+    for kind in _CONDITION_KIND_ORDER:
+        fact = planned.facts.get(kind)
+        if fact is None:
+            state = "unavailable" if kind in planned.probed_kinds else "not_fetched"
+            statuses.append(ConditionStatus(kind=kind.value, state=state))
+            continue
+        src = provider_short(fact.source)
+        if _is_coverage_gap(kind, fact.value):
+            statuses.append(
+                ConditionStatus(
+                    kind=kind.value,
+                    state="no_data",
+                    source=src,
+                    checked_at=fact.fetched_at,
+                    detail=fact.disclosures[0] if fact.disclosures else "",
+                )
+            )
+            continue
+        if _is_checked_clear(kind, fact.value):
+            statuses.append(
+                ConditionStatus(
+                    kind=kind.value, state="no_hazard", source=src, checked_at=fact.fetched_at
+                )
+            )
+            continue
+        age_s = (render_now - fact.fetched_at).total_seconds()
+        state = "stale_degraded" if age_s > _STALE_HORIZON_S.get(kind, 7200.0) else "present"
+        statuses.append(
+            ConditionStatus(kind=kind.value, state=state, source=src, checked_at=fact.fetched_at)
+        )
+        line_kinds.append(kind)
+    return tuple(statuses), line_kinds
+
+
 def feed_card(planned: PlannedTrail, *, now: datetime | None = None) -> FeedCard:
-    """Render one card's condition lines. `now` is threaded to `summarize_fact` so a
-    cache hit can re-render freshness against serve-time rather than capture-time
-    (`_render_feed` below is the only caller that ever passes a non-None `now`);
-    `None` here means "real wall-clock now", identical to today's behavior."""
+    """Render one card's condition lines + the per-kind condition summary. `now` is
+    threaded to `summarize_fact` so a cache hit can re-render freshness against
+    serve-time rather than capture-time (`_render_feed` below is the only caller that
+    ever passes a non-None `now`); `None` here means "real wall-clock now", identical
+    to today's behavior.
+
+    A coverage-gap or checked-clear answer (no_data / no_hazard) renders as legible
+    silence in `conditions`, not as a feed line — "0 detections nearby" is exactly the
+    calm-clear CDP-02's silence states exist for. Its source + timestamp still travel
+    on the ConditionStatus, so nothing sourced is dropped (honesty relocated, never
+    deleted). The drive-time line is origin-relative, not a point condition — it stays
+    a line and has no ConditionStatus entry."""
+    render_now = now or datetime.now(timezone.utc)
+    conditions, line_kinds = _condition_summary(planned, render_now)
     lines = [
-        summarize_fact(kind.value, fact, planned.confidences.get(kind) or compute(), now=now)
-        for kind, fact in planned.facts.items()
+        summarize_fact(
+            kind.value, planned.facts[kind], planned.confidences.get(kind) or compute(), now=now
+        )
+        for kind in line_kinds
     ]
+    drive_fact = planned.facts.get(ConditionKind.drive_time)
+    if drive_fact is not None:
+        lines.append(
+            summarize_fact(
+                ConditionKind.drive_time.value,
+                drive_fact,
+                planned.confidences.get(ConditionKind.drive_time) or compute(),
+                now=now,
+            )
+        )
     dist = planned.candidate.distance_m
     return FeedCard(
         canonical_id=planned.candidate.canonical_id,
@@ -478,6 +640,7 @@ def feed_card(planned: PlannedTrail, *, now: datetime | None = None) -> FeedCard
         lines=lines,
         warnings=planned.verdict.warnings,
         unavailable=tuple(_unavailable_condition(u) for u in planned.verdict.unavailable),
+        conditions=conditions,
     )
 
 

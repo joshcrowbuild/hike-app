@@ -193,10 +193,22 @@ def test_nws_alerts_subcall_failure_omits_active_alerts() -> None:
     assert fact.value["active_alerts"] is None  # unknown, NOT [] ("no alerts")
 
 
-def test_usgs_no_nearby_gauge_yields_no_water_fact() -> None:
-    # An empty feature set is not a zero-flow reading — it is silence (no water fact).
-    empty = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})))
-    assert UsgsWaterAdapter(client=empty).probe(_POINT) is None
+def test_usgs_no_nearby_gauge_is_a_sourced_no_data_answer_not_an_outage() -> None:
+    # Three-way source-or-silence (Epic 018 S4 / CDP-02): a malformed document (no
+    # `features` key) is a parse failure → None; a well-formed `features: []` is the
+    # source ANSWERING "no monitoring location here" → a sourced no-data fact,
+    # distinguishable from an outage. Neither is ever a zero-flow reading.
+    malformed = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+    assert UsgsWaterAdapter(client=malformed).probe(_POINT) is None
+
+    answered_empty = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"features": []}))
+    )
+    fact = UsgsWaterAdapter(client=answered_empty).probe(_POINT)
+    assert isinstance(fact, VerifiedFact)
+    assert fact.source and fact.fetched_at is not None
+    assert fact.value["gauge_available"] is False
+    assert any("No USGS gauge" in d for d in fact.disclosures)
 
 
 @pytest.mark.parametrize("name,make,_check", CASSETTE_CASES, ids=_IDS)

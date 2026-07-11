@@ -101,6 +101,15 @@ class _Unavailable:
 
 
 @dataclass
+class _ConditionStatus:
+    kind: str
+    state: str
+    source: str = ""
+    checked_at: datetime | None = None
+    detail: str = ""
+
+
+@dataclass
 class _Card:
     canonical_id: str
     name: str
@@ -108,6 +117,7 @@ class _Card:
     lines: list[_Line]
     warnings: list[_Warning] = field(default_factory=list)
     unavailable: list[_Unavailable] = field(default_factory=list)
+    conditions: list[_ConditionStatus] = field(default_factory=list)
 
 
 @dataclass
@@ -175,6 +185,16 @@ def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) 
                         source="no source responded",
                         kind="water",
                     )
+                ],
+                conditions=[
+                    _ConditionStatus(
+                        kind="fire",
+                        state="no_hazard",
+                        source="FIRMS",
+                        checked_at=datetime(2026, 7, 1, 22, 0, tzinfo=timezone.utc),
+                    ),
+                    _ConditionStatus(kind="water", state="unavailable"),
+                    _ConditionStatus(kind="permits", state="not_fetched"),
                 ],
             ),
         ],
@@ -462,6 +482,21 @@ def test_plan_happy_path_contract(client: Any) -> None:
     assert reason["source"] == "AirNow"
     assert "hazardous" in reason["text"]
     assert reason["source"] in reason["text"]  # source-stamped
+
+    # Per-kind condition dispositions (Epic 018 S4 / CDP-02): distinct silence
+    # states ride the wire — an answered clear carries its source + timestamp,
+    # an un-probed kind says so, and neither is a blank the client must guess about.
+    assert card["conditions"] == [
+        {
+            "kind": "fire",
+            "state": "no_hazard",
+            "source": "FIRMS",
+            "checked_at": "2026-07-01T22:00:00+00:00",
+            "detail": "",
+        },
+        {"kind": "water", "state": "unavailable", "source": "", "checked_at": None, "detail": ""},
+        {"kind": "permits", "state": "not_fetched", "source": "", "checked_at": None, "detail": ""},
+    ]
 
     # Maps/terrain fields degrade to null when absent — never fabricated (Rule #1).
     assert card["geometry"] is None

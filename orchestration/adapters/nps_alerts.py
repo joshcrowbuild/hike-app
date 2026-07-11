@@ -5,8 +5,11 @@ is CLOSED / in danger." The NPS `/alerts` endpoint has no lat/lon/radius filter 
 design gap vs. RIDB), so "nearest park" is resolved in two calls: fetch the parks list
 once and pick the nearest centroid by haversine (within a radius cap — a distant match
 must not masquerade as "the local park"), then fetch that park's alerts and keep only
-the safety-relevant categories. TTL: ~1 hour. Source-or-silence: no park in range, no
-relevant alert, or any transport failure -> None, never a fabricated "open".
+the safety-relevant categories. TTL: ~1 hour. Source-or-silence, three-way (Epic 018
+S4 / CDP-02): a transport failure -> None (couldn't verify); no park within the radius
+-> a sourced `in_range: False` fact (the `no-data` silence state); zero relevant alerts
+for the nearest park -> a sourced `count: 0` fact (the `no-hazard` / checked-clear
+state). A fabricated "open" is never possible — clear is only ever an explicit answer.
 """
 
 from __future__ import annotations
@@ -105,10 +108,20 @@ def fetch(
     parks_doc = _http.get_json(c, PARKS_URL, params={"limit": 500})
     units = parks_doc.get("data") if isinstance(parks_doc, dict) else None
     if not units:
-        return None
+        return None  # transport/parse failure (or an empty catalog) — couldn't verify
     nearest = _nearest_park(units, lat, lon)
     if nearest is None:
-        return None
+        # The parks catalog ANSWERED and no unit centroid sits within the radius cap:
+        # a real, sourced "NPS doesn't cover this spot" — the CDP-02 `no-data` silence
+        # state, distinguishable from a failed probe (None above). The engine renders
+        # it as legible silence, never as a feed line (Epic 018 S4).
+        return VerifiedFact(
+            value={"in_range": False, "radius_miles": RADIUS_MILES},
+            source=SOURCE,
+            fetched_at=now or datetime.now(timezone.utc),
+            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            disclosures=(f"No NPS unit within {RADIUS_MILES:.0f} mi of this point.",),
+        )
     park_code = nearest.get("parkCode")
     full_name = nearest.get("fullName")
     if not park_code:
@@ -116,8 +129,8 @@ def fetch(
 
     alerts_doc = _http.get_json(c, ALERTS_URL, params={"parkCode": park_code})
     records = alerts_doc.get("data") if isinstance(alerts_doc, dict) else None
-    if not records:
-        return None
+    if records is None:
+        return None  # alerts sub-call failed — couldn't verify, never "no alerts" (rule #1)
 
     alerts = [
         {"title": a.get("title"), "category": a.get("category"), "url": a.get("url")}
@@ -125,7 +138,19 @@ def fetch(
         if isinstance(a, dict) and a.get("category") in _RELEVANT_CATEGORIES
     ]
     if not alerts:
-        return None
+        # The alerts endpoint ANSWERED with zero Closure/Danger alerts for the nearest
+        # unit: a verified "checked, nothing to flag" — the CDP-02 `no-hazard` /
+        # checked-clear silence state. Only an explicit source answer may claim clear
+        # (rule #1); the engine renders it as calm silence, not a "0 alerts" noise line.
+        return VerifiedFact(
+            value={"park": full_name, "park_code": park_code, "alerts": [], "count": 0},
+            source=SOURCE,
+            fetched_at=now or datetime.now(timezone.utc),
+            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            disclosures=(
+                "Park-level scope — the nearest NPS unit to this point, not trail-specific.",
+            ),
+        )
 
     return VerifiedFact(
         value={
