@@ -1,6 +1,6 @@
 # Epic 028 — GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅ *(shipped in PR #132 — serializer + endpoint + Send-to-device chip; live `GET /trail/{id}/export.gpx` verified serving well-formed GPX 1.1 on 2026-07-11; header had drifted at IN_PROGRESS)*
 **Phase:** 1 (Phase-A app-completeness; CoMaps borrow wave 2, item D4)
 **Spec refs:** CoMaps borrow plan §D4 (verifier corrections D4.2 / D4.3) · CLAUDE.md Rule #1 (source-or-silence) · Rule #5 (private-by-default overlay; share the derived conclusion, never the raw substrate) · Epic 016 (route geometry) · Epic 017 (3DEP elevation profile)
 **Depends on:** Epic 022, Epic 024 (merge AFTER both) — this PR is wave-2 and rides on their groundwork.

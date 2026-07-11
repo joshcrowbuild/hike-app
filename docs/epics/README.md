@@ -19,8 +19,8 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [013](epic-013-live-adapter-seam.md) | LiveAdapter seam (kind-keyed registry, failover, Valhalla drive-time, TTL) | DONE ✅ | 1 | Epic 003 |
 | [014](epic-014-overlay-egress-and-viewer-auth.md) | Private-overlay egress + viewer-auth hardening (C3 + C4) | DONE ✅ | 1 | Epic 003 |
 | [015](epic-015-ci-neo4j-integration.md) | CI Neo4j integration (live owner-isolation guardrail; separate required leg) | DONE ✅ | 1 | Epic 011 |
-| [016](epic-016-maps-and-terrain.md) | Maps & terrain (topographic Detail map · route · elevation profile) | DEFINED | 1 | Epic 013 · 017 (S5) |
-| [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | IN_PROGRESS | 1 | Epic 012 · `geom_wkt` |
+| [016](epic-016-maps-and-terrain.md) | Maps & terrain (topographic Detail map · route · elevation profile) | DONE ✅ | 1 | Epic 013 · 017 (S5) |
+| [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | DONE ✅ | 1 | Epic 012 · `geom_wkt` |
 | [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced weather/water/air/fire/permits + four-state silence) | DEFINED | 1 | Epic 013 · #53/#54 |
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | DONE ✅ | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | DONE ✅ | A | — |
@@ -28,7 +28,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [025](epic-025-validity-exclusions.md) | Wire geometry/null-island validity into the load path + externalize trail-filter denylists to config | DONE ✅ | A | Epics 023 · 030 |
 
 | [024](epic-024-schema-format.md) | Schema-format axis (integer `schema_format` on `:Meta` + API startup gate via /health disclose) | DONE ✅ | A | — |
-| [028](epic-028-gpx-export.md) | GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail (CoMaps borrow §D4) | IN_PROGRESS | 1 | Epic 022 · 024 |
+| [028](epic-028-gpx-export.md) | GPX export (`GET /trail/{id}/export.gpx`) + Send-to-device on Detail (CoMaps borrow §D4) | DONE ✅ | 1 | Epic 022 · 024 |
 
 | [027](epic-027-facet-ingest-diff.md) | Per-facet leveled ingest-diff check (within-run) + stats on /health | DONE ✅ | A/B | Epic 024 |
 | [038](epic-038-trail-search-geocoder.md) | Trail-name search + geocoder seam (B001) — spec-complete spike, no product code | DONE ✅ | E | — |

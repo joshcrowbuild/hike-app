@@ -2,11 +2,13 @@
 
 *Living status doc. Owned by the PM/planner lane. Terse by design — delete stale entries, wrong memory is worse than none (CLAUDE.md).*
 
-**Last verified:** 2026-07-01 · **Owner:** PO (product-owner lane) · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v11
+**Last verified:** 2026-07-11 · **Owner:** PO (product-owner lane) · **Repo:** `joshcrowbuild/hike-app` · **Baseline:** tag `v0.1-phase1` @ `c12be36` · `main` is the protected line · **Version:** v12
 
 > **◆ PHASE-1 BASELINE + DOCS OVERHAUL — both complete; `main` is the single line.** Phase-1 build is done (backend personalization + design-system + the personal-intelligence app UX, all verified honest) and collapsed onto `main`, tagged `v0.1-phase1`. Repo is on the `joshcrowbuild` Team org; `main` is the default + protected branch with **7 required CI checks**: `format-check` · `lint` · `typecheck` · `test` · `integration (neo4j)` · `workflow-lint` · `docs-lint`. No force-push/delete; admin override retained. All merged feature branches swept (only `main` remains remote). **The documentation overhaul is complete** (PRs #27–30): 55 live docs (down from 60), ~115KB of closed history archived, 0 broken links, a lean always-load hot path, and a CI `docs-lint` gate that **fails the build on wrong memory** (stale-marker denylist · broken-link check · auto-generated epic index). **Go-forward model:** feature branches off `main`; lanes are conventions, not long-lived branches.
 
 > **◆ HOSTED & LIVE — dogfood #1 CLOSED; the primary surface now serves clean data (v11).** Full stack deployed: Vercel → Render API → Aura; maps+terrain (016/017) serve real geometry + 3DEP elevation; Cypher-25/provider/TLS fixed (#41/#44). **This round:** the corpus-filter fix landed (#56 — a ref-keyed disqualifier for TIGER-mis-imported numbered state routes, a `wellness` token for the institutional-footway class, and a stale-node prune in `graph/load.py`), and the overnight re-ingest applied it (corpus 1532 → **1481**, the right direction). **Verified on live /plan near Front Royal (38.918,-78.194):** no SR/CR state routes, no "Snake Road"/"Little Loop Road"/"Andreae" — and real trails serve (Dickey Ridge, Fox Hollow, Snead Farm Loop, Front Royal Connector), with legit fire roads (Compton Gap Road, `ref=None`) correctly kept. Cold-start fixed (#52) and **Render upgraded to the always-on paid tier — instance no longer idles, cold-start eliminated**; /plan secured (#53), corroboration wired (#54), API tests merged (#57). **Live-reliability finding (2026-07-01):** /plan intermittently 500'd on a first-after-idle request (dogfood: 1 fail → then 12/12 incl. 6 concurrent = 200); always-on + the 5s `/health` graph-probe now keep the Aura pool warm, and a hardening lane (`claude/plan-reliability`, in flight) adds driver + provider transient-retry so a blip self-heals. **New watch item — candidate dogfood #2, NOT the systemic TIGER class:** residential-style "Lane" names survive (Turkey Lane, Yard Bird Lane) — they carry no SR/CR `ref`, so they're outside #56's filter and need a separate signal. Rule still holds: **substrate before surface.** Verdict: honestly-good on the core surface; now iterate the long tail.
+
+> **◆ OSS-BORROW WAVE + LATENCY WAVE-1 LANDED; DASHBOARD RECONCILED (v12, 2026-07-11).** ~30 PRs merged since v11 (#112–#155). The CoMaps-borrow build wave shipped: 022 duration-truth · 023 agency-length · 024 schema-format · 025 validity-exclusions · 027 facet ingest-diff · **030 slug-collision guard + re-runnable audit (the Phase-A landmine — closed)** · 031 GPX reader · 032 grade-aware ETA · 033 OpenTopoData fallback · 034 NPS closures adapter · 035 OSM water overlay · 036 pyosmium transport · **028 GPX export** (endpoint + Send-to-device; live endpoint verified serving well-formed GPX 1.1). Also: 038 search spike (B001, spec-complete) · 037 Open-Meteo failover spike (**downstream build BLOCKED on a PO commercial-license decision**) · 039 latency Wave 1 (returning paint 0.385s) · **B010 trail-connectivity research + spike (#155, parked at Phase E, `ready`)**. Corpus after the wave's re-ingests: see `STATUS.md` (refreshed 2026-07-11 — counts live there per G4; headline: ~2.2k trails, schema 0.2.0). **Live /plan re-verified 2026-07-11 (anonymous, Front Royal):** 8 real cards, each carrying sourced+timestamped NWS weather + USGS gauge lines with honest single-source labels; no TIGER junk and no residential-"Lane" names observed in the top-8 (a *targeted* dogfood-#2 check is still owed before calling that class closed). **Drift fixed this pass:** 016/017/028 epic headers flipped to DONE (they had shipped; statuses never flipped — index regenerated). The v11 "cards thin/anonymous (`lines:[]`)" claim is obsolete — cards are no longer thin; what remains of that thread is Epic 018's *completeness* (four-state silence + closures/AQI/fire kinds on the card — much of its substrate shipped via 034/035, so 018 needs a scope reconcile before build). The `claude/plan-reliability` lane's branch no longer exists on origin and its outcome is unverified in this pass — treat "in flight" mentions below as historical.
 
 > Companion to `docs/workplan.md` (the 11-stage agenda + threads T1–T7) and `docs/epics/README.md` (epic index — now generated from epic headers). This doc aggregates *live* state across lanes; the workplan is the plan, the index is the per-epic source of truth, this is the dashboard. New here? Start at `docs/README.md` (the doc map).
 
@@ -22,7 +24,9 @@
 > - **Corroboration** (CDP-01) — wired in #54 but unsurfaced (no user value yet); honest single-source labels only.
 > - **Defend-and-secure /plan** — #53 (rate-limit + obs); deploy caveat: `/health` 60/min collapses to one bucket behind Render's proxy — confirm probe + warm-ping cadence <60/min.
 
-Lanes #51–57 landed clean and merged (incl. Epic 008 API tests, #57). **In flight:** `claude/plan-reliability` (transient-retry hardening of /plan). **Behind Phase A, still design-gated:** 006 (novelty), 007 (readiness), 009 (eval). **Still unmeasured:** R5 cost spike.
+**Where that leaves Phase A (v12 read):** substantially paid down — the audit/identity trio (023/025/030) + deterministic ingest transport (036) + ingest-diff gate (027) landed; corroboration wired (#54); /plan defended (#53) and fast for returning visitors (039). **Still open, near-term:** ① verify the plan-reliability outcome (branch gone from origin, no merged PR found — confirm or re-open); ② R5's cost half (read `feed_cache_hit` + est_tokens from Render logs — small ops task); ③ a *targeted* dogfood-#2 check (residential-"Lane" class not seen in today's top-8; unconfirmed as systematically closed); ④ Epic 018 scope reconcile (cards already carry NWS+USGS lines — 018's remaining value is the four silence states + closures/AQI/fire kinds on the card).
+
+**The strategic fork is now open (PO → Josh):** with Phase A paid down, the next big lane is either **Phase B** (defend the claim: golden trips + cassettes as a CI regression gate — Epic 009's regression half; source-or-silence is currently undefended on PRs) or the **Phase C pivot** (real auth + episode intake — the "make it real for one real user" move; the Supabase decision brief awaits PO sign-off). Design-gated as before: 006 (novelty, needs a `been_on` producer), 007 (readiness, needs a design session). Parked at Phase E: B010 connectivity (`ready`), B001/B005 builds.
 
 ---
 
@@ -40,7 +44,7 @@ Lanes #51–57 landed clean and merged (incl. Epic 008 API tests, #57). **In fli
 | 7 Eval deep-dive | 1 | ✅ | ❌ | Methodology designed (on `main`); Epic 009 **DEFINED**; harness unbuilt |
 | 8 Multiplayer | 2 | ✅ | ❌ | Designed (on `main`); gated by always-on infra + auth provider (R3/R7) |
 | 9 Commons | 3 | ✅ | 🔶 | Write half accreting (010 on `main`); read/aggregation dormant; **gated by T6** |
-| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped, **live serving clean data** | design-system + **app UX** + **Maps (016/017)** on `main`; hosted Vercel→Render→Aura. **Corpus junk (dogfood #1) CLOSED** (#56 filter + re-ingest, verified on /plan); **cold-start eliminated** (#52 + Render always-on paid). Remaining: cards thin/anonymous (viewer=`anonymous`, `lines:[]`); a transient-500 hardening lane in flight; residential-"Lane" tail (dogfood #2). Gate G1/G2 |
+| 10 Experience/design-system | 4 | ✅ v0.1 | 🔶 shipped, **live serving clean data** | design-system + **app UX** + **Maps (016/017)** on `main`; hosted Vercel→Render→Aura. **Corpus junk (dogfood #1) CLOSED** (#56 filter + re-ingest, verified on /plan); **cold-start eliminated** (#52 + Render always-on paid). Remaining (v12): personalization is anonymous-only until Phase-C auth; Epic 018 completeness (silence states + closures/AQI/fire kinds — cards *do* carry sourced NWS+USGS lines, verified live 2026-07-11); targeted dogfood-#2 check owed. Gate G1/G2 |
 | 11 Native shell | 4 | ❌ | ❌ | Not started |
 
 ---
@@ -105,7 +109,8 @@ DONE & BASELINED ─────────────────────
 LIVE ✅ — real-data path complete (R7 API-hosting done)
   ✅ frontend = Vercel · ✅ DB = Aura (1481 trails) · ✅ API on Render (always-on paid) · ✅ Vercel flipped
   ✅ real trails on the phone · ✅ dogfood #1 closed (#56 + re-ingest) · ✅ cold-start eliminated
-  ▶ IN FLIGHT: claude/plan-reliability — transient graph+provider retry so /plan self-heals a blip
+  ✅ OSS-borrow wave (022-036) + GPX export (028) + latency Wave 1 (039) — see v12 block above
+  ❓ plan-reliability outcome unverified (branch gone from origin; confirm or re-open)
 
 BEHIND IT — the design-gated Phase-1 remainder
   Epic 008 (API tests)  ── SMALL: write its epic-with-ACs, ratify → buildable (no deps)
@@ -118,10 +123,10 @@ OTHER OPEN
   Watch-poller host       ── the one still-deferred piece of R7 (Garmin sync; not needed to browse)
 ```
 
-**Next-up by lane:**
-- **Live & clean (done):** hosted end-to-end on always-on Render; dogfood #1 (junk trails) closed. **Now:** ① harden reliability (`claude/plan-reliability`, in flight) so a first-after-idle blip self-heals; ② the thin-cards surface gap (viewer=`anonymous`, `lines:[]` — cards render anonymous + condition-less); ③ dogfood #2 (residential "Lane" tail). Then let the next dogfood findings set priorities.
-- **Hardening follow-ups (build lane, post-live):** audit the 1643→1458 slug merge; commit `apply_schema.py` + the `python3`/preflight tooling fixes; drop the seeded Old Rag duplicate.
-- **Behind that (your design call, when ready):** Epic 007 (readiness — biggest, safety-adjacent), Epic 006's `been_on` producer, or Epic 008's epic-with-ACs.
+**Next-up by lane (v12):**
+- **Build lane:** ① **Epic 018 reconcile + finish** — inventory what 034/035/#54 already shipped vs. the epic's silence-states + remaining condition kinds, trim the epic, build the delta (the last honesty gap on the live card); ② **Epic 009's regression half** — golden trips + cassettes as a required CI gate (Phase B; the central source-or-silence claim is currently undefended on every PR); ③ small ops: R5 cost read from Render logs; verify/close the plan-reliability thread.
+- **PO decisions (Josh, in unlock order):** ① **auth provider sign-off** (Supabase brief on `main` — unlocks the Phase-C pivot, the biggest strategic move on the board); ② **Open-Meteo commercial license** (unblocks Epic 037's downstream build); ③ **readiness (007) design session** (safety-adjacent, Phase D).
+- **Parked, on purpose:** B010 connectivity (`ready`, Phase E) · B001 search build (spike done, Phase E) · B005 route drawing (Phase E) · commons read half (Stage 9, gated on T6/R1).
 
 ---
 

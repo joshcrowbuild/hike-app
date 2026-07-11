@@ -1,6 +1,6 @@
 # Epic 017 — Terrain elevation enrichment (USGS 3DEP profiles)
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅ *(shipped in PR #39 — enrichment loader + 3DEP profiles live in Aura; header had drifted at IN_PROGRESS — flipped 2026-07-11)*
 **Owner:** Lane A (backend) — started 2026-06-26
 **Phase:** 1 (pulled forward — the backend prerequisite for Epic 016 Maps)
 **Spec refs:** `stage-1-data-sources` (USGS 3DEP = elevation/grade) · `stage-3-corpus-pipeline` §7 (enrichment joins — the "second kind" of source) · Epic 012 (CorpusSource seam, which this extends) · **Epic 016** (the consumer: the elevation profile chart) · CLAUDE.md Rule #1 (source-or-silence) · Rule #3 (graph holds slow/structural data) · Rule #7 (provenance + timestamp)
