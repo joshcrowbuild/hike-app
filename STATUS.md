@@ -5,10 +5,10 @@ judgement, and next-work live in [`docs/process/roadmap.md`](docs/process/roadma
 For real-time state, GET `https://adventure-planner-api.onrender.com/status`. For how the claude fleet operates, see
 [`docs/process/agent-operating-model.md`](docs/process/agent-operating-model.md).*
 
-**As of:** `main@50c9b44ca` (2026-07-01T08:15:25-04:00) · refreshed 2026-07-01T12:19:44+00:00
+**As of:** `main@84ad85980` (2026-07-11T12:18:09-04:00) · refreshed 2026-07-11T16:23:56+00:00
 
 ## Live substrate
-- **Corpus:** 1481 canonical trails · 24 trailheads · 1637 source records · schema `0.1.0`
+- **Corpus:** 2206 canonical trails · 45 trailheads · 2706 source records · schema `0.2.0`
 - **Region:** `shenandoah-gwj`
 - **API:** https://adventure-planner-api.onrender.com — live
 

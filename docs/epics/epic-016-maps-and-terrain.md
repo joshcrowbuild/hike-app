@@ -1,6 +1,6 @@
 # Epic 016 — Maps & Terrain (topographic Detail map · route · elevation profile)
 
-**Status:** DEFINED
+**Status:** DONE ✅ *(shipped in PR #38, verified live; header had drifted at DEFINED — flipped 2026-07-11 to match roadmap/reality)*
 **Phase:** 1 (pulled forward — first dogfood finding; realizes the Stage-10 Detail spec)
 **Spec refs:** `home-curation-prototype-spec-v0.3` §C3 + Detail block `[2. map / terrain]` · `stage-1-data-sources` (OSM geometry spine, USGS 3DEP elevation) · CLAUDE.md Rule #1 (source-or-silence) · Rule #2 (confidence) · Rule #4/#5 (access-scoped personal data) · T6 / roadmap R1 (ODbL licensing)
 
