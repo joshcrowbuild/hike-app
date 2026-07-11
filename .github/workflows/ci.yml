@@ -107,6 +107,30 @@ jobs:
           path: frontend/coverage/lcov.info
           if-no-files-found: ignore
 
+  a11y:
+    # The Phase-B a11y baseline gate: axe over every story of the
+    # safety-relevant honesty primitives (Confidence / Signal / Staleness),
+    # composed via composeStories so the real story args are what's audited.
+    # BLOCKING — the surface was axe-clean at introduction, and the harness
+    # was falsification-checked (a planted alt-less <img> trips it).
+    name: a11y (axe, safety stories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Generated design tokens — the vanilla-extract styles import them.
+      - run: npm run tokens
+      - run: npm run test:a11y
+
   integration:
     name: integration (neo4j)
     runs-on: ubuntu-latest
