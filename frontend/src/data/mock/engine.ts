@@ -15,7 +15,7 @@ import type { Trail, TuningState } from '../../types'
 import { buildTrailGeo } from './geoFixtures'
 
 /** Base trail records; the sample route + elevation profile is attached below. */
-const BASE_TRAILS: Omit<Trail, 'geo'>[] = [
+const SAMPLE_TRAILS: Omit<Trail, 'geo'>[] = [
   {
     id: 'stony-man',
     name: 'Stony Man Loop',
@@ -168,6 +168,13 @@ const BASE_TRAILS: Omit<Trail, 'geo'>[] = [
     promptTerms: ['views', 'summit', 'ridge', 'short'],
   },
 ]
+
+// Dev-gate (Phase B "kill dummy messaging"): on a production build
+// `import.meta.env.PROD` is statically replaced with `true`, this folds to `[]`,
+// and the now-unreferenced SAMPLE_TRAILS literal is dead-code-eliminated from
+// the bundle — so sample trails structurally cannot render as verified ones,
+// even if a misconfigured deploy reached the mock engine.
+const BASE_TRAILS: Omit<Trail, 'geo'>[] = import.meta.env.PROD ? [] : SAMPLE_TRAILS
 
 /**
  * The mock trail set — each base record enriched with its sample route geometry

@@ -15,9 +15,10 @@ import { HttpPlannerClient } from './http/httpPlanner'
 import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
+import { USE_MOCK } from './useMock'
 import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
 
-const useMockDefault = import.meta.env.VITE_USE_MOCK !== 'false'
+const useMockDefault = USE_MOCK
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
 /** The most recent successfully-resolved feed + the tuning that produced it,

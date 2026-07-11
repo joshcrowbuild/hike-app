@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import type { Coords } from '../types'
 import type { RegionsResponse } from './api'
 import { haversineMeters } from './geo'
+import { USE_MOCK } from './useMock'
 
 export interface OriginOption extends Coords {
   key: string
@@ -32,7 +33,7 @@ export interface RegionCatalogEntry {
   origins: OriginOption[]
 }
 
-const useMockDefault = import.meta.env.VITE_USE_MOCK !== 'false'
+const useMockDefault = USE_MOCK
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
 // Mock-mode fixture only (see module docstring) — the real app never reads this;
