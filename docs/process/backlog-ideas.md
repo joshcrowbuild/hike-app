@@ -221,6 +221,6 @@ Build-state caveat the review flags: Confidence/Staleness are *not yet built* as
 
 **Collisions / synergy:** hard-gated on **Phase A identity stability** (same collision as CoMaps E1 — noding re-cuts segment identity); companions: E1 (OSM relations = tier-2 named routes), E3 (POI anchors), **B005** (same junction substrate — topology-first makes B005 mostly UI), B001/B002 (the spatial-query axis).
 
-**Open questions:** are unnamed connectors (fire roads, horse trails) even in the corpus? (fetch is named-ways-only — possibly the real long pole) · `:Route` in the feed vs. Detail-screen "extensions & loops" tray first · route identity per (trailhead, direction) vs. variants-on-one.
+**Open questions:** ~~are unnamed connectors even in the corpus?~~ (answered — spike §9: flagship connectors are named and already ingested; unnamed in-boundary ways should join as connector-class network edges) · `:Route` in the feed vs. Detail-screen "extensions & loops" tray first · route identity per (trailhead, direction) vs. variants-on-one.
 
-**Ripeness:** `shaped` — research done, spike defined (one-region offline notebook; falsification target: rediscover the NPS Cedar Run–Whiteoak Circuit from structure alone and rank it top-3). Next step is the spike, post-Phase-A.
+**Ripeness:** `ready` — spike executed 2026-07-11 and **falsification target passed** (enumerator rediscovered the NPS Cedar Run–Whiteoak Circuit from structure alone, ranked #1; 38 total cycles in 0.1 s — no explosion). PO decisions logged: Layer-1 topology is the first slice, built at Phase E alongside E1. Next step: write the Layer-1 epic when Phase E opens.
