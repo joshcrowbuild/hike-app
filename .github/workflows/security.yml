@@ -13,12 +13,15 @@ concurrency:
 permissions:
   contents: read
 
-# Phase B CI security scanning (path-to-complete §Phase B). bandit and
-# secret-scan are BLOCKING: their historical findings are triaged to zero
-# (B324 sha1 call sites carry usedforsecurity=False, the B310 urlopen sites
-# carry audited nosec markers, and .gitleaks.toml value-pins the known dummy
-# test credentials). pip-audit stays ADVISORY (continue-on-error): it flags
-# unpinned transitive deps we don't control release timing for.
+# Phase B CI security scanning (path-to-complete §Phase B). bandit,
+# secret-scan, and pip-audit are all BLOCKING: bandit/gitleaks historical
+# findings are triaged to zero (B324 sha1 call sites carry
+# usedforsecurity=False, the B310 urlopen sites carry audited nosec markers,
+# and .gitleaks.toml value-pins the known dummy test credentials), and
+# pip-audit audits the committed lockfile (requirements.txt — every
+# transitive pinned; 2026-07-12 review lane 5), which passed clean at flip
+# time. Regenerate the lockfile after a dependency change with:
+#   uv pip compile pyproject.toml --all-extras -o requirements.txt --python-version 3.11
 jobs:
   bandit:
     name: bandit
@@ -37,23 +40,20 @@ jobs:
       - run: bandit -r api graph ingestion orchestration evals scripts --severity-level medium
 
   pip-audit:
-    name: pip-audit (advisory)
+    name: pip-audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip pip-audit
-      # Audit the full resolved environment (all extras) so serve-time and
-      # ingestion dependencies are both covered. --skip-editable skips the
-      # local adventure-planner package itself (not on PyPI).
-      - run: python -m pip install -e ".[all]"
-      - run: pip-audit --skip-editable
+      # Audit the committed lockfile: it resolves ALL extras, so serve-time and
+      # ingestion dependencies are both covered without installing the heavy
+      # geo stack. --no-deps because the file is already a complete transitive
+      # closure — nothing needs re-resolving.
+      - run: pip-audit -r requirements.txt --no-deps
 
   secret-scan:
     name: secret-scan
