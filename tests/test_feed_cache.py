@@ -225,3 +225,36 @@ def test_max_entries_zero_or_negative_degrades_to_one_never_crashes() -> None:
         hit = cache.get(("r", 38.5, -78.4, 10))
         assert hit is not None and _tag(hit) == "b"
         assert cache.get(("q", 38.5, -78.4, 10)) is None
+
+
+# ── Epic 039 B5: peek (the warmer's skip-if-warm probe) ──
+
+
+def test_peek_never_moves_stats_or_evicts() -> None:
+    clock = [0.0]
+    cache = FeedCache(ttl_s=10.0, clock=lambda: clock[0])
+    key = ("q", 38.5, -78.4, 10)
+
+    assert cache.peek(key) is False  # absent
+    cache.put(key, _plan("a"))
+    assert cache.peek(key) is True  # fresh
+
+    clock[0] = 10.001
+    assert cache.peek(key) is False  # expired reads as cold...
+    assert len(cache._store) == 1  # ...but eviction stays get()'s business
+
+    assert cache.stats.hits == 0 and cache.stats.misses == 0  # peeks are uncounted
+
+
+def test_peek_horizon_reads_soon_to_expire_as_cold() -> None:
+    # The warmer's re-prime lookahead (Epic 039 B5 self-review fix): an entry that
+    # will expire within `horizon_s` is already cold for the warmer's purposes.
+    clock = [0.0]
+    cache = FeedCache(ttl_s=10.0, clock=lambda: clock[0])
+    key = ("q", 38.5, -78.4, 10)
+    cache.put(key, _plan("a"))  # expires at 10.0
+
+    assert cache.peek(key, horizon_s=5.0) is True  # outlives the horizon
+    assert cache.peek(key, horizon_s=10.0) is False  # dies within it → cold
+    clock[0] = 6.0
+    assert cache.peek(key, horizon_s=5.0) is False  # 4s left < 5s horizon

@@ -139,6 +139,24 @@ def _prewarmed_api(monkeypatch: Any) -> Any:
     warmed.ok.set()
     monkeypatch.setattr(app_mod, "_start_warmup", lambda *a, **k: None)
     monkeypatch.setattr(app_mod, "_warmup", warmed)
+
+    # The feed warmer (Epic 039 B5) must never spawn here either: lifespan wires it
+    # to the pre-opened gate above, and a real warm loop would run build_runtime +
+    # engine.plan against the AMBIENT environment — real Aura/provider credentials
+    # if a .env is exported into the test shell (the exact 2026-07-01 hazard class).
+    # The NAME bound in api.app is replaced (not the class itself), so the warmer's
+    # own unit tests (test_feed_warmer.py) still exercise the real start() with fakes.
+    class _StubFeedWarmer:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._thread = None
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr(app_mod, "FeedWarmer", _StubFeedWarmer)
     yield
 
 

@@ -231,3 +231,17 @@ def test_s2_ac10_feed_cache_ttl_zero_disables() -> None:
     # Runtime.feed_cache at None (a byte-identical no-op).
     s = Settings.from_env({"ADVENTURE_ANON_FEED_CACHE_TTL_S": "0"})
     assert s.feed_cache_ttl_s == 0.0
+
+
+# ── Epic 039 B5: default-frame feed warmer cadence ──
+
+
+def test_b5_feed_warm_interval_default_and_override() -> None:
+    assert Settings.from_env({}).feed_warm_interval_s == 240.0
+    s = Settings.from_env({"ADVENTURE_FEED_WARM_INTERVAL_S": "600"})
+    assert s.feed_warm_interval_s == 600.0
+
+
+def test_b5_feed_warm_interval_zero_disables() -> None:
+    # 0 is the warmer's kill switch — FeedWarmer.start() then never spawns a thread.
+    assert Settings.from_env({"ADVENTURE_FEED_WARM_INTERVAL_S": "0"}).feed_warm_interval_s == 0.0

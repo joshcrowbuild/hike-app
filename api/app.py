@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 
+from api.feed_warmer import FeedWarmer
 from api.gpx import build_gpx
 from api.observability import (
     PlanMetrics,
@@ -102,6 +103,7 @@ class SchemaFormatError(RuntimeError):
 # Module-level singletons populated at startup
 _settings: Settings | None = None
 _graph_client: GraphClient | None = None
+_feed_warmer: FeedWarmer | None = None
 
 
 class _WarmupState:
@@ -216,7 +218,7 @@ def _start_warmup(settings: Settings, graph_client: GraphClient) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
-    global _settings, _graph_client
+    global _settings, _graph_client, _feed_warmer
     # Coherent process logging (Phase B): without this, the API process has no
     # logging config at all and INFO lines (the /plan cost metrics, warm-up
     # completion) never reach the deploy's log stream — only WARNING+ escapes
@@ -225,8 +227,21 @@ async def lifespan(app: FastAPI) -> Any:
     _settings = Settings.from_env()
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
     _start_warmup(_settings, _graph_client)
+    # Default-frame feed warmer (Epic 039 B5): parks behind the warm-up readiness
+    # gate, then keeps the anonymous feed cache primed for each region's default
+    # frame on a cadence. Never blocks startup (daemon thread); 0-interval or a
+    # disabled feed cache makes start() a logged no-op.
+    _feed_warmer = FeedWarmer(
+        _settings,
+        _graph_client,
+        ready=_warmup.ok,
+        interval_s=_settings.feed_warm_interval_s,
+    )
+    _feed_warmer.start()
     yield
     _warmup.stop.set()
+    if _feed_warmer is not None:
+        _feed_warmer.stop()
     if _graph_client:
         _graph_client.close()
 

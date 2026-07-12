@@ -105,6 +105,12 @@ class PlanMetrics:
     # `cache_misses` below already read as zero on a hit without any special-casing,
     # since `probe_stats_before`/`_after` are unchanged when no probe ran.
     feed_cache_hit: bool = False
+    # Default-frame feed warmer (Epic 039 B5): True when this run was the warmer's
+    # own in-process self-invocation rather than a viewer's request. The warmer
+    # spends real LLM tokens + probe quota on the viewer's behalf ahead of time —
+    # this flag keeps that spend measured under its own tag, never hidden inside
+    # (or mistaken for) organic request traffic.
+    warmed: bool = False
 
     @property
     def cache_misses(self) -> int:
@@ -157,7 +163,7 @@ class PlanMetrics:
         logger.info(
             "plan viewer=%s latency_ms=%.1f cards=%d cache=%d->%d miss=%d warm=%s "
             "live_calls=%d cache_hits=%d wall_by_kind=%s est_tokens=%d est_cost_usd=%.6f "
-            "feed_cache_hit=%s",
+            "feed_cache_hit=%s warmed=%s",
             self.viewer_tag,
             self.latency_ms,
             self.card_count,
@@ -171,4 +177,5 @@ class PlanMetrics:
             self.est_tokens,
             self.est_cost_usd,
             self.feed_cache_hit,
+            self.warmed,
         )

@@ -19,6 +19,7 @@ production collaborators from config + clients (needs a live environment to actu
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -394,7 +395,16 @@ def plan_from_origin(
         notices = (res.disclosure,) if res.disclosure else ()
 
     # CDP-01: distinct-origin corroboration per candidate from the SAME_AS corpus layer.
-    corr_by_id, sources_by_id = _corpus_corroboration(candidates, session)
+    # B4 (Epic 039 mitigation ladder): this read is independent of the live-probe
+    # fan-out below, so it runs on one worker thread concurrently with the fan-out
+    # instead of adding its own serial graph round trip. Thread-safe because
+    # `ScopedSession.run` opens a fresh driver session per call (graph/client.py
+    # read_runner; the neo4j Driver itself is thread-safe) and nothing else touches
+    # `session` until the result is joined after the fan-out. Same function, same
+    # inputs, joined at the same consumption point — byte-identical outputs.
+    corr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="corroboration")
+    corr_future = corr_pool.submit(_corpus_corroboration, candidates, session)
+    corr_pool.shutdown(wait=False)  # no more work; the thread exits once the read completes
 
     # Which point kinds the Verifier will actually attempt — lets the guardrails tell
     # "weather probed but no source answered" (unverifiable → disclosed on the card,
@@ -421,6 +431,10 @@ def plan_from_origin(
     facts_by_candidate = verify_batch(
         probe_points, probes, cache=cache, max_workers=probe_max_workers
     )
+    # Join the overlapped corroboration read. `_corpus_corroboration` catches its own
+    # read failures (degrading to the honest count-as-1 baseline, rule #6), so this
+    # `result()` re-raises nothing in practice — the degrade path is unchanged.
+    corr_by_id, sources_by_id = corr_future.result()
 
     planned: list[PlannedTrail] = []
     set_aside: list[SetAsideTrail] = []
