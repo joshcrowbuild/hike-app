@@ -33,13 +33,15 @@ _VALID_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 # based on purpose: the filter must not need the live key values to do its job, and
 # it keeps masking if a key is rotated mid-process.
 _SECRET_URL_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    # FIRMS map key: the path segment right after /api/area/csv/.
+    # FIRMS map key: the path segment right after /api/area/csv/. "***" is the repo's
+    # existing mask convention (orchestration/adapters/_http.py), which also makes
+    # re-masking an already-masked line a no-op.
     (
         re.compile(r"(firms\.modaps\.eosdis\.nasa\.gov/api/area/csv/)[^/\s\"]+"),
-        r"\1[redacted]",
+        r"\1***",
     ),
     # AirNow (and any other) API_KEY-style query param, case-insensitive.
-    (re.compile(r"(?i)\b(api_key=)[^&\s\"']+"), r"\1[redacted]"),
+    (re.compile(r"(?i)\b(api_key=)[^&\s\"']+"), r"\1***"),
 )
 
 
@@ -104,11 +106,16 @@ def setup_logging(level: str | None = None) -> None:
         resolved = "INFO"
     logging.basicConfig(level=resolved, format=_LOG_FORMAT)
     logging.getLogger().setLevel(resolved)
-    # httpx (and its transport, httpcore) log each request line at INFO with the full
-    # URL — for FIRMS/AirNow that URL carries the API key (2026-07-12 review). Mask at
-    # the emitting logger so no handler ever sees the key. Same idempotence contract
-    # as basicConfig above: never stack a duplicate filter on a re-run lifespan.
-    for name in ("httpx", "httpcore"):
-        http_logger = logging.getLogger(name)
-        if not any(isinstance(f, SecretUrlRedactionFilter) for f in http_logger.filters):
-            http_logger.addFilter(SecretUrlRedactionFilter())
+    # httpx logs each request line at INFO with the full URL — for FIRMS/AirNow that
+    # URL carries the API key (2026-07-12 review). Mask at the emitting logger so no
+    # handler ever sees the key. A logger-level filter does NOT see records from child
+    # loggers (httpcore emits via httpcore.http11 etc., where a filter on "httpcore"
+    # would be a silent no-op — self-review finding), so the root handlers get the
+    # filter too: every propagated record from any logger passes through them. Same
+    # idempotence contract as basicConfig above: never stack a duplicate filter.
+    httpx_logger = logging.getLogger("httpx")
+    if not any(isinstance(f, SecretUrlRedactionFilter) for f in httpx_logger.filters):
+        httpx_logger.addFilter(SecretUrlRedactionFilter())
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters):
+            handler.addFilter(SecretUrlRedactionFilter())

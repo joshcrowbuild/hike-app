@@ -132,6 +132,34 @@ class TestSecretUrlRedaction:
         setup_logging("INFO")
         filters = logging.getLogger("httpx").filters
         assert sum(isinstance(f, SecretUrlRedactionFilter) for f in filters) == 1
+        for handler in logging.getLogger().handlers:
+            assert sum(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters) == 1
+
+    def test_root_handlers_carry_the_filter_for_child_logger_records(self) -> None:
+        # A logger-level filter never sees a CHILD logger's records (httpcore emits via
+        # httpcore.http11 etc. — self-review finding), so coverage for those comes from
+        # the root handlers, which every propagated record passes through.
+        from orchestration.logsafe import SecretUrlRedactionFilter
+
+        setup_logging("INFO")
+        assert logging.getLogger().handlers, "setup_logging must configure a root handler"
+        for handler in logging.getLogger().handlers:
+            assert any(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters)
+
+        # And a filtered handler masks an httpcore.http11-style record end-to-end.
+        capturing = _CapturingHandler()
+        capturing.addFilter(SecretUrlRedactionFilter())
+        child_logger = logging.getLogger("httpcore.http11")
+        child_logger.addHandler(capturing)
+        try:
+            child_logger.info(
+                "send_request_headers.started request=<Request [b'GET'] %s>",
+                "https://www.airnowapi.org/aq/observation/?API_KEY=secret-airnow-key",
+            )
+        finally:
+            child_logger.removeHandler(capturing)
+        assert capturing.messages
+        assert not any("secret-airnow-key" in m for m in capturing.messages)
 
 
 class TestNoRawIdentifiersInLogs:
