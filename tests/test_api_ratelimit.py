@@ -203,7 +203,10 @@ def test_outcome_write_endpoint_is_rate_limited(client, monkeypatch) -> None:
     # adjacent endpoint). A 404 still counts against the limiter — the limit fires before
     # the route body — so we can prove the bound without a real episode.
     monkeypatch.setenv("ADVENTURE_RATELIMIT_OUTCOME", "1/hour")
-    body = {"overall": 4}
+    # A schema-valid body: a 422 short-circuits before the limiter counts the call
+    # (overall is edge-validated ge=1/le=3 since the 2026-07-12 review), so the probe
+    # must pass validation and reach the route (404 on the unknown episode).
+    body = {"overall": 3}
     first = client.post("/episode/ep-unknown/outcome", json=body)
     second = client.post("/episode/ep-unknown/outcome", json=body)
     assert first.status_code != 429  # first call reaches the route (404/422/etc.)

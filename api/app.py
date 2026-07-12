@@ -45,6 +45,7 @@ from api.ratelimit import (
 )
 from api.schemas import (
     CANONICAL_ID_PATTERN,
+    EPISODE_ID_PATTERN,
     VIEWER_ID_PATTERN,
     CardWarningResponse,
     ConditionStatusResponse,
@@ -1035,9 +1036,11 @@ def _drain_queue_bg(queue, graph_client) -> None:
 @limiter.limit(outcome_limit)
 def record_outcome(
     request: Request,  # required by slowapi for per-IP keying
-    episode_id: str,
     body: OutcomeBody,
     background_tasks: BackgroundTasks,
+    # Episode ids share viewer_id's alphabet (they embed the owner id) — validate the
+    # path param before it reaches a scoped query or a log line (2026-07-12 review).
+    episode_id: str = Path(pattern=EPISODE_ID_PATTERN),
     # Phase 1: query param; Stage 8 replaces with auth header.
     viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
     x_dev_viewer_secret: str | None = Header(default=None),

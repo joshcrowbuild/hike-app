@@ -19,11 +19,50 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 _VALID_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+
+# Known secret-bearing URL shapes in live-probe requests (2026-07-12 review). httpx
+# logs every request line at INFO with the FULL url, and two adapters carry their key
+# in it: FIRMS embeds FIRMS_MAP_KEY as a path segment
+# (/api/area/csv/{key}/{dataset}/...), AirNow passes API_KEY as a query param. Pattern
+# based on purpose: the filter must not need the live key values to do its job, and
+# it keeps masking if a key is rotated mid-process.
+_SECRET_URL_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # FIRMS map key: the path segment right after /api/area/csv/. "***" is the repo's
+    # existing mask convention (orchestration/adapters/_http.py), which also makes
+    # re-masking an already-masked line a no-op.
+    (
+        re.compile(r"(firms\.modaps\.eosdis\.nasa\.gov/api/area/csv/)[^/\s\"]+"),
+        r"\1***",
+    ),
+    # AirNow (and any other) API_KEY-style query param, case-insensitive.
+    (re.compile(r"(?i)\b(api_key=)[^&\s\"']+"), r"\1***"),
+)
+
+
+class SecretUrlRedactionFilter(logging.Filter):
+    """Masks known key-in-URL patterns before a record reaches any handler.
+
+    Attached to the ``httpx``/``httpcore`` loggers by ``setup_logging`` — a logging-
+    layer fix, chosen over demoting httpx to WARNING so the request lines stay useful
+    in production logs (which requests ran, status, latency) with only the credential
+    material masked. The record's message is resolved eagerly (``getMessage``) then
+    rewritten, because the secret arrives via ``args``, not the format string."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = message
+        for pattern, replacement in _SECRET_URL_PATTERNS:
+            redacted = pattern.sub(replacement, redacted)
+        if redacted != message:
+            record.msg = redacted
+            record.args = None
+        return True
 
 
 def scrub_viewer(viewer_id: str) -> str:
@@ -67,3 +106,16 @@ def setup_logging(level: str | None = None) -> None:
         resolved = "INFO"
     logging.basicConfig(level=resolved, format=_LOG_FORMAT)
     logging.getLogger().setLevel(resolved)
+    # httpx logs each request line at INFO with the full URL — for FIRMS/AirNow that
+    # URL carries the API key (2026-07-12 review). Mask at the emitting logger so no
+    # handler ever sees the key. A logger-level filter does NOT see records from child
+    # loggers (httpcore emits via httpcore.http11 etc., where a filter on "httpcore"
+    # would be a silent no-op — self-review finding), so the root handlers get the
+    # filter too: every propagated record from any logger passes through them. Same
+    # idempotence contract as basicConfig above: never stack a duplicate filter.
+    httpx_logger = logging.getLogger("httpx")
+    if not any(isinstance(f, SecretUrlRedactionFilter) for f in httpx_logger.filters):
+        httpx_logger.addFilter(SecretUrlRedactionFilter())
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters):
+            handler.addFilter(SecretUrlRedactionFilter())

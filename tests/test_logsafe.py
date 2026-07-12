@@ -67,6 +67,101 @@ class TestSetupLogging:
         assert len(logging.getLogger().handlers) == count_after_first
 
 
+class _CapturingHandler(logging.Handler):
+    """Collects the final rendered messages exactly as a real handler would see them."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+class TestSecretUrlRedaction:
+    """2026-07-12 review: httpx logs each request line at INFO with the full URL —
+    FIRMS carries FIRMS_MAP_KEY as a path segment and AirNow carries API_KEY as a
+    query param, so those lines printed live keys into production logs. The filter
+    installed by setup_logging must mask the key before ANY handler sees the record."""
+
+    def _emit_through_httpx_logger(self, msg: str, *args: object) -> list[str]:
+        setup_logging("INFO")
+        httpx_logger = logging.getLogger("httpx")
+        handler = _CapturingHandler()
+        httpx_logger.addHandler(handler)
+        try:
+            # The httpx idiom exactly: a %s format string with the URL in args.
+            httpx_logger.info(msg, *args)
+        finally:
+            httpx_logger.removeHandler(handler)
+        return handler.messages
+
+    def test_firms_map_key_in_url_path_never_reaches_a_handler(self) -> None:
+        url = "https://firms.modaps.eosdis.nasa.gov/api/area/csv/SECRET-MAP-KEY/VIIRS_SNPP_NRT/-78.9,38.0,-77.9,39.0/1"
+        messages = self._emit_through_httpx_logger(
+            'HTTP Request: %s %s "%s"', "GET", url, "HTTP/1.1 200 OK"
+        )
+        assert messages, "expected the record to reach the handler"
+        assert not any("SECRET-MAP-KEY" in m for m in messages)
+        # The rest of the request line survives — that is the point of a redaction
+        # filter over demoting httpx to WARNING.
+        assert any("firms.modaps.eosdis.nasa.gov" in m and "GET" in m for m in messages)
+
+    def test_airnow_api_key_query_param_never_reaches_a_handler(self) -> None:
+        url = (
+            "https://www.airnowapi.org/aq/observation/latLong/current/"
+            "?format=application%2Fjson&latitude=38.5&longitude=-78.4"
+            "&distance=50&API_KEY=secret-airnow-key"
+        )
+        messages = self._emit_through_httpx_logger(
+            'HTTP Request: %s %s "%s"', "GET", url, "HTTP/1.1 200 OK"
+        )
+        assert messages, "expected the record to reach the handler"
+        assert not any("secret-airnow-key" in m for m in messages)
+        assert any("airnowapi.org" in m and "latitude=38.5" in m for m in messages)
+
+    def test_keyless_request_lines_pass_through_untouched(self) -> None:
+        line = 'HTTP Request: GET https://api.weather.gov/points/38.5,-78.4 "HTTP/1.1 200 OK"'
+        messages = self._emit_through_httpx_logger(line)
+        assert messages == [line]
+
+    def test_filter_is_not_stacked_on_repeated_setup(self) -> None:
+        from orchestration.logsafe import SecretUrlRedactionFilter
+
+        setup_logging("INFO")
+        setup_logging("INFO")
+        filters = logging.getLogger("httpx").filters
+        assert sum(isinstance(f, SecretUrlRedactionFilter) for f in filters) == 1
+        for handler in logging.getLogger().handlers:
+            assert sum(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters) == 1
+
+    def test_root_handlers_carry_the_filter_for_child_logger_records(self) -> None:
+        # A logger-level filter never sees a CHILD logger's records (httpcore emits via
+        # httpcore.http11 etc. — self-review finding), so coverage for those comes from
+        # the root handlers, which every propagated record passes through.
+        from orchestration.logsafe import SecretUrlRedactionFilter
+
+        setup_logging("INFO")
+        assert logging.getLogger().handlers, "setup_logging must configure a root handler"
+        for handler in logging.getLogger().handlers:
+            assert any(isinstance(f, SecretUrlRedactionFilter) for f in handler.filters)
+
+        # And a filtered handler masks an httpcore.http11-style record end-to-end.
+        capturing = _CapturingHandler()
+        capturing.addFilter(SecretUrlRedactionFilter())
+        child_logger = logging.getLogger("httpcore.http11")
+        child_logger.addHandler(capturing)
+        try:
+            child_logger.info(
+                "send_request_headers.started request=<Request [b'GET'] %s>",
+                "https://www.airnowapi.org/aq/observation/?API_KEY=secret-airnow-key",
+            )
+        finally:
+            child_logger.removeHandler(capturing)
+        assert capturing.messages
+        assert not any("secret-airnow-key" in m for m in capturing.messages)
+
+
 class TestNoRawIdentifiersInLogs:
     """The leak sites fixed in this lane stay fixed: log output from the
     belief-update and outcome paths never carries a raw owner/episode id."""

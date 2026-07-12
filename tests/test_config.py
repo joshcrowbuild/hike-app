@@ -245,3 +245,40 @@ def test_b5_feed_warm_interval_default_and_override() -> None:
 def test_b5_feed_warm_interval_zero_disables() -> None:
     # 0 is the warmer's kill switch — FeedWarmer.start() then never spawns a thread.
     assert Settings.from_env({"ADVENTURE_FEED_WARM_INTERVAL_S": "0"}).feed_warm_interval_s == 0.0
+
+
+# ── 2026-07-12 review: numeric env knobs must be finite — inf/NaN/negative → default ──
+#
+# `float()` happily parses "inf"/"nan", and any typo crashed from_env outright; each
+# knob must instead degrade to its documented default (rule #6 at the config layer).
+
+_FLOAT_KNOBS = [
+    # (env var, settings attr, documented default, zero is a valid kill switch)
+    ("DRIVE_SPEED_KMH", "drive_speed_kmh", 60.0, False),
+    ("ADVENTURE_3DEP_RESOLUTION_M", "elev_resolution_m", 20.0, False),
+    # zero_ok: a 0 deadline means "report a down dependency immediately" (the warmup
+    # tests exercise it) — an established valid value, not a typo.
+    ("ADVENTURE_WARMUP_DEADLINE_S", "warmup_deadline_s", 30.0, True),
+    ("ADVENTURE_ANON_FEED_CACHE_TTL_S", "feed_cache_ttl_s", 300.0, True),
+    ("ADVENTURE_FEED_WARM_INTERVAL_S", "feed_warm_interval_s", 240.0, True),
+]
+
+
+def test_settings_float_knobs_fall_back_on_nonfinite_or_negative() -> None:
+    for env_var, attr, default, _ in _FLOAT_KNOBS:
+        for bad in ("inf", "-inf", "nan", "-5", "not-a-number"):
+            s = Settings.from_env({env_var: bad})
+            assert getattr(s, attr) == default, f"{env_var}={bad!r}"
+
+
+def test_settings_float_knobs_zero_only_valid_for_kill_switches() -> None:
+    for env_var, attr, default, zero_ok in _FLOAT_KNOBS:
+        s = Settings.from_env({env_var: "0"})
+        expected = 0.0 if zero_ok else default
+        assert getattr(s, attr) == expected, f"{env_var}=0"
+
+
+def test_settings_float_knobs_valid_overrides_unchanged() -> None:
+    for env_var, attr, _, _ in _FLOAT_KNOBS:
+        s = Settings.from_env({env_var: "42.5"})
+        assert getattr(s, attr) == 42.5, f"{env_var}=42.5"

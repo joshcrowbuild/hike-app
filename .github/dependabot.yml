@@ -6,6 +6,10 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # pip watches the repo root, where the committed lockfile lives
+  # (requirements.txt — the full pyproject --all-extras pin set, 2026-07-12
+  # review lane 5): version bumps land as pin updates there, and the blocking
+  # pip-audit job re-checks the updated pins.
   - package-ecosystem: pip
     directory: "/"
     schedule:

@@ -31,6 +31,12 @@ POINTS_URL = "https://api.weather.gov/points/{lat},{lon}"
 ALERTS_URL = "https://api.weather.gov/alerts/active"
 ROOT_URL = "https://api.weather.gov/"
 
+# The /points response supplies the second hop's URL. Only ever follow it back into
+# api.weather.gov over https (2026-07-12 review): a compromised/spoofed response must
+# not be able to point this client at an arbitrary host (SSRF) — a non-conforming URL
+# is a probe failure (couldn't-verify → None), never fetched.
+_ALLOWED_FORECAST_PREFIX = "https://api.weather.gov/"
+
 
 def fetch(
     lat: float,
@@ -47,7 +53,7 @@ def fetch(
     points = _http.get_json(c, POINTS_URL.format(lat=lat, lon=lon))
     props = points.get("properties", {}) if isinstance(points, dict) else {}
     forecast_url = props.get("forecast")
-    if not forecast_url:
+    if not isinstance(forecast_url, str) or not forecast_url.startswith(_ALLOWED_FORECAST_PREFIX):
         return None
 
     # Origin-at-boundary (CDP-03 / spike item 3): the forecast office (CWA / gridId) and

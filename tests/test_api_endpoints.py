@@ -562,6 +562,12 @@ def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any
             {"query": "x", "lat": 38.5, "lon": -78.4, "viewer_id": "a" * 65},
             id="viewer-id-too-long",
         ),
+        # 2026-07-12 review: the free-text query flows into provider prompts and log
+        # lines — cap it at the edge so an unbounded body 422s, never becomes substrate.
+        pytest.param(
+            {"query": "q" * 501, "lat": 38.5, "lon": -78.4},
+            id="query-over-max-length",
+        ),
     ],
 )
 def test_plan_malformed_body_is_422_never_500(client: Any, body: dict[str, Any]) -> None:
@@ -570,6 +576,12 @@ def test_plan_malformed_body_is_422_never_500(client: Any, body: dict[str, Any])
     assert resp.status_code != 500
     assert 400 <= resp.status_code < 500
     assert resp.status_code == 422
+
+
+def test_plan_query_at_max_length_is_accepted(client: Any) -> None:
+    # Valid input is unchanged by the cap: a 500-char query still plans normally.
+    resp = client.post("/plan", json={**_PLAN_BODY, "query": "q" * 500})
+    assert resp.status_code == 200
 
 
 def test_plan_invalid_json_body_is_4xx_never_500(client: Any) -> None:

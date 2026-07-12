@@ -6,6 +6,8 @@
 
 > **Pass 2 — Adversarial Deep-Dive** findings are prefixed `[A]` and appear below the original findings.
 
+> **Follow-up:** a third-party review of 2026-07-12 was PO-verified and its confirmed findings remediated on the `claude/security-hardening-1` PR (input-validation bounds, config parse hardening, httpx key redaction, NWS forecast-URL pinning, dependency lockfile + blocking pip-audit).
+
 ---
 
 ## High Confidence

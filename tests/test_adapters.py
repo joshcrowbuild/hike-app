@@ -58,6 +58,63 @@ def test_nws_silence_on_failure() -> None:
     assert nws.fetch(0, 0, "ua", client=_client(lambda r: httpx.Response(500))) is None
 
 
+def test_nws_off_host_forecast_url_is_never_fetched() -> None:
+    # 2026-07-12 review: the /points response supplies the second hop's URL; a
+    # spoofed/compromised payload must not steer this client to an arbitrary host.
+    # Non-conforming → probe failure (None), and the URL is never requested.
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = str(request.url)
+        requested.append(u)
+        if "/points/" in u:
+            return httpx.Response(
+                200, json={"properties": {"forecast": "https://evil.example.com/forecast"}}
+            )
+        return httpx.Response(200, json={"properties": {"periods": [{"name": "Today"}]}})
+
+    assert nws.fetch(38.5, -78.4, "ua", client=_client(handler)) is None
+    assert not any("evil.example.com" in u for u in requested)
+
+
+def test_nws_http_scheme_forecast_url_is_never_fetched() -> None:
+    # Same guard, downgrade variant: plain-http back to the right host is still
+    # non-conforming (the prefix pins the scheme too).
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(
+            200, json={"properties": {"forecast": "http://api.weather.gov/x/forecast"}}
+        )
+
+    assert nws.fetch(38.5, -78.4, "ua", client=_client(handler)) is None
+    assert all(u.startswith("https://api.weather.gov/") for u in requested)
+
+
+def test_nws_conforming_forecast_url_still_fetched() -> None:
+    # The guard changes nothing for the real shape: an api.weather.gov https URL
+    # is followed exactly as before (the happy-path contract test also covers this).
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = str(request.url)
+        requested.append(u)
+        if "/points/" in u:
+            return httpx.Response(
+                200, json={"properties": {"forecast": "https://api.weather.gov/x/forecast"}}
+            )
+        if u.endswith("/forecast"):
+            return httpx.Response(
+                200, json={"properties": {"periods": [{"name": "Today", "temperature": 60}]}}
+            )
+        return httpx.Response(200, json={"features": []})
+
+    fact = nws.fetch(38.5, -78.4, "ua", client=_client(handler))
+    assert isinstance(fact, VerifiedFact)
+    assert any(u == "https://api.weather.gov/x/forecast" for u in requested)
+
+
 def test_nws_captures_office_and_grid_origin() -> None:
     # CDP-03 origin-at-boundary: office (gridId) + gridpoint are captured from /points.
     def handler(request: httpx.Request) -> httpx.Response:
