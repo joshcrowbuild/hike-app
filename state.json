@@ -1,8 +1,8 @@
 {
   "generated_by": "scripts/gen_state.py --refresh (do not hand-edit)",
-  "refreshed_at": "2026-07-12T01:46:31+00:00",
-  "main_sha": "a09ca496cc1e785ea664fc362ca1379e8d6044f2",
-  "main_committed_at": "2026-07-11T21:43:02-04:00",
+  "refreshed_at": "2026-07-12T03:35:36+00:00",
+  "main_sha": "5fb1ccd0fa013c420348319da3550ca36c24b92d",
+  "main_committed_at": "2026-07-11T23:04:21-04:00",
   "region": "shenandoah-gwj",
   "corpus": {
     "canonical_trails": 2206,
