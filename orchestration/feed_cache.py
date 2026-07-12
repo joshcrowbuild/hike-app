@@ -116,6 +116,16 @@ class FeedCache:
             self.stats.hits += 1
             return plan
 
+    def peek(self, key: FeedCacheKey) -> bool:
+        """True when `key` holds an unexpired entry — WITHOUT touching the hit/miss
+        stats or evicting. The feed warmer's skip-if-warm probe (Epic 039 B5): a
+        background cadence check must not inflate the hit rate real viewers'
+        requests report, and a non-serving path shouldn't do the store's eviction
+        work either — expiry stays `get`'s business."""
+        with self._lock:
+            hit = self._store.get(key)
+            return hit is not None and self._clock() < hit[1]
+
     def put(self, key: FeedCacheKey, plan: CachedPlan) -> None:
         with self._lock:
             if key not in self._store and len(self._store) >= self._max_entries:
