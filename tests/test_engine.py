@@ -9,6 +9,7 @@ verified hard threshold (hazardous AQI) is set aside.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -719,6 +720,38 @@ def test_corpus_corroboration_read_failure_degrades_not_blocks() -> None:
     batch = plan_from_origin(38.5, -78.4, session, _weather_probes(_clear_weather), k=10)  # type: ignore[arg-type]
     assert [p.candidate.canonical_id for p in batch.trails] == ["safe"]
     assert batch.trails[0].corpus_corroboration == 1  # degraded, not crashed
+
+
+def test_corroboration_read_overlaps_the_probe_fanout() -> None:
+    # B4 (Epic 039 ladder): the SAME_AS read runs CONCURRENTLY with the live-probe
+    # fan-out. Deterministic proof, no timing: the corroboration read blocks until a
+    # probe has started. Under the pre-B4 serial order (read completes before the
+    # fan-out begins) the wait would time out and the flag would record False.
+    probe_started = threading.Event()
+    overlap_seen: list[bool] = []
+    rows = [_row("t1", 38.5, -78.4, 100)]
+
+    class _BlockingCorrSession(_FakeSession):
+        def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+            cypher, _ = query
+            if "SAME_AS" in cypher:
+                overlap_seen.append(probe_started.wait(timeout=5.0))
+                return []
+            return super().run(query)
+
+    def weather(lat: float, lon: float) -> Any:
+        probe_started.set()
+        return {"short_forecast": "Clear"}
+
+    batch = plan_from_origin(
+        38.5,
+        -78.4,
+        _BlockingCorrSession(rows),  # type: ignore[arg-type]
+        _weather_probes(weather),
+        k=10,
+    )
+    assert overlap_seen == [True]  # the read was in flight WHILE the fan-out ran
+    assert batch.trails[0].corpus_corroboration == 1  # empty read → honest baseline
 
 
 def test_confidence_never_reorders_candidates() -> None:
