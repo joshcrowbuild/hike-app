@@ -1,0 +1,25 @@
+{
+  "adapter": "nps_alerts",
+  "source": "developer.nps.gov",
+  "note": "The parks catalog ANSWERS with real, parseable coordinates — all beyond the 50 mi radius cap. A sourced 'NPS doesn't cover this spot' (`no_data`), distinct from both an outage and a checked-clear. No alerts call happens (no unit in range).",
+  "interactions": [
+    {
+      "match": "/parks",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "fullName": "Acadia National Park",
+            "parkCode": "acad",
+            "latLong": "lat:44.409286, long:-68.247501"
+          },
+          {
+            "fullName": "Joshua Tree National Park",
+            "parkCode": "jotr",
+            "latLong": "lat:33.918824, long:-116.166865"
+          }
+        ]
+      }
+    }
+  ]
+}

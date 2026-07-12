@@ -21,7 +21,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [015](epic-015-ci-neo4j-integration.md) | CI Neo4j integration (live owner-isolation guardrail; separate required leg) | DONE ✅ | 1 | Epic 011 |
 | [016](epic-016-maps-and-terrain.md) | Maps & terrain (topographic Detail map · route · elevation profile) | DONE ✅ | 1 | Epic 013 · 017 (S5) |
 | [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | DONE ✅ | 1 | Epic 012 · `geom_wkt` |
-| [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced weather/water/air/fire/permits + four-state silence) | DEFINED | 1 | Epic 013 · #53/#54 |
+| [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced conditions + six-state legible silence — reconciled 2026-07-12) | IN_PROGRESS | 1 | Epic 013 · #53/#54 |
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | DONE ✅ | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | DONE ✅ | A | — |
 | [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | DONE ✅ | A | — |

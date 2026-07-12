@@ -22,6 +22,14 @@
       "osm:hazel-mountain": 1
     },
     "expected_warnings": [],
-    "expected_unavailable_kinds": []
+    "expected_unavailable_kinds": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "not_fetched",
+      "fire": "not_fetched",
+      "water": "not_fetched",
+      "closures": "not_fetched",
+      "permits": "not_fetched"
+    }
   }
 }

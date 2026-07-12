@@ -7,6 +7,7 @@ import * as preview from '../../.storybook/preview'
 import * as ConfidenceStories from '../components/Confidence/Confidence.stories'
 import * as SignalStories from '../components/Signal/Signal.stories'
 import * as StalenessStories from '../components/Staleness/Staleness.stories'
+import * as ConditionStatesStories from '../screens/ConditionStates.stories'
 
 // The a11y baseline gate (path-to-complete §Phase B): every story of the
 // safety-relevant honesty primitives — Confidence (hedge/flag presentation),
@@ -20,6 +21,10 @@ const suites = [
   ['Confidence', composeStories(ConfidenceStories)],
   ['Signal', composeStories(SignalStories)],
   ['Staleness', composeStories(StalenessStories)],
+  // The six per-kind condition states (Epic 018 S4f) are the same
+  // safety-relevant honesty surface: a user reads them to judge whether an
+  // absent condition was checked-clear, unreachable, or never checked.
+  ['ConditionStates', composeStories(ConditionStatesStories)],
 ] as const
 
 async function runAxe(container: HTMLElement) {

@@ -23,6 +23,7 @@
     "facts": {},
     "corpus_corroboration": {},
     "expected_warnings": [],
-    "expected_unavailable_kinds": []
+    "expected_unavailable_kinds": [],
+    "condition_states": {}
   }
 }

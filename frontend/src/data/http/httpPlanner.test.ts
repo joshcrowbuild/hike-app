@@ -317,6 +317,126 @@ describe('HttpPlannerClient hazard warnings + held-back mapping (2026-07-01)', (
   })
 })
 
+describe('HttpPlannerClient per-kind condition states (Epic 018 S4f / CDP-02)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-01T22:00:00Z'))
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  const cardWith = (conditions?: FeedResponse['cards'][number]['conditions']): FeedResponse => ({
+    query: '',
+    card_count: 1,
+    notices: [],
+    cards: [
+      {
+        canonical_id: 'compton-peak',
+        name: 'Compton Peak',
+        distance_mi: 2.1,
+        lines: [],
+        warnings: [],
+        unavailable: [],
+        ...(conditions ? { conditions } : {}),
+      },
+    ],
+  })
+
+  it('maps all six wire states onto the VM, humanising checked_at (§7.2)', async () => {
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'weather', state: 'present', source: 'NWS', checked_at: '2026-07-01T21:48:00Z', detail: '' },
+          { kind: 'air', state: 'stale_degraded', source: 'EPA AirNow', checked_at: '2026-07-01T19:00:00Z', detail: '' },
+          { kind: 'fire', state: 'no_hazard', source: 'NASA FIRMS', checked_at: '2026-07-01T21:40:00Z', detail: '' },
+          {
+            kind: 'water',
+            state: 'no_data',
+            source: 'USGS',
+            checked_at: '2026-07-01T21:45:00Z',
+            detail: 'no gauge within 30 mi',
+          },
+          { kind: 'closures', state: 'unavailable', source: '', checked_at: null, detail: '' },
+          { kind: 'permits', state: 'not_fetched', source: '', checked_at: null, detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toEqual([
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '12m ago', detail: undefined },
+      { kind: 'air', state: 'stale-degraded', source: 'EPA AirNow', checkedAgo: '3h ago', detail: undefined },
+      { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago', detail: undefined },
+      { kind: 'water', state: 'no-data', source: 'USGS', checkedAgo: '15m ago', detail: 'no gauge within 30 mi' },
+      { kind: 'closures', state: 'unavailable', source: undefined, checkedAgo: undefined, detail: undefined },
+      { kind: 'permits', state: 'not-fetched', source: undefined, checkedAgo: undefined, detail: undefined },
+    ])
+  })
+
+  it('retires the lines.length===0 heuristic: an answered card gets NO blanket silence (#160 mislabel)', async () => {
+    // A lineless card whose kinds all answered clear/no-data must never read
+    // "not checked" — the per-kind payload is the authoritative rendering.
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'fire', state: 'no_hazard', source: 'NASA FIRMS', checked_at: '2026-07-01T21:40:00Z', detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditionSilence).toBeUndefined()
+    expect(result.cards[0].conditions).toHaveLength(1)
+  })
+
+  it('keeps the honest not-fetched fallback ONLY for an older payload with no conditions field', async () => {
+    fetchMock.mockReturnValue(ok(cardWith(undefined)))
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toBeUndefined()
+    expect(result.cards[0].conditionSilence).toEqual({ state: 'not-fetched' })
+  })
+
+  it('strips source/age from an UNANSWERED state — a divergent payload can never fabricate an attribution', async () => {
+    // The engine never sets source/checked_at on unavailable/not_fetched; the
+    // client re-enforces that (Rule #1) so "couldn't verify (USGS · 2h ago)"
+    // is unrenderable even from a divergent or stored payload.
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'water', state: 'unavailable', source: 'USGS', checked_at: '2026-07-01T20:00:00Z', detail: '' },
+          { kind: 'air', state: 'not_fetched', source: 'EPA AirNow', checked_at: '2026-07-01T20:00:00Z', detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toEqual([
+      { kind: 'water', state: 'unavailable', source: undefined, checkedAgo: undefined, detail: undefined },
+      { kind: 'air', state: 'not-fetched', source: undefined, checkedAgo: undefined, detail: undefined },
+    ])
+  })
+
+  it('drops a wire state this client does not know rather than guessing a disposition', async () => {
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'weather', state: 'some_future_state', source: 'NWS', checked_at: null, detail: '' },
+          { kind: 'permits', state: 'not_fetched', source: '', checked_at: null, detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toEqual([
+      { kind: 'permits', state: 'not-fetched', source: undefined, checkedAgo: undefined, detail: undefined },
+    ])
+  })
+})
+
 describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current set" fix)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

@@ -1,0 +1,14 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "Full outage — every AirNow call 500s. Probed-but-silent must surface as the `unavailable` disposition (couldn't verify), NEVER as clear and never conflated with an ANSWERED clear (CDP-02).",
+  "interactions": [
+    {
+      "match": "airnowapi",
+      "status": 500,
+      "json": {
+        "detail": "upstream error"
+      }
+    }
+  ]
+}

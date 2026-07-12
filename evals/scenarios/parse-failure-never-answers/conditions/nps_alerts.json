@@ -1,0 +1,29 @@
+{
+  "adapter": "nps_alerts",
+  "source": "developer.nps.gov",
+  "note": "Catalog-wide latLong format drift — every unit's coordinates fail to parse. This is a parse FAILURE, not an answer: the adapter must return None (couldn't verify) and the card must wear `unavailable`, never a fabricated sourced 'no coverage' (`no_data`). Locks in the PR #160 self-review bug as a permanent gate-level regression.",
+  "interactions": [
+    {
+      "match": "/parks",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "fullName": "Shenandoah National Park",
+            "parkCode": "shen",
+            "latLong": "38.5300;-78.4500"
+          },
+          {
+            "fullName": "Great Smoky Mountains National Park",
+            "parkCode": "grsm",
+            "latLong": ""
+          },
+          {
+            "fullName": "Acadia National Park",
+            "parkCode": "acad"
+          }
+        ]
+      }
+    }
+  ]
+}

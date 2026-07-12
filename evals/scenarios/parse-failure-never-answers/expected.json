@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-11",
+    "note": "The #160 self-review bug, locked in at the gate (Epic 018 S4f): a catalog-wide NPS latLong parse failure is a FAILURE, not an answer. Closures must surface as `unavailable` (couldn't verify, no source attribution) — pinning that here reds the build if the adapter ever again fabricates a sourced 'no coverage' (`no_data`) out of parsed-nothing."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      }
+    },
+    "corpus_corroboration": {
+      "osm:old-rag-mountain-loop": 3,
+      "osm:whiteoak-canyon": 2,
+      "osm:cedar-run": 1,
+      "osm:rose-river-loop": 2,
+      "osm:corbin-hollow": 1
+    },
+    "expected_warnings": [],
+    "expected_unavailable_kinds": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "not_fetched",
+      "fire": "not_fetched",
+      "water": "not_fetched",
+      "closures": "unavailable",
+      "permits": "not_fetched"
+    }
+  }
+}

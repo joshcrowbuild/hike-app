@@ -42,11 +42,12 @@ from graph.client import ScopedSession
 from orchestration.adapters.airnow import AirNowAdapter
 from orchestration.adapters.base import ConditionKind, LiveAdapter
 from orchestration.adapters.firms import FirmsAdapter
+from orchestration.adapters.nps_alerts import NpsAlertsAdapter
 from orchestration.adapters.nws import NwsAdapter
 from orchestration.adapters.registry import TTLCache
 from orchestration.adapters.ridb import RidbAdapter
 from orchestration.adapters.usgs_water import UsgsWaterAdapter
-from orchestration.engine import PlannedBatch, plan_from_origin
+from orchestration.engine import PlannedBatch, feed_card, plan_from_origin
 
 SCENARIOS_DIR = Path(__file__).resolve().parent / "scenarios"
 
@@ -58,6 +59,7 @@ _ADAPTER_BUILDERS: dict[str, Callable[[httpx.Client], LiveAdapter]] = {
     "firms": lambda c: FirmsAdapter("eval-replay-not-a-key", client=c),
     "usgs_water": lambda c: UsgsWaterAdapter(client=c),
     "ridb": lambda c: RidbAdapter("eval-replay-not-a-key", client=c),
+    "nps_alerts": lambda c: NpsAlertsAdapter("eval-replay-not-a-key", client=c),
 }
 
 
@@ -195,8 +197,21 @@ _REQUIRED_HARD_KEYS = frozenset(
         "corpus_corroboration",
         "expected_warnings",
         "expected_unavailable_kinds",
+        "condition_states",
     }
 )
+
+# The per-kind disposition vocabulary (Epic 018 S4 / CDP-02) — mirrors
+# `orchestration.engine.ConditionStatus`. Kept here as a literal so a fixture typo
+# ("no_hazrd") reds the scenario with a named violation instead of passing vacuously.
+_CONDITION_STATES = frozenset(
+    {"present", "stale_degraded", "no_hazard", "no_data", "unavailable", "not_fetched"}
+)
+
+# States where a source actually ANSWERED: the status must carry source + checked_at
+# (sourced silence / sourced fact). The complement must carry neither — an unanswered
+# kind wearing a source would be a fabricated attribution (rule #1).
+_ANSWERED_STATES = frozenset({"present", "stale_degraded", "no_hazard", "no_data"})
 
 
 def _hard(scenario: ReplayScenario) -> dict[str, Any]:
@@ -327,6 +342,53 @@ def check_unavailable_disclosed(batch: PlannedBatch, hard: dict[str, Any]) -> li
     return out
 
 
+def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[str]:
+    """CDP-02 at the gate (Epic 018 S4f): every surfaced card's per-kind disposition
+    must match the pinned state, through the same `feed_card` path production serves.
+    This is what keeps an ANSWERED clear (no_hazard / no_data — sourced silence)
+    permanently distinct from couldn't-verify (unavailable), and locks in the #160
+    self-review bug: a parse failure must never surface as an answered no-data —
+    pinning `unavailable` here fails if the engine ever fabricates a sourced answer.
+    An answered state must carry source + checked_at; an unanswered one must carry
+    neither (a source on an unanswered kind is a fabricated attribution, rule #1)."""
+    expected: dict[str, str] = hard.get("condition_states", {})
+    out: list[str] = []
+    known_kinds = {k.value for k in ConditionKind}
+    for kind, want in expected.items():
+        if kind not in known_kinds:
+            out.append(f"expected.json names unknown condition kind {kind!r}")
+        if want not in _CONDITION_STATES:
+            out.append(
+                f"expected.json pins unknown condition state {want!r} for {kind!r}"
+                f" ({', '.join(sorted(_CONDITION_STATES))})"
+            )
+    if out or not expected:
+        return out
+    if not batch.trails:
+        # Non-empty pins with zero surfaced cards must not quiet-green: there is
+        # nothing to check the pins against (the vacuous-pass class the required-
+        # keys mechanism exists to prevent). A blocked-feed scenario states an
+        # explicit empty `condition_states` instead.
+        return ["condition_states pinned but no trail surfaced to carry them"]
+    for trail in batch.trails:
+        cid = trail.candidate.canonical_id
+        by_kind = {c.kind: c for c in feed_card(trail).conditions}
+        for kind, want in expected.items():
+            status = by_kind.get(kind)
+            if status is None:
+                out.append(f"{cid}: card carries no condition status for {kind!r}")
+                continue
+            if status.state != want:
+                out.append(f"{cid}: {kind} state {status.state!r} != pinned {want!r}")
+                continue
+            answered = bool(status.source) and status.checked_at is not None
+            if want in _ANSWERED_STATES and not answered:
+                out.append(f"{cid}: {kind} {want!r} lacks source/checked_at (unsourced answer)")
+            if want not in _ANSWERED_STATES and answered:
+                out.append(f"{cid}: {kind} {want!r} carries a fabricated source attribution")
+    return out
+
+
 _CHECKS: list[tuple[str, Callable[[PlannedBatch, dict[str, Any]], list[str]]]] = [
     ("surfaced_expected", check_surfaced_expected),
     ("must_be_blocked_held", check_must_be_blocked),
@@ -335,6 +397,7 @@ _CHECKS: list[tuple[str, Callable[[PlannedBatch, dict[str, Any]], list[str]]]] =
     ("corroboration_wired", check_corroboration_wired),
     ("warnings_expected", check_warnings_expected),
     ("unavailable_disclosed", check_unavailable_disclosed),
+    ("condition_states", check_condition_states),
 ]
 
 

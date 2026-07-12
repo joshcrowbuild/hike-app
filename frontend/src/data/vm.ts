@@ -73,6 +73,43 @@ export interface ConditionSilence {
 }
 
 /**
+ * One kind's disposition on one card — the six per-kind condition states the
+ * `/plan` wire now carries (Epic 018 S4f / CDP-02, PR #160). The VM mirror of
+ * `ConditionStatusResponse`, humanised at the adapter boundary: `checkedAgo` is
+ * a relative age ("2h ago"), never a raw datetime (§7.2). Presentation only —
+ * never a ranking input (Rule #2).
+ *
+ * - `present`        — a sourced fact renders as a condition line
+ * - `stale-degraded` — a sourced fact renders, but is past its freshness horizon
+ * - `no-hazard`      — the source answered "nothing to flag" (checked-clear —
+ *                      calm sourced silence, never a loud "0 detections")
+ * - `no-data`        — the source answered "nothing covers this spot"
+ * - `unavailable`    — probed and no source answered (couldn't verify — never
+ *                      "clear", Rule #1; must read visibly different from
+ *                      `not-fetched`)
+ * - `not-fetched`    — not probed in this deployment (no signal either way)
+ */
+export type ConditionStateVM =
+  | 'present'
+  | 'stale-degraded'
+  | 'no-hazard'
+  | 'no-data'
+  | 'unavailable'
+  | 'not-fetched'
+
+export interface ConditionStatusVM {
+  /** The wire condition kind, e.g. "weather" | "water" | "closures". */
+  kind: string
+  state: ConditionStateVM
+  /** Short provider name, set exactly when a source actually answered. */
+  source?: string
+  /** Humanised relative age of the answering fact ("2h ago") — never a raw datetime. */
+  checkedAgo?: string
+  /** The adapter's own disclosure for the no-data case (e.g. the no-gauge radius note). */
+  detail?: string
+}
+
+/**
  * The rich card vocabulary the v0.3 design wants but the API does not yet
  * provide. Optional by construction: the HTTP adapter drops what it can't
  * supply, and the card degrades to the honest-thin rendering. Everything here
@@ -121,6 +158,14 @@ export interface CardVM {
    * the card falls back to the honest `not-fetched` default when it has no lines.
    */
   conditionSilence?: ConditionSilence
+  /**
+   * The per-kind condition dispositions (Epic 018 S4f / CDP-02) — the six-state
+   * `conditions` payload the API now returns, humanised. When present it is the
+   * card's authoritative condition coverage and supersedes the single
+   * `conditionSilence` fallback; absent (mock, or an older payload) the card
+   * degrades to the legacy silence rendering.
+   */
+  conditions?: ConditionStatusVM[]
   /** Prominent source-stamped hazard warnings from the engine (the API's `warnings`). */
   warnings: WarningVM[]
   enrichment?: CardEnrichment
