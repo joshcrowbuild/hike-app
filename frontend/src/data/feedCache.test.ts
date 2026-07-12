@@ -250,6 +250,25 @@ describe('toStalePaint (AC-3.3 — honesty is the transform, not a banner)', () 
     expect(painted.query).toBe(feed.query)
     expect(painted.dataSource).toBe('live')
   })
+
+  it('strips the per-kind conditions — a frozen checked-clear must never repaint as current (Epic 018 S4f)', async () => {
+    const { toStalePaint } = await import('./feedCache')
+    const card: CardVM = {
+      id: 'a',
+      name: 'A',
+      distanceMi: 2.1,
+      conditionLines: [],
+      warnings: [],
+      // A cached "checked — nothing to flag · 20m ago" on a safety kind: hours
+      // later this would be a false-fresh sourced all-clear (its checkedAgo is
+      // a pre-humanised string no reader can re-age), and the screens give
+      // `conditions` precedence over the injected silence below.
+      conditions: [{ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' }],
+    }
+    const painted = toStalePaint(feedWith({ cards: [card] }), '5h ago')
+    expect(painted.cards[0].conditions).toBeUndefined()
+    expect(painted.cards[0].conditionSilence).toEqual({ state: 'stale-degraded', detail: '5h ago' })
+  })
 })
 
 describe('staleAgeLabel (honest — derived from the real fetch timestamp)', () => {

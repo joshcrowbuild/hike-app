@@ -84,6 +84,13 @@ describe('ConditionStates (full coverage list)', () => {
     expect(row?.querySelector('.condition-state-glyph svg')).toBeInTheDocument()
   })
 
+  it('keeps the may-have-changed hedge on a stale row even without an age — never a bare current-looking value', () => {
+    const { container } = render(
+      <ConditionStates conditions={[{ kind: 'water', state: 'stale-degraded', source: 'USGS' }]} />,
+    )
+    expect(container.querySelector('.condition-state--stale-degraded')?.textContent).toContain('may have changed')
+  })
+
   it('carries the adapter disclosure on a no-data row', () => {
     render(
       <ConditionStates

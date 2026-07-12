@@ -18,7 +18,7 @@ import type { FeedVM } from './vm'
 const STORAGE_KEY = 'adventure-planner:anon-feed-cache'
 /** Bump on ANY FeedVM shape change — there is no build-hash to detect drift
  *  another way, so a stale reader must self-identify via this number. */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2 // v2: CardVM grew per-kind `conditions` (Epic 018 S4f)
 
 /**
  * Age cap / kill switch, build-time baked (Vite), like `VITE_USE_MOCK` — a
@@ -140,6 +140,13 @@ export function toStalePaint(feed: FeedVM, staleAsOf: string): FeedVM {
       conditionLines: [],
       warnings: [],
       enrichment: undefined,
+      // The per-kind dispositions are live/ephemeral assertions too: a frozen
+      // "checked — nothing to flag · 20m ago" repainted hours later would be a
+      // false-fresh all-clear on a safety kind (Rule #1), and its `checkedAgo`
+      // is a pre-humanised string this module cannot re-age. Stripped, so the
+      // injected stale-degraded silence below is what actually renders (the
+      // screens give `conditions` precedence whenever it is present).
+      conditions: undefined,
       conditionSilence: { state: 'stale-degraded', detail: staleAsOf },
     })),
     notices: [],

@@ -402,6 +402,25 @@ describe('HttpPlannerClient per-kind condition states (Epic 018 S4f / CDP-02)', 
     expect(result.cards[0].conditionSilence).toEqual({ state: 'not-fetched' })
   })
 
+  it('strips source/age from an UNANSWERED state — a divergent payload can never fabricate an attribution', async () => {
+    // The engine never sets source/checked_at on unavailable/not_fetched; the
+    // client re-enforces that (Rule #1) so "couldn't verify (USGS · 2h ago)"
+    // is unrenderable even from a divergent or stored payload.
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'water', state: 'unavailable', source: 'USGS', checked_at: '2026-07-01T20:00:00Z', detail: '' },
+          { kind: 'air', state: 'not_fetched', source: 'EPA AirNow', checked_at: '2026-07-01T20:00:00Z', detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toEqual([
+      { kind: 'water', state: 'unavailable', source: undefined, checkedAgo: undefined, detail: undefined },
+      { kind: 'air', state: 'not-fetched', source: undefined, checkedAgo: undefined, detail: undefined },
+    ])
+  })
+
   it('drops a wire state this client does not know rather than guessing a disposition', async () => {
     fetchMock.mockReturnValue(
       ok(

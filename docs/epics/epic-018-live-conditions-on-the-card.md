@@ -22,7 +22,7 @@ A trail card shows **real, sourced live conditions** — weather, streamflow, ai
 
 ## What remains (the open scope)
 
-### S4f — Render the six per-kind states in the frontend *(frontend lane — CDP-02's finish half; in flight on the phase-b wave-3 build lane)*
+### S4f — Render the six per-kind states in the frontend *(frontend lane — CDP-02's finish half)*
 **Given** the API now returns a per-kind `conditions` payload the frontend ignores,
 **When** a card (and Detail) renders,
 **Then** every kind's disposition is visible through the design system's honesty primitives — and the interim `lines.length === 0 → "not checked"` heuristic in `httpPlanner.ts` (the #160 documented mislabel: an answered-clear card reads as couldn't-verify) is retired.

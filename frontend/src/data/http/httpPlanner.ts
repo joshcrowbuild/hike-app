@@ -141,17 +141,29 @@ const WIRE_CONDITION_STATES: Record<string, ConditionStateVM> = {
  * posture: an older client ignores what it can't render rather than guessing a
  * disposition it can't stand behind (Rule #1).
  */
+/** States where a source actually ANSWERED — the only ones that may carry a
+ *  source + age. The engine already guarantees this; the client re-enforces it
+ *  so a divergent payload can never render a fabricated attribution on a
+ *  couldn't-verify or not-checked claim (Rule #1). */
+const ANSWERED_STATES: ReadonlySet<ConditionStateVM> = new Set([
+  'present',
+  'stale-degraded',
+  'no-hazard',
+  'no-data',
+])
+
 function mapConditions(wire: ConditionStatusResponse[] | undefined): ConditionStatusVM[] | undefined {
   if (!wire) return undefined
   const mapped: ConditionStatusVM[] = []
   for (const s of wire) {
     const state = WIRE_CONDITION_STATES[s.state]
     if (!state) continue
+    const answered = ANSWERED_STATES.has(state)
     mapped.push({
       kind: s.kind,
       state,
-      source: s.source || undefined,
-      checkedAgo: s.checked_at ? relativeAge(s.checked_at) : undefined,
+      source: answered ? s.source || undefined : undefined,
+      checkedAgo: answered && s.checked_at ? relativeAge(s.checked_at) : undefined,
       detail: s.detail || undefined,
     })
   }

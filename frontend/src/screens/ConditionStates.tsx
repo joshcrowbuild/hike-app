@@ -38,11 +38,13 @@ export const conditionKindLabels: Record<string, string> = {
 const kindLabel = (kind: string): string => conditionKindLabels[kind] ?? kind
 
 /**
- * Per-state copy + text glyph. Mirrors `cardParts`' SILENCE_COPY vocabulary; the
- * glyph set stays disjoint per state (○ ✓ – ×) with `stale-degraded` carrying
- * the real Lucide `History` mark (AC-20.3.1) and `unavailable` carrying no
- * glyph of its own — its whole body routes through flagged <Confidence>, whose
- * treatment (the verify accent + sr-only lead-in) is the distinguisher.
+ * Per-state copy + text glyph. Mirrors `cardParts`' SILENCE_COPY vocabulary.
+ * `present` and `no-hazard` share ✓ but never a treatment (bare mark vs filled
+ * chip) or copy; every other state has its own glyph, with `stale-degraded`
+ * carrying the real Lucide `History` mark (AC-20.3.1) and `unavailable`
+ * carrying no glyph of its own — its whole body routes through flagged
+ * <Confidence>, whose treatment (the verify accent + sr-only lead-in) is the
+ * distinguisher.
  */
 const STATE_COPY: Record<ConditionStateVM, { glyph: string | null; announce: string; label: string }> = {
   present: { glyph: '✓', announce: 'Reported', label: 'reported' },
@@ -176,10 +178,17 @@ function StateBody({ status }: { status: ConditionStatusVM }) {
       </span>
       <span className="condition-state-text">
         {copy.label}
-        {status.state === 'stale-degraded' && status.checkedAgo ? (
+        {status.state === 'stale-degraded' ? (
+          // The hedge is unconditional — a stale row without an age must still
+          // say "may have changed", never read as a bare current value.
           <>
-            {' '}
-            <Staleness stale>{status.checkedAgo}</Staleness> — may have changed
+            {status.checkedAgo ? (
+              <>
+                {' '}
+                <Staleness stale>{status.checkedAgo}</Staleness>
+              </>
+            ) : null}
+            {' — may have changed'}
           </>
         ) : null}
         {status.state === 'no-data' && status.detail ? ` — ${status.detail}` : null}

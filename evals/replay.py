@@ -364,6 +364,12 @@ def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[st
             )
     if out or not expected:
         return out
+    if not batch.trails:
+        # Non-empty pins with zero surfaced cards must not quiet-green: there is
+        # nothing to check the pins against (the vacuous-pass class the required-
+        # keys mechanism exists to prevent). A blocked-feed scenario states an
+        # explicit empty `condition_states` instead.
+        return ["condition_states pinned but no trail surfaced to carry them"]
     for trail in batch.trails:
         cid = trail.candidate.canonical_id
         by_kind = {c.kind: c for c in feed_card(trail).conditions}
