@@ -2,6 +2,9 @@
 # Allowlist is value-pinned to known DUMMY credentials only (never real ones):
 #   - the 32-char FIRMS-style MAP_KEY fixture in tests/test_http.py
 #   - the throwaway Neo4j service-container password in .github/workflows/ci.yml
+#   - the OSM access-tag literals (access=no/private/discouraged) documented in
+#     docs/research/trail-connectivity-loops.md, which generic-api-key misreads
+#     as a credential assignment; pinned to those exact tag values only
 # Real secrets live in the deploy platforms' secret stores, never in the repo
 # (CLAUDE.md rule 10) — do not allowlist paths or whole files here.
 
@@ -11,8 +14,9 @@ title = "adventure-planner gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Known dummy test credentials (exact values, checked in on purpose)"
+description = "Known dummy test credentials + OSM tag literals (exact values, checked in on purpose)"
 regexes = [
   '''abc123def456abc123def456abc12345''',
   '''testpassword''',
+  '''no/private/discouraged''',
 ]
