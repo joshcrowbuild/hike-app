@@ -17,10 +17,20 @@ VIEWER_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,64}$"
 # length well above any real id (e.g. "ct:osm:old-rag-loop").
 CANONICAL_ID_PATTERN = r"^[^\x00-\x1F\x7F]{1,200}$"
 
+# Shape of an episode_id path param (2026-07-12 review): episode ids are built as
+# "ep:{owner_id}:{watch_activity_id}" (ingestion/ingest_episode.py) — the same
+# alphabet as a viewer_id, with headroom for the activity segment. A malformed value
+# 422s before it is ever bound into a scoped Cypher query or a log line.
+EPISODE_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,128}$"
+
 
 class PlanRequest(BaseModel):
+    # 500 chars is ample for a free-text ask (2026-07-12 review): the query flows into
+    # provider prompts and log lines, so an unbounded body is unbounded substrate.
     query: str = Field(
-        ..., description="Free-text request, e.g. 'something mellow with good views'"
+        ...,
+        max_length=500,
+        description="Free-text request, e.g. 'something mellow with good views'",
     )
     lat: float = Field(..., ge=-90, le=90, description="Origin latitude (WGS84)")
     lon: float = Field(..., ge=-180, le=180, description="Origin longitude (WGS84)")
@@ -226,11 +236,18 @@ class GraphStats(BaseModel):
 
 
 class OutcomeBody(BaseModel):
+    # ge/le mirrors orchestration.outcome.OutcomeRequest's __post_init__ check (kept —
+    # defense at both the edge and the domain layer); here it 422s instead of 500→422
+    # round-tripping through a ValueError (2026-07-12 review).
     overall: int | None = Field(
         default=None,
+        ge=1,
+        le=3,
         description="1 (😞) | 2 (😐) | 3 (🙂); null when skipped",
     )
-    delta_question: str | None = None
+    # Echoed back to the client and stored alongside the answer — same bounded-substrate
+    # rationale as delta_answer below, sized for a one-line reflect-back question.
+    delta_question: str | None = Field(default=None, max_length=500)
     # AL3: this free-text answer is stored verbatim as a `stated` Belief (never decays,
     # confidence 1.0 — orchestration/outcome.py), so an unbounded body is unbounded
     # substrate. 2000 chars is ample for a reflect-back answer.

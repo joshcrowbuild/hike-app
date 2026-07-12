@@ -183,3 +183,61 @@ def test_delta_answer_at_max_length_is_accepted() -> None:
             json={"overall": 2, "skipped": False, "delta_answer": "x" * 2000},
         )
     assert r.status_code == 200
+
+
+# ── 2026-07-12 review: additive edge validation (422 on violation, valid unchanged) ──
+
+
+def _post_outcome(path_episode_id: str, json: dict[str, Any]) -> Any:
+    with TestClient(app) as client:
+        app_mod._settings = Settings.from_env({})
+        app_mod._graph_client = _FakeGraphClient([])  # type: ignore[assignment]
+        return client.post(f"/episode/{path_episode_id}/outcome", json=json)
+
+
+def test_episode_id_bad_chars_is_422_never_500() -> None:
+    """An episode id embeds the owner id (ep:{owner}:{activity}) — the same alphabet
+    check viewer_id gets must gate the path param before it reaches a scoped query."""
+    r = _post_outcome("ep:anon:1;DROP", {"overall": 2, "skipped": False})
+    assert r.status_code == 422
+
+
+def test_episode_id_over_max_length_is_422() -> None:
+    r = _post_outcome("e" * 129, {"overall": 2, "skipped": False})
+    assert r.status_code == 422
+
+
+def test_episode_id_at_max_length_is_accepted() -> None:
+    # 128 chars of the valid alphabet routes through to the (fake) ownership check.
+    r = _post_outcome("e" * 128, {"overall": 2, "skipped": False})
+    assert r.status_code == 200
+
+
+def test_delta_question_over_max_length_is_422() -> None:
+    r = _post_outcome("ep:anon:1", {"overall": 2, "skipped": False, "delta_question": "q" * 501})
+    assert r.status_code == 422
+
+
+def test_delta_question_at_max_length_is_accepted() -> None:
+    r = _post_outcome("ep:anon:1", {"overall": 2, "skipped": False, "delta_question": "q" * 500})
+    assert r.status_code == 200
+
+
+def test_overall_out_of_range_is_422_not_500() -> None:
+    """The edge now rejects an out-of-range rating itself (ge=1/le=3), instead of
+    round-tripping OutcomeRequest's ValueError through the 500→422 handler."""
+    for bad in (0, 4, -1):
+        r = _post_outcome("ep:anon:1", {"overall": bad, "skipped": False})
+        assert r.status_code == 422, f"overall={bad}"
+
+
+def test_overall_valid_ratings_still_accepted() -> None:
+    for ok in (1, 2, 3):
+        r = _post_outcome("ep:anon:1", {"overall": ok, "skipped": False})
+        assert r.status_code == 200, f"overall={ok}"
+
+
+def test_overall_null_when_skipped_still_accepted() -> None:
+    # ge/le must not break the null-when-skipped contract (overall is optional).
+    r = _post_outcome("ep:anon:1", {"skipped": True})
+    assert r.status_code == 200
