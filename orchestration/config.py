@@ -7,10 +7,14 @@ See `.env.example` for the shape.
 
 from __future__ import annotations
 
+import logging
+import math
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping
+
+logger = logging.getLogger(__name__)
 
 # Conventional per-region DEM location (Epic 017 durability). `scripts/fetch_dem.py`
 # writes the fetched/merged raster here, and — when ADVENTURE_3DEP_DEM is unset — this
@@ -24,6 +28,30 @@ DEM_DIR = "data/dem"
 # reviewable file, NEVER a graph node (CLAUDE.md rule #3: fast/derived data isn't
 # persisted as structural graph state). Under gitignored `data/`, so it never commits.
 REVIEW_BAND_DIR = "data/review"
+
+
+def _finite_positive(name: str, raw: str, default: float, *, allow_zero: bool = False) -> float:
+    """Parse an env-sourced float, falling back to `default` unless the value is finite
+    and positive (2026-07-12 review). `float()` happily accepts "inf"/"nan", and a bare
+    `float(...)` crashed the process on any typo — a config knob must degrade to its
+    documented default with a warning, never boot with inf/NaN in a timeout/TTL/speed.
+    `allow_zero=True` is for the kill-switch knobs (feed cache TTL / warm interval)
+    where 0 is a documented, valid operator value."""
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("%s=%r is not a number; using default %s", name, raw, default)
+        return default
+    if not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
+        logger.warning(
+            "%s=%r is not a finite %s number; using default %s",
+            name,
+            raw,
+            "non-negative" if allow_zero else "positive",
+            default,
+        )
+        return default
+    return value
 
 
 def default_dem_path(region: str) -> str | None:
@@ -242,7 +270,9 @@ class Settings:
             live_adapters=live_adapters,
             live_region=e.get("ADVENTURE_LIVE_REGION", "US"),
             valhalla_base_url=e.get("VALHALLA_BASE_URL") or None,
-            drive_speed_kmh=float(e.get("DRIVE_SPEED_KMH", "60.0")),
+            drive_speed_kmh=_finite_positive(
+                "DRIVE_SPEED_KMH", e.get("DRIVE_SPEED_KMH", "60.0"), 60.0
+            ),
             live_probe_max_workers=int(e.get("ADVENTURE_LIVE_PROBE_MAX_WORKERS", "8")),
             commons_writer_salt=e.get("ADVENTURE_COMMONS_WRITER_SALT") or None,
             watch_adapters=watch_adapters,
@@ -264,12 +294,32 @@ class Settings:
             # fix — the DEM no longer has to live in a hand-set env var that gets
             # lost). Absent both → None → 3DEP degrades to a no-op (rule #6).
             dem_path=e.get("ADVENTURE_3DEP_DEM") or default_dem_path(region),
-            elev_resolution_m=float(e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0")),
+            elev_resolution_m=_finite_positive(
+                "ADVENTURE_3DEP_RESOLUTION_M", e.get("ADVENTURE_3DEP_RESOLUTION_M", "20.0"), 20.0
+            ),
             opentopodata_url=e.get("ADVENTURE_OPENTOPODATA_URL") or None,
             opentopodata_dataset=e.get("ADVENTURE_OPENTOPODATA_DATASET", "ned10m"),
-            warmup_deadline_s=float(e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0")),
+            # allow_zero: 0 is an established operator value — "report a down
+            # dependency immediately, no retry window" — not a typo to correct.
+            warmup_deadline_s=_finite_positive(
+                "ADVENTURE_WARMUP_DEADLINE_S",
+                e.get("ADVENTURE_WARMUP_DEADLINE_S", "30.0"),
+                30.0,
+                allow_zero=True,
+            ),
             review_band_dir=e.get("ADVENTURE_REVIEW_BAND_DIR", REVIEW_BAND_DIR),
-            feed_cache_ttl_s=float(e.get("ADVENTURE_ANON_FEED_CACHE_TTL_S", "300")),
+            # allow_zero: 0 is these two knobs' documented kill switch, not a typo.
+            feed_cache_ttl_s=_finite_positive(
+                "ADVENTURE_ANON_FEED_CACHE_TTL_S",
+                e.get("ADVENTURE_ANON_FEED_CACHE_TTL_S", "300"),
+                300.0,
+                allow_zero=True,
+            ),
             feed_cache_max_entries=int(e.get("ADVENTURE_ANON_FEED_CACHE_MAX_ENTRIES", "512")),
-            feed_warm_interval_s=float(e.get("ADVENTURE_FEED_WARM_INTERVAL_S", "240")),
+            feed_warm_interval_s=_finite_positive(
+                "ADVENTURE_FEED_WARM_INTERVAL_S",
+                e.get("ADVENTURE_FEED_WARM_INTERVAL_S", "240"),
+                240.0,
+                allow_zero=True,
+            ),
         )
