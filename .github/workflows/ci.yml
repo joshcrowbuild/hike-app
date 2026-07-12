@@ -101,7 +101,7 @@ jobs:
         # always(): a red test run is exactly when the partial coverage report is
         # most useful; if-no-files-found keeps a pre-coverage crash from double-failing.
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
           path: frontend/coverage/lcov.info
