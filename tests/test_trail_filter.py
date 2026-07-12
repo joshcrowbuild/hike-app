@@ -136,11 +136,44 @@ def test_drops_institutional_wellness_footway():
 def test_drops_residential_street_suffix_track():
     # Outer Banks sand residential streets are tagged highway=track|footway (not
     # `residential`), clearing the highway gate. A name ending in an unambiguous street
-    # suffix (Street/Avenue/Boulevard/Court/Drive/Lane) is a residential road, not a hike.
+    # suffix (Street/Avenue/Boulevard/Court/Circle/Place/Terrace/Drive/Lane) is a
+    # residential road, not a hike.
     for name in ("Barracuda Street", "Amadas Avenue", "Malbon Drive", "Seagull Lane"):
         assert not is_trail_worthy(_w(name=name, highway="track"), _MANY), name
     assert not is_trail_worthy(_w(name="Tasman Drive", highway="footway"), _MANY)
     assert not is_trail_worthy(_w(name="Brother's Way", highway="track"), _MANY)
+
+
+def test_drops_residential_circle_place_terrace_track():
+    # Dogfood #2: TIGER-imported cul-de-sacs near Front Royal survived the original
+    # suffix set — it listed Court/Drive/Lane but omitted Circle/Place/Terrace, so
+    # these residential tracks (no numbered ref, tiger:name_type Cir/Pl/Ter) cleared
+    # every gate and reached the live /plan feed (Oak Circle + Overlook Circle in the
+    # top-10; Peace and Quiet Circle above real trails). Real observed names + tags.
+    survivors = (
+        _w(name="Oak Circle", highway="track", **{"tiger:name_type": "Cir", "tiger:cfcc": "A41"}),
+        _w(name="Peace and Quiet Circle", highway="track", **{"tiger:name_type": "Cir"}),
+        _w(name="Bluebird Circle", highway="track"),  # residential, no tiger:name_type
+        _w(name="Wildwood Place", highway="track", **{"tiger:name_type": "Pl"}),
+    )
+    for tags in survivors:
+        assert not is_trail_worthy(tags, _MANY), tags["name"]
+    # Terrace completes the residential set (no live instance in-region yet; pinned so
+    # the next TIGER "…Terrace" import can't re-open the gap the way Circle did).
+    assert not is_trail_worthy(_w(name="Sunset Terrace", highway="footway"), _MANY)
+
+
+def test_keeps_trailish_suffixes_adjacent_to_residential():
+    # Precision guard for the Circle/Place/Terrace addition: real trail-feature words
+    # that a broader denylist could wrongly sweep must survive. All are live Shenandoah
+    # corpus keeps (highway=path/footway, no tiger street suffix): Loop/Run/Hollow/
+    # Crossing are geographic trail terms, not street types.
+    for name in ("Bear Rocks Loop", "Biscuit Run", "Barger Hollow", "Boyd's Crossing"):
+        assert is_trail_worthy(_w(name=name, highway="path"), _MANY), name
+    # End-anchored + word-boundary: a suffix word mid-name or inside a compound must not
+    # fire ("Circle Rock Trail" ends in Trail; "Semicircle" has no boundary before it).
+    assert is_trail_worthy(_w(name="Circle Rock Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="Semicircle", highway="path"), _MANY)
 
 
 def test_keeps_compound_way_suffix_trail():
