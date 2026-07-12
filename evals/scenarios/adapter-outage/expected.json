@@ -26,6 +26,14 @@
     "expected_warnings": [],
     "expected_unavailable_kinds": [
       "weather"
-    ]
+    ],
+    "condition_states": {
+      "weather": "present",
+      "air": "present",
+      "fire": "no_hazard",
+      "water": "unavailable",
+      "closures": "not_fetched",
+      "permits": "present"
+    }
   }
 }

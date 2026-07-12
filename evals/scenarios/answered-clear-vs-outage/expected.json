@@ -2,17 +2,15 @@
   "meta": {
     "ingest_version": "fixture-2026-07",
     "review_by": "2026-10-11",
-    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory."
+    "note": "The CDP-02 distinction scenario (Epic 018 S4f): an ANSWERED clear must never be conflated with couldn't-verify. FIRMS answers zero detections (no_hazard, sourced), NPS answers no-unit-in-range (no_data, sourced + disclosed), AirNow is a full outage (unavailable, unsourced), USGS/RIDB are unprobed (not_fetched). Three different silences, three distinct sourced-or-silent dispositions."
   },
   "hard": {
     "min_cards": 5,
     "must_be_blocked": [],
     "allowed_kinds": [
       "weather",
-      "air",
       "fire",
-      "water",
-      "permits"
+      "closures"
     ],
     "facts": {
       "weather": {
@@ -23,30 +21,16 @@
           "active_alerts": []
         }
       },
-      "air": {
-        "source_prefix": "EPA AirNow",
-        "value": {
-          "aqi": 45,
-          "parameter": "PM2.5"
-        }
-      },
       "fire": {
         "source_prefix": "NASA FIRMS",
         "value": {
           "hotspot_count": 0
         }
       },
-      "water": {
-        "source_prefix": "USGS",
+      "closures": {
+        "source_prefix": "NPS",
         "value": {
-          "site_id": "01628500",
-          "latest_discharge_cfs": 123.0
-        }
-      },
-      "permits": {
-        "source_prefix": "Recreation.gov",
-        "value": {
-          "count": 2
+          "in_range": false
         }
       }
     },
@@ -61,11 +45,11 @@
     "expected_unavailable_kinds": [],
     "condition_states": {
       "weather": "present",
-      "air": "present",
+      "air": "unavailable",
       "fire": "no_hazard",
-      "water": "present",
-      "closures": "not_fetched",
-      "permits": "present"
+      "water": "not_fetched",
+      "closures": "no_data",
+      "permits": "not_fetched"
     }
   }
 }
