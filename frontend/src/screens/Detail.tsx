@@ -16,6 +16,7 @@ import {
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
 import { formatEstimatedDuration } from '../data/duration'
+import { ConditionStates } from './ConditionStates'
 import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
 
@@ -194,8 +195,14 @@ function ConditionLines({ card }: { card: CardVM }) {
       </div>
     )
   }
+  // The per-kind coverage list (Epic 018 S4f): every kind's disposition, row
+  // per kind — present rows quietly confirm the lines above; each silence state
+  // renders visibly distinct (no_hazard = calm sourced silence; unavailable =
+  // the flagged couldn't-verify; not_fetched = quiet not-checked). The payload
+  // supersedes the legacy blanket silence.
+  const coverage = card.conditions && card.conditions.length > 0 ? <ConditionStates conditions={card.conditions} /> : null
   if (card.conditionLines.length === 0) {
-    return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
+    return coverage ?? <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
   }
   return (
     <>
@@ -208,7 +215,7 @@ function ConditionLines({ card }: { card: CardVM }) {
           </li>
         ))}
       </ul>
-      {card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null}
+      {coverage ?? (card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null)}
     </>
   )
 }

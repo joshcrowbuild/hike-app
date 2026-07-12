@@ -10,6 +10,7 @@ import { relativeAge } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
 import type {
+  ConditionStatusResponse,
   ConfidenceLevel,
   FeedCardResponse,
   FeedResponse,
@@ -20,7 +21,17 @@ import type {
   WireElevationProfile,
 } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
-import type { CardVM, ElevationProfile, EpisodeVM, FeedError, FeedVM, OutcomeVM, TrailGeo } from '../vm'
+import type {
+  CardVM,
+  ConditionStateVM,
+  ConditionStatusVM,
+  ElevationProfile,
+  EpisodeVM,
+  FeedError,
+  FeedVM,
+  OutcomeVM,
+  TrailGeo,
+} from '../vm'
 import type { Coords, TuningState } from '../../types'
 
 // Last-resort default when a named origin key isn't in the loaded catalog at all
@@ -73,11 +84,15 @@ function mapFeed(res: FeedResponse): FeedVM {
           // carries straight through; never backfilled from card-level enrichment.
           sources: l.sources,
         })),
-        // Source-or-silence: a live card with no lines gets the honest
-        // `not-fetched` state, not a blank (CDP-02). We never claim `checked-clear`
-        // here — that needs a real per-source signal the thin `/plan` doesn't yet
-        // carry, so asserting it would be a false-clear (Rule #1).
-        conditionSilence: c.lines.length === 0 ? { state: 'not-fetched' } : undefined,
+        // The per-kind `conditions` payload (Epic 018 S4f / CDP-02) is the
+        // authoritative coverage signal — the old `lines.length === 0 →
+        // not-fetched` heuristic mislabeled an answered-clear card as
+        // couldn't-verify (#160's documented interim quirk), so it applies ONLY
+        // when the payload is absent (an older backend). With the payload, the
+        // card renders each kind's real disposition and needs no blanket guess.
+        conditions: mapConditions(c.conditions),
+        conditionSilence:
+          c.conditions == null && c.lines.length === 0 ? { state: 'not-fetched' } : undefined,
         // A VERIFIED hazard rides the card as a prominent warning — shown, never
         // hidden (decision of 2026-07-01). Source + humanised age, like a line.
         warnings: c.warnings.map((w) => ({
@@ -107,6 +122,40 @@ function mapFeed(res: FeedResponse): FeedVM {
     readiness: { on: false, state: 'off' },
     dataSource: 'live',
   }
+}
+
+/** Wire → VM state names (snake_case → the VM's kebab-case vocabulary). */
+const WIRE_CONDITION_STATES: Record<string, ConditionStateVM> = {
+  present: 'present',
+  stale_degraded: 'stale-degraded',
+  no_hazard: 'no-hazard',
+  no_data: 'no-data',
+  unavailable: 'unavailable',
+  not_fetched: 'not-fetched',
+}
+
+/**
+ * Wire → VM for the per-kind condition dispositions (Epic 018 S4f). Timestamps
+ * are humanised here (`relativeAge`) so no raw datetime crosses into the VM
+ * (§7.2). A state this client doesn't know is dropped — the additive-contract
+ * posture: an older client ignores what it can't render rather than guessing a
+ * disposition it can't stand behind (Rule #1).
+ */
+function mapConditions(wire: ConditionStatusResponse[] | undefined): ConditionStatusVM[] | undefined {
+  if (!wire) return undefined
+  const mapped: ConditionStatusVM[] = []
+  for (const s of wire) {
+    const state = WIRE_CONDITION_STATES[s.state]
+    if (!state) continue
+    mapped.push({
+      kind: s.kind,
+      state,
+      source: s.source || undefined,
+      checkedAgo: s.checked_at ? relativeAge(s.checked_at) : undefined,
+      detail: s.detail || undefined,
+    })
+  }
+  return mapped
 }
 
 /**

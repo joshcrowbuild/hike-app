@@ -277,6 +277,56 @@ describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
   })
 })
 
+describe('RecommendationCard per-kind condition states (Epic 018 S4f, CDP-02)', () => {
+  it('renders the compact coverage summary beneath the Now line — the shown set never implies exhaustive (AC-4f.2)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          conditionLines: [{ text: '54°F · clear (NWS, 12m ago)', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+          conditions: [
+            { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '12m ago' },
+            { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+            { kind: 'air', state: 'not-fetched' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
+    const summary = container.querySelector('.condition-states--compact')
+    expect(summary).toBeInTheDocument()
+    expect(summary?.textContent).toContain('Checked — nothing to flag: Fire (NASA FIRMS · 20m ago)')
+    expect(summary?.textContent).toContain('Not checked here: Air quality')
+    // Present kinds live in the Now line, never repeated in the summary.
+    expect(summary?.textContent).not.toContain('Weather')
+  })
+
+  it('a lineless answered-clear card renders its real dispositions, never "not checked" (the retired #160 mislabel)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          conditionLines: [],
+          conditions: [
+            { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+            { kind: 'closures', state: 'unavailable' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelector('.condition-silence')).not.toBeInTheDocument()
+    expect(container.querySelector('.condition-state-group.condition-state--no-hazard')?.textContent).toContain(
+      'Checked — nothing to flag: Fire',
+    )
+    // The outage is visibly its own state — never conflated with not-checked.
+    expect(container.querySelector('.condition-state-group.condition-state--unavailable')?.textContent).toContain(
+      'Couldn’t verify: Closures',
+    )
+  })
+})
+
 describe('RecommendationCard Directions (surfaced prominently, outside the tap target)', () => {
   it('renders a Directions link to the trailhead when the card has geo', () => {
     render(<RecommendationCard card={card()} onOpen={vi.fn()} />)

@@ -1384,6 +1384,123 @@ button {
   font-size: 0.76rem;
 }
 
+/* ---- the six per-kind condition states (CDP-02, Epic 018 S4f) ----
+   The coverage surface for the wire's `conditions` payload. Treatments extend
+   the silence-state vocabulary above; each state stays glyph+copy distinct so
+   meaning survives without colour (§4.3). The unavailable state carries no
+   styling of its own here — its body routes through flagged <Confidence>, the
+   owned couldn't-verify treatment. */
+.condition-states {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.condition-state {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+/* The kind word reads as data: mono + uppercase, like every meta label. */
+.condition-state-kind {
+  flex: none;
+  min-width: 6.5em;
+  font-family: var(--font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.condition-state-body {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.condition-state-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 50%;
+  font-size: 0.7em;
+}
+
+.condition-state-meta {
+  color: var(--text-muted);
+}
+
+/* present — a quiet confirmation of the sourced line above it. */
+.condition-state--present {
+  color: var(--text-secondary);
+}
+.condition-state--present .condition-state-glyph {
+  color: var(--text-secondary);
+}
+
+/* no-hazard — calm sourced silence (checked-clear): filled chip, firmer text. */
+.condition-state--no-hazard {
+  color: var(--text-secondary);
+}
+.condition-state--no-hazard .condition-state-glyph {
+  background: var(--color-neutral-100);
+  color: var(--text-secondary);
+}
+
+/* no-data — a plain sourced absence: italic, no ornament. */
+.condition-state--no-data .condition-state-text {
+  font-style: italic;
+}
+.condition-state--no-data .condition-state-glyph {
+  color: var(--text-muted);
+}
+
+/* stale-degraded — a neutral note, never the hazard hue (AC-20.3.1). */
+.condition-state--stale-degraded {
+  color: var(--text-secondary);
+}
+.condition-state--stale-degraded .condition-state-glyph {
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+/* not-fetched — the quiet open loop: dashed, muted, visibly NOT an outage. */
+.condition-state--not-fetched .condition-state-glyph {
+  border: 1px dashed var(--color-neutral-alpha-40);
+  color: var(--text-muted);
+}
+
+/* The card's grouped compact summary: one row per state, quieter than a line. */
+.condition-states--compact {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.condition-state-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.condition-state-group.condition-state--no-hazard,
+.condition-state-group.condition-state--stale-degraded {
+  color: var(--text-secondary);
+}
+
 /* ---- pending outcome nod (the post-hike loop finds you on Home, R4) ---- */
 .pending-nod {
   width: 100%;

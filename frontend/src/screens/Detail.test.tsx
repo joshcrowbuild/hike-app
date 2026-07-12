@@ -198,3 +198,42 @@ describe('Detail uses a real screen title, not the quiet .wordmark slot (Epic 02
     expect(container.querySelector('.screen-title')).toBeInTheDocument()
   })
 })
+
+describe('Detail per-kind condition coverage (Epic 018 S4f, CDP-02)', () => {
+  it('renders the full row-per-kind coverage list beneath the condition lines', async () => {
+    const { container } = await renderDetail(
+      card({
+        conditionLines: [{ text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+        conditions: [
+          { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '12m ago' },
+          { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+          { kind: 'water', state: 'no-data', source: 'USGS', detail: 'no gauge within 30 mi' },
+          { kind: 'closures', state: 'unavailable' },
+          { kind: 'permits', state: 'not-fetched' },
+        ],
+      }),
+    )
+    const rows = container.querySelectorAll('.condition-state')
+    expect(rows).toHaveLength(5)
+    // Each state is its own legible disposition — answered-clear ≠ outage ≠ not-checked.
+    expect(container.querySelector('.condition-state--no-hazard')?.textContent).toContain('checked — nothing to flag')
+    expect(container.querySelector('.condition-state--no-data')?.textContent).toContain('no gauge within 30 mi')
+    expect(container.querySelector('.condition-state--unavailable')?.textContent).toContain(
+      'couldn’t be verified right now',
+    )
+    expect(container.querySelector('.condition-state--not-fetched')?.textContent).toContain('not checked here')
+    // The payload supersedes the legacy blanket silence note.
+    expect(container.querySelector('.condition-silence')).not.toBeInTheDocument()
+  })
+
+  it('a lineless card with a payload renders the coverage list, never the legacy not-fetched blanket', async () => {
+    const { container } = await renderDetail(
+      card({
+        conditionLines: [],
+        conditions: [{ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' }],
+      }),
+    )
+    expect(container.querySelector('.condition-silence')).not.toBeInTheDocument()
+    expect(container.querySelector('.condition-state--no-hazard')).toBeInTheDocument()
+  })
+})

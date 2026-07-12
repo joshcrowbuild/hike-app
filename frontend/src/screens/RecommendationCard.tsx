@@ -10,6 +10,7 @@ import {
   Verdict,
   WarningBlock,
 } from './cardParts'
+import { ConditionStates } from './ConditionStates'
 import { glyphs } from './glyphs'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
@@ -88,6 +89,13 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
 function ConditionBlock({ card }: { card: CardVM }) {
   const e = card.enrichment
   const primary = card.conditionLines[0]
+  // The per-kind coverage summary (Epic 018 S4f): the kinds that DON'T render
+  // as lines — checked-clear, coverage gaps, outages, not-checked — shown as
+  // grouped compact rows beneath the Now slot, so the shown line never implies
+  // the set is exhaustive (AC-4f.2) and an answered-clear card never reads as
+  // couldn't-verify (the retired lines.length===0 mislabel).
+  const silentStates = card.conditions?.filter((s) => s.state !== 'present' && s.state !== 'stale-degraded')
+  const summary = silentStates && silentStates.length > 0 ? <ConditionStates conditions={silentStates} compact /> : null
   if (e?.conditionValue) {
     return (
       <div className="condition">
@@ -102,18 +110,23 @@ function ConditionBlock({ card }: { card: CardVM }) {
   }
   if (primary) {
     return (
-      <div className="condition">
-        <span className="condition-label">Now</span>
-        <span className="condition-value">
-          <Confidence level={primary.confidence} provenance={primary.provenance}>
-            {primary.text}
-          </Confidence>
-        </span>
-      </div>
+      <>
+        <div className="condition">
+          <span className="condition-label">Now</span>
+          <span className="condition-value">
+            <Confidence level={primary.confidence} provenance={primary.provenance}>
+              {primary.text}
+            </Confidence>
+          </span>
+        </div>
+        {summary}
+      </>
     )
   }
-  // No usable line: a legible silence rather than a blank card (CDP-02). The
-  // honest default when the backend signals nothing is `not-fetched` — we never
-  // imply we *checked and it's clear* without a source.
+  // No line at all: with the per-kind payload the compact summary IS the honest
+  // rendering (each kind's real disposition); only a payload-less card falls
+  // back to the legacy blanket silence — never a blank, never a false-clear
+  // (CDP-02), and never `checked-clear` without a source.
+  if (summary) return summary
   return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
 }
