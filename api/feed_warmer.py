@@ -170,8 +170,13 @@ class FeedWarmer:
         feed_cache = runtime.feed_cache
         if feed_cache is None:  # cache kill-switched after start — nothing to prime
             return False
-        if feed_cache.peek(_anon_key(frame.query, (frame.lat, frame.lon), frame.k)):
-            return False  # still warm — spend nothing
+        # Skip only when the entry outlives the NEXT round (horizon = the cadence):
+        # an entry expiring before then would leave the frame cold until the round
+        # after — the exact gap B5 exists to close. A recent organic compute that
+        # does outlive the horizon is honored with a skip (no duplicate spend).
+        key = _anon_key(frame.query, (frame.lat, frame.lon), frame.k)
+        if feed_cache.peek(key, horizon_s=self._interval_s):
+            return False  # warm through the next round — spend nothing
         started = time.perf_counter()
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)

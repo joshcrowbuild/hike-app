@@ -137,6 +137,22 @@ def test_skips_frame_the_cache_already_holds_fresh() -> None:
     assert (fc.stats.hits, fc.stats.misses) == (hits_before, misses_before)
 
 
+def test_entry_expiring_before_the_next_round_is_reprimed() -> None:
+    # Self-review fix: a skip must only honor an entry that outlives the NEXT round.
+    # An entry with 10s of TTL left when the cadence is 240s would go cold mid-window
+    # if skipped — the warmer recomputes it now instead (the never-cold guarantee).
+    clock = [0.0]
+    fc = FeedCache(ttl_s=10.0, clock=lambda: clock[0])
+    fc.put(
+        _anon_key(FRAME.query, (FRAME.lat, FRAME.lon), FRAME.k),
+        CachedPlan(planned=(), notices=(), set_aside=()),
+    )
+    plan = _PlanSpy()
+
+    assert _warmer(plan, fc, interval_s=240.0).run_round() == 1  # unexpired, but re-primed
+    assert plan.calls == [(FRAME.query, (FRAME.lat, FRAME.lon), FRAME.k)]
+
+
 def test_expired_entry_is_rewarmed() -> None:
     clock = [0.0]
     fc = FeedCache(ttl_s=10.0, clock=lambda: clock[0])
@@ -235,6 +251,26 @@ def test_runtime_without_feed_cache_skips_without_computing() -> None:
     plan = _PlanSpy()
     assert _warmer(plan, feed_cache=None).run_round() == 0
     assert plan.calls == []
+
+
+# ── hermetic-test posture: lifespan must never spawn a real warm loop in tests ──
+
+
+def test_hermetic_lifespan_never_spawns_the_warm_thread() -> None:
+    # Regression (self-review CRITICAL, 2026-07-12): the autouse _prewarmed_api
+    # fixture pre-opens the readiness gate, so an unstubbed warmer inside a
+    # lifespan-entered TestClient would immediately warm every region's frame
+    # against the AMBIENT environment — real Aura/provider credentials if a .env
+    # is exported into the test shell (the 2026-07-01 hazard class). The fixture
+    # stubs FeedWarmer.start; this pins that the stub is actually in force.
+    from fastapi.testclient import TestClient
+
+    import api.app as app_mod
+
+    with TestClient(app_mod.app):
+        pass
+    assert app_mod._feed_warmer is not None  # lifespan wired it...
+    assert app_mod._feed_warmer._thread is None  # ...but no thread ever spawned
 
 
 # ── metrics honesty: warm runs are visible, stamped warmed=True ──

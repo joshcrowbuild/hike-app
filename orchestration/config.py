@@ -174,7 +174,9 @@ class Settings:
     # in-process warm rounds over each region's default frame, so the anonymous
     # feed cache is never cold for the common path. 0 disables the warmer entirely
     # (same kill-switch convention as feed_cache_ttl_s). Default sits below the
-    # feed-cache TTL (300s) so a warmed frame is re-primed before it expires.
+    # feed-cache TTL (300s), and each round re-primes any entry that would expire
+    # before the NEXT round (FeedCache.peek's horizon), so the frame stays warm
+    # continuously rather than in on/off windows.
     feed_warm_interval_s: float = 240.0
 
     def for_region(self, region_id: str, env: Mapping[str, str] | None = None) -> "Settings":

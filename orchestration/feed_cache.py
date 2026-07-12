@@ -116,15 +116,20 @@ class FeedCache:
             self.stats.hits += 1
             return plan
 
-    def peek(self, key: FeedCacheKey) -> bool:
-        """True when `key` holds an unexpired entry — WITHOUT touching the hit/miss
-        stats or evicting. The feed warmer's skip-if-warm probe (Epic 039 B5): a
-        background cadence check must not inflate the hit rate real viewers'
-        requests report, and a non-serving path shouldn't do the store's eviction
-        work either — expiry stays `get`'s business."""
+    def peek(self, key: FeedCacheKey, *, horizon_s: float = 0.0) -> bool:
+        """True when `key` holds an entry still unexpired `horizon_s` from now —
+        WITHOUT touching the hit/miss stats or evicting. The feed warmer's
+        skip-if-warm probe (Epic 039 B5): a background cadence check must not
+        inflate the hit rate real viewers' requests report, and a non-serving path
+        shouldn't do the store's eviction work either — expiry stays `get`'s
+        business. `horizon_s` is the warmer's re-prime lookahead: an entry that
+        will expire before the next warm round is already "cold" for its purposes
+        (skipping it would leave a gap until the round after — the never-cold
+        guarantee B5 exists for), while a recent organic compute that outlives the
+        horizon is honored with a skip."""
         with self._lock:
             hit = self._store.get(key)
-            return hit is not None and self._clock() < hit[1]
+            return hit is not None and self._clock() + horizon_s < hit[1]
 
     def put(self, key: FeedCacheKey, plan: CachedPlan) -> None:
         with self._lock:
