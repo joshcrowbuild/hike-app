@@ -42,6 +42,39 @@ services:
         value: claude-haiku-4-5-20251001
       - key: ADVENTURE_MODEL_JUDGMENT
         value: claude-sonnet-4-6
+      # Optional per-ROLE overrides layered on top of the tiers above
+      # (orchestration/providers/registry.py resolve(); Epic 040 operator-lever
+      # seam). Unset = the role resolves on its tier exactly as configured above
+      # — "one mechanism, not a curate special-case," so the same three knobs
+      # exist per role (extract/normalize share the mechanical tier; judge/curate
+      # share judgment). The one named in Epic 040 as the phase-1 budget's
+      # biggest lever is ADVENTURE_MODEL_CURATE (pin curate to a cheaper/faster
+      # model than judge's eval-quality model without moving judge). Dashboard-
+      # managed; leave unset unless deliberately tuning a role.
+      - key: ADVENTURE_PROVIDER_EXTRACT
+        sync: false
+      - key: ADVENTURE_MODEL_EXTRACT
+        sync: false
+      - key: ADVENTURE_LOCAL_MODEL_EXTRACT
+        sync: false
+      - key: ADVENTURE_PROVIDER_NORMALIZE
+        sync: false
+      - key: ADVENTURE_MODEL_NORMALIZE
+        sync: false
+      - key: ADVENTURE_LOCAL_MODEL_NORMALIZE
+        sync: false
+      - key: ADVENTURE_PROVIDER_JUDGE
+        sync: false
+      - key: ADVENTURE_MODEL_JUDGE
+        sync: false
+      - key: ADVENTURE_LOCAL_MODEL_JUDGE
+        sync: false
+      - key: ADVENTURE_PROVIDER_CURATE
+        sync: false
+      - key: ADVENTURE_MODEL_CURATE
+        sync: false
+      - key: ADVENTURE_LOCAL_MODEL_CURATE
+        sync: false
       # ── Injected in the Render dashboard (never committed) ──
       # Anthropic key — required because both tiers are set to the anthropic provider.
       - key: ANTHROPIC_API_KEY
