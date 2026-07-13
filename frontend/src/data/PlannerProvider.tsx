@@ -8,10 +8,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { MutableRefObject } from 'react'
 
+import { BootShell } from '../screens/BootShell'
 import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
 import { feedKey, readFeedCache, staleAgeLabel, toStalePaint, writeFeedCache } from './feedCache'
 import { HttpPlannerClient } from './http/httpPlanner'
+import { COLDSTART_MS, REASSURE_MS, type LoadingStage } from './loadingStages'
 import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
@@ -66,12 +68,11 @@ export function PlannerProvider({ scope, client, children }: PlannerProviderProp
     [client, scope, coordsMap],
   )
 
+  // The cold-start gate is the app's true first paint (craft review H1): on a
+  // Render free-tier wake this blocks for up to a minute, so it must be the
+  // designed shell with the staged loading copy — never a bare unstyled string.
   if (!client && !useMockDefault && originsLoading) {
-    return (
-      <p className="app-loading" role="status">
-        Loading…
-      </p>
-    )
+    return <BootShell />
   }
 
   return <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>
@@ -151,16 +152,10 @@ export function useEpisode(id: string | null): {
 
 export type FeedStatus = 'loading' | 'ready' | 'empty' | 'error'
 
-/** Where a still-loading request sits on the honest progress ladder (D4 —
- *  perceived performance): a wait past NNG's ~10s attention threshold must keep
- *  saying something new rather than sitting on a line that now reads as frozen.
- *  `reassure` covers ordinary-but-slow live calls; `coldstart` is long enough
- *  that a Render free-tier wake (30-60s) is the more likely explanation, still
- *  well inside the 60s /plan budget. */
-export type LoadingStage = 'initial' | 'reassure' | 'coldstart'
-
-const REASSURE_MS = 10_000
-const COLDSTART_MS = 25_000
+/** The honest progress ladder (D4) now lives in `loadingStages.ts`, shared
+ *  with the BootShell gate above; re-exported so existing consumers keep one
+ *  import site for feed state. */
+export type { LoadingStage } from './loadingStages'
 
 export interface FeedState {
   status: FeedStatus

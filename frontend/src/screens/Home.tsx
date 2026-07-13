@@ -3,8 +3,9 @@ import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
 import { splitFeedWarnings } from '../data/feedWarnings'
+import { LOADING_COPY } from '../data/loadingStages'
 import { prefersReducedMotion } from '../data/motion'
-import { useFeed, useRecentEpisodes, type LoadingStage } from '../data/PlannerProvider'
+import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { useOrigins, type OriginOption } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
@@ -13,17 +14,7 @@ import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
 import { RecommendationCard } from './RecommendationCard'
-import { SkeletonCard } from './SkeletonCard'
-
-/** The honest progress ladder for a still-loading request (D4 — perceived
- *  performance). Never a frozen line past NNG's ~10s attention threshold: the
- *  copy keeps changing as the wait stretches, without pretending to know a
- *  cause it can't confirm until the wait is long enough to make one likely. */
-const LOADING_COPY: Record<LoadingStage, string> = {
-  initial: 'Reading conditions…',
-  reassure: 'Still checking conditions…',
-  coldstart: 'Waking the server — this can take up to a minute…',
-}
+import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
 
 /** A short, staggered per-card delay so real cards settle in one after another
  *  instead of popping in as one flat block — a calmer "arriving" feel than an
@@ -39,11 +30,6 @@ function revealDelay(index: number): number | undefined {
   if (prefersReducedMotion()) return undefined
   return Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_MAX_MS)
 }
-
-/** Home shows peers, not a full page of results (v0.3 §2: "≤3 peers") — the
- *  skeleton mirrors that count so the placeholder shape matches what actually
- *  lands. */
-const SKELETON_COUNT = 3
 
 /** A stable empty array so `useMemo` below doesn't recompute every render
  *  while there's no feed yet (a fresh `[]` literal would never memoize). */
