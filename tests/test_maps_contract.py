@@ -26,6 +26,8 @@ from api.schemas import (
     FeedCardResponse,
     GeoJsonGeometry,
     GeoPoint,
+    TrailWaterResponse,
+    WaterSourceResponse,
 )
 
 _API_TS = Path(__file__).resolve().parent.parent / "frontend" / "src" / "data" / "api.ts"
@@ -58,6 +60,19 @@ EXPECTED: dict[str, set[str]] = {
         "summit",
         "elevation_profile",
     },
+    # The Detail-only water answer (Epic 041) — rides `TripDetailResponse`, never
+    # the feed card (the feed is deliberately untouched by that epic).
+    "WireWaterSource": {
+        "water_id",
+        "water_type",
+        "name",
+        "lat",
+        "lon",
+        "distance_m",
+        "seasonal",
+        "source",
+    },
+    "WireTrailWater": {"state", "basis", "radius_m", "source", "sources"},
 }
 
 # Which Pydantic model implements each wire type.
@@ -67,6 +82,8 @@ _MODEL_FOR = {
     "WireElevationSample": ElevationSample,
     "WireElevationProfile": ElevationProfile,
     "FeedCardResponse": FeedCardResponse,
+    "WireWaterSource": WaterSourceResponse,
+    "WireTrailWater": TrailWaterResponse,
 }
 
 
@@ -113,6 +130,8 @@ def test_frontend_api_ts_matches_when_wire_types_present():
         "WireElevationSample",
         "WireElevationProfile",
         "FeedCardResponse",
+        "WireWaterSource",
+        "WireTrailWater",
     ):
         found = _ts_interface_fields(text, wire_name)
         assert found is not None, f"{wire_name} missing from api.ts"
