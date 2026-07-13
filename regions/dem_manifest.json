@@ -247,6 +247,95 @@
           "sha256": null
         }
       ]
+    },
+    "harpers-ferry": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -77.82,
+        39.27,
+        -77.66,
+        39.37
+      ],
+      "output": "data/dem/harpers-ferry.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n40w078",
+          "sha256": null
+        }
+      ]
+    },
+    "catoctin-sugarloaf": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -77.53,
+        39.22,
+        -77.35,
+        39.7
+      ],
+      "output": "data/dem/catoctin-sugarloaf.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n40w078",
+          "sha256": null
+        }
+      ]
+    },
+    "westmoreland": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -77.2,
+        38.1,
+        -76.78,
+        38.38
+      ],
+      "output": "data/dem/westmoreland.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n39w077",
+          "sha256": null
+        },
+        {
+          "name": "n39w078",
+          "sha256": null
+        }
+      ]
+    },
+    "york-river": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -76.8,
+        37.23,
+        -76.58,
+        37.47
+      ],
+      "output": "data/dem/york-river.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n38w077",
+          "sha256": null
+        }
+      ]
+    },
+    "st-john-usvi": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -64.81,
+        18.29,
+        -64.64,
+        18.39
+      ],
+      "output": "data/dem/st-john-usvi.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n19w065",
+          "sha256": null
+        }
+      ]
     }
   }
 }
