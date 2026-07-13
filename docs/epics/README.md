@@ -49,7 +49,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [039](epic-039-feed-first-paint-latency.md) | Feed first-paint latency Wave 1 (anonymous fast-path · engine-layer anon plan cache · frontend stale-while-revalidate) | DONE ✅ | A | — |
 
-| [040](epic-040-two-phase-render.md) | Two-phase render (graph-only ranked cards <1.5s · `POST /plan/conditions` patch · six-state pending silence) | IN_PROGRESS | A | Epic 039 · 018 S4 |
+| [040](epic-040-two-phase-render.md) | Two-phase render (graph-only ranked cards <1.5s · `POST /plan/conditions` patch · six-state pending silence) | REVIEW | A | Epic 039 · 018 S4 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
