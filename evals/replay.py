@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +81,15 @@ class ReplayScenario:
     corpus: dict[str, Any]
     conditions: dict[str, dict[str, Any]]  # adapter name -> cassette doc
     expected: dict[str, Any]
+    # The pinned render clock (optional `clock.json` input — GLM red-team F2):
+    # render-time checks run at wall-clock + this offset, so a scenario can open a
+    # deterministic age gap between `fetched_at` (stamped at replay wall-clock by
+    # the real adapters) and render time — the only way `stale_degraded` is
+    # exercisable hermetically. HARNESS-ONLY injection through `feed_card`'s
+    # existing production `now` parameter (the same seam a cache re-render uses,
+    # Epic 039 S2) — no production code path reads this field or fakes its clock.
+    # 0.0 (no clock.json) = real wall-clock rendering, exactly as before.
+    render_age_s: float = 0.0
 
 
 def list_scenario_dirs() -> list[Path]:
@@ -106,7 +115,29 @@ def load_scenario(path: Path) -> ReplayScenario:
         corpus=_read("corpus.json"),
         conditions=conditions,
         expected=_read("expected.json"),
+        render_age_s=_render_age(path),
     )
+
+
+def _render_age(path: Path) -> float:
+    """Parse the optional `clock.json` scenario input ({"render_age_s": <seconds>}).
+    Absent → 0.0 (real wall-clock rendering — the pre-seam behavior). Malformed
+    fails LOUDLY at the load boundary: a scenario that meant to pin time but got
+    the shape wrong must never quietly render at some accidental clock (the same
+    no-vacuous-pass discipline as the required-hard-keys guard). This cannot
+    quiet-green an expectation either way: a pinned `stale_degraded` still reds
+    unless the clock actually opens the age gap."""
+    clock_path = path / "clock.json"
+    if not clock_path.exists():
+        return 0.0
+    doc = json.loads(clock_path.read_text(encoding="utf-8"))
+    raw = doc.get("render_age_s") if isinstance(doc, dict) else None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw < 0:
+        raise ValueError(
+            f"scenario {path.name!r}: clock.json must carry a non-negative numeric"
+            f" render_age_s, got {raw!r}"
+        )
+    return float(raw)
 
 
 # ── the cassette player (mirrors tests/test_adapter_cassettes.py) ─────────────
@@ -402,7 +433,9 @@ def check_verdict_consistency(batch: PlannedBatch, hard: dict[str, Any]) -> list
     return out
 
 
-def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[str]:
+def check_condition_states(
+    batch: PlannedBatch, hard: dict[str, Any], *, now: datetime | None = None
+) -> list[str]:
     """CDP-02 at the gate (Epic 018 S4f): every surfaced card's per-kind disposition
     must match the pinned state, through the same `feed_card` path production serves.
     This is what keeps an ANSWERED clear (no_hazard / no_data — sourced silence)
@@ -410,7 +443,13 @@ def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[st
     self-review bug: a parse failure must never surface as an answered no-data —
     pinning `unavailable` here fails if the engine ever fabricates a sourced answer.
     An answered state must carry source + checked_at; an unanswered one must carry
-    neither (a source on an unanswered kind is a fabricated attribution, rule #1)."""
+    neither (a source on an unanswered kind is a fabricated attribution, rule #1).
+
+    `now` is the scenario's pinned render clock (GLM red-team F2): None (no
+    clock.json) renders at real wall-clock exactly as before; a pinned clock ages
+    the facts through `feed_card`'s own production `now` seam so the six-state
+    vocabulary's `stale_degraded` arm is gate-exercisable — the harness injects,
+    production keeps real time."""
     expected: dict[str, str] = hard.get("condition_states", {})
     out: list[str] = []
     known_kinds = {k.value for k in ConditionKind}
@@ -432,7 +471,7 @@ def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[st
         return ["condition_states pinned but no trail surfaced to carry them"]
     for trail in batch.trails:
         cid = trail.candidate.canonical_id
-        by_kind = {c.kind: c for c in feed_card(trail).conditions}
+        by_kind = {c.kind: c for c in feed_card(trail, now=now).conditions}
         for kind, want in expected.items():
             status = by_kind.get(kind)
             if status is None:
@@ -497,6 +536,8 @@ def check_two_phase_composition(
     phase1: PlannedBatch,
     composed: list[PlannedTrail],
     removed: list[SetAsideTrail],
+    *,
+    now: datetime | None = None,
 ) -> list[str]:
     """D3.2 — phase 1 + the conditions patch, composed, is equivalent to the
     single-pass output over the same bundle: same surfaced trail set, same
@@ -531,7 +572,10 @@ def check_two_phase_composition(
             out.append(f"{cid}: set-aside reasons drifted {c_reasons} != {s_reasons}")
     if tuple(single.notices) != tuple(phase1.notices):
         out.append(f"notices drifted: {list(phase1.notices)} != {list(single.notices)}")
-    render_now = datetime.now(timezone.utc)
+    # Both sides render at the same clock — the scenario's pinned render clock when
+    # set (GLM red-team F2: the stale arm must compose identically too), else real
+    # wall-clock exactly as before.
+    render_now = now or datetime.now(timezone.utc)
     for cid, s_trail in single_by_id.items():
         c_trail = composed_by_id[cid]
         my_facts = {k.value: f for k, f in s_trail.facts.items()}
@@ -622,6 +666,17 @@ def evaluate_scenario(scenario: ReplayScenario, n: int = 3) -> ScenarioResult:
     hard = _hard(scenario)
     for _ in range(n):
         batch = run_scenario(scenario)
+        # The scenario's pinned render clock (GLM red-team F2): wall-clock + the
+        # clock.json offset, computed per run AFTER the facts were fetched so the
+        # age gap is at least the offset. None (no clock.json) = real wall-clock,
+        # byte-identical to the pre-seam gate. Only the render-time checks below
+        # receive it — the engine run above always used real time (production
+        # never sees an injected clock).
+        render_now = (
+            datetime.now(timezone.utc) + timedelta(seconds=scenario.render_age_s)
+            if scenario.render_age_s
+            else None
+        )
         if source_or_silence_ok(batch.trails):
             counts["source_or_silence"] += 1
         else:
@@ -631,17 +686,26 @@ def evaluate_scenario(scenario: ReplayScenario, n: int = 3) -> ScenarioResult:
         else:
             failures.setdefault("no_blocked_surfaced", ["a blocked trail reached the feed"])
         for name, check in _CHECKS:
-            violations = check(batch, hard)
+            # condition_states is the one render-time check: it alone receives the
+            # scenario's pinned render clock (None → identical to before).
+            if name == "condition_states":
+                violations = check_condition_states(batch, hard, now=render_now)
+            else:
+                violations = check(batch, hard)
             if not violations:
                 counts[name] += 1
             else:
                 failures.setdefault(name, violations)
         # Epic 040 D3: the same recorded bundle through BOTH paths — the split is
         # gated against the single-pass truth every run, same zero-tolerance bar.
+        # The composition check renders both sides at the same (possibly pinned)
+        # clock, so the stale arm must compose identically too.
         phase1, composed, removed = run_scenario_two_phase(scenario)
         two_phase_results: dict[str, list[str]] = {
             "phase1_silence": check_phase1_silence(phase1),
-            "two_phase_composition": check_two_phase_composition(batch, phase1, composed, removed),
+            "two_phase_composition": check_two_phase_composition(
+                batch, phase1, composed, removed, now=render_now
+            ),
             "phase_order_stable": check_phase_order_stable(phase1, composed, removed),
         }
         for name, violations in two_phase_results.items():

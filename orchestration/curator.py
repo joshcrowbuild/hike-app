@@ -122,6 +122,34 @@ def _hotspots(fact: VerifiedFact) -> int:
     return count if isinstance(count, int) else 0
 
 
+def _closure_alerts(fact: VerifiedFact) -> list[tuple[str, str]]:
+    """(category, title) pairs for the alerts on a closures fact. Severity triage
+    lives at the adapter boundary: `nps_alerts` keeps ONLY the Closure/Danger
+    categories (`_RELEVANT_CATEGORIES` — Caution/Information never reach a fact),
+    so every alert here is safety-relevant by construction and every one warns.
+    Defensive on shape (this reads a recorded/remote payload): a no-data fact
+    (`in_range: False`, no alerts key) or a checked-clear fact (empty list) yields
+    nothing; a missing title degrades to a generic pointer rather than dropping
+    the alert into silence (a verified hazard never quietly disappears, rule #1)."""
+    value = fact.value
+    alerts = value.get("alerts") if isinstance(value, dict) else None
+    if not isinstance(alerts, list):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        category = alert.get("category")
+        title = alert.get("title")
+        pairs.append(
+            (
+                category if isinstance(category, str) and category.strip() else "closure/danger",
+                title if isinstance(title, str) and title.strip() else "see park alerts",
+            )
+        )
+    return pairs
+
+
 def evaluate_guardrails(
     facts: Mapping[ConditionKind, VerifiedFact],
     *,
@@ -201,6 +229,31 @@ def evaluate_guardrails(
                     f"{count} active-fire detection(s) nearby (thermal anomalies)",
                     provider_short(fire.source),
                     fire.fetched_at,
+                )
+            )
+
+    closures = facts.get(ConditionKind.closures)
+    if closures is not None:
+        # A VERIFIED NPS closure/danger alert shows ON the card, prominently — it
+        # never hides the trail and never feeds ranking (decision of 2026-07-01;
+        # rule #2 — safety is presentation). GLM red-team F1 (2026-07-13): before
+        # this branch the closure rode only as a condition line while the verdict
+        # said "Good to go" beside it. All alert categories on the fact warn: the
+        # adapter already keeps only the Closure/Danger classes (see
+        # `_closure_alerts`). The fact is park-level (the nearest NPS unit within
+        # 50 mi, not trail-specific), so the park name rides the warning text —
+        # scope stays legible on the card itself, mirroring the fact's own
+        # disclosure. Dedupe mirrors the NWS branch above: a card never wears the
+        # same warning twice.
+        park = closures.value.get("park") if isinstance(closures.value, dict) else None
+        scope = f" — {park}" if isinstance(park, str) and park.strip() else ""
+        for category, title in dict.fromkeys(_closure_alerts(closures)):
+            warnings.append(
+                CardWarning(
+                    "closures",
+                    f"{category.lower()} alert: {title}{scope}",
+                    provider_short(closures.source),
+                    closures.fetched_at,
                 )
             )
 

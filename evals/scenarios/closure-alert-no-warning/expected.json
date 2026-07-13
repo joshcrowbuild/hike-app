@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM adversarial red-team finding F1 (HIGH), FIXED 2026-07-13: evaluate_guardrails (curator.py) now routes a verified NPS Closure/Danger alert to a CardWarning (kind 'closures', short provider source, fetched_at, park-scoped text) \u2014 never a block, never a ranking penalty (rule #2). This scenario pins the warning permanently: the adapter returns one Closure-category alert for Shenandoah NP, the condition line renders AND the card wears 'closure alert: Old Rag Area Closure \u2014 Shenandoah National Park', so the frontend verdict derives 'Caution', never 'Good to go' beside an active closure."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "closures"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "closures": {
+        "source_prefix": "NPS",
+        "value": {
+          "count": 1
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [
+      "closure alert: Old Rag Area Closure"
+    ],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "present",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "present",
+      "permits": "not_fetched"
+    }
+  }
+}

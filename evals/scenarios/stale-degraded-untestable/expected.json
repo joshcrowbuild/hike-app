@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM adversarial red-team finding F2 (MEDIUM), FIXED 2026-07-13: the replay gate can now pin a render clock (clock.json render_age_s), injected harness-side through feed_card's existing production `now` parameter \u2014 the same seam a cache re-render uses (Epic 039 S2); production code keeps real wall-clock time. With a 4h pinned age over the 2h weather horizon, the weather fact classifies 'stale_degraded' (source + checked_at still attached \u2014 an answered state), while the fire checked-clear stays 'no_hazard' (age-independent). This is the six-state vocabulary's stale arm gate-defended for the first time: a horizon-value or comparison-operator bug in engine._condition_summary now reds this scenario."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "fire"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "fire": {
+        "source_prefix": "NASA FIRMS",
+        "value": {
+          "hotspot_count": 0
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "stale_degraded",
+      "air": "not_fetched",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "not_fetched",
+      "permits": "not_fetched"
+    }
+  }
+}

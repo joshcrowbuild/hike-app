@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM adversarial red-team finding F3 (LOW, passing): AQI 150 is above AQI_WARN (101) but below AQI_BLOCK (201). The guardrail correctly routes this to CardWarning, not a block. The card carries the warning and the verdict is caution. This scenario PASSES — it documents the boundary is correctly handled and provides coverage for the AQI warn path (no existing scenario tests the warn threshold, only the block threshold at AQI 250 in guardrail-trip-aqi)."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "air": {
+        "source_prefix": "EPA AirNow",
+        "value": {
+          "aqi": 150
+        }
+      },
+      "fire": {
+        "source_prefix": "NASA FIRMS",
+        "value": {
+          "hotspot_count": 0
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [
+      "air quality elevated (AQI 150)"
+    ],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "present",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "not_fetched",
+      "permits": "not_fetched"
+    }
+  }
+}
