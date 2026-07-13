@@ -334,6 +334,40 @@ def test_conditions_fallback_resolves_from_graph_without_warming_cache() -> None
     assert not fc.peek(_anon_key("mellow loop", _ORIGIN, 5))
 
 
+def test_repeat_phase1_within_pen_ttl_reuses_the_parked_plan() -> None:
+    # Two identical phase-1 requests inside the pen's TTL rank ONCE — the pen's
+    # single-flight gate is the same discipline the full path's cache uses (a
+    # re-tap re-fetches conditions via the follow-up call either way).
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    judge = _CountingJudge('["a","b"]')
+    runtime = _runtime(phase1_pending=pending, judge=judge)
+
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+
+    assert judge.calls == 1
+
+
+def test_two_phase_composes_from_pen_even_with_feed_cache_disabled() -> None:
+    # The feed-cache kill switch (TTL=0 -> Runtime.feed_cache None) must not
+    # silently degrade the composition to the graph fallback: the pen still
+    # parks phase 1 and the conditions call still composes from it — it just
+    # has no cache to warm.
+    weather = _SpyAdapter("nws", ConditionKind.weather, {"temp_f": 70})
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    runtime = _runtime(weather=weather, feed_cache=None, phase1_pending=pending)
+
+    _, complete = plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    assert complete is False
+    assert pending.peek(_anon_key("mellow loop", _ORIGIN, 5))
+
+    patch = plan_conditions("mellow loop", _ORIGIN, runtime, ["a", "b"], k=5)
+    assert [c.canonical_id for c in patch.cards] == ["a", "b"]
+    assert weather.calls == 2  # composed from the pen, not the graph fallback
+    states = {s.kind: s.state for s in patch.cards[0].conditions}
+    assert states["weather"] == "present"
+
+
 def test_verify_planned_bounds_workers_default() -> None:
     # Guard the shared constant wiring: the module must default to the verifier's
     # own bound, not a private copy that could drift.

@@ -294,6 +294,11 @@ def test_conditions_request_bounds(client: Any) -> None:
     too_many = [f"ct:{i}" for i in range(21)]
     resp = client.post("/plan/conditions", json={**_CONDITIONS_BODY, "canonical_ids": too_many})
     assert resp.status_code == 422
+    # Per-item hygiene: a control character or an over-long id 422s before it can
+    # reach a graph read, a log line, or the echoed `unknown` list.
+    for bad in ["ct:\x00evil", "x" * 201]:
+        resp = client.post("/plan/conditions", json={**_CONDITIONS_BODY, "canonical_ids": [bad]})
+        assert resp.status_code == 422
 
 
 def test_conditions_non_anonymous_requires_auth(client: Any) -> None:

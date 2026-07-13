@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 # Shape of a viewer identity (AH4): the anonymous default, or an alphanumeric/underscore/
 # hyphen/colon token (":" separates the household-member prefix, e.g. "mem:josh"),
@@ -237,7 +237,12 @@ class PlanConditionsRequest(BaseModel):
     lon: float = Field(..., ge=-180, le=180)
     k: int = Field(default=10, ge=1, le=20)
     viewer_id: str = Field(default="anonymous", pattern=VIEWER_ID_PATTERN)
-    canonical_ids: list[str] = Field(..., min_length=1, max_length=20)
+    # Each id gets the same hygiene bound as the path-param form (control chars
+    # rejected, length-capped) — an id is echoed back in `unknown` and bound into
+    # a parameterized graph read, so an unbounded string is unbounded substrate.
+    canonical_ids: list[Annotated[str, StringConstraints(pattern=CANONICAL_ID_PATTERN)]] = Field(
+        ..., min_length=1, max_length=20
+    )
 
 
 class ConditionPatchResponse(BaseModel):

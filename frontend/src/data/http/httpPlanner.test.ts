@@ -670,3 +670,24 @@ describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
     await expect(client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a'])).rejects.toThrow('500')
   })
 })
+
+describe('HttpPlannerClient getCard stays single-pass (Epic 040 self-review)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('the deep-link refetch never asks for phase:"cards" — Detail must get verified conditions', async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
+    )
+    await client().getCard('ct:a', ANON_SCOPE, TUNING)
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
+    expect(body.phase).toBeUndefined()
+  })
+})

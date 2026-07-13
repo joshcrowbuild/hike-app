@@ -96,3 +96,15 @@ describe('composeConditions (Epic 040 S3 — in place, remove-never-reorder)', (
     expect(composed.heldBack.map((h) => h.id)).toEqual(['x', 'b'])
   })
 })
+
+describe('composeConditions divergent-payload guard', () => {
+  it('keeps the phase-1 per-kind states when a patch entry carries none', () => {
+    const patch: ConditionsPatchVM = {
+      patches: [{ id: 'a', conditionLines: [], conditions: undefined, warnings: [] }],
+      heldBack: [],
+    }
+    const composed = composeConditions(phase1(['a']), patch)
+    // Never trade real silence for a blank: the honest not-fetched states stay.
+    expect(composed.cards[0].conditions).toEqual(NOT_FETCHED)
+  })
+})

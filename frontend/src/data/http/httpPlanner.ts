@@ -250,6 +250,16 @@ export class HttpPlannerClient implements PlannerClient {
   ) {}
 
   async plan(input: PlanInput, scope: ScopeContext): Promise<FeedVM> {
+    return this.planWith(input, scope, TWO_PHASE)
+  }
+
+  /**
+   * The shared /plan POST. `twoPhase=false` forces the classic single-pass
+   * response — `getCard`'s deep-link refetch uses it so Detail NEVER resolves a
+   * card from an unverified phase-1 frame (the D4 snapshot rule, applied to the
+   * refetch path too).
+   */
+  private async planWith(input: PlanInput, scope: ScopeContext, twoPhase: boolean): Promise<FeedVM> {
     // A live "Near me" fix overrides the named origin's fixed coordinates so
     // /plan searches from the viewer's actual position; absent that, the named
     // origin lookup is unchanged.
@@ -264,7 +274,7 @@ export class HttpPlannerClient implements PlannerClient {
       // Two-phase (Epic 040): ask for cards-first; the response self-describes
       // completeness, so a kill-switched server or a warm key degrades to the
       // classic flow with no client branching beyond `conditionsPending`.
-      ...(TWO_PHASE ? { phase: 'cards' as const } : {}),
+      ...(twoPhase ? { phase: 'cards' as const } : {}),
     }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
@@ -338,8 +348,10 @@ export class HttpPlannerClient implements PlannerClient {
     // the CALLER'S current tuning (never a rebuilt default — a reset frame
     // returns a different, often thinner, set that may not contain the card,
     // which is what made every non-default-origin trail read as "not found").
-    // A true deep-link to a card outside the set still returns null.
-    const feed = await this.plan({ tuning: tuning ?? fallbackTuning() }, scope)
+    // A true deep-link to a card outside the set still returns null. Always
+    // the FULL single-pass response (twoPhase=false): a card handed to Detail
+    // must carry verified conditions, never a phase-1 frame's pending silence.
+    const feed = await this.planWith({ tuning: tuning ?? fallbackTuning() }, scope, false)
     // A transient failure (notably the cold-start timeout this branch now waits
     // out for up to 60s) must not masquerade as "not found": throw so `useCard`
     // maps it to a retryable error state, not an authoritative absence (R1).

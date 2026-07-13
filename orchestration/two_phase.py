@@ -90,7 +90,12 @@ def plan_cards(
     miss and compute rather than silently serve an unverified plan.
     """
     fc = runtime.feed_cache
-    key = _anon_key(query, origin, k) if (fc is not None and viewer_id == "anonymous") else None
+    # The anonymous key exists independently of the feed cache: the holding pen
+    # must keep working when the cache is TTL-0-disabled (its kill switch must
+    # not silently degrade the two-phase composition to the graph fallback).
+    # None for any non-anonymous viewer — a personalized plan never enters
+    # either shared store (Rule #5).
+    key = _anon_key(query, origin, k) if viewer_id == "anonymous" else None
     runtime.feed_cache_hit = False
     if fc is not None and key is not None:
         cached = fc.get(key)
@@ -100,12 +105,19 @@ def plan_cards(
             # recomputing a phase-1 (D7).
             runtime.feed_cache_hit = True
             return _render_feed(query, cached), True
-    phase1 = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id, verify=False)
-    if key is not None and runtime.phase1_pending is not None:
-        # Anonymous only, mirroring the feed cache's Rule-#5 gate: `key` is None
-        # for any non-anonymous viewer, so a personalized plan never enters this
-        # shared store.
-        runtime.phase1_pending.put(key, phase1)
+    pending_store = runtime.phase1_pending
+    if key is not None and pending_store is not None:
+        # Park-or-reuse through the pen's own single-flight gate: two identical
+        # phase-1 misses landing together rank once, not twice (same discipline
+        # as the full path's FeedCache.get_or_compute), and a re-tap within the
+        # pen's short TTL reuses the parked plan — its conditions are fetched
+        # fresh by the follow-up call either way.
+        phase1 = pending_store.get_or_compute(
+            key,
+            lambda: _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id, verify=False),
+        )
+    else:
+        phase1 = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id, verify=False)
     return _render_feed(query, phase1), False
 
 
@@ -185,7 +197,9 @@ def plan_conditions(
     This call never ranks — zero LLM spend by construction (AC-2.3)."""
     requested = list(dict.fromkeys(canonical_ids))  # de-dupe, order preserved
     fc = runtime.feed_cache
-    key = _anon_key(query, origin, k) if (fc is not None and viewer_id == "anonymous") else None
+    # Same key derivation as `plan_cards` (decoupled from the feed cache's
+    # presence, None for non-anonymous viewers — Rule #5).
+    key = _anon_key(query, origin, k) if viewer_id == "anonymous" else None
 
     if fc is not None and key is not None:
         cached = fc.get(key)

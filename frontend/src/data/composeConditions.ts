@@ -26,7 +26,10 @@ export function composeConditions(phase1: FeedVM, patch: ConditionsPatchVM): Fee
         return {
           ...c,
           conditionLines: p.conditionLines,
-          conditions: p.conditions,
+          // A patch entry without per-kind dispositions (a divergent payload)
+          // keeps the card's own honest phase-1 states rather than blanking
+          // them — never trade real silence for a guess (Rule #1).
+          conditions: p.conditions ?? c.conditions,
           warnings: p.warnings,
           // The per-kind payload is now authoritative; the blanket fallback
           // (older-payload rendering) must not linger under real dispositions.
