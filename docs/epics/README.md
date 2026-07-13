@@ -11,7 +11,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time integration (post-Scout prune + ranking input) | DONE ✅ | 0 | — (via Epic 013) |
 | [006](epic-006-novelty-filter.md) | Novelty filter in Curator | DEFINED | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
-| 008 | API tests (FastAPI TestClient, /plan + /health) | REVIEW | 0 | — |
+| 008 | API tests (FastAPI TestClient, /plan + /health) | DONE ✅ | 0 | — |
 | [009](epic-009-eval-harness-expansion.md) | Stage-7 eval-harness expansion (fixtures, golden trips, judge, N-run regression, security/privacy) | IN_PROGRESS | 1→2 | Stage 7 methodology |
 | [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation`) | DONE ✅ | 1 | Epic 001 |
 | [011](epic-011-scoped-write-seam.md) | Scoped-write seam (`run_write` guard + owned-node builders) | DONE ✅ | 1 | Epic 001 |

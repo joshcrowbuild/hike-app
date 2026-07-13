@@ -2,19 +2,19 @@
 
 *The strategic sequencing layer above the tactical roadmap. North-star + ordering, not status.*
 
-**Last verified:** 2026-06-29 · **Owner:** vision-PM
+**Last verified:** 2026-07-13 · **Owner:** vision-PM
 
 > **Read order.** This doc sits *one altitude above* `docs/process/roadmap.md`. The roadmap stays the **live status SSOT** (PM/planner-owned) — it says *what is built and what is next this week*. This doc says *what "complete" means and in what order we get there, and why that order*. **Do not duplicate status here**; when you want current build state, go to the roadmap. When you want the why-this-order, stay here.
 >
 > **Companion artifacts (same lane).** The north-star/thesis/pillars/refusals live in `docs/vision.md`; this doc operationalizes them into a buildable sequence. Design provenance for the `CDP-NN` items is `docs/research/cross-domain-pattern-library.md` + `docs/research/graph-architecture-patterns.md`; the field analysis is `docs/research/competitive-lateral-review.md`; the raw idea inbox is `docs/process/backlog-ideas.md` (B001–B009). Stage order is `docs/workplan.md`.
 >
-> **Grounding discipline.** Every current-state claim below was checked against `main` on 2026-06-29 (file:line where load-bearing). Where a claim is asserted-but-not-reproducible-from-`main` (the Aura corpus), it is marked as such. *Built* ≠ *defined* ≠ *aspirational*, and the three are never blurred.
+> **Grounding discipline.** Every current-state claim below was checked against `main` on 2026-07-13 (file:line where load-bearing). Where a claim is asserted-but-not-reproducible-from-`main` (the Aura corpus), it is marked as such. *Built* ≠ *defined* ≠ *aspirational*, and the three are never blurred.
 
 ---
 
 ## 1. Honest state-of-the-union snapshot
 
-The truth is a **paradox of altitude: a beautifully-engineered engine with no one at the wheel and no road under it.** The hard part is genuinely built and faithful to the six product invariants the cross-domain research now frames as discovered law. What is missing is everything that turns a faithful *prototype* into a deeply useful *application* — a real intake, the correctness the product already advertises, the table-stakes surface, and the operational substrate a live multi-user app demands.
+The truth is a **paradox of altitude: a beautifully-engineered engine, now live and serving real data, but still with no one personal at the wheel.** The hard part is genuinely built and faithful to the six product invariants the cross-domain research now frames as discovered law. The operational substrate is now live (hosted end-to-end, security-hardened). What is missing is what turns a faithful *live prototype* into a deeply useful *personal* application — a real intake (auth + episode creation), the correctness the product already advertises (corroboration wired but unsurfaced), and the table-stakes surface polish the UX reviews identified.
 
 ### Built (verified in code)
 
@@ -28,25 +28,25 @@ The truth is a **paradox of altitude: a beautifully-engineered engine with no on
 
 - **Epic 006 novelty** — fully specced; `novelty_score()`/`apply_novelty_discount()` **do not exist**; self-blocked on a `been_on` producer (zero `.py` hits) and a missing `graph/migrations/` dir.
 - **Epic 007 readiness** — **no epic file exists**; only a sensor seam feeding nothing; biggest remaining Phase-1 lever, safety-adjacent, solo-vs-party composition unspecified → needs a **design session before it can be DEFINED**.
-- **Epic 008 API tests** — **no epic file**; `/plan` is exercised only on auth-rejection paths; **zero `/health` tests**.
-- **Epic 009 eval harness** — defined; unbuilt. No golden trips, no cassettes, no N-run gate, no LLM-judge; **never runs in CI**, so source-or-silence has no automated regression gate against the real engine.
-- **Corroboration (the headline gap)** — the formula has an independence axis, but `engine.py:172` calls `for_fact(fact)` with no corroboration argument, so it defaults to **1** (`confidence.py:71`), and the Verifier keeps only the first adapter's fact per kind. A single tier-1 source and a multiply-corroborated fact are **indistinguishable**. The CDP-01 spike ([`../research/cdp-01-corroboration-feasibility-spike.md`](../research/cdp-01-corroboration-feasibility-spike.md)) settled what this is: an **unexercised axis**, not the feed-counting sin — the live path is single-source-by-construction (one government agency per kind, so its `1` is an *honest* count), while the genuine multi-origin corroboration the corpus already holds (distinct `SourceRecord.source` per `SAME_AS` cluster) never reaches `for_fact`. The fix is *wiring* origins we already hold into confidence.
-- **Dead/inert paths** — `intent.filters` (dog-friendly/max_length/difficulty) is parsed but consumed nowhere; water (USGS) and permits (RIDB) reach presentation only, never the guardrail; the outcome loop is open — `upsert_episode` exists in `graph/queries.py` but **has no app/HTTP caller** (only tests), and there is no authenticated path to create an Episode.
+- **Epic 009 eval harness** — **IN_PROGRESS**: the source-or-silence regression gate shipped (Wave 1, `evals/replay.py` + 5 golden scenarios + cassettes, hermetic, CI-gated); the deferred halves (LLM-judge, Brier hook, N-run tiers) remain unbuilt.
+- **Corroboration (the headline gap)** — the formula has an independence axis, but `engine.py:172` calls `for_fact(fact)` with no corroboration argument, so it defaults to **1** (`confidence.py:71`), and the Verifier keeps only the first adapter's fact per kind. A single tier-1 source and a multiply-corroborated fact are **indistinguishable**. The CDP-01 spike ([`../research/cdp-01-corroboration-feasibility-spike.md`](../research/cdp-01-corroboration-feasibility-spike.md)) settled what this is: an **unexercised axis**, not the feed-counting sin — the live path is single-source-by-construction (one government agency per kind, so its `1` is an *honest* count), while the genuine multi-origin corroboration the corpus already holds (distinct `SourceRecord.source` per `SAME_AS` cluster) never reaches `for_fact`. The fix is *wiring* origins we already hold into confidence. *(Corroboration was wired into the graph layer in #54 but remains unsurfaced — no user value yet.)*
+- **Dead/inert paths** — `intent.filters` (dog-friendly/max_length/difficulty) is parsed but consumed nowhere; water (USGS) and permits (RIDB) reach presentation only, never the guardrail. *(The outcome loop is now **closed**: Epic 002 shipped `POST /episode/{id}/outcome` with an authenticated caller; `upsert_episode` is exercised end-to-end.)*
 
 ### Aspirational / unverifiable-from-`main`
 
-- The **"1458 Shenandoah trails + geometry + 3DEP loaded into Aura"** claim cannot be confirmed from `main` — only the boundary polygon and a single Old Rag seed trail are committed; the corpus lives in managed Aura from a one-time ingest nobody can re-check. Treated as **asserted, not proven**; a re-runnable ingest verification is a Phase-E item.
+- The **Aura corpus** is now **live and verified** — the app is hosted end-to-end (Vercel → Render → Aura) and serving real data; `STATUS.md` (generated by `scripts/gen_state.py`) tracks live counts (currently ~2.2k trails, schema 0.2.0). The 2026-06-29 "cannot be confirmed from `main`" caveat is resolved by the live deployment + the `/status` endpoint.
 - Stages 7/8/9/11 (deep eval, multiplayer/grants, commons read-half, native SwiftUI) are designed, none built. The two new research reviews (~260KB) are landed but **un-triaged into epics** — CDP-01..20 is design provenance, not yet metabolized.
 
 ### Doc-drift (the "wrong memory" the project forbids — fix these first, they're cheap)
 
 | Drift | Reality on `main` |
 |---|---|
-| `roadmap.md` says `scripts/apply_schema.py` is "untracked / commit it" (4 places: ~lines 78/100/116 + the v9 header ~line 9) | It **is** tracked; `tests/test_apply_schema.py` exists. |
-| Epic index shows **016 DEFINED / 017 IN_PROGRESS** | Roadmap declares both **DONE & merged** (#38/#39); the epic files' own `Status:` headers still say DEFINED/IN_PROGRESS, so the generated index inherits the stale value. |
-| ~~`docs/README.md` does not route `docs/runbooks/`~~ | **Fixed in this pass** — README now routes `runbooks/deploy-api-render.md` in both the read-this-for-that table and the load-on-demand list. |
+| ~~`roadmap.md` says `scripts/apply_schema.py` is "untracked / commit it"~~ | **Fixed** — it is tracked; `tests/test_apply_schema.py` exists. |
+| ~~Epic index shows 016 DEFINED / 017 IN_PROGRESS~~ | **Fixed** — both DONE ✅; epic headers flipped, index regenerated. |
+| ~~`docs/README.md` does not route `docs/runbooks/`~~ | **Fixed** — README routes `runbooks/deploy-api-render.md` in both the read-this-for-that table and the load-on-demand list. |
+| ~~Epic 008 REVIEW in index~~ | **Fixed** (2026-07-13) — 008 shipped as PR #57; index row flipped to DONE ✅. |
 
-**The one-line snapshot:** the build quality is real and invariant-faithful; the sophisticated personal-intelligence machinery runs on **mock episodes for one seeded user** because the intake is empty (no real auth, no HTTP episode creation, no history import, no search, one unverifiable region); the loudest differentiator (independence-checked corroboration) is an **unexercised axis pinned at 1** — the spike confirms the real distinct-origin count sits in the corpus `SAME_AS` layer and just needs wiring into `for_fact`; and the operational substrate a live multi-user app needs is **absent while the app is deployed**.
+**The one-line snapshot:** the build quality is real and invariant-faithful; the sophisticated personal-intelligence machinery runs on **mock episodes for one seeded user** because the intake is empty (no real auth, no HTTP episode creation, no history import, no search); the loudest differentiator (independence-checked corroboration) is an **unexercised axis pinned at 1** — the spike confirms the real distinct-origin count sits in the corpus `SAME_AS` layer and just needs wiring into `for_fact`; and the operational substrate is now **live** (hosted end-to-end, serving real data, security-hardened via #166).
 
 ---
 

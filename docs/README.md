@@ -2,7 +2,7 @@
 
 *Start here. This is the router for everything under `docs/` — which doc answers which question, what's always loaded vs. read-on-demand, and the single source of truth (SSOT) for each kind of fact.*
 
-**Last verified:** 2026-07-01 · **Owner:** docs
+**Last verified:** 2026-07-13 · **Owner:** docs
 
 > Project root: [`../CLAUDE.md`](../CLAUDE.md) (product invariants + architecture) · [`../AGENTS.md`](../AGENTS.md) (repo operating contract).
 
