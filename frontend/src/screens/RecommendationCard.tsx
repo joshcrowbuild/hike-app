@@ -8,11 +8,14 @@ import {
   formatDrive,
   SaveButton,
   Verdict,
+  verdictSpokenWarningText,
   WarningBlock,
 } from './cardParts'
 import { ConditionStates } from './ConditionStates'
 import { glyphs } from './glyphs'
 import { ElevationGlyph } from './map/ElevationGlyph'
+
+const NO_TEXTS: ReadonlySet<string> = new Set()
 
 /**
  * A lean, scannable recommendation card (Epic 019 · DD1) — one tap opens Detail,
@@ -23,9 +26,24 @@ import { ElevationGlyph } from './map/ElevationGlyph'
  * change): the condition value carries its provenance through <Confidence>, so a
  * sampled value is visibly demoted and tagged — never indistinguishable from a
  * verified one (R1).
+ *
+ * `hoistedWarningTexts` (F1, ux-review 2026-07) names warnings the feed banner
+ * already states once, so this card's warning BLOCK doesn't repeat them — but
+ * the verdict and the accessible name below still derive from the FULL
+ * `card.warnings`, exactly as Detail does. One signal set, both surfaces: a
+ * card can never say "Good to go" while its own Detail says "Caution".
  */
-export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () => void }) {
+export function RecommendationCard({
+  card,
+  onOpen,
+  hoistedWarningTexts = NO_TEXTS,
+}: {
+  card: CardVM
+  onOpen: () => void
+  hoistedWarningTexts?: ReadonlySet<string>
+}) {
   const e = card.enrichment
+  const ownWarnings = card.warnings.filter((w) => !hoistedWarningTexts.has(w.text))
   return (
     <article className="card">
       <button className="card-tap" type="button" onClick={onOpen} aria-label={cardAccessibleName(card.name, card.warnings)}>
@@ -56,10 +74,12 @@ export function RecommendationCard({ card, onOpen }: { card: CardVM; onOpen: () 
 
         <ConditionBlock card={card} />
 
-        {/* A verified hazard STAYS on the card, collapsed under the verdict that
-            already speaks it — source + age retained, sentence suppressed
-            (AC-19.1.3). It is never relocated off the card. */}
-        <WarningBlock warnings={card.warnings} collapsed />
+        {/* A verified trail-specific hazard STAYS on the card — only the one
+            sentence the verdict above already speaks is collapsed to source +
+            age (AC-19.1.3). A banner-hoisted region-wide warning is
+            source-stamped once at feed level instead of ten times here; the
+            verdict above still carries it (F1). */}
+        <WarningBlock warnings={ownWarnings} spokenText={verdictSpokenWarningText(card)} />
 
         <div className="card-foot">
           {e?.freshness ? <Staleness>{e.freshness}</Staleness> : <span />}

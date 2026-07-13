@@ -12,6 +12,7 @@ import {
   SaveButton,
   TrailSummary,
   Verdict,
+  verdictSpokenWarningText,
   WarningBlock,
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
@@ -97,7 +98,7 @@ function DetailBody({ card }: { card: CardVM }) {
 
         <Verdict card={card} className="verdict--detail" />
 
-        <WarningBlock warnings={card.warnings} collapsed />
+        <WarningBlock warnings={card.warnings} spokenText={verdictSpokenWarningText(card)} />
 
         <div className="detail-actions">
           <SaveButton id={card.id} name={card.name} />

@@ -1,9 +1,18 @@
 /**
- * Splits a feed's card warnings into one feed-level banner + per-card leftovers
- * (report finding #1): a region-wide NWS product duplicated verbatim on most
- * cards was a full-color wall that pushed distance off a 390px screen. Hoisting
- * it once, and keeping only the trail-specific deltas per card, is presentation
- * only — it never touches ranking or drops a fact (Rule #2, R6).
+ * Splits a feed's card warnings into one feed-level banner + the set of shared
+ * texts each card should stop re-RENDERING (report finding #1): a region-wide
+ * NWS product duplicated verbatim on most cards was a full-color wall that
+ * pushed distance off a 390px screen. Hoisting is presentation only — it never
+ * touches ranking or drops a fact (Rule #2, R6).
+ *
+ * Load-bearing shape (F1, ux-review 2026-07): this module returns a *rendering
+ * suppression set*, never a rewritten card. An earlier version handed Home a
+ * warnings-stripped card copy, and the card's verdict — derived from
+ * `card.warnings` — flipped to "Good to go" under an active regional alert
+ * while Detail (full card) said "Caution": the same trail, two verdicts, the
+ * single worst failure mode for a trust-under-stress product. Every verdict
+ * and accessible-name consumer must keep reading the FULL card; only the
+ * duplicate warning *block* rendering is suppressed.
  */
 import type { CardVM, WarningVM } from './vm'
 
@@ -25,20 +34,24 @@ const SHARED_MIN_SHARE = 0.5
 export interface FeedWarnings {
   /** The region-wide alert(s), one per hazard kind, ranked by severity. */
   banner: WarningVM[]
-  /** Each card's warnings with the banner-hoisted text removed. */
-  perCard: Map<string, WarningVM[]>
+  /**
+   * Texts stated once at feed level, which a card's warning BLOCK should not
+   * re-render. Rendering-only: the warnings themselves stay on the card VM, so
+   * the verdict and the accessible name still speak them (F1).
+   */
+  sharedTexts: ReadonlySet<string>
 }
 
 /**
  * Hoist any warning shared across a majority of cards to the banner. When two
  * near-identical shared alerts of the same `kind` both qualify (an Extreme
  * Heat Warning and a Heat Advisory, say), only the higher-severity one
- * survives — the lower one is dropped everywhere rather than stacked.
+ * survives in the banner — the lower one is suppressed everywhere rather than
+ * stacked (it still counts as shared, so no card re-renders it as its own).
  */
 export function splitFeedWarnings(cards: CardVM[]): FeedWarnings {
   const total = cards.length
-  const perCard = new Map<string, WarningVM[]>()
-  if (total === 0) return { banner: [], perCard }
+  if (total === 0) return { banner: [], sharedTexts: new Set() }
 
   const byText = new Map<string, { warning: WarningVM; count: number }>()
   for (const card of cards) {
@@ -66,12 +79,5 @@ export function splitFeedWarnings(cards: CardVM[]): FeedWarnings {
   }
   const banner = [...bestByKind.values()].sort((a, b) => warningSeverity(b.text) - warningSeverity(a.text))
 
-  for (const card of cards) {
-    perCard.set(
-      card.id,
-      card.warnings.filter((w) => !sharedTexts.has(w.text)),
-    )
-  }
-
-  return { banner, perCard }
+  return { banner, sharedTexts }
 }

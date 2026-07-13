@@ -330,29 +330,46 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
     warnings,
   })
 
-  it('shows a region-wide alert once at feed level and clears it off every card', async () => {
+  it('shows a region-wide alert once at feed level and suppresses only the per-card warning blocks', async () => {
     const shared = heat('weather alert: Extreme Heat Warning — NWS')
     const cards = [cardWith('a', [shared]), cardWith('b', [shared]), cardWith('c', [shared])]
     const { container } = await renderHomeWith(feedWith({ cards }))
 
-    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
+    // The full source-stamped statement lives in exactly one place: the banner.
     expect(container.querySelector('.feed-alert-banner')).toBeInTheDocument()
     expect(container.querySelectorAll('.card .card-warnings').length).toBe(0)
+    // But the alert is never hoisted OUT of the cards' own verdicts (F1): each
+    // card still derives Caution from its full warning set, exactly as its
+    // Detail page will — one signal set, both surfaces.
+    const verdicts = container.querySelectorAll('.card .verdict')
+    expect(verdicts.length).toBe(3)
+    for (const v of verdicts) expect(v.textContent).toMatch(/Caution.*Extreme Heat Warning/)
   })
 
-  it('keeps a trail-specific warning on its own card alongside the hoisted region-wide one', async () => {
+  it('never renders "Good to go" on any card while a regional alert banner is up (F1 — card verdict == Detail verdict)', async () => {
+    const shared = heat('weather alert: Beach Hazards Statement — NWS')
+    const cards = [cardWith('hammock-hills', [shared]), cardWith('springers-point', [shared]), cardWith('ocracoke', [shared])]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+
+    expect(container.querySelector('.feed-alert-banner')).toBeInTheDocument()
+    // The live-DOM bug this pins (ux-review 2026-07, `home-obx-mobile`): banner
+    // "Beach Hazards Statement" over three "Good to go" cards, while every
+    // card's Detail said "Caution" — the tool contradicting itself under stress.
+    expect(screen.queryByText(/Good to go/)).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.verdict--caution').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('keeps a trail-specific warning sentence visible on its own card alongside the hoisted region-wide one', async () => {
     const shared = heat('weather alert: Extreme Heat Warning — NWS')
     const specific = heat('flash flood warning — creek crossing')
     const cards = [cardWith('a', [shared, specific]), cardWith('b', [shared]), cardWith('c', [shared])]
     const { container } = await renderHomeWith(feedWith({ cards }))
 
-    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
-    // The trail-specific warning stays on its own card: spoken once, as the
-    // top-line verdict headline. The sourced warning block below it collapses
-    // to just source + age — it doesn't repeat the hazard sentence verbatim.
-    expect(container.textContent).toMatch(/flash flood warning/)
+    // The trail-specific warning stays on its own card, sentence + source: the
+    // verdict headline speaks the shared alert (warnings[0]) and only counts
+    // this one ("+1 more"), so its sentence must not vanish into the count.
     const specificBlock = container.querySelector('.card .card-warnings')
-    expect(specificBlock?.textContent).not.toMatch(/flash flood warning/)
+    expect(specificBlock?.textContent).toMatch(/flash flood warning/)
     expect(specificBlock?.textContent).toMatch(/NWS api\.weather\.gov/)
     expect(container.querySelectorAll('.card .card-warnings').length).toBe(1)
   })
@@ -361,9 +378,11 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
     const strong = heat('weather alert: Extreme Heat Warning — NWS')
     const weak = heat('weather alert: Heat Advisory — NWS')
     const cards = [cardWith('a', [strong, weak]), cardWith('b', [strong, weak])]
-    await renderHomeWith(feedWith({ cards }))
+    const { container } = await renderHomeWith(feedWith({ cards }))
 
-    expect(screen.getAllByText(/Extreme Heat Warning/).length).toBe(1)
+    // One banner statement; no card re-renders either shared text as a block.
+    expect(container.querySelectorAll('.feed-alert-banner .card-warning').length).toBe(1)
+    expect(container.querySelectorAll('.card .card-warnings').length).toBe(0)
     expect(screen.queryByText(/Heat Advisory/)).not.toBeInTheDocument()
   })
 

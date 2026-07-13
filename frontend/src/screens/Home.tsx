@@ -96,8 +96,11 @@ export function Home({
   const cards = feed?.cards ?? EMPTY_CARDS
   // Hoist any region-wide alert duplicated across most cards to one feed-level
   // banner (report #1) — the red wall was pushing distance off-screen on every
-  // card. `perCard` carries only each trail's own delta.
-  const { banner, perCard } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // card. Rendering-only: cards are never rewritten (F1) — the card component
+  // suppresses the shared warning BLOCK but its verdict and accessible name
+  // keep deriving from the full CardVM, exactly as Detail does, so the two
+  // surfaces can never disagree on the verdict.
+  const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -233,8 +236,6 @@ export function Home({
             {shown.length > 0 ? (
               <div className="card-stack">
                 {shown.map((card, i) => {
-                  const cardWarnings = perCard.get(card.id) ?? card.warnings
-                  const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
                   const delay = revealDelay(i)
                   return (
                     <div
@@ -242,7 +243,11 @@ export function Home({
                       className={delay != null ? 'card-reveal' : undefined}
                       style={delay != null ? { animationDelay: `${delay}ms` } : undefined}
                     >
-                      <RecommendationCard card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+                      <RecommendationCard
+                        card={card}
+                        onOpen={() => onOpenTrail(card.id)}
+                        hoistedWarningTexts={sharedTexts}
+                      />
                     </div>
                   )
                 })}
