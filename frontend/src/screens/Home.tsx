@@ -192,10 +192,23 @@ export function Home({
                 Showing your last visit ({staleAsOf}) — checking current conditions…
               </p>
             ) : null}
-            {stale && revalidateError ? (
+            {/* Two-phase pending line (Epic 040 AC-3.3): fresh ranked cards are
+                on screen wearing per-kind `not-fetched` silence; the feed-level
+                pending signal lives HERE, not in the VM — no per-card "loading
+                conditions" copy is ever fabricated (D2). */}
+            {!stale && revalidating ? (
+              <p className="state-note" role="status" aria-live="polite">
+                Checking current conditions…
+              </p>
+            ) : null}
+            {revalidateError ? (
               <div className="state-block">
                 <p className="state-note" role="status">
-                  Couldn’t refresh — showing your last visit. Conditions may have changed.
+                  {stale
+                    ? 'Couldn’t refresh — showing your last visit. Conditions may have changed.'
+                    : // A failed conditions patch (Epic 040 AC-3.4): the cards
+                      // stay usable; retry re-posts the conditions call only.
+                      revalidateError.message}
                 </p>
                 <button className="text-action" type="button" onClick={reload}>
                   Try again

@@ -10,12 +10,16 @@ import { relativeAge } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
 import type {
+  CardWarningResponse,
   ConditionStatusResponse,
   ConfidenceLevel,
   FeedCardResponse,
+  FeedLineResponse,
   FeedResponse,
   OutcomeBody,
   OutcomeResponse,
+  PlanConditionsRequest,
+  PlanConditionsResponse,
   PlanRequest,
   ScopeContext,
   WireElevationProfile,
@@ -23,14 +27,17 @@ import type {
 import type { PlanInput, PlannerClient } from '../source'
 import type {
   CardVM,
+  ConditionsPatchVM,
   ConditionStateVM,
   ConditionStatusVM,
   ElevationProfile,
   EpisodeVM,
   FeedError,
   FeedVM,
+  LineVM,
   OutcomeVM,
   TrailGeo,
+  WarningVM,
 } from '../vm'
 import type { Coords, TuningState } from '../../types'
 
@@ -47,6 +54,18 @@ const FALLBACK_COORDS: Coords = { lat: 38.918, lon: -78.194 }
 // /plan (and getCard, which reruns plan) carries this budget — recordOutcome has
 // no timeout — so a single constant suffices.
 const PLAN_TIMEOUT_MS = 60_000
+
+/**
+ * Two-phase client switch (Epic 040 D6), build-time baked like `VITE_USE_MOCK`
+ * and the S3 stale cap: `VITE_TWO_PHASE=0` restores today's single-call flow
+ * byte-identically (AC-3.5). Blank counts as unset (enabled) — an
+ * empty-but-present env line must not silently engage the kill switch.
+ */
+const TWO_PHASE = ((): boolean => {
+  const raw = import.meta.env.VITE_TWO_PHASE
+  if (raw === undefined || raw.trim() === '') return true
+  return raw !== '0'
+})()
 
 /**
  * Scoped requests carry the dev-viewer secret so the backend's fail-closed
@@ -67,6 +86,31 @@ function classify(err: unknown, status?: number): FeedError {
   return { kind: 'offline', message: 'Couldn’t reach the planner. Showing nothing live right now.' }
 }
 
+/** Wire lines → VM, shared by the full feed card and the phase-2 patch (Epic 040
+ *  AC-2.1's client half: one mapping truth, never two). */
+function mapLines(lines: FeedLineResponse[]): LineVM[] {
+  return lines.map((l) => ({
+    text: l.text,
+    source: l.source,
+    confidence: l.confidence_level,
+    provenance: 'live',
+    // Real per-fact corroboration (Epic 026a) — every wire line is live, so this
+    // carries straight through; never backfilled from card-level enrichment.
+    sources: l.sources,
+  }))
+}
+
+/** Wire warnings → VM (source + humanised age), shared like `mapLines`. */
+function mapWarnings(warnings: CardWarningResponse[]): WarningVM[] {
+  return warnings.map((w) => ({
+    text: w.text,
+    source: w.source,
+    observedAgo: relativeAge(w.observed_at),
+    kind: w.kind,
+    provenance: 'live',
+  }))
+}
+
 function mapFeed(res: FeedResponse): FeedVM {
   return {
     query: res.query,
@@ -75,15 +119,7 @@ function mapFeed(res: FeedResponse): FeedVM {
         id: c.canonical_id,
         name: c.name,
         distanceMi: c.distance_mi,
-        conditionLines: c.lines.map((l) => ({
-          text: l.text,
-          source: l.source,
-          confidence: l.confidence_level,
-          provenance: 'live',
-          // Real per-fact corroboration (Epic 026a) — every wire line is live, so this
-          // carries straight through; never backfilled from card-level enrichment.
-          sources: l.sources,
-        })),
+        conditionLines: mapLines(c.lines),
         // The per-kind `conditions` payload (Epic 018 S4f / CDP-02) is the
         // authoritative coverage signal — the old `lines.length === 0 →
         // not-fetched` heuristic mislabeled an answered-clear card as
@@ -95,13 +131,7 @@ function mapFeed(res: FeedResponse): FeedVM {
           c.conditions == null && c.lines.length === 0 ? { state: 'not-fetched' } : undefined,
         // A VERIFIED hazard rides the card as a prominent warning — shown, never
         // hidden (decision of 2026-07-01). Source + humanised age, like a line.
-        warnings: c.warnings.map((w) => ({
-          text: w.text,
-          source: w.source,
-          observedAgo: relativeAge(w.observed_at),
-          kind: w.kind,
-          provenance: 'live',
-        })),
+        warnings: mapWarnings(c.warnings),
         // The API supplies no rich enrichment yet; the card degrades to thin.
         enrichment: undefined,
         // Geometry/elevation arrive once Lane A's contract lands; map them when
@@ -121,6 +151,9 @@ function mapFeed(res: FeedResponse): FeedVM {
     // Readiness has no HTTP surface yet (Epic 007 backlog); it stays off.
     readiness: { on: false, state: 'off' },
     dataSource: 'live',
+    // Two-phase (Epic 040): only an EXPLICIT false means pending — an older
+    // backend omits the field and its feed is the verified single-pass truth.
+    conditionsPending: res.conditions_complete === false || undefined,
   }
 }
 
@@ -228,6 +261,10 @@ export class HttpPlannerClient implements PlannerClient {
       lon,
       k: input.k ?? 10,
       viewer_id: scope.viewerId,
+      // Two-phase (Epic 040): ask for cards-first; the response self-describes
+      // completeness, so a kill-switched server or a warm key degrades to the
+      // classic flow with no client branching beyond `conditionsPending`.
+      ...(TWO_PHASE ? { phase: 'cards' as const } : {}),
     }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
@@ -244,6 +281,52 @@ export class HttpPlannerClient implements PlannerClient {
       return mapFeed((await resp.json()) as FeedResponse)
     } catch (err) {
       return emptyFeed(input, classify(err))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
+   * The phase-2 patch (Epic 040 S2): POSTs the same key inputs as `plan` plus
+   * the phase-1 card ids, and maps the verified overlay through the SAME
+   * line/warning/condition mappers the full feed uses. Rejects on any failure —
+   * `useFeed` owns the calm "couldn't verify" surface (never a fake-clear).
+   */
+  async planConditions(input: PlanInput, scope: ScopeContext, canonicalIds: string[]): Promise<ConditionsPatchVM> {
+    const { lat, lon } =
+      input.tuning.originCoords ?? this.originCoords[input.tuning.origin] ?? FALLBACK_COORDS
+    const body: PlanConditionsRequest = {
+      query: buildQuery(input.tuning),
+      lat,
+      lon,
+      k: input.k ?? 10,
+      viewer_id: scope.viewerId,
+      canonical_ids: canonicalIds,
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
+    try {
+      const resp = await fetch(`${this.baseUrl}/plan/conditions`, {
+        method: 'POST',
+        headers: authHeaders(scope),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      if (!resp.ok) throw new Error(`conditions failed: ${resp.status}`)
+      const res = (await resp.json()) as PlanConditionsResponse
+      return {
+        patches: res.patches.map((p) => ({
+          id: p.canonical_id,
+          conditionLines: mapLines(p.lines),
+          conditions: mapConditions(p.conditions),
+          warnings: mapWarnings(p.warnings),
+        })),
+        heldBack: (res.set_aside ?? []).map((s) => ({
+          id: s.canonical_id,
+          name: s.name,
+          reasons: s.reasons.map((r) => ({ text: r.text, source: r.source, kind: r.kind })),
+        })),
+      }
     } finally {
       clearTimeout(timer)
     }
