@@ -1,0 +1,14 @@
+{
+  "adapter": "usgs_water",
+  "source": "USGS Water Data (OGC API + WaterServices)",
+  "note": "No monitoring locations in the coastal search box — a sourced `gauge_available: false` answer (no_data), so the legacy discharge sub-call is never made.",
+  "interactions": [
+    {
+      "match": "monitoring-locations",
+      "status": 200,
+      "json": {
+        "features": []
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 import type { OriginKey, TuningState } from '../../types'
 import type { OutcomeBody, ScopeContext } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
-import type { CardVM, EpisodeVM, FeedVM, OutcomeVM, ReadinessVM, SetAside } from '../vm'
+import type { CardVM, EpisodeVM, FeedVM, OutcomeVM, ReadinessVM, SetAside, TrailWaterVM } from '../vm'
 import { buildFitLine, runFeed, trails } from './engine'
 import { findEpisode, listEpisodes, setOutcome } from './episodes'
 import type { Trail } from '../../types'
@@ -120,6 +120,14 @@ export class MockPlannerClient implements PlannerClient {
     return toCardVM(trail, neutralize(tuning ?? defaultFrame), origin, anon)
   }
 
+  async trailWater(id: string): Promise<TrailWaterVM | null> {
+    // Sample water answers demonstrating all three CDP-02 states (Epic 041):
+    // an answer, an answered-empty, and — for every other trail — the honest
+    // null silence. `provenance: 'mock'` so the surface can never dress these
+    // as verified corpus facts (R1); Detail's sample strip already discloses.
+    return mockWater[id] ?? null
+  }
+
   async recentEpisodes(scope: ScopeContext): Promise<EpisodeVM[]> {
     // Episodes are personal; the anonymous world-browser has none (R7).
     if (isAnonymous(scope)) return []
@@ -151,6 +159,51 @@ export class MockPlannerClient implements PlannerClient {
       companions,
     }
   }
+}
+
+// Sample water answers (Epic 041), keyed by trail id. Whiteoak Canyon carries
+// the answered state (a stream canyon — springs are plausible sample texture);
+// Old Rag carries the answered-empty (a dry ridge — apt); every other trail is
+// the null silence. Geometry sits near each trail's mock trailhead so the map
+// markers land believably on screen.
+const mockWater: Record<string, TrailWaterVM> = {
+  'whiteoak-canyon': {
+    state: 'sources',
+    basis: 'route',
+    radiusM: 200,
+    source: 'OSM',
+    // Coordinates hug the whiteoak-canyon geoFixtures waypoints so the sample
+    // markers land ON the sample route, not in a nearby field.
+    sources: [
+      {
+        id: 'water:osm:node/1001',
+        type: 'spring',
+        name: 'Limberlost Spring',
+        lat: 38.559,
+        lon: -78.3515,
+        distanceM: 64,
+        seasonal: 'yes',
+      },
+      { id: 'water:osm:node/1002', type: 'spring', lat: 38.5645, lon: -78.356, distanceM: 118 },
+      {
+        id: 'water:osm:node/1003',
+        type: 'water_tap',
+        name: 'Lower lot spigot',
+        lat: 38.5556,
+        lon: -78.3488,
+        distanceM: 22,
+      },
+    ],
+    provenance: 'mock',
+  },
+  'old-rag': {
+    state: 'none-nearby',
+    basis: 'route',
+    radiusM: 200,
+    source: 'OSM',
+    sources: [],
+    provenance: 'mock',
+  },
 }
 
 // A minimal frame used only to satisfy buildFitLine for getCard (which is anon-

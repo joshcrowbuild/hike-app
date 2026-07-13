@@ -1,0 +1,50 @@
+{
+  "adapter": "nws",
+  "source": "api.weather.gov",
+  "note": "The ux-review F1 evidence shape (Ocracoke, 2026-07-12): a stormy forecast plus one active region-wide Beach Hazards Statement answering EVERY trail's point probe.",
+  "interactions": [
+    {
+      "match": "/points/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "forecast": "https://api.weather.gov/gridpoints/MHX/60,32/forecast",
+          "gridId": "MHX",
+          "cwa": "MHX",
+          "gridX": 60,
+          "gridY": 32
+        }
+      }
+    },
+    {
+      "match": "/gridpoints/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "periods": [
+            {
+              "number": 1,
+              "name": "This Afternoon",
+              "shortForecast": "Showers And Thunderstorms Likely",
+              "temperature": 77,
+              "temperatureUnit": "F"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "match": "/alerts/active",
+      "status": 200,
+      "json": {
+        "features": [
+          {
+            "properties": {
+              "event": "Beach Hazards Statement"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

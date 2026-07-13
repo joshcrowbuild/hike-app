@@ -73,34 +73,49 @@ export function Verdict({ card, className }: { card: CardVM; className?: string 
  * <Staleness>, mirroring how condition lines carry source/confidence — a hazard
  * claim is a fact and dresses like one (R1).
  *
- * `collapsed` drops the repeated hazard sentence when a <Verdict> headline
- * directly above has already spoken it (a caution verdict is always derived
- * from these same warnings) — source + age still show, so source-or-silence
- * holds, but the sentence itself is never said twice on one card.
+ * `spokenText` drops one repeated hazard sentence — the one a <Verdict>
+ * headline directly above has already spoken (a caution verdict always speaks
+ * `card.warnings[0]`) — source + age still show, so source-or-silence holds,
+ * but that sentence is never said twice on one surface. Every OTHER warning's
+ * sentence stays visible: the verdict only counts them ("+N more"), so
+ * suppressing their text would make a verified hazard sentence invisible
+ * everywhere on the card (F1's cousin — a hidden fact, not a duplicate).
  */
 export function WarningBlock({
   warnings,
   label = 'Warning',
-  collapsed = false,
+  spokenText,
 }: {
   warnings: WarningVM[]
   label?: string
-  collapsed?: boolean
+  spokenText?: string
 }) {
   if (warnings.length === 0) return null
   return (
     <div className="card-warnings">
-      {warnings.map((w, i) => (
-        <Signal key={i} label={label} className="card-warning">
-          {collapsed ? null : w.text}
-          <span className="card-warning-meta">
-            {collapsed ? null : ' — '}
-            {w.source} · <Staleness>{w.observedAgo}</Staleness>
-          </span>
-        </Signal>
-      ))}
+      {warnings.map((w, i) => {
+        const spoken = w.text === spokenText
+        return (
+          <Signal key={i} label={label} className="card-warning">
+            {spoken ? null : w.text}
+            <span className="card-warning-meta">
+              {spoken ? null : ' — '}
+              {w.source} · <Staleness>{w.observedAgo}</Staleness>
+            </span>
+          </Signal>
+        )
+      })}
     </div>
   )
+}
+
+/**
+ * The warning sentence a card's <Verdict> headline speaks (the caution detail
+ * is derived from `warnings[0]`) — shared by the card and Detail so both
+ * suppress exactly the same duplicate sentence and nothing else.
+ */
+export function verdictSpokenWarningText(card: CardVM): string | undefined {
+  return card.warnings[0]?.text
 }
 
 /**

@@ -19,62 +19,62 @@ describe('warningSeverity', () => {
   })
 })
 
-describe('splitFeedWarnings (report #1: dedupe the region-wide alert wall)', () => {
-  it('hoists a warning shared across most cards to the banner and clears it off every card', () => {
+describe('splitFeedWarnings (report #1: dedupe the region-wide alert wall; F1: never rewrite the card)', () => {
+  it('hoists a warning shared across most cards to the banner and names its text as shared', () => {
     const shared = warning('weather alert: Extreme Heat Warning — NWS')
     const cards = [card('a', [shared]), card('b', [shared]), card('c', [shared])]
 
-    const { banner, perCard } = splitFeedWarnings(cards)
+    const { banner, sharedTexts } = splitFeedWarnings(cards)
 
     expect(banner).toEqual([shared])
-    for (const c of cards) expect(perCard.get(c.id)).toEqual([])
+    expect(sharedTexts).toEqual(new Set([shared.text]))
   })
 
-  it('leaves a trail-specific warning on its own card untouched, even alongside a hoisted one', () => {
+  it('leaves a trail-specific warning off the shared set, even alongside a hoisted one', () => {
     const shared = warning('weather alert: Extreme Heat Warning — NWS')
     const specific = warning('flash flood warning — creek crossing')
     const cards = [card('a', [shared, specific]), card('b', [shared]), card('c', [shared])]
 
-    const { banner, perCard } = splitFeedWarnings(cards)
+    const { banner, sharedTexts } = splitFeedWarnings(cards)
 
     expect(banner).toEqual([shared])
-    expect(perCard.get('a')).toEqual([specific])
-    expect(perCard.get('b')).toEqual([])
+    expect(sharedTexts.has(specific.text)).toBe(false)
   })
 
-  it('never stacks two near-identical shared alerts — only the higher-severity one survives', () => {
+  it('never stacks two near-identical shared alerts — only the higher-severity one survives the banner, both count as shared', () => {
     const strong = warning('weather alert: Extreme Heat Warning — NWS')
     const weak = warning('weather alert: Heat Advisory — NWS')
     const cards = [card('a', [strong, weak]), card('b', [strong, weak])]
 
-    const { banner, perCard } = splitFeedWarnings(cards)
+    const { banner, sharedTexts } = splitFeedWarnings(cards)
 
     expect(banner).toEqual([strong])
-    expect(perCard.get('a')).toEqual([])
-    expect(perCard.get('b')).toEqual([])
+    // The weak near-duplicate is still shared (so no card re-renders it as its
+    // own block) — it is simply not stacked in the banner.
+    expect(sharedTexts).toEqual(new Set([strong.text, weak.text]))
   })
 
   it('does not hoist a warning that only one card carries, even in a small feed', () => {
     const lone = warning('flash flood warning — creek crossing')
     const cards = [card('a', [lone]), card('b', [])]
 
-    const { banner, perCard } = splitFeedWarnings(cards)
+    const { banner, sharedTexts } = splitFeedWarnings(cards)
 
     expect(banner).toEqual([])
-    expect(perCard.get('a')).toEqual([lone])
+    expect(sharedTexts.size).toBe(0)
   })
 
   it('does not hoist the only warning on a single-card feed', () => {
     const only = warning('weather alert: Extreme Heat Warning — NWS')
     const cards = [card('a', [only])]
 
-    const { banner, perCard } = splitFeedWarnings(cards)
+    const { banner, sharedTexts } = splitFeedWarnings(cards)
 
     expect(banner).toEqual([])
-    expect(perCard.get('a')).toEqual([only])
+    expect(sharedTexts.size).toBe(0)
   })
 
   it('returns empty results for an empty feed', () => {
-    expect(splitFeedWarnings([])).toEqual({ banner: [], perCard: new Map() })
+    expect(splitFeedWarnings([])).toEqual({ banner: [], sharedTexts: new Set() })
   })
 })

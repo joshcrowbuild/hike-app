@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useRoute } from './app/useRoute'
 import { useIsAnonymous } from './data/PlannerProvider'
+import { useOrigins } from './data/regionsCatalog'
+import { readStoredTuning, writeStoredTuning } from './data/tuningStorage'
 import { Detail } from './screens/Detail'
 import { Home } from './screens/Home'
 import { Outcome } from './screens/Outcome'
@@ -23,9 +25,36 @@ const defaultState: TuningState = {
 function App() {
   const anonymous = useIsAnonymous()
   const { route, navigate, back } = useRoute()
-  const [tuning, setTuning] = useState<TuningState>(defaultState)
+  // The frame survives a reload (craft review M4): initialized from the
+  // device-local store — lazily, so the persisted frame paints on the FIRST
+  // committed render (no default-then-swap flash) — and written back on every
+  // change. `readStoredTuning` degrades to null on any doubt.
+  const [tuning, setTuning] = useState<TuningState>(() => readStoredTuning() ?? defaultState)
   const [tuningOpen, setTuningOpen] = useState(false)
   const [openPanel, setOpenPanel] = useState<PanelKey | null>(null)
+
+  useEffect(() => {
+    writeStoredTuning(tuning)
+  }, [tuning])
+
+  // A persisted origin can outlive the catalog that named it (a region file
+  // removed between visits): once the catalog is loaded, an unknown key falls
+  // back to the built-in default — or the first cataloged origin if even that
+  // is gone — rather than planning from a place that no longer exists.
+  const { origins } = useOrigins()
+  useEffect(() => {
+    if (origins.length === 0) return
+    if (origins.some((o) => o.key === tuning.origin)) return
+    // Re-check inside the updater: a user pick landing between this effect's
+    // render and its run must never be clobbered by the fallback.
+    setTuning((current) => {
+      if (origins.some((o) => o.key === current.origin)) return current
+      const fallback = origins.some((o) => o.key === defaultState.origin)
+        ? defaultState.origin
+        : origins[0].key
+      return { ...current, origin: fallback }
+    })
+  }, [origins, tuning.origin])
 
   return (
     <>

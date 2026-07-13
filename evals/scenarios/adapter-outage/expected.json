@@ -27,6 +27,7 @@
     "expected_unavailable_kinds": [
       "weather"
     ],
+    "region_wide_warnings": [],
     "condition_states": {
       "weather": "present",
       "air": "present",

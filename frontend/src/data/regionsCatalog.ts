@@ -11,7 +11,7 @@
  * lockstep with `mock/engine.ts`'s trail fixtures (which key `drives` by these same
  * origin keys), not the real config path.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { Coords } from '../types'
 import type { RegionsResponse } from './api'
@@ -125,20 +125,56 @@ export function orderOrigins(origins: OriginOption[], location?: Coords): Origin
   )
 }
 
-/** The flattened origin list for the picker + origin→label/region lookups, loaded
+/** One picker section: a region and its origins in display order. */
+export interface OriginGroup {
+  regionId: string
+  label: string
+  origins: OriginOption[]
+}
+
+/**
+ * The picker's region-grouped view (craft review C1 fix (2)): 35 flat
+ * alphabetical rows mixing towns, state parks, and beaches gave the list no
+ * scannable structure — the feed already thinks in regions, so the picker
+ * groups by them. Within a region, `orderOrigins`' existing contract applies
+ * (alphabetical; nearest-first once a live fix exists). With a fix, whole
+ * regions also re-rank by their nearest origin so the closest region's
+ * section leads. Regions with no origins are dropped (nothing to pick).
+ * Never mutates the catalog.
+ */
+export function groupOrigins(regions: RegionCatalogEntry[], location?: Coords): OriginGroup[] {
+  const groups = regions
+    .filter((region) => region.origins.length > 0)
+    .map((region) => ({
+      regionId: region.regionId,
+      label: region.label,
+      origins: orderOrigins(region.origins, location),
+    }))
+  if (!location) return groups
+  const from: [number, number] = [location.lon, location.lat]
+  const nearest = (group: OriginGroup) =>
+    Math.min(...group.origins.map((o) => haversineMeters(from, [o.lon, o.lat])))
+  return groups.sort((a, b) => nearest(a) - nearest(b))
+}
+
+/** A stable empty catalog so the loading state never re-triggers consumers'
+ *  memoization with a fresh `[]` identity every render. */
+const NO_REGIONS: RegionCatalogEntry[] = []
+
+/** The region catalog with its grouping intact (the picker's sections), loaded
  *  once and shared across every caller. Synchronous-fast once warm: a component
  *  mounting after the catalog has already resolved (the common case — the live app
  *  gates rendering on this in `PlannerProvider`) reads it with no loading flicker. */
-export function useOrigins(): { origins: OriginOption[]; loading: boolean } {
-  const [state, setState] = useState<{ origins: OriginOption[]; loading: boolean }>(() =>
-    cachedValue ? { origins: flattenOrigins(cachedValue), loading: false } : { origins: [], loading: true },
+export function useRegions(): { regions: RegionCatalogEntry[]; loading: boolean } {
+  const [state, setState] = useState<{ regions: RegionCatalogEntry[]; loading: boolean }>(() =>
+    cachedValue ? { regions: cachedValue, loading: false } : { regions: NO_REGIONS, loading: true },
   )
 
   useEffect(() => {
     if (!state.loading) return
     let live = true
     loadRegions().then((regions) => {
-      if (live) setState({ origins: flattenOrigins(regions), loading: false })
+      if (live) setState({ regions, loading: false })
     })
     return () => {
       live = false
@@ -148,4 +184,12 @@ export function useOrigins(): { origins: OriginOption[]; loading: boolean } {
   }, [])
 
   return state
+}
+
+/** The flattened origin list for origin→label/region lookups — a view over
+ *  `useRegions`, so the two can never disagree about the catalog. */
+export function useOrigins(): { origins: OriginOption[]; loading: boolean } {
+  const { regions, loading } = useRegions()
+  const origins = useMemo(() => flattenOrigins(regions), [regions])
+  return { origins, loading }
 }

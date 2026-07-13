@@ -82,6 +82,71 @@ def test_s2_ac3_grouped_by_kind_ordered_by_position(monkeypatch: Any) -> None:
     assert isinstance(grouped[ConditionKind.weather][0], NwsAdapter)
 
 
+# ── Epic 018 S2 (AC-2.1 / AC-2.2) — keyed sources: the full production adapter
+# list with any subset of keys self-drops cleanly, never raises. The deploy flips
+# air/fire/permits/closures on by adding dashboard keys alone; a partial key set
+# must never be able to 500 the boot or the fan-out (absent kinds stay honestly
+# `not_fetched` — pinned by test_condition_states + the answered-clear-vs-outage
+# golden scenario). ──
+
+# The v17 production value: every shipped source, keyless and keyed.
+_FULL_PRODUCTION_LIST = "nws,usgs_water,airnow,firms,ridb,nps_alerts"
+
+_ALL_KEYS = {
+    "NWS_USER_AGENT": "ua@example.com",
+    "AIRNOW_API_KEY": "k-air",
+    "FIRMS_MAP_KEY": "k-fire",
+    "RIDB_API_KEY": "k-permits",
+    "NPS_API_KEY": "k-closures",
+}
+
+
+def test_epic018_s2_firms_self_drops_without_key() -> None:
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": "firms"})  # no FIRMS_MAP_KEY
+    assert registry.enabled_adapters(s) == []
+
+
+def test_epic018_s2_ridb_self_drops_without_key() -> None:
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": "ridb"})  # no RIDB_API_KEY
+    assert registry.enabled_adapters(s) == []
+
+
+def test_epic018_s2_ac2_partial_key_set_never_raises() -> None:
+    # Full production list, only the keyless-tier credentials present: every keyed
+    # adapter self-drops (from_config → None) and the keyless ones still serve.
+    s = Settings.from_env(
+        {"ADVENTURE_LIVE_ADAPTERS": _FULL_PRODUCTION_LIST, "NWS_USER_AGENT": "ua@example.com"}
+    )
+    names = [a.name for a in registry.enabled_adapters(s)]
+    assert names == ["nws", "usgs_water"]
+    kinds = set(registry.probes_for("US", s))
+    assert kinds == {ConditionKind.weather, ConditionKind.water}
+
+
+def test_epic018_s2_ac2_zero_keys_still_clean() -> None:
+    # The degenerate partial set — no credential at all (not even the NWS contact
+    # string): only keyless USGS remains, and nothing raises.
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": _FULL_PRODUCTION_LIST})
+    assert [a.name for a in registry.enabled_adapters(s)] == ["usgs_water"]
+
+
+def test_epic018_s2_ac1_full_key_set_enables_all_six_kinds() -> None:
+    # The v17 deploy shape: full list + the four agency keys + the NWS contact
+    # string → every point kind is probed (what /health's probes_available
+    # reflects after the flip).
+    s = Settings.from_env({"ADVENTURE_LIVE_ADAPTERS": _FULL_PRODUCTION_LIST, **_ALL_KEYS})
+    grouped = registry.probes_for("US", s)
+    assert set(grouped) == {
+        ConditionKind.weather,
+        ConditionKind.water,
+        ConditionKind.air,
+        ConditionKind.fire,
+        ConditionKind.permits,
+        ConditionKind.closures,
+    }
+    assert all(len(adapters) == 1 for adapters in grouped.values())
+
+
 # ── AC-4.1 / AC-4.2 / AC-4.3 — per-region capability gating ──
 
 

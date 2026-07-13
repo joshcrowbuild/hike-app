@@ -109,12 +109,20 @@ _ROWS = {
 }
 
 
+# Rows the fake graph answers the Epic 041 water-coverage query with. Default
+# empty = a region never water-ingested → `water_sources: null` (silence);
+# per-test monkeypatching exercises the answered states.
+_WATER_ROWS: list[dict[str, Any]] = []
+
+
 class _FakeSession:
     def __init__(self, viewer_id: str) -> None:
         self.viewer_id = viewer_id
 
     def run(self, query: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
         _, params = query
+        if "origin" in params:  # water_sources_near (Epic 041)
+            return list(_WATER_ROWS)
         if "cids" in params:  # batched trails_detail (feed)
             return [_ROWS[c] for c in params["cids"] if c in _ROWS]
         row = _ROWS.get(params.get("cid"))  # single trail_detail (detail endpoint)
@@ -157,7 +165,11 @@ def test_full_trail_returns_exact_contract_shape():
         "geometry_confidence",
         "summit",
         "elevation_profile",
+        "water_sources",
     }
+    # No water rows in this fixture graph → the CDP-02 not-fetched silence: an
+    # honest null, never an empty "no water" claim (Epic 041).
+    assert body["water_sources"] is None
 
     assert body["geometry"]["type"] == "LineString"
     assert body["geometry"]["coordinates"][0] == [-78.30, 38.55]  # (lon, lat) order
@@ -417,3 +429,86 @@ def test_feed_card_carries_maps_fields():
     assert bare["elevation_profile"] is None
     # trailhead still served; a surveyed trailhead → derived=False.
     assert bare["trailhead"] == {"lat": 40.0, "lon": -105.0, "derived": False}
+
+
+# ── water overlay on the wire (Epic 041) — endpoint-level three-way states ────
+
+
+def _water_row(water_id: str, lat: float, lon: float, **over: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "water_id": water_id,
+        "water_type": "spring",
+        "name": None,
+        "point": {"latitude": lat, "longitude": lon},
+        "seasonal": None,
+        "source": "OSM",
+        "distance_m": 0.0,
+    }
+    row.update(over)
+    return row
+
+
+def test_water_answer_rides_the_detail_payload(monkeypatch: Any) -> None:
+    # ~11 m off ct:has's first route vertex (-78.30, 38.55) → within the near
+    # radius; the far row proves regional coverage without joining the answer.
+    monkeypatch.setattr(
+        "tests.test_trail_detail_endpoint._WATER_ROWS",
+        [
+            _water_row("water:osm:node/1", 38.5501, -78.30, name="Ridge Spring", seasonal="yes"),
+            _water_row("water:osm:node/9", 38.75, -78.55),
+        ],
+    )
+    client = _client()
+    try:
+        body = client.get("/trail/ct:has").json()
+    finally:
+        client.__exit__(None, None, None)
+
+    water = body["water_sources"]
+    assert water["state"] == "sources"
+    assert water["basis"] == "route"
+    assert water["radius_m"] == 200.0
+    assert water["source"] == "OSM"
+    assert [w["water_id"] for w in water["sources"]] == ["water:osm:node/1"]
+    spring = water["sources"][0]
+    assert spring["water_type"] == "spring"
+    assert spring["name"] == "Ridge Spring"
+    assert spring["seasonal"] == "yes"
+    assert spring["distance_m"] <= 200.0
+
+
+def test_water_answered_empty_when_covered_region_has_none_near(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "tests.test_trail_detail_endpoint._WATER_ROWS",
+        [_water_row("water:osm:node/9", 38.75, -78.55)],  # ~25 km away — coverage only
+    )
+    client = _client()
+    try:
+        body = client.get("/trail/ct:has").json()
+    finally:
+        client.__exit__(None, None, None)
+
+    water = body["water_sources"]
+    assert water["state"] == "none_nearby"
+    assert water["sources"] == []
+    assert water["source"] == "OSM"
+
+
+def test_water_read_failure_degrades_to_null_never_a_500(monkeypatch: Any) -> None:
+    def _boom(row: dict[str, Any]) -> None:
+        raise RuntimeError("water read exploded")
+
+    # A failure inside the water helper → the endpoint must still 200 with
+    # water_sources: null (enrichment, never a dependency). The patched helper
+    # is only called by `_water_sources`; geometry resolves separately through
+    # `_geometry_and_confidence`, so the rest of the payload stays intact.
+    monkeypatch.setattr(app_mod, "_route_coords_for_export", _boom)
+    client = _client()
+    try:
+        r = client.get("/trail/ct:has")
+    finally:
+        client.__exit__(None, None, None)
+
+    assert r.status_code == 200
+    assert r.json()["water_sources"] is None
+    assert r.json()["geometry"] is not None

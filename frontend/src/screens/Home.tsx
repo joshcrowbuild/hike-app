@@ -2,9 +2,11 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
+import { splitFeedConditions } from '../data/feedConditions'
 import { splitFeedWarnings } from '../data/feedWarnings'
+import { LOADING_COPY } from '../data/loadingStages'
 import { prefersReducedMotion } from '../data/motion'
-import { useFeed, useRecentEpisodes, type LoadingStage } from '../data/PlannerProvider'
+import { useFeed, useRecentEpisodes } from '../data/PlannerProvider'
 import { useOrigins, type OriginOption } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
@@ -12,18 +14,9 @@ import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
+import { FeedConditionsRibbon } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
-import { SkeletonCard } from './SkeletonCard'
-
-/** The honest progress ladder for a still-loading request (D4 — perceived
- *  performance). Never a frozen line past NNG's ~10s attention threshold: the
- *  copy keeps changing as the wait stretches, without pretending to know a
- *  cause it can't confirm until the wait is long enough to make one likely. */
-const LOADING_COPY: Record<LoadingStage, string> = {
-  initial: 'Reading conditions…',
-  reassure: 'Still checking conditions…',
-  coldstart: 'Waking the server — this can take up to a minute…',
-}
+import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
 
 /** A short, staggered per-card delay so real cards settle in one after another
  *  instead of popping in as one flat block — a calmer "arriving" feel than an
@@ -39,11 +32,6 @@ function revealDelay(index: number): number | undefined {
   if (prefersReducedMotion()) return undefined
   return Math.min(index * REVEAL_STAGGER_MS, REVEAL_STAGGER_MAX_MS)
 }
-
-/** Home shows peers, not a full page of results (v0.3 §2: "≤3 peers") — the
- *  skeleton mirrors that count so the placeholder shape matches what actually
- *  lands. */
-const SKELETON_COUNT = 3
 
 /** A stable empty array so `useMemo` below doesn't recompute every render
  *  while there's no feed yet (a fresh `[]` literal would never memoize). */
@@ -96,8 +84,16 @@ export function Home({
   const cards = feed?.cards ?? EMPTY_CARDS
   // Hoist any region-wide alert duplicated across most cards to one feed-level
   // banner (report #1) — the red wall was pushing distance off-screen on every
-  // card. `perCard` carries only each trail's own delta.
-  const { banner, perCard } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // card. Rendering-only: cards are never rewritten (F1) — the card component
+  // suppresses the shared warning BLOCK but its verdict and accessible name
+  // keep deriving from the full CardVM, exactly as Detail does, so the two
+  // surfaces can never disagree on the verdict.
+  const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // Region-scope conditions — one NWS zone's reading, a fire/closure sweep, a
+  // region-wide outage — hoist to ONE quiet ribbon under the curation header
+  // (report F3/F9a); cards keep only their per-trail deltas. Rendering-only,
+  // same posture as the warnings split above.
+  const feedConditions = useMemo(() => splitFeedConditions(cards), [cards])
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -192,10 +188,23 @@ export function Home({
                 Showing your last visit ({staleAsOf}) — checking current conditions…
               </p>
             ) : null}
-            {stale && revalidateError ? (
+            {/* Two-phase pending line (Epic 040 AC-3.3): fresh ranked cards are
+                on screen wearing per-kind `not-fetched` silence; the feed-level
+                pending signal lives HERE, not in the VM — no per-card "loading
+                conditions" copy is ever fabricated (D2). */}
+            {!stale && revalidating ? (
+              <p className="state-note" role="status" aria-live="polite">
+                Checking current conditions…
+              </p>
+            ) : null}
+            {revalidateError ? (
               <div className="state-block">
                 <p className="state-note" role="status">
-                  Couldn’t refresh — showing your last visit. Conditions may have changed.
+                  {stale
+                    ? 'Couldn’t refresh — showing your last visit. Conditions may have changed.'
+                    : // A failed conditions patch (Epic 040 AC-3.4): the cards
+                      // stay usable; retry re-posts the conditions call only.
+                      revalidateError.message}
                 </p>
                 <button className="text-action" type="button" onClick={reload}>
                   Try again
@@ -230,11 +239,13 @@ export function Home({
               </div>
             ) : null}
 
+            {/* The safety banner keeps the top slot; the quiet region-scope
+                conditions read once, directly below it, before the cards. */}
+            <FeedConditionsRibbon conditions={feedConditions} />
+
             {shown.length > 0 ? (
               <div className="card-stack">
                 {shown.map((card, i) => {
-                  const cardWarnings = perCard.get(card.id) ?? card.warnings
-                  const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
                   const delay = revealDelay(i)
                   return (
                     <div
@@ -242,7 +253,13 @@ export function Home({
                       className={delay != null ? 'card-reveal' : undefined}
                       style={delay != null ? { animationDelay: `${delay}ms` } : undefined}
                     >
-                      <RecommendationCard card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+                      <RecommendationCard
+                        card={card}
+                        onOpen={() => onOpenTrail(card.id)}
+                        hoistedWarningTexts={sharedTexts}
+                        hoistedLineKeys={feedConditions.sharedLineKeys}
+                        hoistedStateKeys={feedConditions.sharedStateKeys}
+                      />
                     </div>
                   )
                 })}

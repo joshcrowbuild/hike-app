@@ -27,6 +27,24 @@
       "source_url": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
       "replication_timestamp": null,
       "output": "data/osm/north-carolina-latest.osm.pbf"
+    },
+    {
+      "state": "maryland",
+      "source_url": "https://download.geofabrik.de/north-america/us/maryland-latest.osm.pbf",
+      "replication_timestamp": null,
+      "output": "data/osm/maryland-latest.osm.pbf"
+    },
+    {
+      "state": "west-virginia",
+      "source_url": "https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf",
+      "replication_timestamp": null,
+      "output": "data/osm/west-virginia-latest.osm.pbf"
+    },
+    {
+      "state": "us-virgin-islands",
+      "source_url": "https://download.geofabrik.de/north-america/us/us-virgin-islands-latest.osm.pbf",
+      "replication_timestamp": null,
+      "output": "data/osm/us-virgin-islands-latest.osm.pbf"
     }
   ]
 }

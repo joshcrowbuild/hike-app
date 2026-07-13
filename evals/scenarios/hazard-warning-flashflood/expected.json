@@ -29,6 +29,9 @@
       "weather alert: Flash Flood Warning"
     ],
     "expected_unavailable_kinds": [],
+    "region_wide_warnings": [
+      "weather alert: Flash Flood Warning"
+    ],
     "condition_states": {
       "weather": "present",
       "air": "present",

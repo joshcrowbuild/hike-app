@@ -8,7 +8,7 @@
  * <Confidence> primitive demotes a non-live reading — a sampled "go" can never
  * wear the costume of a verified one.
  */
-import type { CardVM, Provenance } from './vm'
+import type { CardVM, ConditionStateVM, Provenance } from './vm'
 
 export type VerdictTone = 'go' | 'caution' | 'unverified'
 
@@ -26,6 +26,31 @@ const UNVERIFIED: Omit<VerdictVM, 'provenance'> = {
   tone: 'unverified',
   lead: 'Heads up',
   detail: 'conditions couldn’t be verified',
+}
+
+/** The states where a source actually ANSWERED (CDP-02) — the only ones the
+ *  go-detail may count as a completed check. `unavailable`/`not-fetched` are
+ *  not checks: counting them would dress an outage as a completed sweep. */
+const CHECKED_STATES: ReadonlySet<ConditionStateVM> = new Set([
+  'present',
+  'stale-degraded',
+  'no-hazard',
+  'no-data',
+])
+
+/**
+ * The go-detail when no merged reading exists. It claims exactly what was
+ * verified and nothing more (F2, ux-review 2026-07 / Invariant 1): "clear" is a
+ * weather word, and the old `'conditions look clear'` fallback asserted a
+ * sky-state no source had stated — rendered beside a sourced "Showers And
+ * Thunderstorms Likely" line, it was an unsourced editorial claim. What the
+ * verdict actually means is "nothing blocking", so that is all it says, counted
+ * from the six-state payload's answered checks.
+ */
+function checkedDetail(card: CardVM): string {
+  const n = card.conditions?.filter((s) => CHECKED_STATES.has(s.state)).length ?? 0
+  if (n === 0) return 'nothing flagged'
+  return n === 1 ? 'nothing flagged in 1 check' : `nothing flagged across ${n} checks`
 }
 
 /**
@@ -53,16 +78,19 @@ export function deriveVerdict(card: CardVM): VerdictVM {
   }
 
   // 3) A verified, unflagged reading → good to go. Summarised from the merged
-  //    "Now" value when present; else a generic phrasing so we never echo a
-  //    sourced per-line string (source lives in the Sources section, not here).
+  //    "Now" value when present; else the checked-count phrasing — it claims only
+  //    what was verified, never a sky-state (F2), and never echoes a sourced
+  //    per-line string (source lives in the Sources section, not here).
   if (e?.conditionValue ?? primary) {
-    return { tone: 'go', lead: 'Good to go', detail: e?.conditionValue ?? 'conditions look clear', provenance }
+    return { tone: 'go', lead: 'Good to go', detail: e?.conditionValue ?? checkedDetail(card), provenance }
   }
 
-  // 4) No usable reading. An explicit checked-clear silence is a real positive;
-  //    the honest default (not-fetched / no-data / stale) is an unverified nudge.
+  // 4) No usable reading. An explicit checked-clear silence is a real positive —
+  //    spoken in the six-state vocabulary ("checked — nothing to flag"), never a
+  //    sky-word; the honest default (not-fetched / no-data / stale) is an
+  //    unverified nudge.
   if (card.conditionSilence?.state === 'checked-clear') {
-    return { tone: 'go', lead: 'Good to go', detail: 'clear — nothing flagged', provenance: 'live' }
+    return { tone: 'go', lead: 'Good to go', detail: 'checked — nothing to flag', provenance: 'live' }
   }
   return { ...UNVERIFIED, provenance }
 }

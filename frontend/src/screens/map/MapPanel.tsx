@@ -24,7 +24,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import { boundsOf, expandBounds, nearestFractionToPoint, pointAtFraction } from '../../data/geo'
 import type { Bounds } from '../../data/geo'
-import type { GeoPosition, TrailGeo } from '../../data/vm'
+import type { GeoPosition, TrailGeo, TrailWaterVM } from '../../data/vm'
+import { waterMarkerLabel } from '../../data/water'
 import { basemapStyle } from './mapStyle'
 import type { MapLayerKey } from './layers'
 
@@ -39,6 +40,8 @@ export interface MapPanelProps {
   onTileError: () => void
   /** Device location (from the parent's permission-gated request), or null. */
   userLocation: GeoPosition | null
+  /** Nearby mapped water (Epic 041) — present only in the answered state. */
+  water?: TrailWaterVM
 }
 
 const ROUTE_INK = '#23211c'
@@ -50,6 +53,7 @@ export default function MapPanel({
   onRouteClick,
   onTileError,
   userLocation,
+  water,
 }: MapPanelProps) {
   const ref = useRef<MapRef>(null)
 
@@ -154,6 +158,21 @@ export default function MapPanel({
           <span className="map-marker map-marker--me" aria-hidden="true" />
         </Marker>
       ) : null}
+
+      {/* Mapped water (Epic 041): quiet, distinct-by-SHAPE droplet markers —
+          never color alone (§4.3). Unlike the decorative trailhead/summit dots
+          these carry information located nowhere else on the map, so each has
+          a real accessible name + a hover label instead of aria-hidden. */}
+      {water?.sources.map((w) => (
+        <Marker key={w.id} longitude={w.lon} latitude={w.lat} anchor="bottom">
+          <span
+            className="map-marker--water"
+            role="img"
+            aria-label={waterMarkerLabel(w, water.basis)}
+            title={waterMarkerLabel(w, water.basis)}
+          />
+        </Marker>
+      ))}
 
       <ScaleControl position="bottom-left" unit="imperial" />
     </Map>

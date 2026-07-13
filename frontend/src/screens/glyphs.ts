@@ -5,6 +5,7 @@ import {
   Car,
   Clock,
   Download,
+  Droplet,
   Gauge,
   History,
   LocateFixed,
@@ -32,6 +33,9 @@ export const glyphs = {
   distance: Route,
   ascent: Mountain,
   duration: Clock,
+  // Trail fact (Epic 041): a MAPPED water source — never streamflow (the live
+  // condition kind confusingly also named "water"), never a potability cue.
+  water: Droplet,
   // Actions
   save: Bookmark,
   saved: BookmarkCheck,
