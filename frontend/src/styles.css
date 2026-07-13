@@ -170,6 +170,27 @@ button {
   margin: 0 0 0.85rem;
 }
 
+/* ---- feed-level conditions ribbon (region-scope facts stated once — report
+   F3/F9a) — a quiet raised panel below the safety banner: the reading and the
+   silent dispositions reuse the card's own condition treatments (their type
+   sizes are theirs), so the three silences stay exactly as distinct here as on
+   a card. Never the accent hue — the banner above owns that. */
+.feed-conditions {
+  margin: 0 0 0.85rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+}
+
+.feed-conditions-scope {
+  margin: 0 0 0.35rem;
+}
+
+.feed-conditions .condition-states--compact {
+  margin-top: 0.3rem;
+}
+
 .card-stack {
   display: grid;
   gap: 0.85rem;

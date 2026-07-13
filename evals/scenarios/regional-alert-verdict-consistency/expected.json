@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-12",
+    "note": "Golden expectations are versioned with the fixture corpus (AC-3.6); re-review by the stamp or this is wrong memory. Pins ux-review-conditions-2026-07 F1: card verdict == Detail verdict under a region-wide alert."
+  },
+  "hard": {
+    "min_cards": 3,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "fire",
+      "water",
+      "permits"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 77,
+          "short_forecast": "Showers And Thunderstorms Likely",
+          "active_alerts": [
+            "Beach Hazards Statement"
+          ]
+        }
+      }
+    },
+    "corpus_corroboration": {
+      "osm:hammock-hills": 2,
+      "osm:springers-point": 1,
+      "osm:ocracoke-beach-walk": 2
+    },
+    "expected_warnings": [
+      "weather alert: Beach Hazards Statement"
+    ],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [
+      "weather alert: Beach Hazards Statement"
+    ],
+    "condition_states": {
+      "weather": "present",
+      "air": "unavailable",
+      "fire": "no_hazard",
+      "water": "no_data",
+      "closures": "not_fetched",
+      "permits": "present"
+    }
+  }
+}

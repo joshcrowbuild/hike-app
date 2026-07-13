@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
+import { splitFeedConditions } from '../data/feedConditions'
 import { splitFeedWarnings } from '../data/feedWarnings'
 import { prefersReducedMotion } from '../data/motion'
 import { useFeed, useRecentEpisodes, type LoadingStage } from '../data/PlannerProvider'
@@ -12,6 +13,7 @@ import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
+import { FeedConditionsRibbon } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
 import { SkeletonCard } from './SkeletonCard'
 
@@ -96,8 +98,16 @@ export function Home({
   const cards = feed?.cards ?? EMPTY_CARDS
   // Hoist any region-wide alert duplicated across most cards to one feed-level
   // banner (report #1) — the red wall was pushing distance off-screen on every
-  // card. `perCard` carries only each trail's own delta.
-  const { banner, perCard } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // card. Rendering-only: cards are never rewritten (F1) — the card component
+  // suppresses the shared warning BLOCK but its verdict and accessible name
+  // keep deriving from the full CardVM, exactly as Detail does, so the two
+  // surfaces can never disagree on the verdict.
+  const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // Region-scope conditions — one NWS zone's reading, a fire/closure sweep, a
+  // region-wide outage — hoist to ONE quiet ribbon under the curation header
+  // (report F3/F9a); cards keep only their per-trail deltas. Rendering-only,
+  // same posture as the warnings split above.
+  const feedConditions = useMemo(() => splitFeedConditions(cards), [cards])
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -243,11 +253,13 @@ export function Home({
               </div>
             ) : null}
 
+            {/* The safety banner keeps the top slot; the quiet region-scope
+                conditions read once, directly below it, before the cards. */}
+            <FeedConditionsRibbon conditions={feedConditions} />
+
             {shown.length > 0 ? (
               <div className="card-stack">
                 {shown.map((card, i) => {
-                  const cardWarnings = perCard.get(card.id) ?? card.warnings
-                  const displayCard = cardWarnings === card.warnings ? card : { ...card, warnings: cardWarnings }
                   const delay = revealDelay(i)
                   return (
                     <div
@@ -255,7 +267,13 @@ export function Home({
                       className={delay != null ? 'card-reveal' : undefined}
                       style={delay != null ? { animationDelay: `${delay}ms` } : undefined}
                     >
-                      <RecommendationCard card={displayCard} onOpen={() => onOpenTrail(card.id)} />
+                      <RecommendationCard
+                        card={card}
+                        onOpen={() => onOpenTrail(card.id)}
+                        hoistedWarningTexts={sharedTexts}
+                        hoistedLineKeys={feedConditions.sharedLineKeys}
+                        hoistedStateKeys={feedConditions.sharedStateKeys}
+                      />
                     </div>
                   )
                 })}
