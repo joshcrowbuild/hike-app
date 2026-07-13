@@ -73,19 +73,37 @@ schema-aura:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	$(PYTHON) scripts/apply_schema.py
 
+# Region resolution, explicit-env/CLI precedence over .env:
+# `$(ADVENTURE_REGION)` is Make's view of the var, which already reflects both
+# `ADVENTURE_REGION=x make target` (process env) and `make target ADVENTURE_REGION=x`
+# (CLI override) — Make imports both into its variable namespace before the recipe
+# runs. We snapshot that into $$region_override *before* sourcing .env, because
+# `set -a && . ./.env` unconditionally overwrites the shell's ADVENTURE_REGION with
+# .env's value (a plain source, not a fill-if-unset). After sourcing, we re-assert
+# the override if one was given, so .env can only supply a default, never clobber an
+# explicit request. Every recipe echoes the resolved region so a wrong-region run is
+# obvious in the log.
+define RESOLVE_REGION
+region_override="$(ADVENTURE_REGION)"; \
+set -a && [ -f .env ] && . ./.env; set +a; \
+if [ -n "$$region_override" ]; then ADVENTURE_REGION="$$region_override"; fi; \
+ADVENTURE_REGION="$${ADVENTURE_REGION:-shenandoah-gwj}"; \
+echo ">> ADVENTURE_REGION resolved to: $$ADVENTURE_REGION"
+endef
+
 fetch-dem:
-	@set -a && [ -f .env ] && . ./.env; set +a; \
-	$(PYTHON) scripts/fetch_dem.py --region $${ADVENTURE_REGION:-shenandoah-gwj}
+	@$(RESOLVE_REGION); \
+	$(PYTHON) scripts/fetch_dem.py --region "$$ADVENTURE_REGION"
 
 ingest:
-	@set -a && [ -f .env ] && . ./.env; set +a; \
-	$(PYTHON) -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} && \
-	$(PYTHON) -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj}
+	@$(RESOLVE_REGION); \
+	$(PYTHON) -m ingestion.pipeline --region "$$ADVENTURE_REGION" && \
+	$(PYTHON) -m ingestion.ingest_trailheads --region "$$ADVENTURE_REGION"
 
 ingest-dry:
-	@set -a && [ -f .env ] && . ./.env; set +a; \
-	$(PYTHON) -m ingestion.pipeline --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run && \
-	$(PYTHON) -m ingestion.ingest_trailheads --region $${ADVENTURE_REGION:-shenandoah-gwj} --dry-run
+	@$(RESOLVE_REGION); \
+	$(PYTHON) -m ingestion.pipeline --region "$$ADVENTURE_REGION" --dry-run && \
+	$(PYTHON) -m ingestion.ingest_trailheads --region "$$ADVENTURE_REGION" --dry-run
 
 api-dev:
 	@set -a && [ -f .env ] && . ./.env; set +a; \
