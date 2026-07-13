@@ -71,6 +71,13 @@ export function splitFeedWarnings(cards: CardVM[]): FeedWarnings {
       .map(([text]) => text),
   )
 
+  // Deliberate trade-off (review M2, accepted): one banner slot per kind means a
+  // second DISTINCT shared hazard of the same kind (or a severity tie) loses its
+  // banner sentence. The fact is never dropped — it stays in every affected
+  // card's verdict count ("+N more"), its accessible name, and Detail's warning
+  // block (which renders full sentences for non-spoken warnings) — but the feed
+  // shows one sentence per kind by design: the banner is a calm top slot, not a
+  // stack.
   const bestByKind = new Map<string, WarningVM>()
   for (const text of sharedTexts) {
     const w = byText.get(text)!.warning

@@ -19,9 +19,13 @@
  */
 import type { CardVM, ConditionStatusVM, LineVM } from './vm'
 
-// A signal counts as region-scope once at least two cards carry it AND it
-// covers a majority of the feed — mirrors feedWarnings' thresholds, so the
-// two hoisting rules can't drift apart.
+// A signal counts as region-scope once at least two cards carry it AND a
+// STRICT majority of the feed does. Strictness is load-bearing (self-review
+// finding M1): a card carries exactly one disposition per kind and one reading
+// per fact, so an exact-half tie (2 cards fire checked-clear + 2 cards fire
+// couldn't-verify) would, at >= 0.5, hoist BOTH — a self-contradicting ribbon
+// hanging its checked-clear over the cards whose probe actually failed. Two
+// variants of one partitioned signal can never BOTH exceed a strict half.
 const SHARED_MIN_CARDS = 2
 const SHARED_MIN_SHARE = 0.5
 
@@ -66,7 +70,7 @@ const EMPTY: FeedConditions = {
 }
 
 /** Tally distinct keys per card (a card votes once per key), then keep the keys
- *  shared across the feed-majority threshold, in first-seen order. */
+ *  shared across a strict feed majority, in first-seen order. */
 function shared<T>(cards: CardVM[], pick: (c: CardVM) => T[], key: (t: T) => string): T[] {
   const total = cards.length
   const byKey = new Map<string, { item: T; count: number }>()
@@ -82,17 +86,29 @@ function shared<T>(cards: CardVM[], pick: (c: CardVM) => T[], key: (t: T) => str
     }
   }
   return [...byKey.values()]
-    .filter((v) => v.count >= SHARED_MIN_CARDS && v.count / total >= SHARED_MIN_SHARE)
+    .filter((v) => v.count >= SHARED_MIN_CARDS && v.count / total > SHARED_MIN_SHARE)
     .map((v) => v.item)
+}
+
+/**
+ * Defence-in-depth behind the strict-majority rule (M1): if more than one
+ * distinct disposition of the SAME kind ever qualifies (only reachable if a
+ * payload carried duplicate kind entries — the partition assumption broken),
+ * hoist NONE of that kind. A ribbon must never state two truths about one
+ * kind while the cards that disagree are silenced; the per-card rows are the
+ * honest rendering of a conflict.
+ */
+function dropConflictingKinds(states: ConditionStatusVM[]): ConditionStatusVM[] {
+  const kindsSeen = new Map<string, number>()
+  for (const s of states) kindsSeen.set(s.kind, (kindsSeen.get(s.kind) ?? 0) + 1)
+  return states.filter((s) => kindsSeen.get(s.kind) === 1)
 }
 
 export function splitFeedConditions(cards: CardVM[]): FeedConditions {
   if (cards.length === 0) return EMPTY
   const sharedLines = shared(cards, (c) => c.conditionLines, lineKey)
-  const sharedStates = shared(
-    cards,
-    (c) => (c.conditions ?? []).filter((s) => SILENT_STATES.has(s.state)),
-    conditionStateKey,
+  const sharedStates = dropConflictingKinds(
+    shared(cards, (c) => (c.conditions ?? []).filter((s) => SILENT_STATES.has(s.state)), conditionStateKey),
   )
   return {
     sharedLines,

@@ -94,6 +94,40 @@ describe('splitFeedConditions (F3: region-scope facts stated once, per-trail del
     expect(sharedStateKeys.has(conditionStateKey(own))).toBe(false)
   })
 
+  it('hoists neither side of an exact-half disposition tie — a ribbon never contradicts itself (M1)', () => {
+    // 2 cards fire checked-clear + 2 cards fire couldn't-verify: at >= 0.5 both
+    // would hoist, and the ribbon's checked-clear would hang over the two cards
+    // whose fire probe actually failed while their own rows were suppressed.
+    const fireClear = status()
+    const fireOut = status({ state: 'unavailable', source: undefined, checkedAgo: undefined })
+    const cards = [
+      card('a', { conditions: [fireClear] }),
+      card('b', { conditions: [fireClear] }),
+      card('c', { conditions: [fireOut] }),
+      card('d', { conditions: [fireOut] }),
+    ]
+
+    const { sharedStates, sharedStateKeys } = splitFeedConditions(cards)
+
+    expect(sharedStates).toEqual([])
+    expect(sharedStateKeys.size).toBe(0)
+  })
+
+  it('hoists neither of two exact-half-tied readings — one area, one stated sky', () => {
+    const north = line({ text: 'Sunny 60°F · NWS, just now' })
+    const south = line({ text: 'Rain 55°F · NWS, just now' })
+    const cards = [
+      card('a', { conditionLines: [north] }),
+      card('b', { conditionLines: [north] }),
+      card('c', { conditionLines: [south] }),
+      card('d', { conditionLines: [south] }),
+    ]
+
+    const { sharedLines } = splitFeedConditions(cards)
+
+    expect(sharedLines).toEqual([])
+  })
+
   it('treats near-identical dispositions as distinct — the key carries source, age and detail', () => {
     const fresh = status({ checkedAgo: 'just now' })
     const older = status({ checkedAgo: '2h ago' })

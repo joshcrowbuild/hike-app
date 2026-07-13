@@ -15,7 +15,7 @@
  * untouched (the verdict still derives from the full card, F1).
  */
 import { Confidence } from '../components'
-import type { FeedConditions } from '../data/feedConditions'
+import { lineKey, type FeedConditions } from '../data/feedConditions'
 import { ConditionStates } from './ConditionStates'
 
 export function FeedConditionsRibbon({ conditions }: { conditions: FeedConditions }) {
@@ -26,8 +26,11 @@ export function FeedConditionsRibbon({ conditions }: { conditions: FeedCondition
       <p className="kicker feed-conditions-scope">In this area</p>
       {sharedLines.length > 0 ? (
         <ul className="condition-lines feed-conditions-lines">
+          {/* Rows are keyed on the same full-fact identity the split dedupes
+              on (`lineKey`), so two lines differing only in confidence or
+              provenance can never collide. */}
           {sharedLines.map((line) => (
-            <li key={`${line.text}·${line.source}`} className="condition-line">
+            <li key={lineKey(line)} className="condition-line">
               <Confidence level={line.confidence} provenance={line.provenance}>
                 {line.text}
               </Confidence>
