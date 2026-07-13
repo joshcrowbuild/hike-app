@@ -1,6 +1,6 @@
 # Epic 018 — Live conditions on the card (JIT overlay wiring)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (the thin-cards → live-conditions build; reconciled 2026-07-12 against what actually shipped; open scope closed 2026-07-12 — S4f/S2/S6c struck below)
 **Spec refs:** Rules #1/#2/#3 (source-or-silence · confidence-as-one-property · slow-corpus + JIT overlays) · `docs/vision.md` Pillars 1+2 · `docs/research/cdp-01-corroboration-feasibility-spike.md` · CDP-02 (legible silence) · CDP-08 (per-data-type freshness)
 
