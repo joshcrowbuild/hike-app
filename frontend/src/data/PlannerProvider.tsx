@@ -10,6 +10,7 @@ import type { MutableRefObject } from 'react'
 
 import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
+import { composeConditions } from './composeConditions'
 import { feedKey, readFeedCache, staleAgeLabel, toStalePaint, writeFeedCache } from './feedCache'
 import { HttpPlannerClient } from './http/httpPlanner'
 import { COLDSTART_MS, REASSURE_MS, type LoadingStage } from './loadingStages'
@@ -17,7 +18,7 @@ import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
 import { USE_MOCK } from './useMock'
-import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
+import type { CardVM, EpisodeVM, FeedError, FeedVM, TrailWaterVM } from './vm'
 
 const useMockDefault = USE_MOCK
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
@@ -218,8 +219,20 @@ function hydrateStale(input: PlanInput, scope: ScopeContext): { feed: FeedVM; st
   return { feed: toStalePaint(hit.feed, staleAsOf), staleAsOf }
 }
 
+/** The calm patch-failure disclosure (Epic 040 AC-3.4): the cards stay usable,
+ *  the gap is named, retry re-posts the conditions call only. */
+const CONDITIONS_ERROR: FeedError = {
+  kind: 'partial',
+  message: 'Couldn’t verify current conditions — try again.',
+}
+
 export function useFeed(input: PlanInput): FeedState {
   const { client, scope, feedSnapshot } = usePlanner()
+  // Two-phase retry seam (Epic 040 AC-3.4): set ONLY while a conditions patch
+  // has failed and its phase-1 feed is still on screen — `reload()` then
+  // re-posts the conditions call alone instead of re-running the whole plan.
+  // Cleared on every effect re-key (a retune invalidates the pending patch).
+  const retryConditions = useRef<(() => void) | null>(null)
   // Lazy initializer, not an effect-only seed (FLASH IS REAL): an effect runs
   // AFTER the first commit, so seeding only there would still paint one
   // skeleton frame first. This runs once, synchronously, before that first
@@ -240,6 +253,9 @@ export function useFeed(input: PlanInput): FeedState {
 
   useEffect(() => {
     let live = true
+    // A re-key (retune/reload) invalidates any failed patch from the previous
+    // frame — its phase-1 feed is no longer the one on screen.
+    retryConditions.current = null
     // Re-hydrate on every key change too (a retune), not just on mount — the
     // same helper the lazy initializer used, so mount and retune behave
     // identically.
@@ -280,15 +296,60 @@ export function useFeed(input: PlanInput): FeedState {
             setState({ status: 'error', feed, error: feed.error, stale: false, revalidating: false })
           }
         } else {
-          // Record the frame that produced this feed so `useCard` can resolve a
-          // tapped card in-memory, and — failing that — refetch with THIS
-          // tuning rather than a rebuilt default. Written ONLY on a fresh
-          // resolve, never from the stale seed, so a stripped-condition card
-          // can never be handed to Detail as authoritative.
-          feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
-          if (scope.viewerId === 'anonymous' && feed.cards.length > 0) writeFeedCache(key, feed)
-          if (feed.cards.length === 0) setState({ status: 'empty', feed, stale: false, revalidating: false })
-          else setState({ status: 'ready', feed, stale: false, revalidating: false })
+          const planConditions = client.planConditions?.bind(client)
+          if (feed.conditionsPending && planConditions && feed.cards.length > 0) {
+            // Two-phase (Epic 040): phase 1 landed — paint the fresh ranked
+            // cards NOW (their per-kind `not-fetched` silence is honest on its
+            // own, D2), keep `revalidating` up for the feed-level "Checking
+            // current conditions…" line, and only then start phase 2 (AC-3.1:
+            // the conditions call never blocks this paint). A stale S3 seed is
+            // replaced here with `stale` cleared — the cards are no longer
+            // stale, only unverified (D4's ladder, step 2).
+            const runConditions = () => {
+              retryConditions.current = null
+              setState({ status: 'ready', feed, stale: false, revalidating: true })
+              planConditions(input, scope, feed.cards.map((c) => c.id))
+                .then((patch) => {
+                  if (!live) return
+                  const composed = composeConditions(feed, patch)
+                  // D4 write-gate: ONLY the composed (phase-2-complete) feed
+                  // reaches the snapshot or the stale-paint cache — an
+                  // all-not-fetched frame must never re-serve later as "your
+                  // last visit", and Detail must never resolve a card from a
+                  // half-composed feed.
+                  feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed: composed }
+                  if (scope.viewerId === 'anonymous' && composed.cards.length > 0) writeFeedCache(key, composed)
+                  if (composed.cards.length === 0)
+                    setState({ status: 'empty', feed: composed, stale: false, revalidating: false })
+                  else setState({ status: 'ready', feed: composed, stale: false, revalidating: false })
+                })
+                .catch(() => {
+                  if (!live) return
+                  // The phase-1 cards stay usable and keep their honest
+                  // silence; the gap is disclosed, never a blank or a
+                  // fake-clear (AC-3.4). Retry re-posts phase 2 only.
+                  retryConditions.current = runConditions
+                  setState({
+                    status: 'ready',
+                    feed,
+                    stale: false,
+                    revalidating: false,
+                    revalidateError: CONDITIONS_ERROR,
+                  })
+                })
+            }
+            runConditions()
+          } else {
+            // Record the frame that produced this feed so `useCard` can resolve a
+            // tapped card in-memory, and — failing that — refetch with THIS
+            // tuning rather than a rebuilt default. Written ONLY on a fresh
+            // resolve, never from the stale seed, so a stripped-condition card
+            // can never be handed to Detail as authoritative.
+            feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
+            if (scope.viewerId === 'anonymous' && feed.cards.length > 0) writeFeedCache(key, feed)
+            if (feed.cards.length === 0) setState({ status: 'empty', feed, stale: false, revalidating: false })
+            else setState({ status: 'ready', feed, stale: false, revalidating: false })
+          }
         }
       })
       .catch(() => {
@@ -318,6 +379,7 @@ export function useFeed(input: PlanInput): FeedState {
       })
     return () => {
       live = false
+      retryConditions.current = null
       clearTimeout(reassureTimer)
       clearTimeout(coldstartTimer)
     }
@@ -325,7 +387,20 @@ export function useFeed(input: PlanInput): FeedState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, nonce])
 
-  return { ...state, loadingStage, reload: () => setNonce((n) => n + 1) }
+  const reload = () => {
+    // A failed conditions patch retries the conditions call ONLY (Epic 040
+    // AC-3.4) — the ranked cards on screen are already the fresh phase-1
+    // result; re-running the whole plan would re-spend the rank and could
+    // reshuffle what the user is looking at.
+    const retry = retryConditions.current
+    if (retry) {
+      retry()
+      return
+    }
+    setNonce((n) => n + 1)
+  }
+
+  return { ...state, loadingStage, reload }
 }
 
 export type CardStatus = 'loading' | 'ready' | 'notfound' | 'error'
@@ -384,4 +459,40 @@ export function useCard(id: string | null): CardState {
   }, [id, scopeKey, nonce])
 
   return { ...state, reload: () => setNonce((n) => n + 1) }
+}
+
+/**
+ * The water answer for one trail (Epic 041) — resolved through the client seam
+ * so mock and live behave identically. Two-value envelope, no error state by
+ * design: `trailWater` degrades every failure to null (silence), and Detail
+ * renders a null answer as NO row (CDP-02 not-fetched) — water is enrichment
+ * on the commitment view, never a dependency. `loading` lets the surface
+ * simply wait (render nothing) rather than flash an answer in.
+ */
+export function useTrailWater(id: string | null): { water: TrailWaterVM | null; loading: boolean } {
+  const { client, scope } = usePlanner()
+  const [state, setState] = useState<{ water: TrailWaterVM | null; loading: boolean }>({
+    water: null,
+    loading: true,
+  })
+  const scopeKey = scopeKeyOf(scope)
+
+  useEffect(() => {
+    if (!id) {
+      setState({ water: null, loading: false })
+      return
+    }
+    let live = true
+    setState({ water: null, loading: true })
+    client
+      .trailWater(id, scope)
+      .then((water) => live && setState({ water, loading: false }))
+      .catch(() => live && setState({ water: null, loading: false }))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, scopeKey])
+
+  return state
 }

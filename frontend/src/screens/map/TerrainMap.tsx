@@ -8,7 +8,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 import { isDrawableRoute, trailheadDirectionsUrl } from '../../data/geo'
-import type { GeoPosition, TrailGeo } from '../../data/vm'
+import type { GeoPosition, TrailGeo, TrailWaterVM } from '../../data/vm'
 import { ElevationProfile } from './ElevationProfile'
 import { layerByKey, OSM_ATTRIBUTION, type MapLayerKey } from './layers'
 import { MapControls } from './MapControls'
@@ -19,7 +19,18 @@ import { supportsWebGL } from './webgl'
 // this dynamic import, so it lands in its own chunk, off the feed path.
 const MapPanel = lazy(() => import('./MapPanel'))
 
-export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: string }) {
+export function TerrainMap({
+  geo,
+  trailName,
+  water,
+}: {
+  geo: TrailGeo
+  trailName: string
+  /** Nearby mapped water (Epic 041, answered state only) — quiet markers on the
+   *  GL map. The static fallback renders none: the fact line above the map
+   *  already carries the whole answer, so the marker layer degrades silently. */
+  water?: TrailWaterVM
+}) {
   const [interactive] = useState(supportsWebGL)
   const [layer, setLayer] = useState<MapLayerKey>('topo')
   const [cursor, setCursor] = useState<number | null>(null)
@@ -100,6 +111,7 @@ export function TerrainMap({ geo, trailName }: { geo: TrailGeo; trailName: strin
               onRouteClick={setCursor}
               onTileError={() => setTileError(true)}
               userLocation={userLocation}
+              water={water}
             />
           </Suspense>
         ) : (

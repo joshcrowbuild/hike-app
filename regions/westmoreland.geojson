@@ -1,0 +1,78 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "westmoreland",
+    "name": "Westmoreland & Caledon (Northern Neck, VA)",
+    "region_label": "Westmoreland",
+    "description": "The Potomac shore of Virginia's Northern Neck: Westmoreland State Park with its Horsehead Cliffs, Fossil Beach and Big Meadow trails, Caledon State Park's old-growth forest and bald-eagle marsh overlooks upriver, and George Washington Birthplace National Monument between them. Quiet rural cliff-and-ravine hiking over Miocene fossil beds \u2014 modest relief, correctly gentle elevation profiles.",
+    "bbox": [
+      -77.2,
+      38.1,
+      -76.78,
+      38.38
+    ],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "NPS",
+      "USGS"
+    ],
+    "area_ids": [
+      "va:westmoreland-sp",
+      "va:caledon-sp",
+      "nps:gewa"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "westmorelandSP",
+        "label": "Westmoreland State Park",
+        "lat": 38.1632,
+        "lon": -76.8692
+      },
+      {
+        "key": "caledon",
+        "label": "Caledon State Park",
+        "lat": 38.339,
+        "lon": -77.142
+      },
+      {
+        "key": "colonialBeach",
+        "label": "Colonial Beach",
+        "lat": 38.2546,
+        "lon": -76.9636
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 15
+    }
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -77.2,
+          38.1
+        ],
+        [
+          -76.78,
+          38.1
+        ],
+        [
+          -76.78,
+          38.38
+        ],
+        [
+          -77.2,
+          38.38
+        ],
+        [
+          -77.2,
+          38.1
+        ]
+      ]
+    ]
+  }
+}

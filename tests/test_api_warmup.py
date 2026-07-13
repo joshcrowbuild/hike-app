@@ -232,6 +232,57 @@ def test_warm_round_retries_graph_within_deadline(monkeypatch: Any) -> None:
     assert graph.calls == 2  # failed once, retried within the budget, succeeded
 
 
+# Captured at import time (before any monkeypatching) so the keyed-source tests can
+# run the REAL registry under a warm round while the provider stack stays stubbed.
+_REAL_PROBES_FOR = app_mod.registry.probes_for
+
+
+def _warm_probe_keys(monkeypatch: Any, env: dict[str, str]) -> list[str]:
+    """Run one warm round with the real adapter registry (still no network — the
+    registry only instantiates adapters) and return what /health would serve as
+    probes_available."""
+    provider = _RecorderProvider()
+    _install_free_stack(monkeypatch, provider)
+    monkeypatch.setattr(app_mod.registry, "probes_for", _REAL_PROBES_FOR)
+    state = app_mod._WarmupState()
+    app_mod._warm_plan_path(state, Settings.from_env({**_FAST, **env}), _WarmGraph())
+    return state.probe_keys
+
+
+_FULL_LIST = "nws,usgs_water,airnow,firms,ridb,nps_alerts"  # the v17 production value
+
+
+def test_epic018_s2_probes_available_reflects_keyed_kinds(monkeypatch: Any) -> None:
+    """AC-2.1 (wire half): with the full adapter list, the four agency keys, and the
+    NWS contact string, /health's probes_available names every point kind — the
+    deploy-side signal that the key flip actually took. Set-compared: cross-kind
+    order is an incidental grouping side effect, not a contract."""
+    keys = _warm_probe_keys(
+        monkeypatch,
+        {
+            "ADVENTURE_LIVE_ADAPTERS": _FULL_LIST,
+            "NWS_USER_AGENT": "ua@example.com",
+            "AIRNOW_API_KEY": "k",
+            "FIRMS_MAP_KEY": "k",
+            "RIDB_API_KEY": "k",
+            "NPS_API_KEY": "k",
+        },
+    )
+    assert set(keys) == {"weather", "water", "air", "fire", "permits", "closures"}
+    assert len(keys) == 6  # one entry per kind — no duplicates
+
+
+def test_epic018_s2_partial_key_set_warms_clean(monkeypatch: Any) -> None:
+    """AC-2.2: a partial key set never fails the warm round (so it can never hold
+    /health at 503 or 500 a boot) — keyed adapters self-drop and probes_available
+    honestly lists only what is actually probed."""
+    keys = _warm_probe_keys(
+        monkeypatch,
+        {"ADVENTURE_LIVE_ADAPTERS": _FULL_LIST, "NWS_USER_AGENT": "ua@example.com"},
+    )
+    assert set(keys) == {"weather", "water"}  # air/fire/permits/closures stay not_fetched
+
+
 # ── Schema-format compatibility gate (Epic 024) ───────────────────────────────
 
 

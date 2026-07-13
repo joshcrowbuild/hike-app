@@ -1,0 +1,14 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "Region-wide AirNow outage (the ux-review F9a evidence): every call 500s. Probed-but-silent must surface as `unavailable` (couldn't verify) — never as clear, never conflated with an ANSWERED clear (CDP-02).",
+  "interactions": [
+    {
+      "match": "airnowapi",
+      "status": 500,
+      "json": {
+        "detail": "upstream error"
+      }
+    }
+  ]
+}

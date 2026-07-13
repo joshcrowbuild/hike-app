@@ -1,0 +1,88 @@
+{
+  "note": "Pinned golden corpus: three hand-built Ocracoke trips (the ux-review-conditions-2026-07 F1 evidence region). Row shapes mirror graph/queries.py candidate_trails_near / trail_source_corroboration.",
+  "trailhead_rows": [
+    {
+      "canonical_id": "osm:hammock-hills",
+      "name": "Hammock Hills Nature Trail",
+      "trailhead_id": "th:hammock-hills",
+      "distance_m": 4300.0,
+      "is_loop": true,
+      "length_mi": 0.8,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 35.1421,
+        "longitude": -75.9333
+      },
+      "trailhead_point": {
+        "latitude": 35.1418,
+        "longitude": -75.9329
+      },
+      "area_id": "cape-hatteras-ns"
+    },
+    {
+      "canonical_id": "osm:springers-point",
+      "name": "Springers Point Trail",
+      "trailhead_id": "th:springers-point",
+      "distance_m": 1100.0,
+      "is_loop": false,
+      "length_mi": 0.6,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 35.1089,
+        "longitude": -75.9905
+      },
+      "trailhead_point": {
+        "latitude": 35.1093,
+        "longitude": -75.9899
+      },
+      "area_id": "ocracoke-village"
+    },
+    {
+      "canonical_id": "osm:ocracoke-beach-walk",
+      "name": "Ocracoke Beach Walk",
+      "trailhead_id": "th:ocracoke-day-use",
+      "distance_m": 3600.0,
+      "is_loop": false,
+      "length_mi": 1.4,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 35.1235,
+        "longitude": -75.9512
+      },
+      "trailhead_point": {
+        "latitude": 35.1229,
+        "longitude": -75.9506
+      },
+      "area_id": "cape-hatteras-ns"
+    }
+  ],
+  "direct_rows": [],
+  "corroboration": [
+    {
+      "canonical_id": "osm:hammock-hills",
+      "sources": [
+        "NPS",
+        "OSM"
+      ],
+      "corroboration": 2
+    },
+    {
+      "canonical_id": "osm:springers-point",
+      "sources": [
+        "OSM"
+      ],
+      "corroboration": 1
+    },
+    {
+      "canonical_id": "osm:ocracoke-beach-walk",
+      "sources": [
+        "NPS",
+        "OSM"
+      ],
+      "corroboration": 2
+    }
+  ]
+}

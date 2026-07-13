@@ -10,6 +10,9 @@ interface ImportMetaEnv {
   /** Age cap (ms) for the anonymous stale-while-revalidate Home feed cache (feedCache.ts). `0` disables read
    *  AND write. Unset defaults to 6h. Build-time baked (Vite) — changing it needs a rebuild. */
   readonly VITE_ANON_FEED_STALE_MAX_MS?: string
+  /** Two-phase render client kill switch (Epic 040 D6): `0` restores the single-call flow
+   *  byte-identically. Unset/blank = enabled. Build-time baked (Vite). */
+  readonly VITE_TWO_PHASE?: string
 }
 
 interface ImportMeta {

@@ -33,6 +33,13 @@ export interface PlanRequest {
   lon: number
   k?: number
   viewer_id?: string
+  /**
+   * Two-phase render (Epic 040 D6). Absent → the classic full single-pass
+   * response. `'cards'` → the graph-only phase-1 response (every probe-able
+   * kind `not_fetched`), unless the server kill switch is off or the key is
+   * warm — the response then self-describes via `conditions_complete`.
+   */
+  phase?: 'cards'
 }
 
 export interface FeedLineResponse {
@@ -144,6 +151,53 @@ export interface WireElevationProfile {
   estimated_duration_min: number
 }
 
+// ---- GET /trail/{canonical_id} — the water answer (Epic 041) --------------
+
+/**
+ * One mapped water POI near a trail (Epic 041, reading the Epic 035
+ * `:WaterSource` overlay). Location + type + seasonality only — NEVER a
+ * potability claim in any field (`water_type: "drinking_water"` is the OSM
+ * POI category, not a "safe to drink" assertion). `distance_m` is measured
+ * against `WireTrailWater.basis` (route vertices or the trail's start point).
+ */
+export interface WireWaterSource {
+  water_id: string
+  water_type: string // "spring" | "drinking_water" | "water_tap" | "water_well"
+  name: string | null
+  lat: number
+  lon: number
+  distance_m: number
+  /** Raw OSM `seasonal` tag (e.g. "yes"), or null. */
+  seasonal: string | null
+  /** Provenance, e.g. "OSM" (ODbL — the surface owes © OpenStreetMap). */
+  source: string
+}
+
+/**
+ * The water answer for one trail — a TRAIL FACT from the slow/structural
+ * corpus, deliberately NOT a condition kind (the condition kind named "water"
+ * is USGS streamflow). CDP-02 three ways: `state: "sources"` = an answer;
+ * `state: "none_nearby"` = an answered-empty (the corpus has water mapped
+ * around this trail, none within `radius_m`); the whole field null/absent on
+ * `GET /trail/{id}` = silence (region never water-ingested / read failed) —
+ * rendered as NO row, never an empty claim.
+ */
+export interface WireTrailWater {
+  state: 'sources' | 'none_nearby'
+  basis: 'route' | 'start'
+  /** The near threshold the server actually applied (m). */
+  radius_m: number
+  /** Distinct corpus source names backing the answer, e.g. "OSM". */
+  source: string
+  sources: WireWaterSource[]
+}
+
+/** The slice of `GET /trail/{canonical_id}` this client reads today (the maps
+ *  fields also ride that payload but Detail already has them via the card). */
+export interface TrailDetailWaterSlice {
+  water_sources?: WireTrailWater | null
+}
+
 /** One source-stamped cause a trail was set aside by a hard live guardrail (Epic 018 S5). */
 export interface SetAsideReasonResponse {
   text: string
@@ -170,6 +224,46 @@ export interface FeedResponse {
   notices: string[]
   /** Trails a hard live guardrail set aside, disclosed with cause + source (Epic 018 S5). */
   set_aside?: SetAsideResponse[]
+  /**
+   * Two-phase self-description (Epic 040 S3 AC-3.2). Absent/true → verified
+   * single-pass conditions (an older backend, a warm key, or the kill switch);
+   * false → a phase-1 response whose conditions arrive via `POST
+   * /plan/conditions`. Absence must never be read as pending.
+   */
+  conditions_complete?: boolean
+}
+
+// ---- POST /plan/conditions (Epic 040 S2: the phase-2 patch) ---------------
+
+export interface PlanConditionsRequest {
+  query: string
+  lat: number
+  lon: number
+  k?: number
+  viewer_id?: string
+  canonical_ids: string[]
+}
+
+/**
+ * One card's verified overlay — the condition-bearing fields of
+ * `FeedCardResponse`, rendered by the same backend path (never a second
+ * presentation truth). The client patches it onto the phase-1 card in place,
+ * keyed by `canonical_id` (order is the phase-1 order; a patch never reorders — D5).
+ */
+export interface ConditionPatchResponse {
+  canonical_id: string
+  lines: FeedLineResponse[]
+  warnings: CardWarningResponse[]
+  unavailable?: ConditionUnavailableResponse[]
+  conditions?: ConditionStatusResponse[]
+}
+
+export interface PlanConditionsResponse {
+  patches: ConditionPatchResponse[]
+  /** Requested ids a hard live guardrail removed — disclosed, cause + source (D5). */
+  set_aside?: SetAsideResponse[]
+  /** Requested ids the backend could not resolve at all — disclosed, never fabricated. */
+  unknown?: string[]
 }
 
 // ---- GET /regions (Phase 2: config-driven origins) -----------------------
