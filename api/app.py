@@ -19,7 +19,7 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,13 +73,20 @@ from api.schemas import (
     SetAsideReasonResponse,
     SetAsideResponse,
     StatusResponse,
+    TrailWaterResponse,
     TripDetailResponse,
+    WaterSourceResponse,
 )
 from graph.client import GraphClient
 from graph.queries import trail_detail as trail_detail_query
 from graph.queries import trails_detail as trails_detail_query
+from graph.queries import water_sources_near
 from ingestion.checks.facet_diff import LEVELS, ingest_stats_path, sorted_by_abs_delta
-from ingestion.elevation import DEFAULT_NOISE_THRESHOLD_M, compute_gain_loss_grade
+from ingestion.elevation import (
+    DEFAULT_NOISE_THRESHOLD_M,
+    compute_gain_loss_grade,
+    haversine_m,
+)
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
@@ -1006,10 +1013,111 @@ def _fetch_maps_by_canonical(session: Any, canonical_ids: list[str]) -> dict[str
     return {r["canonical_id"]: _maps_fields(r) for r in rows if r.get("canonical_id")}
 
 
-def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailResponse:
+# ── Water overlay (Epic 041): the read surface over Epic 035's :WaterSource ──
+#
+# `water_sources_near` measures from ONE point, so "near the route" must be
+# earned here: fetch coarsely around the trail, then compute each source's
+# minimum great-circle distance to the route vertices. The coarse radius doubles
+# as the CDP-02 coverage probe — an empty coarse read means the region was never
+# water-ingested, which is SILENCE (null), never an answered-empty claim.
+
+# The user-facing "near" threshold (~650 ft) — echoed on the wire as `radius_m`
+# so the client renders the number actually applied, not a hardcoded twin.
+WATER_NEAR_RADIUS_M = 200.0
+# Region-coverage probe scale: comfortably beyond any day-hike route span, and
+# small enough that another region's overlay (regions sit far apart) can't
+# masquerade as local coverage.
+WATER_COVERAGE_RADIUS_M = 30_000.0
+# The whole corpus holds ~hundreds of water nodes; this cap keeps the coarse
+# read bounded without ever truncating a real region's overlay.
+WATER_COARSE_LIMIT = 500
+# Detail shows the nearest few, not a ledger (the UX-review discipline).
+WATER_MAX_SOURCES = 12
+
+
+def _water_sources(session: Any, row: dict[str, Any]) -> TrailWaterResponse | None:
+    """The water answer for one trail (Epic 041), or `None` for honest silence.
+
+    Three-way outcome (CDP-02): sources within `WATER_NEAR_RADIUS_M` → an
+    answer; corpus coverage but nothing near → an answered-empty
+    (`none_nearby`); no coverage at all, no anchor, or a failed read → `None`
+    (rendered as no row — never a fabricated "no water" claim, Rule #1).
+    Distances are honest to their basis: minimum distance to the route
+    vertices when a route is drawable (`basis="route"`), else the graph's own
+    point distance from the trail's start (`basis="start"`). Degrades to
+    silence on any error — water is enrichment on the detail payload, never a
+    dependency (the `_fetch_maps_by_canonical` posture)."""
+    try:
+        vertices = _route_coords_for_export(row)  # ordered (lon, lat) or None
+        basis: Literal["route", "start"]
+        if vertices:
+            mid_lon, mid_lat = vertices[len(vertices) // 2]
+            anchor_lat, anchor_lon = mid_lat, mid_lon
+            basis = "route"
+        else:
+            start = _trailhead(row)
+            if start is None:
+                return None  # nothing honest to anchor a proximity claim to
+            anchor_lat, anchor_lon = start.lat, start.lon
+            basis = "start"
+        rows = session.run(
+            water_sources_near(
+                anchor_lat, anchor_lon, WATER_COVERAGE_RADIUS_M, limit=WATER_COARSE_LIMIT
+            )
+        )
+        if not rows:
+            return None  # region never water-ingested → silence, not answered-empty
+        near: list[tuple[float, float, float, dict[str, Any]]] = []
+        for r in rows:
+            latlon = _point_latlon(r.get("point"))
+            if latlon is None:
+                continue  # unusable node → skipped, never raised on
+            w_lat, w_lon = latlon
+            if basis == "route" and vertices:
+                dist = min(haversine_m((lon, lat), (w_lon, w_lat)) for lon, lat in vertices)
+            else:
+                stored = r.get("distance_m")
+                dist = (
+                    float(stored)
+                    if stored is not None
+                    else haversine_m((anchor_lon, anchor_lat), (w_lon, w_lat))
+                )
+            if dist <= WATER_NEAR_RADIUS_M:
+                near.append((dist, w_lat, w_lon, r))
+        near.sort(key=lambda item: item[0])
+        sources = [
+            WaterSourceResponse(
+                water_id=str(r.get("water_id") or ""),
+                water_type=str(r.get("water_type") or ""),
+                name=r.get("name"),
+                lat=w_lat,
+                lon=w_lon,
+                distance_m=round(dist, 1),
+                seasonal=r.get("seasonal"),
+                source=str(r.get("source") or ""),
+            )
+            for dist, w_lat, w_lon, r in near[:WATER_MAX_SOURCES]
+        ]
+        corpus_source = ", ".join(sorted({str(r.get("source")) for r in rows if r.get("source")}))
+        return TrailWaterResponse(
+            state="sources" if sources else "none_nearby",
+            basis=basis,
+            radius_m=WATER_NEAR_RADIUS_M,
+            source=corpus_source,
+            sources=sources,
+        )
+    except Exception:
+        logger.exception("water overlay read failed; detail renders water-free")
+        return None
+
+
+def _trip_detail_response(
+    canonical_id: str, row: dict[str, Any], water: TrailWaterResponse | None = None
+) -> TripDetailResponse:
     return TripDetailResponse(
         canonical_id=canonical_id,
         name=row.get("name") or canonical_id,
+        water_sources=water,
         **_maps_fields(row),
     )
 
@@ -1039,7 +1147,9 @@ def trail_detail(
         raise HTTPException(status_code=500, detail="Internal error") from exc
     if not rows:
         raise HTTPException(status_code=404, detail="Trail not found")
-    return _trip_detail_response(canonical_id, rows[0])
+    # The water answer (Epic 041) — enrichment on the detail payload: it
+    # degrades to null (silence) inside `_water_sources`, never a 500.
+    return _trip_detail_response(canonical_id, rows[0], _water_sources(session, rows[0]))
 
 
 def _route_coords_for_export(row: dict[str, Any]) -> list[tuple[float, float]] | None:

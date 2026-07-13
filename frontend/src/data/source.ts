@@ -9,7 +9,7 @@
  * methods are added by their own epics so each stays one logical change.
  */
 import type { OutcomeBody, ScopeContext } from './api'
-import type { CardVM, ConditionsPatchVM, EpisodeVM, FeedVM, OutcomeVM } from './vm'
+import type { CardVM, ConditionsPatchVM, EpisodeVM, FeedVM, OutcomeVM, TrailWaterVM } from './vm'
 import type { TuningState } from '../types'
 
 export interface PlanInput {
@@ -42,6 +42,15 @@ export interface PlannerClient {
    * degrades to a distance-only default frame (R7).
    */
   getCard(id: string, scope: ScopeContext, tuning?: TuningState): Promise<CardVM | null>
+
+  /**
+   * The water answer for one trail (Epic 041, Detail-only) — `GET /trail/{id}`'s
+   * `water_sources` slice. Null = honest silence (region never water-ingested,
+   * OR the read failed): Detail renders no water row at all. Never throws —
+   * water is enrichment on the commitment view, not a dependency (Rule #6
+   * posture): a fetch failure degrades to silence, not an error surface.
+   */
+  trailWater(id: string, scope: ScopeContext): Promise<TrailWaterVM | null>
 
   // ---- Post-hike loop ----
   /** Recent hikes for this viewer (the source of the pending outcome nod). */

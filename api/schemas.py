@@ -401,6 +401,51 @@ class StatusResponse(BaseModel):
     corpus: GraphStats | None  # same shape as /health's graph; None if unreachable
 
 
+class WaterSourceResponse(BaseModel):
+    """`WireWaterSource`: one mapped water POI near a trail (Epic 041, reading the
+    Epic 035 `:WaterSource` overlay). Location + type + seasonality only — NEVER a
+    potability claim in any field, positive or negative (Epic 035 Guard 2);
+    `water_type` may be the OSM category value `"drinking_water"`, which is POI
+    identity, not a "safe to drink" assertion. `distance_m` is the minimum
+    great-circle distance to the route vertices (`TrailWaterResponse.basis ==
+    "route"`) or to the trail's start point (`basis == "start"`) — the enclosing
+    response names which, so copy never claims proximity that wasn't computed.
+    `seasonal` is the raw OSM `seasonal` tag (e.g. "yes"), or null."""
+
+    water_id: str
+    water_type: str  # "spring" | "drinking_water" | "water_tap" | "water_well"
+    name: str | None = None
+    lat: float
+    lon: float
+    distance_m: float
+    seasonal: str | None = None
+    source: str  # provenance, e.g. "OSM" (ODbL — the surface owes © OpenStreetMap)
+
+
+class TrailWaterResponse(BaseModel):
+    """`WireTrailWater`: the water answer for one trail (Epic 041) — a TRAIL FACT
+    from the slow/structural corpus (Rule #3), deliberately NOT a condition kind
+    (the condition kind named "water" is USGS streamflow; unrelated). The CDP-02
+    three-way distinction lives here:
+
+    - `state == "sources"`     — mapped water within `radius_m` (an answer)
+    - `state == "none_nearby"` — the corpus HAS water mapped around this trail,
+                                 none within `radius_m` (an answered-empty)
+    - the whole field null     — the region was never water-ingested, or the
+                                 read failed: silence, never a claim (Rule #1)
+
+    No ingest timestamp is carried: the water runner stores no fetch date today
+    (`ingest_version` holds the region id), so the surface hedges "not verified
+    live" instead of wearing a fabricated stamp. Presentation only — never a
+    ranking input (Rule #2)."""
+
+    state: Literal["sources", "none_nearby"]
+    basis: Literal["route", "start"]  # what distance_m was measured against
+    radius_m: float  # the near threshold actually applied server-side
+    source: str  # distinct corpus source names backing the answer, e.g. "OSM"
+    sources: list[WaterSourceResponse] = []
+
+
 class TripDetailResponse(BaseModel):
     """The trip/detail response (`GET /trail/{canonical_id}`). The same maps fields the
     feed card carries, served per-trail — every geometry/elevation field honestly
@@ -413,3 +458,6 @@ class TripDetailResponse(BaseModel):
     geometry_confidence: ConfidenceLevel | None = None
     summit: GeoPoint | None = None
     elevation_profile: ElevationProfile | None = None  # null = no coverage
+    # The water answer (Epic 041). Null = not-fetched silence (region without
+    # water data, or a failed read) — rendered as NO row, never an empty claim.
+    water_sources: TrailWaterResponse | None = None

@@ -1,7 +1,8 @@
 import { Confidence, Icon, Signal, Staleness } from '../components'
 import { gpxExportUrl } from '../data/geo'
-import { useCard } from '../data/PlannerProvider'
-import type { CardVM } from '../data/vm'
+import { useCard, useTrailWater } from '../data/PlannerProvider'
+import type { CardVM, TrailWaterVM } from '../data/vm'
+import { waterHeadline, waterNote } from '../data/water'
 import {
   ConditionSilence,
   DecisionItem,
@@ -73,6 +74,8 @@ export function Detail({ id, onBack, onReplan }: DetailProps) {
 function DetailBody({ card }: { card: CardVM }) {
   const e = card.enrichment
   const sampled = e?.provenance && e.provenance !== 'live'
+  // The water answer (Epic 041): null = not-fetched silence → no row at all.
+  const { water } = useTrailWater(card.id)
   // Mock enrichment carries its own ascentFeet; a live card has none yet, so it
   // falls back to the real elevation profile rather than a false "coming soon"
   // pointer to a figure that never shows up (report #2).
@@ -139,6 +142,8 @@ function DetailBody({ card }: { card: CardVM }) {
           ) : null}
         </div>
 
+        <WaterFact water={water} />
+
         {/* A derived difficulty estimate (R2: presentation only, never ranking). */}
         <DifficultyBadge card={card} />
 
@@ -148,7 +153,15 @@ function DetailBody({ card }: { card: CardVM }) {
         {e?.practicalNote ? <p className="detail-practical">{e.practicalNote}</p> : null}
       </section>
 
-      {card.geo ? <TerrainMap geo={card.geo} trailName={card.name} /> : null}
+      {card.geo ? (
+        <TerrainMap
+          geo={card.geo}
+          trailName={card.name}
+          // Markers only in the answered state (AC-3.2) — an answered-empty or
+          // a silent region puts nothing on the map.
+          water={water?.state === 'sources' ? water : undefined}
+        />
+      ) : null}
 
       {/* The honest one-line character, DERIVED from the card's own verified
           figures (R1) — it replaces the hand-written prose that could not scale
@@ -173,6 +186,35 @@ function DetailBody({ card }: { card: CardVM }) {
         <TrustCue card={card} />
       </section>
     </section>
+  )
+}
+
+/**
+ * The one water line (Epic 041) — a TRAIL FACT in the facts area, answering
+ * "can I refill, or do I carry everything?". Deliberately NOT part of the
+ * conditions block or the six-state system: water sources are slow/structural
+ * corpus data, not a live probe. The CDP-02 three ways render as:
+ * - `sources`      → the answer + the "not verified live" hedge
+ * - `none-nearby`  → a calm answered-empty (same quiet treatment — an answer,
+ *                    never the flagged couldn't-verify styling)
+ * - `null`         → NOTHING (not-fetched silence: the region has no water
+ *                    data, or the read failed — no row, no empty claim)
+ */
+function WaterFact({ water }: { water: TrailWaterVM | null }) {
+  if (!water) return null
+  return (
+    <div className="detail-water">
+      <p className="detail-water-line">
+        {/* DecisionItem's label pattern: the Icon carries the sr-only name and
+            the visible twin is aria-hidden, so "Water" is announced once. */}
+        <span className="detail-water-label">
+          <Icon glyph={glyphs.water} label="Water" className="detail-water-icon" />
+          <span aria-hidden="true">Water</span>
+        </span>
+        <span className="detail-water-text">{waterHeadline(water)}</span>
+      </p>
+      <p className="detail-water-note">{waterNote(water)}</p>
+    </div>
   )
 }
 

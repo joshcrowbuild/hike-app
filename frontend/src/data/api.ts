@@ -151,6 +151,53 @@ export interface WireElevationProfile {
   estimated_duration_min: number
 }
 
+// ---- GET /trail/{canonical_id} — the water answer (Epic 041) --------------
+
+/**
+ * One mapped water POI near a trail (Epic 041, reading the Epic 035
+ * `:WaterSource` overlay). Location + type + seasonality only — NEVER a
+ * potability claim in any field (`water_type: "drinking_water"` is the OSM
+ * POI category, not a "safe to drink" assertion). `distance_m` is measured
+ * against `WireTrailWater.basis` (route vertices or the trail's start point).
+ */
+export interface WireWaterSource {
+  water_id: string
+  water_type: string // "spring" | "drinking_water" | "water_tap" | "water_well"
+  name: string | null
+  lat: number
+  lon: number
+  distance_m: number
+  /** Raw OSM `seasonal` tag (e.g. "yes"), or null. */
+  seasonal: string | null
+  /** Provenance, e.g. "OSM" (ODbL — the surface owes © OpenStreetMap). */
+  source: string
+}
+
+/**
+ * The water answer for one trail — a TRAIL FACT from the slow/structural
+ * corpus, deliberately NOT a condition kind (the condition kind named "water"
+ * is USGS streamflow). CDP-02 three ways: `state: "sources"` = an answer;
+ * `state: "none_nearby"` = an answered-empty (the corpus has water mapped
+ * around this trail, none within `radius_m`); the whole field null/absent on
+ * `GET /trail/{id}` = silence (region never water-ingested / read failed) —
+ * rendered as NO row, never an empty claim.
+ */
+export interface WireTrailWater {
+  state: 'sources' | 'none_nearby'
+  basis: 'route' | 'start'
+  /** The near threshold the server actually applied (m). */
+  radius_m: number
+  /** Distinct corpus source names backing the answer, e.g. "OSM". */
+  source: string
+  sources: WireWaterSource[]
+}
+
+/** The slice of `GET /trail/{canonical_id}` this client reads today (the maps
+ *  fields also ride that payload but Detail already has them via the card). */
+export interface TrailDetailWaterSlice {
+  water_sources?: WireTrailWater | null
+}
+
 /** One source-stamped cause a trail was set aside by a hard live guardrail (Epic 018 S5). */
 export interface SetAsideReasonResponse {
   text: string

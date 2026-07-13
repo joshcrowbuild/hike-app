@@ -247,6 +247,48 @@ export interface TrailGeo {
   elevationProfile: ElevationProfile | null
 }
 
+// ---- Water overlay (Epic 041) ---------------------------------------------
+
+/**
+ * One mapped water POI near a trail — a TRAIL FACT from the slow/structural
+ * corpus (never a condition kind; the condition kind named "water" is USGS
+ * streamflow). Type + location + seasonality only: no field may ever carry a
+ * potability claim, positive or negative (Epic 035 Guard 2).
+ */
+export interface WaterSourceVM {
+  id: string
+  /** OSM POI category: 'spring' | 'drinking_water' | 'water_tap' | 'water_well'. */
+  type: string
+  name?: string
+  lat: number
+  lon: number
+  /** Distance (m) measured against `TrailWaterVM.basis`. */
+  distanceM: number
+  /** Raw OSM `seasonal` tag (e.g. "yes"), when tagged. */
+  seasonal?: string
+}
+
+/**
+ * The water answer for one trail (CDP-02 three ways): `state: 'sources'` = an
+ * answer; `state: 'none-nearby'` = an answered-empty (the corpus HAS water
+ * mapped around this trail, none within `radiusM`) — calm, never the flagged
+ * couldn't-verify treatment; a null VM from the client = silence (region never
+ * water-ingested / read failed) → NO row rendered, never an empty claim.
+ * Corpus data, not a live probe — the surface must hedge "not verified live"
+ * (no ingest timestamp exists to show; see Epic 041's disclosed gap).
+ */
+export interface TrailWaterVM {
+  state: 'sources' | 'none-nearby'
+  /** What the distances were measured against — copy must name it honestly. */
+  basis: 'route' | 'start'
+  /** The near threshold the server actually applied (m). */
+  radiusM: number
+  /** Corpus source names backing the answer, e.g. "OSM". */
+  source: string
+  sources: WaterSourceVM[]
+  provenance: Provenance
+}
+
 /**
  * A candidate excluded by an explicit, reversible constraint (Ruby's party
  * gate, or the readiness filter) — disclosed, never silently dropped (R6, R2).
