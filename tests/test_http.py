@@ -99,3 +99,39 @@ def test_get_json_degrades_to_none_on_redirect() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=False)
     assert _http.get_json(client, "https://example.invalid/") is None
+
+
+# ── shared transport (2026-07-13 cold-/plan latency root cause) ────────────────
+
+
+def test_build_client_shares_one_transport() -> None:
+    # Adapters build a fresh Client per probe; the expensive parts (SSLContext +
+    # keep-alive connection pool) must be paid once per process, not per probe —
+    # every built client rides the same transport singleton.
+    a = _http.build_client()
+    b = _http.build_client(headers={"X-Api-Key": "k"}, follow_redirects=False)
+    assert a._transport is b._transport
+    assert a._transport is _http._get_shared_transport()
+
+
+def test_build_client_keeps_per_client_seams() -> None:
+    # Sharing the transport must not share what is per-adapter: headers and the
+    # redirect mode stay on the individual client.
+    a = _http.build_client(headers={"User-Agent": "nws-contact"})
+    b = _http.build_client(headers={"X-Api-Key": "nps-key"}, follow_redirects=False)
+    assert a.headers["User-Agent"] == "nws-contact"
+    assert "X-Api-Key" not in a.headers
+    assert b.headers["X-Api-Key"] == "nps-key"
+    assert a.follow_redirects is True and b.follow_redirects is False
+
+
+def test_closing_one_client_never_closes_the_shared_pool(monkeypatch) -> None:
+    # One client's close()/context-exit must not tear down the pool every other
+    # client shares — the shared transport's close() override must never reach
+    # the real HTTPTransport.close(). Proven directly: record any call to the
+    # parent close, then close a built client.
+    calls: list[bool] = []
+    monkeypatch.setattr(httpx.HTTPTransport, "close", lambda self: calls.append(True), raising=True)
+    victim = _http.build_client()
+    victim.close()
+    assert calls == []  # the override swallowed it; the shared pool survives

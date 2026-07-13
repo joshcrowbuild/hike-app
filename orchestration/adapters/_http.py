@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -39,6 +40,34 @@ def _safe_url(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, safe_path, "", ""))
 
 
+class _SharedTransport(httpx.HTTPTransport):
+    """The process-wide pooled transport behind every `build_client()` client.
+
+    `close()` is a no-op ON PURPOSE: many short-lived Clients ride this one
+    transport, so any single client's `close()`/context-exit must not tear down
+    the connection pool everyone else is using. The pool lives for the process
+    (the OS reclaims it at exit) — adapters never held long-lived clients anyway.
+    """
+
+    def close(self) -> None:  # noqa: D102 — see class docstring
+        pass
+
+
+_transport_lock = threading.Lock()
+_shared_transport: _SharedTransport | None = None
+
+
+def _get_shared_transport() -> _SharedTransport:
+    """Lazily build the singleton transport (one SSLContext + one keep-alive
+    connection pool per process). Built on first use, never at import, so tests
+    and tools that only use `MockTransport` clients never open a real pool."""
+    global _shared_transport
+    with _transport_lock:
+        if _shared_transport is None:
+            _shared_transport = _SharedTransport()
+        return _shared_transport
+
+
 def build_client(
     headers: dict[str, str] | None = None, *, follow_redirects: bool = True
 ) -> httpx.Client:
@@ -51,8 +80,22 @@ def build_client(
     # Valhalla adapter passes follow_redirects=False explicitly to keep that path
     # closed. A response that returns a 3xx there still degrades to None via the
     # normal non-200 path (source-or-silence, rule #1) instead of being followed.
+    #
+    # Every client shares ONE process-wide `HTTPTransport` (2026-07-13 latency
+    # root-cause): adapters build a fresh Client per probe, and a from-scratch
+    # Client pays a new SSLContext + CA load + TCP/TLS handshake on every live
+    # probe (~22 ms CPU measured, vs ~2 ms over a pooled keep-alive connection).
+    # On the small-CPU deploy host that serialized, GIL-bound work capped the
+    # verify fan-out at ~4 probes/s regardless of `probe_max_workers`, so a cold
+    # k=10 x 6-kind /plan spent ~15 s in verify. Sharing the transport keeps the
+    # per-client seams exactly as they were (headers, redirect mode, and cookies
+    # stay per-client; tests still inject `MockTransport` clients) while the
+    # SSLContext and keep-alive pool are paid once per process, not per probe.
     return httpx.Client(
-        timeout=DEFAULT_TIMEOUT, headers=headers or {}, follow_redirects=follow_redirects
+        timeout=DEFAULT_TIMEOUT,
+        headers=headers or {},
+        follow_redirects=follow_redirects,
+        transport=_get_shared_transport(),
     )
 
 
