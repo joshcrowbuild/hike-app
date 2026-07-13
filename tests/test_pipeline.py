@@ -1389,6 +1389,81 @@ def test_verify_before_prune_elev_coverage_env_configurable(monkeypatch):
     )
 
 
+# ── Filter-drift fix: the gate + load loop go run-marker-aware ─────────────────────
+#
+# With a constant per-region `ingest_version` (production reality — no region geojson
+# sets the optional suffix), the version-keyed `n_cur` counted the WHOLE region no
+# matter what the run actually touched, so the collapse gate could never trip and the
+# prune never saw a stale candidate (`verify_n_prev: 0` every run). Run-marker mode
+# counts what THIS RUN stamped, so a truncated fetch finally reads as a collapse.
+
+
+def test_verify_before_prune_run_marker_truncated_ingest_trips():
+    # A truncated fetch stamps 100 of a prior 1500 — under the constant-iv scheme
+    # n_cur would still read 1500 (whole region) and the gate would pass straight
+    # into a 1400-node wipe. Run-marker n_cur reads 100 → loud abort.
+    seen: list[tuple[str, dict]] = []
+
+    def runner(cypher: str, params: dict):
+        seen.append((cypher, params))
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 100}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 1400}]
+        return None
+
+    with pytest.raises(pipeline.IngestVerificationError, match="collapsed"):
+        pipeline.verify_before_prune(
+            _REGION,
+            {},
+            runner,
+            iv="test-r",
+            elevation_expected=False,
+            pre_load_count=1500,
+            run_id="test-r@20260713T000000Z-abc",
+        )
+
+    # The gate really keyed its current-count on the per-run marker, not the version.
+    cur_cypher, cur_params = seen[0]
+    assert "cur.ingest_run_id = $run_id" in cur_cypher
+    assert cur_params["run_id"] == "test-r@20260713T000000Z-abc"
+
+
+def test_verify_before_prune_run_marker_healthy_run_passes():
+    def runner(cypher: str, params: dict):
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 1490}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 10}]
+        return None
+
+    n_cur, n_prev = pipeline.verify_before_prune(
+        _REGION,
+        {},
+        runner,
+        iv="test-r",
+        elevation_expected=False,
+        pre_load_count=1500,
+        run_id="test-r@20260713T000000Z-abc",
+    )
+    assert (n_cur, n_prev) == (1490, 10)
+
+
+def test_load_matches_threads_run_id_to_loaders():
+    # Every node the load loop writes must carry this run's marker — an unstamped
+    # write would make the node look stale to its OWN run's prune.
+    feat = _feat("Old Rag", "OSM")
+    calls: list[tuple] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    _load_matches(runner, [], [feat], tier_by_name={"osm": 1}, iv="t", run_id="t@run1")
+
+    trail_params = [p for c, p in calls if "MERGE (t:CanonicalTrail" in c]
+    sr_params = [p for c, p in calls if "MERGE (r:SourceRecord" in c]
+    assert trail_params and all(p["run_id"] == "t@run1" for p in trail_params)
+    assert sr_params and all(p["run_id"] == "t@run1" for p in sr_params)
+
+
 # ── Source-construction seam (task 4): the ingest region drives DEM/source resolve ─
 
 
@@ -1806,6 +1881,46 @@ def test_facet_ratio_ignores_healthy_scalar_guards(monkeypatch, tmp_path):
     assert prune_mock.call_count == 1
     assert counts["pruned"] == 0
     assert "prune_blocked_facets" not in counts
+
+
+def test_run_pipeline_mints_run_id_and_threads_it(monkeypatch, tmp_path):
+    """The live path mints ONE per-run marker and threads it end-to-end: every
+    CanonicalTrail/SourceRecord write carries it, and the same value reaches
+    `prune_stale_trails` — the stamp and the stale test must agree or the run would
+    prune its own writes (or none at all)."""
+    spine = _StubSource("osm", role=ConflationRole.spine, features=[_feat("Old Rag Loop", "OSM")])
+    _inject(monkeypatch, [spine])
+    settings = replace(_SETTINGS, review_band_dir=str(tmp_path / "review"))
+    monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
+
+    writes: list[tuple[str, dict]] = []
+
+    def recording_runner(cypher: str, params: dict):
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 990}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 10}]
+        writes.append((cypher, params))
+        return []
+
+    monkeypatch.setattr("graph.client.GraphClient", _FakeGraphClient)
+    monkeypatch.setattr("graph.load.make_runner", lambda session: recording_runner)
+    monkeypatch.setattr("graph.load.count_region_trails", lambda runner, *, region_id: 1000)
+    monkeypatch.setattr("graph.load.count_region_facets", lambda runner, *, region_id: {})
+    monkeypatch.setattr("graph.load.count_version_facets", lambda runner, iv, *, region_id: {})
+    monkeypatch.setattr("graph.load.load_enrichment_facts", lambda runner, facts: 0)
+    prune_mock = MagicMock(return_value=PruneOutcome(pruned=True, n_cur=990, n_prev=10))
+    monkeypatch.setattr("graph.load.prune_stale_trails", prune_mock)
+
+    run_pipeline(_REGION, dry_run=False, settings=settings)
+
+    assert prune_mock.call_count == 1
+    run_id = prune_mock.call_args.kwargs["run_id"]
+    assert run_id is not None and run_id.startswith(f"{_REGION.region_id}@")
+    trail_params = [p for c, p in writes if "MERGE (t:CanonicalTrail" in c]
+    sr_params = [p for c, p in writes if "MERGE (r:SourceRecord" in c]
+    assert trail_params and all(p.get("run_id") == run_id for p in trail_params)
+    assert sr_params and all(p.get("run_id") == run_id for p in sr_params)
 
 
 def test_ingest_stats_write_failure_does_not_raise_or_change_prune_outcome(monkeypatch, tmp_path):
