@@ -20,10 +20,12 @@ from api.schemas import FeedResponse, SetAsideReasonResponse, SetAsideResponse
 _API_TS = Path(__file__).resolve().parent.parent / "frontend" / "src" / "data" / "api.ts"
 
 # Canonical wire field names, transcribed from frontend/src/data/api.ts (source of truth).
+# conditions_complete: the Epic 040 two-phase self-description (additive; absent/true
+# means the verified single-pass truth, false means a phase-1 response).
 EXPECTED: dict[str, set[str]] = {
     "SetAsideReasonResponse": {"text", "source", "kind"},
     "SetAsideResponse": {"canonical_id", "name", "reasons"},
-    "FeedResponse": {"query", "cards", "card_count", "notices", "set_aside"},
+    "FeedResponse": {"query", "cards", "card_count", "notices", "set_aside", "conditions_complete"},
 }
 
 _MODEL_FOR = {
