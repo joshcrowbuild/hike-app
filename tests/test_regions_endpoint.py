@@ -59,6 +59,14 @@ def test_regions_serves_the_committed_catalog(client: Any) -> None:
     assert obx["label"] == "Outer Banks"
     assert {o["key"] for o in obx["origins"]} == {"duck", "nagsHead", "hatteras", "ocracoke"}
 
+    # sky-meadows: the last CoMaps-program region (config-only until an operator
+    # runs the guarded ingest — see regions/README.md and the geojson's own
+    # min_fetch_counts comment). Asserted explicitly so a future edit to the file
+    # can't silently drop its origins without a test noticing.
+    sky_meadows = by_id["sky-meadows"]
+    assert sky_meadows["label"] == "Sky Meadows"
+    assert {o["key"] for o in sky_meadows["origins"]} == {"skyMeadows", "paris", "delaplane"}
+
 
 def test_regions_skips_a_malformed_file_without_500ing(
     tmp_path: Any, monkeypatch: Any, client: Any
