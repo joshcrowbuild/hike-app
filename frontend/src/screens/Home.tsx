@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
 import { partyLabels, whenLabels } from '../data/labels'
+import { splitFeedConditions } from '../data/feedConditions'
 import { splitFeedWarnings } from '../data/feedWarnings'
 import { prefersReducedMotion } from '../data/motion'
 import { useFeed, useRecentEpisodes, type LoadingStage } from '../data/PlannerProvider'
@@ -12,6 +13,7 @@ import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
+import { FeedConditionsRibbon } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
 import { SkeletonCard } from './SkeletonCard'
 
@@ -101,6 +103,11 @@ export function Home({
   // keep deriving from the full CardVM, exactly as Detail does, so the two
   // surfaces can never disagree on the verdict.
   const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
+  // Region-scope conditions — one NWS zone's reading, a fire/closure sweep, a
+  // region-wide outage — hoist to ONE quiet ribbon under the curation header
+  // (report F3/F9a); cards keep only their per-trail deltas. Rendering-only,
+  // same posture as the warnings split above.
+  const feedConditions = useMemo(() => splitFeedConditions(cards), [cards])
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -233,6 +240,10 @@ export function Home({
               </div>
             ) : null}
 
+            {/* The safety banner keeps the top slot; the quiet region-scope
+                conditions read once, directly below it, before the cards. */}
+            <FeedConditionsRibbon conditions={feedConditions} />
+
             {shown.length > 0 ? (
               <div className="card-stack">
                 {shown.map((card, i) => {
@@ -247,6 +258,8 @@ export function Home({
                         card={card}
                         onOpen={() => onOpenTrail(card.id)}
                         hoistedWarningTexts={sharedTexts}
+                        hoistedLineKeys={feedConditions.sharedLineKeys}
+                        hoistedStateKeys={feedConditions.sharedStateKeys}
                       />
                     </div>
                   )

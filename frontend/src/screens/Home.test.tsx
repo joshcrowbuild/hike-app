@@ -392,6 +392,76 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
   })
 })
 
+describe('Home hoists region-scope conditions to one feed ribbon (F3: region facts once, deltas on cards)', () => {
+  const weatherLine = (text = 'Mostly Cloudy 61°F · NWS, just now') => ({
+    text,
+    source: 'NWS api.weather.gov',
+    confidence: 'stated' as const,
+    provenance: 'live' as const,
+  })
+  const fireClear = { kind: 'fire', state: 'no-hazard' as const, source: 'NASA FIRMS', checkedAgo: 'just now' }
+  const airOut = { kind: 'air', state: 'unavailable' as const }
+  const regionCard = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    name: id,
+    distanceMi: 2,
+    conditionLines: [weatherLine()],
+    conditions: [
+      { kind: 'weather', state: 'present' as const, source: 'NWS', checkedAgo: 'just now' },
+      fireClear,
+      airOut,
+    ],
+    warnings: [],
+    ...over,
+  })
+
+  it('states the shared reading, the checked-clear sweep and the outage ONCE, in a named region landmark', async () => {
+    const cards = [regionCard('a'), regionCard('b'), regionCard('c')]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+
+    const ribbon = screen.getByRole('region', { name: 'Conditions across this area' })
+    expect(ribbon).toBeInTheDocument()
+    // Each region-scope fact appears exactly once on the whole feed — with its
+    // source + stamp preserved (honesty is kept, just not repeated ×3).
+    expect(screen.getAllByText(/Mostly Cloudy 61°F/).length).toBe(1)
+    expect(screen.getAllByText(/Checked — nothing to flag/).length).toBe(1)
+    expect(screen.getAllByText(/Couldn’t verify/).length).toBe(1)
+    // The three silences stay copy-distinct inside the ribbon (CDP-02).
+    expect(ribbon.textContent).toMatch(/Checked — nothing to flag: Fire \(NASA FIRMS · just now\)/)
+    expect(ribbon.textContent).toMatch(/Couldn’t verify: Air quality/)
+    // Cards stay silent about what the ribbon already said — and are never
+    // stamped with a false "not checked" fallback (they WERE checked).
+    for (const cardEl of container.querySelectorAll('.card')) {
+      expect(cardEl.textContent).not.toMatch(/Mostly Cloudy/)
+      expect(cardEl.textContent).not.toMatch(/nothing to flag/)
+      expect(cardEl.textContent).not.toMatch(/not checked/i)
+    }
+  })
+
+  it('keeps a differing per-trail reading on its own card as the Now delta', async () => {
+    const cards = [
+      regionCard('a'),
+      regionCard('b'),
+      regionCard('c', { conditionLines: [weatherLine('Mostly Cloudy 64°F · NWS, just now')] }),
+    ]
+    const { container } = await renderHomeWith(feedWith({ cards }))
+
+    // The modal reading sits in the ribbon; card c keeps its own microclimate.
+    expect(screen.getAllByText(/61°F/).length).toBe(1)
+    const cardTexts = [...container.querySelectorAll('.card')].map((el) => el.textContent ?? '')
+    expect(cardTexts.filter((t) => t.includes('64°F')).length).toBe(1)
+  })
+
+  it('renders no ribbon when nothing is region-shared', async () => {
+    const cards = [
+      regionCard('a', { conditionLines: [weatherLine('Sunny 60°F · NWS')], conditions: undefined }),
+      regionCard('b', { conditionLines: [weatherLine('Cloudy 55°F · NWS')], conditions: undefined }),
+    ]
+    await renderHomeWith(feedWith({ cards }))
+    expect(screen.queryByRole('region', { name: 'Conditions across this area' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Home loading state (skeleton placeholders, NNG structured wait)', () => {
   it('renders card-shaped skeletons immediately instead of a bare loading line', () => {
     const { container } = renderHome()

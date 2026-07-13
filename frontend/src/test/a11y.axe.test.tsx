@@ -8,6 +8,7 @@ import * as ConfidenceStories from '../components/Confidence/Confidence.stories'
 import * as SignalStories from '../components/Signal/Signal.stories'
 import * as StalenessStories from '../components/Staleness/Staleness.stories'
 import * as ConditionStatesStories from '../screens/ConditionStates.stories'
+import * as FeedConditionsStories from '../screens/FeedConditions.stories'
 
 // The a11y baseline gate (path-to-complete §Phase B): every story of the
 // safety-relevant honesty primitives — Confidence (hedge/flag presentation),
@@ -25,6 +26,10 @@ const suites = [
   // safety-relevant honesty surface: a user reads them to judge whether an
   // absent condition was checked-clear, unreachable, or never checked.
   ['ConditionStates', composeStories(ConditionStatesStories)],
+  // The feed-level conditions ribbon (F3) is the same honesty surface hoisted
+  // to feed scope — a named region landmark whose silence states must stay
+  // distinct to assistive tech exactly as they are on a card.
+  ['FeedConditionsRibbon', composeStories(FeedConditionsStories)],
 ] as const
 
 async function runAxe(container: HTMLElement) {

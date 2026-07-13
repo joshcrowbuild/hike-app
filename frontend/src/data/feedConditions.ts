@@ -1,0 +1,103 @@
+/**
+ * Splits a feed's per-card condition signals by their TRUE scope
+ * (ux-review-conditions-2026-07 F3/F9a): region-scope facts — one NWS zone's
+ * weather, one AirNow region's reading or outage, a fire/closure sweep — were
+ * repeated verbatim on every card (~35% of each card's height), teaching the
+ * eye to skip the condition block entirely, which is exactly where the one
+ * card that differs will someday put its warning. Facts shared verbatim across
+ * most of the feed are stated ONCE in the feed-level conditions ribbon, with
+ * their source + stamp; cards keep only their per-trail deltas.
+ *
+ * Same posture as `feedWarnings` (F1): this returns rendering suppression
+ * KEYS, never a rewritten card — the verdict and Detail keep reading the full
+ * CardVM. Only verbatim-identical signals hoist (text + source + confidence +
+ * provenance for a line; kind + state + source + age + detail for a state):
+ * choosing a "representative" value for readings that differ would average
+ * away a real microclimate delta, and hoisting a fresher stamp over a card
+ * whose own answer is older would fabricate freshness. Presentation only —
+ * never a ranking input, never a dropped fact (Rule #2, R6).
+ */
+import type { CardVM, ConditionStatusVM, LineVM } from './vm'
+
+// A signal counts as region-scope once at least two cards carry it AND it
+// covers a majority of the feed — mirrors feedWarnings' thresholds, so the
+// two hoisting rules can't drift apart.
+const SHARED_MIN_CARDS = 2
+const SHARED_MIN_SHARE = 0.5
+
+/** NUL can't occur in rendered copy, so joined fields can never collide the way
+ *  a plain space join would ("a b"+"c" vs "a"+"b c"). */
+const SEP = '\u0000'
+
+/** Identity of one condition line for hoisting — the full fact, not just its text. */
+export const lineKey = (l: LineVM): string =>
+  [l.text, l.source, l.confidence, l.provenance].join(SEP)
+
+/** Identity of one per-kind disposition — verbatim, including its stamp + detail. */
+export const conditionStateKey = (s: ConditionStatusVM): string =>
+  [s.kind, s.state, s.source ?? '', s.checkedAgo ?? '', s.detail ?? ''].join(SEP)
+
+/** The states a card renders as its silent compact summary — the only ones the
+ *  ribbon may hoist. Value-bearing states (present / stale-degraded) ride their
+ *  condition LINES, which hoist by line identity instead. */
+const SILENT_STATES: ReadonlySet<ConditionStatusVM['state']> = new Set([
+  'no-hazard',
+  'no-data',
+  'unavailable',
+  'not-fetched',
+])
+
+export interface FeedConditions {
+  /** Region-shared condition readings, stated once at feed level (first-seen order). */
+  sharedLines: LineVM[]
+  /** Region-shared silent dispositions — the three silences stay distinct in rendering. */
+  sharedStates: ConditionStatusVM[]
+  /** Suppression keys (`lineKey`) for the card's own line rendering. */
+  sharedLineKeys: ReadonlySet<string>
+  /** Suppression keys (`conditionStateKey`) for the card's compact state rendering. */
+  sharedStateKeys: ReadonlySet<string>
+}
+
+const EMPTY: FeedConditions = {
+  sharedLines: [],
+  sharedStates: [],
+  sharedLineKeys: new Set(),
+  sharedStateKeys: new Set(),
+}
+
+/** Tally distinct keys per card (a card votes once per key), then keep the keys
+ *  shared across the feed-majority threshold, in first-seen order. */
+function shared<T>(cards: CardVM[], pick: (c: CardVM) => T[], key: (t: T) => string): T[] {
+  const total = cards.length
+  const byKey = new Map<string, { item: T; count: number }>()
+  for (const card of cards) {
+    const seenOnCard = new Set<string>()
+    for (const item of pick(card)) {
+      const k = key(item)
+      if (seenOnCard.has(k)) continue
+      seenOnCard.add(k)
+      const entry = byKey.get(k)
+      if (entry) entry.count += 1
+      else byKey.set(k, { item, count: 1 })
+    }
+  }
+  return [...byKey.values()]
+    .filter((v) => v.count >= SHARED_MIN_CARDS && v.count / total >= SHARED_MIN_SHARE)
+    .map((v) => v.item)
+}
+
+export function splitFeedConditions(cards: CardVM[]): FeedConditions {
+  if (cards.length === 0) return EMPTY
+  const sharedLines = shared(cards, (c) => c.conditionLines, lineKey)
+  const sharedStates = shared(
+    cards,
+    (c) => (c.conditions ?? []).filter((s) => SILENT_STATES.has(s.state)),
+    conditionStateKey,
+  )
+  return {
+    sharedLines,
+    sharedStates,
+    sharedLineKeys: new Set(sharedLines.map(lineKey)),
+    sharedStateKeys: new Set(sharedStates.map(conditionStateKey)),
+  }
+}
