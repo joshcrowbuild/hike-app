@@ -570,3 +570,68 @@ describe('Home stale-while-revalidate disclosure (AC-3.8, Epic 039 S3)', () => {
     expect(screen.queryByText(/Showing your last visit/)).not.toBeInTheDocument()
   })
 })
+
+describe('Home two-phase pending + patch-failure surfaces (Epic 040 S3)', () => {
+  function pendingClient(feed: FeedVM): PlannerClient {
+    return {
+      plan: () => Promise.resolve({ ...feed, conditionsPending: true }),
+      // Never resolves: the conditions patch stays in flight.
+      planConditions: () => new Promise(() => {}),
+      recentEpisodes: () => Promise.resolve([]),
+    } as unknown as PlannerClient
+  }
+
+  function failingPatchClient(feed: FeedVM): PlannerClient {
+    return {
+      plan: () => Promise.resolve({ ...feed, conditionsPending: true }),
+      planConditions: () => Promise.reject(new Error('boom')),
+      recentEpisodes: () => Promise.resolve([]),
+    } as unknown as PlannerClient
+  }
+
+  it('AC-3.3: fresh phase-1 cards show with a polite "Checking current conditions…" line, never busy', async () => {
+    const { container } = render(
+      <PlannerProvider scope={ANON_SCOPE} client={pendingClient(feedWith({}))}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+
+    const note = screen.getByText('Checking current conditions…')
+    expect(note).toHaveAttribute('role', 'status')
+    expect(note).toHaveAttribute('aria-live', 'polite')
+    // The fresh cards are NOT a stale paint — the S3 line must not show.
+    expect(screen.queryByText(/Showing your last visit/)).not.toBeInTheDocument()
+    // Perceivable ranked cards are content, not a busy wait (aria-busy stays loading-only).
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+  })
+
+  it('AC-3.4: a patch failure keeps the cards and shows the calm verify-retry note', async () => {
+    render(
+      <PlannerProvider scope={ANON_SCOPE} client={failingPatchClient(feedWith({}))}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+
+    expect(screen.getByText(/verify current conditions/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    // Never a blank: the phase-1 cards stay on screen behind the disclosure.
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+  })
+})

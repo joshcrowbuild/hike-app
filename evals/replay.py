@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,14 @@ from orchestration.adapters.nws import NwsAdapter
 from orchestration.adapters.registry import TTLCache
 from orchestration.adapters.ridb import RidbAdapter
 from orchestration.adapters.usgs_water import UsgsWaterAdapter
-from orchestration.engine import PlannedBatch, feed_card, plan_from_origin
+from orchestration.engine import (
+    PlannedBatch,
+    PlannedTrail,
+    SetAsideTrail,
+    feed_card,
+    plan_from_origin,
+)
+from orchestration.two_phase import verify_planned
 
 SCENARIOS_DIR = Path(__file__).resolve().parent / "scenarios"
 
@@ -180,6 +188,34 @@ def run_scenario(scenario: ReplayScenario) -> PlannedBatch:
         k=int(intent.get("k", 10)),
         cache=TTLCache(),
     )
+
+
+def run_scenario_two_phase(
+    scenario: ReplayScenario,
+) -> tuple[PlannedBatch, list[PlannedTrail], list[SetAsideTrail]]:
+    """The Epic 040 split over the same recorded world: phase 1 (`verify=False` —
+    zero probes, every kind `not_fetched`), then the phase-2 fold through the SAME
+    `verify_planned` production serves. Returns `(phase1, composed, removed)` for
+    the D3 criteria below."""
+    intent = scenario.intent
+    origin = (float(intent["lat"]), float(intent["lon"]))
+    phase1 = plan_from_origin(
+        origin[0],
+        origin[1],
+        corpus_session(scenario),
+        # No adapters AT ALL on the phase-1 pass: probing is structurally
+        # impossible here, not merely skipped — the no-network guarantee for
+        # phase 1 is by construction.
+        {},
+        radius_m=float(intent.get("radius_m", 40_000.0)),
+        k=int(intent.get("k", 10)),
+        cache=TTLCache(),
+        verify=False,
+    )
+    composed, removed = verify_planned(
+        phase1.trails, origin, build_probes(scenario), cache=TTLCache()
+    )
+    return phase1, composed, removed
 
 
 # ── hard-expectation checks: each returns violation strings (empty == pass) ───
@@ -389,6 +425,143 @@ def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[st
     return out
 
 
+# ── Epic 040 D3: two-phase criteria (code predicates, no judge) ───────────────
+#
+# Every scenario's recorded bundle runs through BOTH paths each evaluation run:
+# the classic single pass (`run_scenario`) and the split (`run_scenario_two_phase`).
+# The three criteria below hold the split to the single-pass truth — a drift reds
+# CI with a named violation, not a rate.
+
+# Point kinds a phase-1 plan may never carry a fact for. drive_time is exempt: it
+# is origin-relative (the drive prefilter is deliberately part of phase 1 — Epic
+# 040 S1), not a live point condition.
+_POINT_KINDS = frozenset(k for k in ConditionKind if k is not ConditionKind.drive_time)
+
+
+def check_phase1_silence(phase1: PlannedBatch) -> list[str]:
+    """D3.1 — the phase-1 batch fabricates nothing: zero point-kind facts, every
+    disposition `not_fetched` with no attribution, zero warnings, zero unavailable
+    disclosures, zero set-asides. Silence before verification, never a guess."""
+    out: list[str] = []
+    if phase1.set_aside:
+        held = [t.canonical_id for t in phase1.set_aside]
+        out.append(f"phase 1 set aside {held} before anything was verified")
+    for trail in phase1.trails:
+        cid = trail.candidate.canonical_id
+        fabricated = sorted(k.value for k in trail.facts if k in _POINT_KINDS)
+        if fabricated:
+            out.append(f"{cid}: phase 1 carries point-kind facts {fabricated}")
+        if trail.verdict.warnings:
+            out.append(f"{cid}: phase 1 wears warnings before verification")
+        if trail.verdict.unavailable:
+            out.append(f"{cid}: phase 1 discloses unavailable kinds nothing probed")
+        card = feed_card(trail)
+        if any(line.text for line in card.lines):
+            drive_only = all("drive" in line.text.lower() for line in card.lines)
+            if not drive_only:
+                out.append(f"{cid}: phase 1 renders condition lines")
+        for status in card.conditions:
+            if status.state != "not_fetched":
+                out.append(f"{cid}: {status.kind} phase-1 state {status.state!r}")
+            if status.source or status.checked_at is not None:
+                out.append(f"{cid}: {status.kind} phase-1 carries a fabricated attribution")
+    return out
+
+
+def check_two_phase_composition(
+    single: PlannedBatch,
+    phase1: PlannedBatch,
+    composed: list[PlannedTrail],
+    removed: list[SetAsideTrail],
+) -> list[str]:
+    """D3.2 — phase 1 + the conditions patch, composed, is equivalent to the
+    single-pass output over the same bundle: same surfaced trail set, same
+    per-kind facts (source + value), same six-state dispositions (incl. the
+    sourced/unsourced attribution contract), same warnings, same unavailable
+    disclosures, same set-asides, same notices. Two phases are a presentation
+    split, never a second truth. (Order is deliberately NOT compared here —
+    `check_phase_order_stable` owns ordering, per D5.)"""
+    out: list[str] = []
+    single_by_id = {t.candidate.canonical_id: t for t in single.trails}
+    composed_by_id = {t.candidate.canonical_id: t for t in composed}
+    if set(single_by_id) != set(composed_by_id):
+        out.append(
+            f"surfaced set drifted: single-pass {sorted(single_by_id)} !="
+            f" composed {sorted(composed_by_id)}"
+        )
+        return out
+    single_aside = {t.canonical_id: t for t in single.set_aside}
+    composed_aside = {t.canonical_id: t for t in (*phase1.set_aside, *removed)}
+    if set(single_aside) != set(composed_aside):
+        out.append(
+            f"set-aside set drifted: single-pass {sorted(single_aside)} !="
+            f" composed {sorted(composed_aside)}"
+        )
+    for cid, aside in single_aside.items():
+        other_aside = composed_aside.get(cid)
+        if other_aside is None:
+            continue
+        s_reasons = [(r.kind, r.text, r.source) for r in aside.reasons]
+        c_reasons = [(r.kind, r.text, r.source) for r in other_aside.reasons]
+        if s_reasons != c_reasons:
+            out.append(f"{cid}: set-aside reasons drifted {c_reasons} != {s_reasons}")
+    if tuple(single.notices) != tuple(phase1.notices):
+        out.append(f"notices drifted: {list(phase1.notices)} != {list(single.notices)}")
+    render_now = datetime.now(timezone.utc)
+    for cid, s_trail in single_by_id.items():
+        c_trail = composed_by_id[cid]
+        my_facts = {k.value: f for k, f in s_trail.facts.items()}
+        other_facts = {k.value: f for k, f in c_trail.facts.items()}
+        if set(my_facts) != set(other_facts):
+            out.append(f"{cid}: fact kinds drifted {sorted(other_facts)} != {sorted(my_facts)}")
+            continue
+        for kind, fact in my_facts.items():
+            got = other_facts[kind]
+            if got.source != fact.source or got.value != fact.value:
+                out.append(f"{cid}: {kind} fact drifted (source/value)")
+        my_card = feed_card(s_trail, now=render_now)
+        other_card = feed_card(c_trail, now=render_now)
+        my_states = [
+            (s.kind, s.state, s.source, s.checked_at is not None) for s in my_card.conditions
+        ]
+        other_states = [
+            (s.kind, s.state, s.source, s.checked_at is not None) for s in other_card.conditions
+        ]
+        if my_states != other_states:
+            out.append(f"{cid}: dispositions drifted {other_states} != {my_states}")
+        my_warn = [(w.kind, w.text, w.source) for w in s_trail.verdict.warnings]
+        other_warn = [(w.kind, w.text, w.source) for w in c_trail.verdict.warnings]
+        if my_warn != other_warn:
+            out.append(f"{cid}: warnings drifted {other_warn} != {my_warn}")
+        my_unavail = [(u.kind, u.reason, u.source) for u in s_trail.verdict.unavailable]
+        other_unavail = [(u.kind, u.reason, u.source) for u in c_trail.verdict.unavailable]
+        if my_unavail != other_unavail:
+            out.append(f"{cid}: unavailable disclosures drifted {other_unavail} != {my_unavail}")
+    return out
+
+
+def check_phase_order_stable(
+    phase1: PlannedBatch, composed: list[PlannedTrail], removed: list[SetAsideTrail]
+) -> list[str]:
+    """D3.3 / D5 — the composed card order is the phase-1 order minus phase-2
+    removals: nothing ever reshuffles under the user's eyes."""
+    removed_ids = {t.canonical_id for t in removed}
+    want = [
+        t.candidate.canonical_id
+        for t in phase1.trails
+        if t.candidate.canonical_id not in removed_ids
+    ]
+    got = [t.candidate.canonical_id for t in composed]
+    if got != want:
+        return [f"composed order {got} != phase-1 order minus removals {want}"]
+    return []
+
+
+# The D3 criteria names (Epic 040 S4 AC-4.1). Run alongside — never instead of —
+# the single-pass `_CHECKS`: the classic path stays gated (it remains the D6
+# fallback and the old-client contract).
+_TWO_PHASE_CRITERIA = ("phase1_silence", "two_phase_composition", "phase_order_stable")
+
 _CHECKS: list[tuple[str, Callable[[PlannedBatch, dict[str, Any]], list[str]]]] = [
     ("surfaced_expected", check_surfaced_expected),
     ("must_be_blocked_held", check_must_be_blocked),
@@ -419,6 +592,7 @@ def evaluate_scenario(scenario: ReplayScenario, n: int = 3) -> ScenarioResult:
     an LLM in the loop, so N here proves replay stability, not sampling spread."""
     counts: dict[str, int] = {"source_or_silence": 0, "no_blocked_surfaced": 0}
     counts.update({name: 0 for name, _ in _CHECKS})
+    counts.update({name: 0 for name in _TWO_PHASE_CRITERIA})
     failures: dict[str, list[str]] = {}
     hard = _hard(scenario)
     for _ in range(n):
@@ -433,6 +607,19 @@ def evaluate_scenario(scenario: ReplayScenario, n: int = 3) -> ScenarioResult:
             failures.setdefault("no_blocked_surfaced", ["a blocked trail reached the feed"])
         for name, check in _CHECKS:
             violations = check(batch, hard)
+            if not violations:
+                counts[name] += 1
+            else:
+                failures.setdefault(name, violations)
+        # Epic 040 D3: the same recorded bundle through BOTH paths — the split is
+        # gated against the single-pass truth every run, same zero-tolerance bar.
+        phase1, composed, removed = run_scenario_two_phase(scenario)
+        two_phase_results: dict[str, list[str]] = {
+            "phase1_silence": check_phase1_silence(phase1),
+            "two_phase_composition": check_two_phase_composition(batch, phase1, composed, removed),
+            "phase_order_stable": check_phase_order_stable(phase1, composed, removed),
+        }
+        for name, violations in two_phase_results.items():
             if not violations:
                 counts[name] += 1
             else:

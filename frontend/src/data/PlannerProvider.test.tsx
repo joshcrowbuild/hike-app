@@ -428,3 +428,174 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
     expect(coldResult.current.stale).toBe(false)
   })
 })
+
+describe('Epic 040 S3 — two-phase flow (cards first, conditions patched behind)', () => {
+  const NOT_FETCHED = [
+    { kind: 'weather', state: 'not-fetched' as const },
+    { kind: 'air', state: 'not-fetched' as const },
+  ]
+
+  function phase1Feed(ids: string[]): FeedVM {
+    return {
+      query: '',
+      cards: ids.map((id) => ({
+        id,
+        name: id,
+        distanceMi: 1,
+        conditionLines: [],
+        conditions: [...NOT_FETCHED],
+        warnings: [],
+      })),
+      notices: [],
+      setAside: [],
+      heldBack: [],
+      readiness: { on: false, state: 'off' },
+      dataSource: 'live',
+      conditionsPending: true,
+    }
+  }
+
+  const PATCH = {
+    patches: [
+      {
+        id: 'old-rag',
+        conditionLines: [
+          { text: 'Clear skies', source: 'nws', confidence: 'stated' as const, provenance: 'live' as const },
+        ],
+        conditions: [{ kind: 'weather', state: 'present' as const, source: 'NWS', checkedAgo: 'just now' }],
+        warnings: [],
+      },
+    ],
+    heldBack: [],
+  }
+
+  async function flush() {
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
+
+  it('AC-3.1/3.3: phase 1 commits ready cards with revalidating up, then the patch fills in place', async () => {
+    const planConditions = vi.fn().mockResolvedValue(PATCH)
+    const client = {
+      plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag'])),
+      planConditions,
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    // Composed end-state: patch applied in place, pending cleared.
+    expect(result.current.status).toBe('ready')
+    expect(result.current.revalidating).toBe(false)
+    expect(result.current.feed?.cards[0].conditionLines[0].text).toBe('Clear skies')
+    expect(result.current.feed?.cards[0].conditions?.[0].state).toBe('present')
+    expect(result.current.feed?.conditionsPending).toBeUndefined()
+    // Phase 2 was asked for exactly the phase-1 ids.
+    expect(planConditions).toHaveBeenCalledTimes(1)
+    expect(planConditions.mock.calls[0][2]).toEqual(['old-rag'])
+  })
+
+  it('AC-3.2: a complete feed (warm key / kill switch / old backend) never fires the conditions call', async () => {
+    const planConditions = vi.fn()
+    const client = {
+      plan: vi.fn().mockResolvedValue(feedWithCard('old-rag')), // no conditionsPending
+      planConditions,
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.revalidating).toBe(false)
+    expect(planConditions).not.toHaveBeenCalled()
+  })
+
+  it('a client without planConditions (the mock) treats a pending feed as complete rather than hanging', async () => {
+    const client = { plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag'])) } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    expect(result.current.status).toBe('ready')
+    expect(result.current.revalidating).toBe(false)
+  })
+
+  it('AC-3.4: a hard-guardrail removal patches out the card and discloses it — order untouched', async () => {
+    const patch = {
+      patches: [],
+      heldBack: [
+        { id: 'smoky', name: 'smoky', reasons: [{ text: 'air quality hazardous (AirNow)', source: 'AirNow', kind: 'air' }] },
+      ],
+    }
+    const client = {
+      plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag', 'smoky', 'stony-man'])),
+      planConditions: vi.fn().mockResolvedValue(patch),
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    expect(result.current.feed?.cards.map((c) => c.id)).toEqual(['old-rag', 'stony-man'])
+    expect(result.current.feed?.heldBack.map((h) => h.id)).toEqual(['smoky'])
+  })
+
+  it('AC-3.4: a patch failure keeps the phase-1 cards usable and reload() re-posts the conditions call ONLY', async () => {
+    const plan = vi.fn().mockResolvedValue(phase1Feed(['old-rag']))
+    const planConditions = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(PATCH)
+    const client = { plan, planConditions } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    // Failure: cards stay (never a blank), the gap is disclosed, silence stays honest.
+    expect(result.current.status).toBe('ready')
+    expect(result.current.feed?.cards[0].conditions?.[0].state).toBe('not-fetched')
+    expect(result.current.revalidateError?.message).toContain('verify current conditions')
+    expect(plan).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      result.current.reload()
+    })
+    await flush()
+
+    // Retry re-posted phase 2 only — the plan call count did NOT grow.
+    expect(plan).toHaveBeenCalledTimes(1)
+    expect(planConditions).toHaveBeenCalledTimes(2)
+    expect(result.current.revalidateError).toBeUndefined()
+    expect(result.current.feed?.cards[0].conditions?.[0].state).toBe('present')
+  })
+
+  it('AC-3.5: the anonymous stale-paint cache holds ONLY the composed feed, never the phase-1 frame', async () => {
+    let resolvePatch!: (p: unknown) => void
+    const patchPending = new Promise((r) => {
+      resolvePatch = r
+    })
+    const client = {
+      plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag'])),
+      planConditions: vi.fn().mockReturnValue(patchPending),
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flush()
+
+    // Phase 1 is on screen but the write-gate held: nothing cached yet.
+    expect(result.current.revalidating).toBe(true)
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+
+    await act(async () => {
+      resolvePatch(PATCH)
+      await patchPending
+    })
+
+    const hit = readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())
+    expect(hit).not.toBeNull()
+    expect(hit?.feed.conditionsPending).toBeUndefined()
+    expect(hit?.feed.cards[0].conditions?.[0].state).toBe('present')
+  })
+})

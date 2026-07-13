@@ -147,6 +147,67 @@ def test_unknown_condition_kind_reds_fidelity_not_a_traceback() -> None:
     assert any("wether" in v for v in result.failures.get("fact_fidelity", []))
 
 
+# ── Epic 040 S4: the two-phase criteria hold AND bite ─────────────────────────
+
+
+def test_two_phase_criteria_run_in_every_scenario_report() -> None:
+    # AC-4.1: the three D3 criteria are live in the same report the single-pass
+    # criteria fill — never a separate opt-in path a scenario could silently skip.
+    result = evaluate_scenario(_by_name("nominal-old-rag"), n=1)
+    names = {c.name for c in result.report.criteria}
+    assert {"phase1_silence", "two_phase_composition", "phase_order_stable"} <= names
+    assert result.passed
+
+
+def test_phase1_silence_bites_on_a_fact_bearing_phase1() -> None:
+    # A single-pass batch (which carries verified facts + sourced dispositions) run
+    # through the phase-1 silence predicate must red loudly — proving the predicate
+    # can actually tell verified content from honest silence.
+    from evals.replay import check_phase1_silence
+
+    single = run_scenario(_by_name("nominal-old-rag"))
+    violations = check_phase1_silence(single)
+    assert violations  # fabricated facts / attributions detected
+
+
+def test_two_phase_composition_bites_on_a_dropped_fact() -> None:
+    # Strip one composed trail's facts after the fold: the composition check must
+    # name the drift against the single-pass truth, not average it away.
+    from evals.replay import check_two_phase_composition, run_scenario_two_phase
+
+    scenario = _by_name("nominal-old-rag")
+    single = run_scenario(scenario)
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    tampered = [dataclasses.replace(composed[0], facts={}, confidences={})] + composed[1:]
+    violations = check_two_phase_composition(single, phase1, tampered, removed)
+    assert any("fact kinds drifted" in v for v in violations)
+
+
+def test_phase_order_stable_bites_on_a_reorder() -> None:
+    # D5: a composed order that isn't the phase-1 order minus removals must red.
+    from evals.replay import check_phase_order_stable, run_scenario_two_phase
+
+    scenario = _by_name("nominal-old-rag")
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    assert len(composed) >= 2  # a reorder needs two cards to swap
+    violations = check_phase_order_stable(phase1, list(reversed(composed)), removed)
+    assert violations
+
+
+def test_two_phase_removal_matches_single_pass_set_aside() -> None:
+    # The guardrail-trip bundle through the split: the hard-blocked trails are
+    # REMOVED into the disclosed set-aside list (D5), and the composition check
+    # holds that equal to the single-pass truth.
+    from evals.replay import run_scenario_two_phase
+
+    scenario = _by_name("guardrail-trip-aqi")
+    single = run_scenario(scenario)
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    assert phase1.trails  # phase 1 surfaced them — nothing was verified yet
+    assert not composed  # …and phase 2 removed every hazardous-AQI trail
+    assert {t.canonical_id for t in removed} == {t.canonical_id for t in single.set_aside}
+
+
 # ── fixture hygiene (mirrors tests/test_adapter_cassettes.py) ─────────────────
 
 

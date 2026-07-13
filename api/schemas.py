@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 # Shape of a viewer identity (AH4): the anonymous default, or an alphanumeric/underscore/
 # hyphen/colon token (":" separates the household-member prefix, e.g. "mem:josh"),
@@ -42,6 +42,13 @@ class PlanRequest(BaseModel):
         pattern=VIEWER_ID_PATTERN,
         description="Viewer identity for graph scoping",
     )
+    # Two-phase render (Epic 040 D6): absent -> today's full single-pass response
+    # (the API contract for old clients, the eval baseline, and the rollback).
+    # "cards" -> the graph-only phase-1 response (every probe-able kind
+    # `not_fetched`), unless the server kill switch is off or the key is already
+    # warm — the response then self-describes complete via
+    # `FeedResponse.conditions_complete` and the client skips the second call.
+    phase: Literal["cards"] | None = None
 
 
 class FeedLineResponse(BaseModel):
@@ -211,6 +218,56 @@ class FeedResponse(BaseModel):
     notices: list[str] = []  # feed-level disclosures (e.g. drive times unavailable)
     # Trails a hard live guardrail set aside, disclosed with cause + source (Epic 018 S5).
     set_aside: list[SetAsideResponse] = []
+    # Two-phase self-description (Epic 040 S3 AC-3.2): True (the default — additive,
+    # old clients ignore it) means the conditions on these cards are the verified
+    # single-pass truth; False means this is a phase-1 response (every probe-able
+    # kind `not_fetched`) and the client should follow up on `POST /plan/conditions`.
+    conditions_complete: bool = True
+
+
+class PlanConditionsRequest(BaseModel):
+    """`POST /plan/conditions` (Epic 040 S2): the phase-2 patch call. Carries the
+    same key inputs as the phase-1 `/plan` (query/lat/lon/k — so the server can
+    find the parked plan and warm the same anonymous cache key) plus the
+    canonical_ids the phase-1 response returned. Bounded to `PlanRequest.k`'s cap
+    (AC-2.4): a phase-1 feed can never hand back more ids than that."""
+
+    query: str = Field(..., max_length=500)
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    k: int = Field(default=10, ge=1, le=20)
+    viewer_id: str = Field(default="anonymous", pattern=VIEWER_ID_PATTERN)
+    # Each id gets the same hygiene bound as the path-param form (control chars
+    # rejected, length-capped) — an id is echoed back in `unknown` and bound into
+    # a parameterized graph read, so an unbounded string is unbounded substrate.
+    canonical_ids: list[Annotated[str, StringConstraints(pattern=CANONICAL_ID_PATTERN)]] = Field(
+        ..., min_length=1, max_length=20
+    )
+
+
+class ConditionPatchResponse(BaseModel):
+    """One card's verified overlay (Epic 040 S2 AC-2.1): the condition-bearing
+    fields of `FeedCardResponse`, rendered through the same `feed_card` path
+    production serves — never a second presentation truth. The client patches
+    these onto the phase-1 card in place, keyed by `canonical_id` (order is the
+    phase-1 order; a patch never reorders — D5)."""
+
+    canonical_id: str
+    lines: list[FeedLineResponse]
+    warnings: list[CardWarningResponse]
+    unavailable: list[ConditionUnavailableResponse] = []
+    conditions: list[ConditionStatusResponse] = []
+
+
+class PlanConditionsResponse(BaseModel):
+    """The phase-2 patch (Epic 040 S2). `set_aside` is the disclosed removal list —
+    requested ids a hard live guardrail blocked (cause + source, D5); `unknown`
+    names requested ids this call could not resolve at all — omitted with
+    disclosure, never fabricated (AC-2.2)."""
+
+    patches: list[ConditionPatchResponse]
+    set_aside: list[SetAsideResponse] = []
+    unknown: list[str] = []
 
 
 class GraphStats(BaseModel):

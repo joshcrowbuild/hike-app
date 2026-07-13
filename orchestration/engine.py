@@ -53,7 +53,13 @@ from orchestration.curator import (
     valid_max_length_mi,
 )
 from orchestration.drive_time import prefilter, time_budget_s
-from orchestration.feed_cache import CachedPlan, FeedCache, FeedCacheKey, default_feed_cache
+from orchestration.feed_cache import (
+    CachedPlan,
+    FeedCache,
+    FeedCacheKey,
+    default_feed_cache,
+    default_pending_store,
+)
 from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
@@ -278,6 +284,13 @@ class Runtime:
     # misattributes a concurrent request's hit to a request that actually computed
     # and spent tokens (adversarial-review finding, 2026-07-08).
     feed_cache_hit: bool = False
+    # Short-TTL holding pen for anonymous phase-1 plans awaiting their conditions
+    # call (Epic 040 D7) — a SEPARATE store from `feed_cache` by construction, so an
+    # all-`not_fetched` phase-1 plan can never be served as a full plan. None = the
+    # two-phase server kill switch (ADVENTURE_TWO_PHASE_ENABLED=0) or a hermetic
+    # test runtime. Anonymous-only, like `feed_cache` (Rule #5): a non-anonymous
+    # phase-1 plan is never stored (the key carries no viewer identity).
+    phase1_pending: FeedCache | None = None
 
 
 @dataclass(frozen=True)
@@ -370,6 +383,7 @@ def plan_from_origin(
     drive_time: DriveTimeComputer | None = None,
     budget_s: float | None = None,
     probe_max_workers: int = DEFAULT_MAX_WORKERS,
+    verify: bool = True,
 ) -> PlannedBatch:
     """Scout near (lat, lon); optionally prune to drive-time reachability; verify each
     survivor's conditions; drop any that trip a hard guardrail. Drive-time facts are
@@ -377,7 +391,14 @@ def plan_from_origin(
     `evaluate_guardrails`, AC-5.3). Live-condition verification runs as one batched,
     concurrent fan-out (`verify_batch`) across every candidate rather than probing
     them one at a time — the dominant cost of `/plan` (latency follow-up to Epic 018
-    S6); `probe_max_workers` bounds total in-flight probes."""
+    S6); `probe_max_workers` bounds total in-flight probes.
+
+    `verify=False` is the Epic 040 phase-1 path: the live-probe fan-out is skipped
+    entirely (zero `probe()` calls for any point kind) and `probed_kinds` stays
+    empty, so every point kind honestly classifies `not_fetched` — nothing was
+    fetched, so nothing is asserted, warned about, disclosed, or set aside (rule
+    #1's contrapositive). Scout, the drive prefilter (its facts are origin-relative,
+    not point conditions), and the corroboration read run exactly as the full path."""
     candidates = scout(lat, lon, session, radius_m=radius_m, k=k)
 
     drive_facts: dict[str, VerifiedFact] = {}
@@ -409,28 +430,41 @@ def plan_from_origin(
     # Which point kinds the Verifier will actually attempt — lets the guardrails tell
     # "weather probed but no source answered" (unverifiable → disclosed on the card,
     # rule #1 + #6) apart from "weather not probed in this deployment" (no signal
-    # either way).
-    probed_kinds = frozenset(
-        kind
-        for kind, adapters in probes.items()
-        if adapters and kind is not ConditionKind.drive_time
+    # either way). On the phase-1 path (verify=False) NOTHING is attempted, so this
+    # stays empty and every kind classifies `not_fetched` (Epic 040 D2).
+    probed_kinds = (
+        frozenset(
+            kind
+            for kind, adapters in probes.items()
+            if adapters and kind is not ConditionKind.drive_time
+        )
+        if verify
+        else frozenset()
     )
 
-    probe_points: list[Point] = []
-    for candidate in candidates:
-        coord = _latlon(candidate.point)
-        if coord is None:
-            log.debug("candidate %s has no point; probing at query origin", candidate.canonical_id)
-            probe_points.append(Point(lat, lon))
-        else:
-            probe_points.append(Point(*coord))
-    # The live-condition fan-out: every candidate's (point, kind) probes run
-    # concurrently across a bounded pool, aligned back to `candidates` by index —
-    # byte-for-byte the same facts a sequential `verify()` per candidate would
-    # produce (point kinds only; drive_time is skipped, folded in below instead).
-    facts_by_candidate = verify_batch(
-        probe_points, probes, cache=cache, max_workers=probe_max_workers
-    )
+    if verify:
+        probe_points: list[Point] = []
+        for candidate in candidates:
+            coord = _latlon(candidate.point)
+            if coord is None:
+                log.debug(
+                    "candidate %s has no point; probing at query origin", candidate.canonical_id
+                )
+                probe_points.append(Point(lat, lon))
+            else:
+                probe_points.append(Point(*coord))
+        # The live-condition fan-out: every candidate's (point, kind) probes run
+        # concurrently across a bounded pool, aligned back to `candidates` by index —
+        # byte-for-byte the same facts a sequential `verify()` per candidate would
+        # produce (point kinds only; drive_time is skipped, folded in below instead).
+        facts_by_candidate = verify_batch(
+            probe_points, probes, cache=cache, max_workers=probe_max_workers
+        )
+    else:
+        # Phase 1 (Epic 040 S1 AC-1.1): zero live probes — every candidate gets an
+        # empty facts dict, so `evaluate_guardrails` below has nothing to block,
+        # warn, or disclose on (empty facts + empty probed_kinds → empty verdict).
+        facts_by_candidate = [{} for _ in candidates]
     # Join the overlapped corroboration read. `_corpus_corroboration` catches its own
     # read failures (degrading to the honest count-as-1 baseline, rule #6), so this
     # `result()` re-raises nothing in practice — the degrade path is unchanged.
@@ -685,10 +719,19 @@ def _compute_plan(
     *,
     k: int = 10,
     viewer_id: str = "anonymous",
+    verify: bool = True,
 ) -> CachedPlan:
     """Full pipeline: parse intent -> scout+drive-prefilter+verify+guardrail-filter ->
     context assembly -> taste-rank. Returns the cacheable `CachedPlan` rather than a
     rendered `Feed` — `_render_feed` below does the (re-)rendering.
+
+    `verify=False` (Epic 040 S1) skips ONLY the live-probe fan-out (see
+    `plan_from_origin`); the taste rank below runs exactly as the full path's —
+    same judge tier, same demotion signals, drive hints included (AC-1.3). The
+    result must NEVER be written to the anonymous FeedCache: an all-`not_fetched`
+    plan served to a later full request would be a silent verification skip
+    (`orchestration/two_phase.py` owns that discipline — this function never
+    touches the cache either way).
 
     viewer_id is used for personal context assembly (AC-5.3: assembled AFTER guardrail
     filtering, BEFORE taste ranking; AC-5.4: assembled once, passed to one rank_ids call).
@@ -724,6 +767,7 @@ def _compute_plan(
         drive_time=runtime.drive_time,
         budget_s=budget_s,
         probe_max_workers=runtime.probe_max_workers,
+        verify=verify,
     )
     planned = batch.trails
 
@@ -896,4 +940,8 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
         drive_speed_kmh=settings.drive_speed_kmh,
         probe_max_workers=settings.live_probe_max_workers,
         feed_cache=feed_cache,
+        # The phase-1 holding pen exists only while the two-phase flow is enabled;
+        # ADVENTURE_TWO_PHASE_ENABLED=0 leaves it None and `/plan` with
+        # phase:"cards" serves the full single-pass response instead (Epic 040 D6).
+        phase1_pending=default_pending_store() if settings.two_phase_enabled else None,
     )

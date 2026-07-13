@@ -48,6 +48,7 @@ from api.schemas import (
     EPISODE_ID_PATTERN,
     VIEWER_ID_PATTERN,
     CardWarningResponse,
+    ConditionPatchResponse,
     ConditionStatusResponse,
     ConditionUnavailableResponse,
     ElevationProfile,
@@ -64,6 +65,8 @@ from api.schemas import (
     OriginResponse,
     OutcomeBody,
     OutcomeResponse,
+    PlanConditionsRequest,
+    PlanConditionsResponse,
     PlanRequest,
     RegionResponse,
     RegionsResponse,
@@ -308,12 +311,12 @@ def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:
         raise HTTPException(status_code=403, detail="viewer_id requires authentication")
 
 
-def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
-    return FeedCardResponse(
-        canonical_id=card.canonical_id,
-        name=card.name,
-        distance_mi=card.distance_mi,
-        lines=[
+def _condition_fields(card: FeedCard) -> dict[str, Any]:
+    """The condition-bearing wire fields of one card — shared verbatim by the full
+    feed card and the Epic 040 phase-2 patch (`ConditionPatchResponse`), so the two
+    responses can never render a condition differently (AC-2.1)."""
+    return {
+        "lines": [
             FeedLineResponse(
                 text=line.text,
                 source=line.source,
@@ -322,7 +325,7 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for line in card.lines
         ],
-        warnings=[
+        "warnings": [
             CardWarningResponse(
                 text=w.text,
                 source=w.source,
@@ -331,11 +334,11 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for w in card.warnings
         ],
-        unavailable=[
+        "unavailable": [
             ConditionUnavailableResponse(text=u.text, source=u.source, kind=u.kind)
             for u in card.unavailable
         ],
-        conditions=[
+        "conditions": [
             ConditionStatusResponse(
                 kind=s.kind,
                 state=s.state,
@@ -345,6 +348,15 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for s in card.conditions
         ],
+    }
+
+
+def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
+    return FeedCardResponse(
+        canonical_id=card.canonical_id,
+        name=card.name,
+        distance_mi=card.distance_mi,
+        **_condition_fields(card),
         **maps,  # geometry / trailhead / geometry_confidence / summit / elevation_profile
     )
 
@@ -359,13 +371,16 @@ def _set_aside_response(trail: Any) -> SetAsideResponse:
     )
 
 
-def _feed_response(feed: Feed, maps_by_cid: dict[str, dict[str, Any]]) -> FeedResponse:
+def _feed_response(
+    feed: Feed, maps_by_cid: dict[str, dict[str, Any]], *, conditions_complete: bool = True
+) -> FeedResponse:
     return FeedResponse(
         query=feed.query,
         cards=[_card_response(c, maps_by_cid.get(c.canonical_id, {})) for c in feed.cards],
         card_count=len(feed.cards),
         notices=list(feed.notices),
         set_aside=[_set_aside_response(t) for t in feed.set_aside],
+        conditions_complete=conditions_complete,
     )
 
 
@@ -590,17 +605,35 @@ def plan(
     started = time.perf_counter()
     try:
         runtime = build_runtime(_settings, _graph_client, body.viewer_id)
-        from orchestration.engine import plan as engine_plan
 
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)
-        feed = engine_plan(
-            body.query,
-            (body.lat, body.lon),
-            runtime,
-            k=body.k,
-            viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
-        )
+        # Two-phase render (Epic 040): phase:"cards" runs the graph-only phase-1
+        # path unless the server kill switch is off (D6) or the anonymous key is
+        # already warm (D7) — either way the response self-describes completeness
+        # via `conditions_complete` so the client knows whether to follow up on
+        # POST /plan/conditions. `phase` absent stays byte-identical to today.
+        if body.phase == "cards" and _settings.two_phase_enabled:
+            from orchestration.two_phase import plan_cards
+
+            feed, conditions_complete = plan_cards(
+                body.query,
+                (body.lat, body.lon),
+                runtime,
+                k=body.k,
+                viewer_id=body.viewer_id,
+            )
+        else:
+            from orchestration.engine import plan as engine_plan
+
+            conditions_complete = True
+            feed = engine_plan(
+                body.query,
+                (body.lat, body.lon),
+                runtime,
+                k=body.k,
+                viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
+            )
         # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
         # request-local on Runtime (set by plan()), never a before/after delta on
         # the shared FeedCacheStats counter — under threadpool concurrency a delta
@@ -610,7 +643,7 @@ def plan(
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
         session = _graph_client.scoped_session(body.viewer_id)
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
-        response = _feed_response(feed, maps_by_cid)
+        response = _feed_response(feed, maps_by_cid, conditions_complete=conditions_complete)
         cache_after = cache_size(runtime.cache)
         stats_after = probe_stats_snapshot(runtime.cache)
     except HTTPException:
@@ -660,6 +693,85 @@ def plan(
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")
+    return response
+
+
+@app.post("/plan/conditions", response_model=PlanConditionsResponse)
+@limiter.limit(plan_limit)
+def plan_conditions(
+    request: Request,  # required by slowapi for per-IP keying
+    body: PlanConditionsRequest,
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> PlanConditionsResponse:
+    """The Epic 040 phase-2 patch call: the verified live overlay for exactly the
+    canonical_ids a phase-1 `/plan` (phase:"cards") returned. Shares `/plan`'s
+    rate-limit class, auth posture (anonymous-allowed; a non-anonymous viewer is
+    gated exactly like `/plan` — AC-2.4), probe registry, TTL cache, and worker
+    bound (shared engine code path, never a re-implementation — AC-2.3). This
+    call never ranks: zero LLM spend by construction."""
+    if _settings is None or _graph_client is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(body.viewer_id, x_dev_viewer_secret)
+    started = time.perf_counter()
+    try:
+        runtime = build_runtime(_settings, _graph_client, body.viewer_id)
+        from orchestration.two_phase import plan_conditions as engine_plan_conditions
+
+        cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
+        patch = engine_plan_conditions(
+            body.query,
+            (body.lat, body.lon),
+            runtime,
+            body.canonical_ids,
+            k=body.k,
+            viewer_id=body.viewer_id,
+        )
+        response = PlanConditionsResponse(
+            patches=[
+                ConditionPatchResponse(canonical_id=c.canonical_id, **_condition_fields(c))
+                for c in patch.cards
+            ],
+            set_aside=[_set_aside_response(t) for t in patch.set_aside],
+            unknown=list(patch.unknown),
+        )
+        cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "plan/conditions failed cid=%s error_class=%s query=%r viewer=%s",
+            correlation_id,
+            type(exc).__name__,
+            body.query,
+            scrub_viewer(body.viewer_id),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
+    # Metrics AFTER the response is built and OUTSIDE the 500-mapping try (same
+    # discipline as /plan): the probe spend is already spent — a metrics bug must
+    # never turn a good patch into a 500.
+    try:
+        PlanMetrics(
+            viewer_tag=scrub_viewer(body.viewer_id),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(patch.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            # This call NEVER runs an LLM (AC-2.3: the rank happened in phase 1) —
+            # est_tokens is honestly 0, not an estimate fabricated from card text.
+            est_tokens=0,
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
+            feed_cache_hit=patch.from_cache,
+        ).emit()
+    except Exception:
+        logger.exception("plan/conditions observability emit failed (response already sent)")
     return response
 
 
