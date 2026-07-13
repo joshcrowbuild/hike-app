@@ -40,7 +40,9 @@ describe('"Near me" origin control', () => {
     // carries the live fix rather than a named origin.
     expect(await screen.findByText(/use a named place instead/i)).toBeInTheDocument()
     // The named picker is still present and usable underneath (never removed).
-    expect(screen.getByRole('radio', { name: 'Luray' })).toBeInTheDocument()
+    // Accessible names carry the region ("Luray, Shenandoah") — the visual
+    // group headers are divs and never reach the accessibility tree.
+    expect(screen.getByRole('radio', { name: 'Luray, Shenandoah' })).toBeInTheDocument()
   })
 
   it('discloses a denial and falls back to the manual picker — never fabricates a position', async () => {
@@ -53,7 +55,7 @@ describe('"Near me" origin control', () => {
     expect(await screen.findByText(/location permission denied/i)).toBeInTheDocument()
     // No fabricated fix: the control stays in its inactive state.
     expect(screen.queryByText(/use a named place instead/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'Front Royal' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Front Royal, Shenandoah' })).toBeInTheDocument()
   })
 
   it('discloses unavailable geolocation honestly (older browser / insecure context)', async () => {
@@ -74,7 +76,7 @@ describe('"Near me" origin control', () => {
     await user.click(screen.getByRole('button', { name: /near me.*use current location/i }))
     expect(await screen.findByText(/use a named place instead/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('radio', { name: 'Luray' }))
+    await user.click(screen.getByRole('radio', { name: 'Luray, Shenandoah' }))
     expect(screen.queryByText(/use a named place instead/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /near me.*use current location/i })).toBeInTheDocument()
   })
@@ -140,10 +142,14 @@ describe('origin picker grouping + ordering (craft review C1/M4 — region-group
     expect(screen.getAllByRole('radiogroup')).toHaveLength(1)
   })
 
-  it('scrolls the already-selected origin into view when the sheet opens (C1)', async () => {
+  it('scrolls the SHEET BODY — never an ancestor chain — to reveal the selected origin on open (C1)', async () => {
     const scrolled: Element[] = []
-    // jsdom has no scrollIntoView; install one that records its receiver.
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    // jsdom implements no Element scrolling; install a scrollTo that records
+    // its receiver. scrollIntoView is deliberately NOT shimmed: if the
+    // implementation ever regresses to it (which can walk scrollable
+    // ancestors past the modal and shift the feed behind it), this test's
+    // assertion below goes unmet and fails.
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
       value(this: Element) {
         scrolled.push(this)
       },
@@ -154,12 +160,14 @@ describe('origin picker grouping + ordering (craft review C1/M4 — region-group
       render(<OriginPanel />)
       await screen.findAllByRole('radio')
       expect(scrolled.length).toBeGreaterThan(0)
-      // The revealed element is the selected Front Royal row.
-      expect(scrolled[0]).toHaveAttribute('data-selected')
-      expect(scrolled[0].textContent).toContain('Front Royal')
+      // The scrolled element is the Sheet's own internal scroll region — the
+      // one element whose scrolling cannot leak into the page behind the modal
+      // — and it contains the selected row it is revealing.
+      expect(scrolled[0]).toHaveAttribute('data-sheet-body')
+      expect(scrolled[0].querySelector('[data-selected]')?.textContent).toContain('Front Royal')
     } finally {
       // @ts-expect-error test-only cleanup of the jsdom shim
-      delete HTMLElement.prototype.scrollIntoView
+      delete HTMLElement.prototype.scrollTo
     }
   })
 })

@@ -200,14 +200,23 @@ export interface PanelSheetProps {
  * Ref callback for the origin list: brings the already-selected origin into
  * view the moment the sheet opens (C1 — with 35 origins in a scroll area, the
  * user's own current pick must never be the thing they have to hunt for).
- * React Aria marks the selected Radio with `data-selected`; jsdom has no
- * scrollIntoView, hence the existence check.
+ * React Aria marks the selected Radio with `data-selected`.
+ *
+ * Deliberately NOT `scrollIntoView`: that walks every scrollable ancestor,
+ * and programmatic scrolling ignores the modal's overflow:hidden scroll lock —
+ * an engine that chains past the fixed overlay could shift the feed behind
+ * the open sheet, the exact leak class C1 closed. Scrolling only the sheet's
+ * own scroll region (`[data-sheet-body]`, the Sheet's public seam) cannot
+ * leak anywhere. jsdom implements neither scrollTo nor layout, hence the
+ * existence check.
  */
 function revealSelectedOrigin(el: HTMLDivElement | null) {
   const selected = el?.querySelector<HTMLElement>('[data-selected]')
-  if (selected && typeof selected.scrollIntoView === 'function') {
-    selected.scrollIntoView({ block: 'center' })
-  }
+  const body = el?.closest<HTMLElement>('[data-sheet-body]')
+  if (!selected || !body || typeof body.scrollTo !== 'function') return
+  const offsetInBody = selected.getBoundingClientRect().top - body.getBoundingClientRect().top
+  const centered = offsetInBody + body.scrollTop - (body.clientHeight - selected.offsetHeight) / 2
+  body.scrollTo({ top: Math.max(0, centered) })
 }
 
 export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps) {
@@ -229,8 +238,11 @@ export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelShe
             {groupOrigins(regions, state.originCoords).map((group) => (
               <Fragment key={group.regionId}>
                 <div className="origin-group-label">{group.label}</div>
+                {/* The visual group headers are divs — they never reach the
+                    accessibility tree as context, so each radio's accessible
+                    name carries its region ("Duck, Outer Banks"). */}
                 {group.origins.map((o) => (
-                  <OptionButton key={o.key} value={o.key}>
+                  <OptionButton key={o.key} value={o.key} aria-label={`${o.label}, ${group.label}`}>
                     {o.label}
                   </OptionButton>
                 ))}

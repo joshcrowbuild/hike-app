@@ -8,7 +8,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { MutableRefObject } from 'react'
 
-import { BootShell } from '../screens/BootShell'
 import type { TuningState } from '../types'
 import type { ScopeContext } from './api'
 import { feedKey, readFeedCache, staleAgeLabel, toStalePaint, writeFeedCache } from './feedCache'
@@ -47,10 +46,17 @@ export interface PlannerProviderProps {
   scope: ScopeContext
   /** Inject a client (tests, Storybook). Defaults to mock or HTTP by env flag. */
   client?: PlannerClient
+  /** Rendered while the origin-catalog gate blocks (live HTTP mode only) —
+   *  the app's true first paint on a cold server (craft review H1). The UI
+   *  layer supplies the designed shell (`main.tsx` passes `<BootShell />`) so
+   *  this data module never imports a screen — no data→screens edge to grow
+   *  into an import cycle. The built-in default is a styled honest minimum,
+   *  never the unstyled bare string H1 flagged. */
+  fallback?: ReactNode
   children: ReactNode
 }
 
-export function PlannerProvider({ scope, client, children }: PlannerProviderProps) {
+export function PlannerProvider({ scope, client, fallback, children }: PlannerProviderProps) {
   const feedSnapshot = useRef<FeedSnapshot | null>(null)
   // The config-driven origin catalog (Phase 2) — HttpPlannerClient needs the
   // resolved coords before its first /plan call, so real (non-injected) HTTP mode
@@ -68,11 +74,21 @@ export function PlannerProvider({ scope, client, children }: PlannerProviderProp
     [client, scope, coordsMap],
   )
 
-  // The cold-start gate is the app's true first paint (craft review H1): on a
-  // Render free-tier wake this blocks for up to a minute, so it must be the
-  // designed shell with the staged loading copy — never a bare unstyled string.
+  // The cold-start gate (craft review H1): on a Render free-tier wake this
+  // blocks for up to a minute, so what renders here must be designed — the
+  // live mount passes the BootShell (staged copy + skeleton chrome).
   if (!client && !useMockDefault && originsLoading) {
-    return <BootShell />
+    return (
+      <>
+        {fallback ?? (
+          <div className="app-shell">
+            <p className="state-note" role="status">
+              Loading…
+            </p>
+          </div>
+        )}
+      </>
+    )
   }
 
   return <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>

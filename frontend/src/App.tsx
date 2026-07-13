@@ -45,10 +45,15 @@ function App() {
   useEffect(() => {
     if (origins.length === 0) return
     if (origins.some((o) => o.key === tuning.origin)) return
-    const fallback = origins.some((o) => o.key === defaultState.origin)
-      ? defaultState.origin
-      : origins[0].key
-    setTuning((current) => ({ ...current, origin: fallback }))
+    // Re-check inside the updater: a user pick landing between this effect's
+    // render and its run must never be clobbered by the fallback.
+    setTuning((current) => {
+      if (origins.some((o) => o.key === current.origin)) return current
+      const fallback = origins.some((o) => o.key === defaultState.origin)
+        ? defaultState.origin
+        : origins[0].key
+      return { ...current, origin: fallback }
+    })
   }, [origins, tuning.origin])
 
   return (

@@ -52,7 +52,7 @@ describe('App tuning persistence (craft review M4 — no amnesia on reload)', ()
     await user.click(within(adjust).getByRole('button', { name: /^from/i }))
 
     const originSheet = await screen.findByRole('dialog', { name: 'Starting point' })
-    await user.click(within(originSheet).getByRole('radio', { name: 'Duck' }))
+    await user.click(within(originSheet).getByRole('radio', { name: 'Duck, Outer Banks' }))
 
     await waitFor(() => expect(readStoredTuning()?.origin).toBe('duck'))
   })
