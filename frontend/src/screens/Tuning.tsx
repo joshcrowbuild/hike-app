@@ -1,9 +1,9 @@
 import type { LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 
 import { Icon, OptionButton, OptionGroup, Sheet, Toggle } from '../components'
 import { effortLabels, partyLabels, todayLabels, whenLabels } from '../data/labels'
-import { orderOrigins, useOrigins, type OriginOption } from '../data/regionsCatalog'
+import { groupOrigins, useOrigins, useRegions, type OriginOption } from '../data/regionsCatalog'
 import type { EffortKey, PartyKey, TodayKey, TuningState, WhenKey } from '../types'
 import { glyphs } from './glyphs'
 
@@ -196,23 +196,45 @@ export interface PanelSheetProps {
   onBack: () => void
 }
 
+/**
+ * Ref callback for the origin list: brings the already-selected origin into
+ * view the moment the sheet opens (C1 — with 35 origins in a scroll area, the
+ * user's own current pick must never be the thing they have to hunt for).
+ * React Aria marks the selected Radio with `data-selected`; jsdom has no
+ * scrollIntoView, hence the existence check.
+ */
+function revealSelectedOrigin(el: HTMLDivElement | null) {
+  const selected = el?.querySelector<HTMLElement>('[data-selected]')
+  if (selected && typeof selected.scrollIntoView === 'function') {
+    selected.scrollIntoView({ block: 'center' })
+  }
+}
+
 export function PanelSheet({ panel, state, setState, onClose, onBack }: PanelSheetProps) {
-  const { origins } = useOrigins()
+  const { regions } = useRegions()
   if (!panel) return null
   return (
     <Sheet isOpen onClose={onClose} onBack={onBack} title={panelTitle(panel)}>
       {panel === 'origin' ? (
-        <div className="origin-sheet">
+        <div className="origin-sheet" ref={revealSelectedOrigin}>
           <NearMeControl state={state} setState={setState} />
+          {/* One radiogroup (a single "pick one" choice), grouped visually by
+              region (craft review C1 fix (2)) — the feed already thinks in
+              regions, so the picker stops being 35 flat alphabetical rows. */}
           <OptionGroup
             label="Starting point"
             value={state.origin}
             onChange={(key) => setState((current) => ({ ...current, origin: key, originCoords: undefined }))}
           >
-            {orderOrigins(origins, state.originCoords).map((o) => (
-              <OptionButton key={o.key} value={o.key}>
-                {o.label}
-              </OptionButton>
+            {groupOrigins(regions, state.originCoords).map((group) => (
+              <Fragment key={group.regionId}>
+                <div className="origin-group-label">{group.label}</div>
+                {group.origins.map((o) => (
+                  <OptionButton key={o.key} value={o.key}>
+                    {o.label}
+                  </OptionButton>
+                ))}
+              </Fragment>
             ))}
           </OptionGroup>
         </div>

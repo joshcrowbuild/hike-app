@@ -80,30 +80,36 @@ describe('"Near me" origin control', () => {
   })
 })
 
-describe('origin picker ordering', () => {
+describe('origin picker grouping + ordering (craft review C1/M4 — region-grouped, never 35 flat rows)', () => {
   // `role=radio` lands on react-aria-components' bare <input>, whose visible
   // label sits in a sibling node (no text content on the input itself) — its
   // `value` attribute is the origin key, so order is asserted against that.
-  it('lists named origins alphabetically by default (no location)', async () => {
+  it('groups origins under region headers, catalog order, alphabetical within each region (no location)', async () => {
     render(<OriginPanel />)
     const keys = (await screen.findAllByRole('radio')).map((r) => r.getAttribute('value'))
     expect(keys).toEqual([
+      // Shenandoah
       'charlottesville',
-      'duck',
       'frontRoyal',
-      'hatteras',
       'luray',
+      // Richmond
+      'richmond',
+      // Outer Banks
+      'duck',
+      'hatteras',
       'nagsHead',
       'ocracoke',
-      'richmond',
     ])
+    // The headers themselves, in catalog order.
+    const headers = [...document.querySelectorAll('.origin-group-label')].map((el) => el.textContent)
+    expect(headers).toEqual(['Shenandoah', 'Richmond', 'Outer Banks'])
   })
 
-  it('re-orders nearest-first the instant a live fix lands ("Near me")', async () => {
-    // A fix right on top of Luray: Front Royal and Charlottesville (both
-    // Shenandoah) are next-closest, then Richmond, then the Outer Banks
-    // origins ordered by their own distance from Luray — proof this is live
-    // haversine math, not a fixed region-grouped list.
+  it('re-ranks regions and their origins nearest-first the instant a live fix lands ("Near me")', async () => {
+    // A fix right on top of Luray: Shenandoah leads (Luray → Front Royal →
+    // Charlottesville by live haversine), then Richmond, then the Outer Banks
+    // origins by their own distance from Luray — proof both grouping levels
+    // re-rank on proximity, not a fixed list.
     const getCurrentPosition = vi.fn((ok) => ok({ coords: { latitude: 38.665, longitude: -78.459 } }))
     Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition }, configurable: true })
     const user = userEvent.setup()
@@ -124,5 +130,36 @@ describe('origin picker ordering', () => {
       'ocracoke',
       'hatteras',
     ])
+    const headers = [...document.querySelectorAll('.origin-group-label')].map((el) => el.textContent)
+    expect(headers).toEqual(['Shenandoah', 'Richmond', 'Outer Banks'])
+  })
+
+  it('keeps the whole grouped list inside one radiogroup — a single choice, not per-region choices', async () => {
+    render(<OriginPanel />)
+    await screen.findAllByRole('radio')
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(1)
+  })
+
+  it('scrolls the already-selected origin into view when the sheet opens (C1)', async () => {
+    const scrolled: Element[] = []
+    // jsdom has no scrollIntoView; install one that records its receiver.
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      value(this: Element) {
+        scrolled.push(this)
+      },
+      configurable: true,
+      writable: true,
+    })
+    try {
+      render(<OriginPanel />)
+      await screen.findAllByRole('radio')
+      expect(scrolled.length).toBeGreaterThan(0)
+      // The revealed element is the selected Front Royal row.
+      expect(scrolled[0]).toHaveAttribute('data-selected')
+      expect(scrolled[0].textContent).toContain('Front Royal')
+    } finally {
+      // @ts-expect-error test-only cleanup of the jsdom shim
+      delete HTMLElement.prototype.scrollIntoView
+    }
   })
 })
