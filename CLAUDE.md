@@ -2,7 +2,7 @@
 
 A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, private **utility** — not social, not engagement-seeking. (Working title.)
 
-**Last verified:** 2026-06-26 · **Owner:** project (product invariants + architecture)
+**Last verified:** 2026-07-13 · **Owner:** project (product invariants + architecture)
 
 > Keep this file lean. The full design lives in the two docs below — read the relevant sections when working a stage. Push stage-specific detail into `.claude/rules/*.md` as code grows. **Delete anything stale — wrong memory is worse than none.**
 
@@ -20,7 +20,7 @@ A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, pri
 - `docs/process/agent-operating-model.md` — **the claude fleet**: personas (PO · Visionary · Steward · Builders), grounding rules, handoffs. Interactive sessions in this repo default to the Product Owner persona; launched lanes are told their persona in their kickoff prompt.
 - `docs/epics/` (index: `docs/epics/README.md`) — **epic definitions** (Epic NNN = stories + ACs). Check here before coding any feature.
 - `docs/research/` (index: `docs/research/README.md`) — **research/design outputs** per stage, indexed with status badges.
-- **Current position:** Phase-1 build complete — backend personalization (Epics 001–005, 010–015) plus the personal-intelligence app UX are shipped on `main`. **Live status, baseline & next work → `docs/process/roadmap.md`** (the status SSOT, so this line can't rot).
+- **Current position:** Phase-1 build + Phase-A OSS-borrow wave shipped on `main` — backend personalization (Epics 001–005, 010–015), the personal-intelligence app UX, Maps/terrain (016/017), the CoMaps-borrow ingestion/duration/GPX wave (022–036, 028), latency waves (039/040), and the security remediation (#166). **Hosted end-to-end** (Vercel → Render → Aura) and serving live data. **Live status, baseline & next work → `docs/process/roadmap.md`** (the status SSOT, so this line can't rot).
 
 ## Non-negotiable rules (must hold in all code)
 1. **Source-or-silence.** Every user-facing fact is backed by a live call with source + timestamp. Unverifiable → *flagged*, never fabricated.

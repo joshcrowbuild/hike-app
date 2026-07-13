@@ -2,7 +2,7 @@
 
 *How the team of Claude sessions divides work and stays grounded in current state. The two failure modes this prevents: a claude acting from a **stale worktree working-copy or a drifted doc**, and **role collisions** (two claudes owning the same decision). Read this before spinning up or acting as any persona.*
 
-**Last verified:** 2026-07-01 · **Owner:** PO (product-owner lane)
+**Last verified:** 2026-07-13 · **Owner:** PO (product-owner lane)
 
 > This formalizes the doc-lane ownership that already exists in the repo. Equivalence to the old labels: **Visionary PM** ≡ `vision-owned` / `vision-PM`; **Product Owner** ≡ the old `PM/planner lane` / `PM-owned`; **Integration Steward** is new (it names the merge-risk discipline in [`../../AGENTS.md`](../../AGENTS.md)); **Builder** ≡ the old `build lane`.
 
@@ -50,7 +50,7 @@
 | **CI** | `scripts/gen_state.py --check` | the `docs-lint` gate fails if `STATUS.md` drifts from `state.json` |
 
 - **`state.json` / `STATUS.md`** — the committed cross-surface snapshot. Regenerate with `make state` (`scripts/gen_state.py --refresh`) — it pulls the live `/health` corpus, `origin/main` SHA, and open PRs. **Never hand-edit.** The PO refreshes it on each status pass.
-- **`GET /status`** — the live, real-time source for any surface that can fetch a URL (desktop/iOS). Until the `/status` endpoint ships (a Builder task), `scripts/ground.py` and `gen_state.py` fall back to `/health`.
+- **`GET /status`** — the live, real-time source for any surface that can fetch a URL (desktop/iOS). Shipped (`api/app.py` — `StatusResponse`); `scripts/ground.py` and `gen_state.py` use it as the primary source, falling back to `/health` if unreachable.
 - **Launch script** — creates each Builder's worktree off freshly-fetched `origin/main` (enforces G3).
 
 ### Enable the terminal hook

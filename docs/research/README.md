@@ -2,7 +2,7 @@
 
 *The map for `docs/research/` — what each design/research doc is, its lifecycle status, and when to read it. Kills the "guess-and-sample 27 files" problem.*
 
-**Last verified:** 2026-06-26 · **Owner:** docs
+**Last verified:** 2026-07-13 · **Owner:** docs
 
 > **This is a static index, not a status dashboard.** The `STATUS` column is a coarse **doc lifecycle** badge, not live build state. For live build status / what's next, the SSOT is **[`../process/roadmap.md`](../process/roadmap.md)**; per-epic status is **[`../epics/README.md`](../epics/README.md)**; decisions are **[`../decision-log.md`](../decision-log.md)**.
 
