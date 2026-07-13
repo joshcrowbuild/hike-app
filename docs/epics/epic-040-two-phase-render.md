@@ -1,6 +1,6 @@
 # Epic 040 — Two-phase render (cards first, conditions verified behind)
 
-**Status:** DEFINED (2026-07-12 · designed in latency Wave 4; ready for a build wave — no product code in this epic's authoring lane)
+**Status:** IN_PROGRESS (2026-07-12 · build wave started; defined in latency Wave 4)
 **Phase:** A
 **Spec refs:** Epic 039 mitigation ladder **B1** (design record [`../research/feed-first-paint-latency-wave1.md`](../research/feed-first-paint-latency-wave1.md), incl. its S2 "Two-phase-render compatibility" section, honored below) · Epic 018 S4 / CDP-02 (the six-state `ConditionStatus` vocabulary this design wears) · CLAUDE.md rules #1/#2/#3/#5/#6
 
