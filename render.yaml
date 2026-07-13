@@ -58,3 +58,22 @@ services:
       # closed); a non-anonymous viewer_id is rejected with 403.
       - key: ADVENTURE_DEV_VIEWER_SECRET
         sync: false
+      # ── Live-condition sources (Epic 018 S2) — dashboard-managed ──
+      # The enabled adapter list (e.g. nws,usgs_water,airnow,firms,ridb,nps_alerts)
+      # stays dashboard-owned so the operator can flip sources without a deploy.
+      # A missing key self-drops just that adapter (never a 500); the kind then
+      # reads honestly `not_fetched` and /health's probes_available shows the gap.
+      - key: ADVENTURE_LIVE_ADAPTERS
+        sync: false
+      # NWS is keyless but requires a real contact string as User-Agent.
+      - key: NWS_USER_AGENT
+        sync: false
+      # Agency API keys (Rule #10: secrets live only in the dashboard, never here).
+      - key: AIRNOW_API_KEY
+        sync: false
+      - key: FIRMS_MAP_KEY
+        sync: false
+      - key: RIDB_API_KEY
+        sync: false
+      - key: NPS_API_KEY
+        sync: false

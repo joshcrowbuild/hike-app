@@ -1,0 +1,80 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "catoctin-sugarloaf",
+    "name": "Catoctin Mountain & Sugarloaf (Frederick County, MD)",
+    "region_label": "Catoctin",
+    "description": "The Catoctin ridge corridor of Frederick County, Maryland: Catoctin Mountain Park (an NPS unit \u2014 Wolf Rock, Chimney Rock, Hog Rock, Cat Rock) and adjoining Cunningham Falls State Park with its 78-ft cascade near Thurmont, Gambrill State Park on the ridge west of Frederick, and Sugarloaf Mountain \u2014 the privately-owned (Stronghold) 1,282-ft monadnock near Dickerson \u2014 anchoring the south end. Rocky Blue Ridge-foothill climbs with real elevation. Urban-adjacent: the city of Frederick sits mid-bbox between the two park clusters, so expect street/footway noise for the filters to shed.",
+    "bbox": [
+      -77.53,
+      39.22,
+      -77.35,
+      39.7
+    ],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "NPS",
+      "USGS",
+      "USFS"
+    ],
+    "area_ids": [
+      "nps:cato",
+      "md:cunningham-falls-sp",
+      "md:gambrill-sp",
+      "local:sugarloaf-mountain"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "thurmont",
+        "label": "Thurmont",
+        "lat": 39.6237,
+        "lon": -77.4108
+      },
+      {
+        "key": "frederick",
+        "label": "Frederick",
+        "lat": 39.4143,
+        "lon": -77.4105
+      },
+      {
+        "key": "sugarloaf",
+        "label": "Sugarloaf Mountain",
+        "lat": 39.2606,
+        "lon": -77.3937
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 80
+    }
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -77.53,
+          39.22
+        ],
+        [
+          -77.35,
+          39.22
+        ],
+        [
+          -77.35,
+          39.7
+        ],
+        [
+          -77.53,
+          39.7
+        ],
+        [
+          -77.53,
+          39.22
+        ]
+      ]
+    ]
+  }
+}

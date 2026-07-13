@@ -1,0 +1,73 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "harpers-ferry",
+    "name": "Harpers Ferry & the Potomac Confluence (WV/MD/VA)",
+    "region_label": "Harpers Ferry",
+    "description": "The Potomac\u2013Shenandoah confluence where West Virginia, Maryland and Virginia meet: Harpers Ferry National Historical Park and its historic Lower Town, the Maryland Heights overlook trails across the Potomac, Loudoun Heights on the Virginia/West Virginia ridge, the Appalachian Trail threading the town (the ATC's psychological midpoint), Weverton Cliffs at the bbox's east edge, and the C&O Canal towpath along the Maryland bank. Rocky river-gap climbs with real relief above the water. Urban-adjacent: Harpers Ferry/Bolivar town streets sit inside the bbox.",
+    "bbox": [
+      -77.82,
+      39.27,
+      -77.66,
+      39.37
+    ],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "NPS",
+      "USGS",
+      "USFS"
+    ],
+    "area_ids": [
+      "nps:hafe",
+      "nps:choh",
+      "nps:appalachian-trail"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "harpersFerry",
+        "label": "Harpers Ferry",
+        "lat": 39.3254,
+        "lon": -77.7389
+      },
+      {
+        "key": "sandyHook",
+        "label": "Sandy Hook (MD)",
+        "lat": 39.324,
+        "lon": -77.68
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 60
+    }
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -77.82,
+          39.27
+        ],
+        [
+          -77.66,
+          39.27
+        ],
+        [
+          -77.66,
+          39.37
+        ],
+        [
+          -77.82,
+          39.37
+        ],
+        [
+          -77.82,
+          39.27
+        ]
+      ]
+    ]
+  }
+}
