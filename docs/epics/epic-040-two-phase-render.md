@@ -1,6 +1,6 @@
 # Epic 040 — Two-phase render (cards first, conditions verified behind)
 
-**Status:** REVIEW (2026-07-12 · S1–S4 built + gated in one lane; PO review pending. Post-merge measured verdict vs the SLO table still owed per the DoD — A2 fast-curate model not yet configured, so the honest phase-1 target is <2.5s until it lands)
+**Status:** DONE ✅ (2026-07-13 · merged in the overnight train, PR #175; all ACs shipped + gated. One DoD row stays open: the post-merge measured-latency verdict vs the SLO table — interim live measurement 2026-07-13 on prod: cold single-shot `/plan` ≈19–21s (st-john-usvi 20.7s, shenandoah 19.2s), warm cache-hit ≈1.2s; the browser time-to-cards verdict with A2 fast-curate configured stays owed, since A2 is not yet set)
 **Phase:** A
 **Spec refs:** Epic 039 mitigation ladder **B1** (design record [`../research/feed-first-paint-latency-wave1.md`](../research/feed-first-paint-latency-wave1.md), incl. its S2 "Two-phase-render compatibility" section, honored below) · Epic 018 S4 / CDP-02 (the six-state `ConditionStatus` vocabulary this design wears) · CLAUDE.md rules #1/#2/#3/#5/#6
 
@@ -132,5 +132,6 @@ intent parse ~0.3s · scout + maps-fields graph reads ~0.3–0.5s (B4 discipline
 - [ ] All ACs covered by at least one passing test; `make check` + `make eval-replay` green (S4 criteria active)
 - [ ] Frontend: `cd frontend && npm ci && npm run test && npm run build` green (manual gate — no frontend CI)
 - [ ] Post-merge measured verdict vs the SLO table (fresh-key <1.5s-to-cards p75 with A2, cold-everything <8s; browser time-to-cards, same protocol as Wave 1), recorded in this file
+      - _Interim (2026-07-13, Steward post-train probe, single-shot `/plan` — not the two-phase browser path): cold ≈19–21s (st-john-usvi 20.7s, shenandoah 19.2s), warm cache-hit ≈1.2s. Cold single-shot still misses the <8s row; the two-phase frontend path + A2 fast-curate are the levers owed to close it. Row stays open._
 - [ ] Merge-sensitive seams called out per PR: `orchestration/engine.py`, `api/app.py` + `api/schemas.py`, `frontend/src/data/PlannerProvider.tsx`
 - [ ] Epic index row synced (`python scripts/gen_epic_index.py --check` clean)

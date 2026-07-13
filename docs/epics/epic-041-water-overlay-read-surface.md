@@ -1,6 +1,6 @@
 # Epic 041 — Water overlay read surface (Detail answer + map markers)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (personal-intelligence app; Detail-page surface)
 **Spec refs:** Epic 035 (the three primitives this consumes) ·
 `docs/research/ux-review-conditions-2026-07.md` (the "answer, not a ledger row"

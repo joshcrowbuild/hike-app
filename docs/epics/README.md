@@ -21,7 +21,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [015](epic-015-ci-neo4j-integration.md) | CI Neo4j integration (live owner-isolation guardrail; separate required leg) | DONE ✅ | 1 | Epic 011 |
 | [016](epic-016-maps-and-terrain.md) | Maps & terrain (topographic Detail map · route · elevation profile) | DONE ✅ | 1 | Epic 013 · 017 (S5) |
 | [017](epic-017-terrain-elevation-enrichment.md) | Terrain elevation enrichment (USGS 3DEP profiles; parallel to 016) | DONE ✅ | 1 | Epic 012 · `geom_wkt` |
-| [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced conditions + six-state legible silence — open scope closed 2026-07-12) | REVIEW | 1 | Epic 013 · #53/#54 |
+| [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced conditions + six-state legible silence — open scope closed 2026-07-12) | DONE ✅ | 1 | Epic 013 · #53/#54 |
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | DONE ✅ | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | DONE ✅ | A | — |
 | [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | DONE ✅ | A | — |
@@ -49,9 +49,9 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [039](epic-039-feed-first-paint-latency.md) | Feed first-paint latency Wave 1 (anonymous fast-path · engine-layer anon plan cache · frontend stale-while-revalidate) | DONE ✅ | A | — |
 
-| [040](epic-040-two-phase-render.md) | Two-phase render (graph-only ranked cards <1.5s · `POST /plan/conditions` patch · six-state pending silence) | REVIEW | A | Epic 039 · 018 S4 |
+| [040](epic-040-two-phase-render.md) | Two-phase render (graph-only ranked cards <1.5s · `POST /plan/conditions` patch · six-state pending silence) | DONE ✅ | A | Epic 039 · 018 S4 |
 
-| [041](epic-041-water-overlay-read-surface.md) | Water overlay read surface (Detail answer line + quiet map markers; CDP-02 three-way silence; no feed change) | REVIEW | 1 | Epic 035 · 016 |
+| [041](epic-041-water-overlay-read-surface.md) | Water overlay read surface (Detail answer line + quiet map markers; CDP-02 three-way silence; no feed change) | DONE ✅ | 1 | Epic 035 · 016 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
