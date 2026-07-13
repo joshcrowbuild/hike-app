@@ -1,0 +1,38 @@
+{
+  "adapter": "nps_alerts",
+  "source": "developer.nps.gov",
+  "note": "The parks catalog ANSWERS with Shenandoah NP in range (~8 mi from origin). The alerts endpoint returns one Closure-category alert. The adapter produces a fact with count=1 — a sourced, verified closure. The finding: evaluate_guardrails does NOT route closures to CardWarning, so the verdict says 'Good to go' beside a closure line.",
+  "interactions": [
+    {
+      "match": "/parks",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "fullName": "Shenandoah National Park",
+            "parkCode": "shen",
+            "latLong": "lat:38.5153, long:-78.4257"
+          },
+          {
+            "fullName": "Acadia National Park",
+            "parkCode": "acad",
+            "latLong": "lat:44.409286, long:-68.247501"
+          }
+        ]
+      }
+    },
+    {
+      "match": "/alerts",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "title": "Old Rag Area Closure",
+            "category": "Closure",
+            "url": "https://www.nps.gov/shen/learn/news/old-rag-closure.htm"
+          }
+        ]
+      }
+    }
+  ]
+}

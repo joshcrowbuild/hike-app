@@ -1,0 +1,33 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "Good AQI — no air warning or block to distract from the closure finding.",
+  "interactions": [
+    {
+      "match": "airnowapi.org",
+      "status": 200,
+      "json": [
+        {
+          "DateObserved": "2026-07-13",
+          "ParameterName": "O3",
+          "AQI": 38,
+          "Category": {
+            "Number": 1,
+            "Name": "Good"
+          },
+          "ReportingArea": "Shenandoah Valley"
+        },
+        {
+          "DateObserved": "2026-07-13",
+          "ParameterName": "PM2.5",
+          "AQI": 45,
+          "Category": {
+            "Number": 1,
+            "Name": "Good"
+          },
+          "ReportingArea": "Shenandoah Valley"
+        }
+      ]
+    }
+  ]
+}
