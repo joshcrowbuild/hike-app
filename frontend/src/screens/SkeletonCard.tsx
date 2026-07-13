@@ -1,5 +1,10 @@
 import { prefersReducedMotion } from '../data/motion'
 
+/** Home shows peers, not a full page of results (v0.3 §2: "≤3 peers") — every
+ *  skeleton stack (Home's loading state, the BootShell gate) mirrors that count
+ *  so the placeholder shape matches what actually lands. */
+export const SKELETON_COUNT = 3
+
 /**
  * A card-shaped placeholder shown the instant a search is submitted (NNG:
  * skeleton screens over spinners/text — a structured wait feels shorter than a

@@ -62,6 +62,7 @@ button {
 .back,
 .facet-value,
 .refine-label,
+.origin-group-label,
 .housekeeping-summary {
   font-family: var(--font-family-mono);
   text-transform: uppercase;
@@ -1128,6 +1129,20 @@ button {
 .origin-sheet {
   display: grid;
   gap: 0.85rem;
+}
+
+/* Region section headers inside the origin picker (C1: 35 flat rows → grouped
+   by the regions the feed already thinks in). Mono-caps via the shared list
+   above; the label tier of the type scale, muted — a wayfinding aid, never a
+   competitor to the option rows it introduces. */
+.origin-group-label {
+  font-size: var(--size-label);
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+.origin-group-label:first-child {
+  margin-top: 0;
 }
 
 .near-me-note {

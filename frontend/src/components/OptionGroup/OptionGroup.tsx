@@ -41,11 +41,16 @@ export function OptionGroup<T extends string>({
 export type OptionButtonProps = {
   value: string
   children: ReactNode
+  /** Optional accessible-name override for when the visible label alone lacks
+   *  context (e.g. the region-grouped origin picker, whose visual group
+   *  headers never reach the accessibility tree). Must CONTAIN the visible
+   *  label (WCAG 2.5.3 label-in-name). */
+  'aria-label'?: string
 }
 
-export function OptionButton({ value, children }: OptionButtonProps) {
+export function OptionButton({ value, children, 'aria-label': ariaLabel }: OptionButtonProps) {
   return (
-    <Radio value={value} className={styles.option}>
+    <Radio value={value} className={styles.option} aria-label={ariaLabel}>
       {children}
     </Radio>
   )

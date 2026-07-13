@@ -13,6 +13,7 @@ import type { ScopeContext } from './api'
 import { composeConditions } from './composeConditions'
 import { feedKey, readFeedCache, staleAgeLabel, toStalePaint, writeFeedCache } from './feedCache'
 import { HttpPlannerClient } from './http/httpPlanner'
+import { COLDSTART_MS, REASSURE_MS, type LoadingStage } from './loadingStages'
 import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
@@ -46,10 +47,17 @@ export interface PlannerProviderProps {
   scope: ScopeContext
   /** Inject a client (tests, Storybook). Defaults to mock or HTTP by env flag. */
   client?: PlannerClient
+  /** Rendered while the origin-catalog gate blocks (live HTTP mode only) —
+   *  the app's true first paint on a cold server (craft review H1). The UI
+   *  layer supplies the designed shell (`main.tsx` passes `<BootShell />`) so
+   *  this data module never imports a screen — no data→screens edge to grow
+   *  into an import cycle. The built-in default is a styled honest minimum,
+   *  never the unstyled bare string H1 flagged. */
+  fallback?: ReactNode
   children: ReactNode
 }
 
-export function PlannerProvider({ scope, client, children }: PlannerProviderProps) {
+export function PlannerProvider({ scope, client, fallback, children }: PlannerProviderProps) {
   const feedSnapshot = useRef<FeedSnapshot | null>(null)
   // The config-driven origin catalog (Phase 2) — HttpPlannerClient needs the
   // resolved coords before its first /plan call, so real (non-injected) HTTP mode
@@ -67,11 +75,20 @@ export function PlannerProvider({ scope, client, children }: PlannerProviderProp
     [client, scope, coordsMap],
   )
 
+  // The cold-start gate (craft review H1): on a Render free-tier wake this
+  // blocks for up to a minute, so what renders here must be designed — the
+  // live mount passes the BootShell (staged copy + skeleton chrome).
   if (!client && !useMockDefault && originsLoading) {
     return (
-      <p className="app-loading" role="status">
-        Loading…
-      </p>
+      <>
+        {fallback ?? (
+          <div className="app-shell">
+            <p className="state-note" role="status">
+              Loading…
+            </p>
+          </div>
+        )}
+      </>
     )
   }
 
@@ -152,16 +169,10 @@ export function useEpisode(id: string | null): {
 
 export type FeedStatus = 'loading' | 'ready' | 'empty' | 'error'
 
-/** Where a still-loading request sits on the honest progress ladder (D4 —
- *  perceived performance): a wait past NNG's ~10s attention threshold must keep
- *  saying something new rather than sitting on a line that now reads as frozen.
- *  `reassure` covers ordinary-but-slow live calls; `coldstart` is long enough
- *  that a Render free-tier wake (30-60s) is the more likely explanation, still
- *  well inside the 60s /plan budget. */
-export type LoadingStage = 'initial' | 'reassure' | 'coldstart'
-
-const REASSURE_MS = 10_000
-const COLDSTART_MS = 25_000
+/** The honest progress ladder (D4) now lives in `loadingStages.ts`, shared
+ *  with the BootShell gate above; re-exported so existing consumers keep one
+ *  import site for feed state. */
+export type { LoadingStage } from './loadingStages'
 
 export interface FeedState {
   status: FeedStatus
