@@ -281,6 +281,27 @@
           "sha256": null
         }
       ]
+    },
+    "westmoreland": {
+      "resolution": "1/3 arc-second (~10 m)",
+      "bbox": [
+        -77.2,
+        38.1,
+        -76.78,
+        38.38
+      ],
+      "output": "data/dem/westmoreland.tif",
+      "output_sha256": null,
+      "tiles": [
+        {
+          "name": "n39w077",
+          "sha256": null
+        },
+        {
+          "name": "n39w078",
+          "sha256": null
+        }
+      ]
     }
   }
 }
