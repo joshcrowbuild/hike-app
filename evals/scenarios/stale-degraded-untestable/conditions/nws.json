@@ -1,0 +1,44 @@
+{
+  "adapter": "nws",
+  "source": "api.weather.gov",
+  "note": "Forecast healthy, no alerts. The cassette player does not pass `now` to the adapter, so fetched_at = datetime.now(utc) at replay time. check_condition_states calls feed_card(trail) without `now`, so render_now is also current time. age_s ≈ 0 — always less than the 2h stale horizon, so the state is always 'present', never 'stale_degraded'. This scenario pins 'stale_degraded' to document the gap: the staleness logic has zero replay coverage.",
+  "interactions": [
+    {
+      "match": "/points/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "forecast": "https://api.weather.gov/gridpoints/LWX/96,70/forecast",
+          "gridId": "LWX",
+          "cwa": "LWX",
+          "gridX": 96,
+          "gridY": 70
+        }
+      }
+    },
+    {
+      "match": "/gridpoints/",
+      "status": 200,
+      "json": {
+        "properties": {
+          "periods": [
+            {
+              "number": 1,
+              "name": "This Afternoon",
+              "shortForecast": "Partly Sunny",
+              "temperature": 68,
+              "temperatureUnit": "F"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "match": "/alerts/active",
+      "status": 200,
+      "json": {
+        "features": []
+      }
+    }
+  ]
+}

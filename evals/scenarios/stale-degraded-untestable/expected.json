@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM adversarial red-team finding F2 (MEDIUM): the stale_degraded state is untestable in the replay gate. The cassette player creates adapters via probe(point) which calls fetch() without `now`, so fetched_at = datetime.now(utc). check_condition_states calls feed_card(trail) without `now`, so render_now is also current time. age_s is always ~0, always less than any _STALE_HORIZON_S. Pinning 'stale_degraded' here FAILS by design — the staleness classification logic (engine.py:643-644) has zero replay coverage. A bug in the horizon values or comparison operator would go undetected.",
+    "skip": true,
+    "skip_reason": "F2 MEDIUM: stale_degraded untestable in replay — condition_states fails by design (GLM red-team 2026-07-13)"
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "fire"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "fire": {
+        "source_prefix": "NASA FIRMS",
+        "value": {
+          "hotspot_count": 0
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "stale_degraded",
+      "air": "not_fetched",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "not_fetched",
+      "permits": "not_fetched"
+    }
+  }
+}

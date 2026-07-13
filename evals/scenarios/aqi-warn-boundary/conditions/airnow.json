@@ -1,0 +1,23 @@
+{
+  "adapter": "airnow",
+  "source": "EPA AirNow",
+  "note": "AQI 150 — above AQI_WARN (101) but below AQI_BLOCK (201). The guardrail routes this to CardWarning ('air quality elevated (AQI 150)'), not a block. The card should carry the warning and the verdict should be 'caution'. This scenario PASSES — it documents the boundary is correctly handled.",
+  "interactions": [
+    {
+      "match": "airnowapi.org",
+      "status": 200,
+      "json": [
+        {
+          "DateObserved": "2026-07-13",
+          "ParameterName": "PM2.5",
+          "AQI": 150,
+          "Category": {
+            "Number": 2,
+            "Name": "Unhealthy for Sensitive Groups"
+          },
+          "ReportingArea": "Shenandoah Valley"
+        }
+      ]
+    }
+  ]
+}

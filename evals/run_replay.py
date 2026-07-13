@@ -14,14 +14,34 @@ Usage: python -m evals.run_replay [--n-runs N] [--scenario NAME]
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from evals.replay import evaluate_scenario, list_scenario_dirs, load_scenario
+
+
+def _is_skipped(path: Path) -> tuple[bool, str]:
+    """Check whether a scenario is gate-skipped (adversarial findings that document
+    a hole — failing on purpose, kept out of CI). Returns (skipped, reason)."""
+    expected_path = path / "expected.json"
+    if not expected_path.exists():
+        return False, ""
+    doc = json.loads(expected_path.read_text(encoding="utf-8"))
+    meta = doc.get("meta", {}) if isinstance(doc, dict) else {}
+    if meta.get("skip"):
+        return True, str(meta.get("skip_reason", "gate-skipped adversarial finding"))
+    return False, ""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="source-or-silence replay gate")
     parser.add_argument("--n-runs", type=int, default=3, help="runs per scenario (default: 3)")
     parser.add_argument("--scenario", help="run one scenario directory by name")
+    parser.add_argument(
+        "--include-skipped",
+        action="store_true",
+        help="run gate-skipped scenarios too (for local investigation)",
+    )
     args = parser.parse_args()
 
     dirs = list_scenario_dirs()
@@ -36,6 +56,10 @@ def main() -> None:
     print(f"source-or-silence replay gate — {len(dirs)} scenario(s), n={args.n_runs}")
     any_failed = False
     for path in dirs:
+        skipped, reason = _is_skipped(path)
+        if skipped and not args.include_skipped:
+            print(f"\n  [SKIP] {path.name} — {reason}")
+            continue
         result = evaluate_scenario(load_scenario(path), n=args.n_runs)
         verdict = "PASS" if result.passed else "FAIL"
         print(f"\n  [{verdict}] {result.report.scenario}")
