@@ -119,12 +119,12 @@ The cache stays keyed on inputs storing `CachedPlan` below presentation — this
 
 ## Phase-1 latency budget (the <1.5s claim, attributed)
 
-intent parse ~0.3s · scout + maps-fields graph reads ~0.3–0.5s (B4 discipline: independent reads overlap) · Valhalla prefilter ~0.2–0.3s · taste rank ~0.5–0.8s **with the A2 fast-curate model** (`ADVENTURE_MODEL_CURATE` — config-only companion lever, quality spot-check gate per the ladder) or ~1.5–2.5s without. **The <1.5s p75 target assumes A2 lands with (or before) this epic; without A2 the honest phase-1 target is <2.5s.** Record the measured verdict per the Wave-1 protocol either way. The maps read (`_fetch_maps_by_canonical`) attaches to phase-1 cards — this is where B4's skipped maps-overlap is naturally absorbed (the read overlaps the conditions fan-out by construction: it happens while phase 2 is in flight).
+intent parse ~0.3s · scout + maps-fields graph reads ~0.3–0.5s (B4 discipline: independent reads overlap) · Valhalla prefilter ~0.2–0.3s · taste rank ~0.5–0.8s **with the A2 fast-curate model** (`ADVENTURE_MODEL_CURATE` — the per-role override seam in `orchestration/providers/registry.py`'s `resolve()`, quality spot-check gate per the ladder) or ~1.5–2.5s without. **The <1.5s p75 target assumes A2 lands with (or before) this epic; without A2 the honest phase-1 target is <2.5s.** Record the measured verdict per the Wave-1 protocol either way. The maps read (`_fetch_maps_by_canonical`) attaches to phase-1 cards — this is where B4's skipped maps-overlap is naturally absorbed (the read overlaps the conditions fan-out by construction: it happens while phase 2 is in flight).
 
 ## Operator levers
 
 - `ADVENTURE_TWO_PHASE_ENABLED` (server kill switch, D6) · `VITE_TWO_PHASE` (client, build-time)
-- `ADVENTURE_MODEL_CURATE` — the A2 fast judge, the phase-1 budget's biggest single lever
+- `ADVENTURE_MODEL_CURATE` — the A2 fast judge, the phase-1 budget's biggest single lever. This seam now exists: `orchestration/providers/registry.py`'s `resolve()` layers optional per-role env overrides (`ADVENTURE_{PROVIDER,MODEL,LOCAL_MODEL}_<ROLE>`) on top of each role's tier config, field by field, so curate can be pinned to a cheaper/faster model independent of judge (sibling knobs: `ADVENTURE_PROVIDER_CURATE`, `ADVENTURE_LOCAL_MODEL_CURATE`; symmetric knobs also exist for extract/normalize/judge).
 - Existing: `ADVENTURE_ANON_FEED_CACHE_TTL_S`, `ADVENTURE_FEED_WARM_INTERVAL_S`, `ADVENTURE_LIVE_PROBE_MAX_WORKERS` — all compose per D7
 
 ## Definition of Done
