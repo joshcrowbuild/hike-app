@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CardVM, LineVM, WarningVM } from './vm'
+import type { CardVM, ConditionStatusVM, LineVM, WarningVM } from './vm'
 import { deriveVerdict } from './verdict'
 
 /** A minimal live card; override the fact-bearing bits per case. */
@@ -59,6 +59,65 @@ describe('deriveVerdict — the go/no-go headline (presentation only, R2)', () =
     expect(v.lead).toBe('Good to go')
   })
 
+  // F2 (ux-review 2026-07): the go-detail claims only what was VERIFIED. "Clear"
+  // is a weather word — asserted beside a sourced "Showers And Thunderstorms
+  // Likely" line it was an unsourced editorial claim (Invariant 1). The detail
+  // now counts the checks that actually answered (the six-state vocabulary),
+  // never characterising the sky on its own authority.
+  describe('the go-detail never asserts an unverified sky-state (F2, Invariant 1)', () => {
+    const status = (over: Partial<ConditionStatusVM>): ConditionStatusVM => ({
+      kind: 'weather',
+      state: 'present',
+      ...over,
+    })
+
+    it('never says "clear" as a default string', () => {
+      const v = deriveVerdict(card({ conditionLines: [line({ text: 'Showers And Thunderstorms Likely 77°F' })] }))
+      expect(v.tone).toBe('go')
+      expect(v.detail).not.toMatch(/clear/i)
+    })
+
+    it('counts only the checks a source actually answered', () => {
+      const v = deriveVerdict(
+        card({
+          conditionLines: [line()],
+          conditions: [
+            status({ kind: 'weather', state: 'present', source: 'NWS' }),
+            status({ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS' }),
+            status({ kind: 'water', state: 'no-data', source: 'USGS' }),
+            status({ kind: 'air', state: 'unavailable' }),
+            status({ kind: 'closures', state: 'not-fetched' }),
+          ],
+        }),
+      )
+      // 3 answered (present + no-hazard + no-data); unavailable/not-fetched are
+      // NOT checks — counting them would dress an outage as a completed sweep.
+      expect(v.detail).toBe('nothing flagged across 3 checks')
+    })
+
+    it('uses the singular for one answered check', () => {
+      const v = deriveVerdict(
+        card({ conditionLines: [line()], conditions: [status({ kind: 'weather', state: 'present', source: 'NWS' })] }),
+      )
+      expect(v.detail).toBe('nothing flagged in 1 check')
+    })
+
+    it('claims only "nothing flagged" when no six-state payload exists (older backend)', () => {
+      const v = deriveVerdict(card({ conditionLines: [line()] }))
+      expect(v.detail).toBe('nothing flagged')
+    })
+
+    it('still quotes a merged reading verbatim when enrichment supplies one', () => {
+      const v = deriveVerdict(
+        card({
+          conditionLines: [line()],
+          enrichment: { provenance: 'live', conditionValue: 'Showers likely 77°F' },
+        }),
+      )
+      expect(v.detail).toBe('Showers likely 77°F')
+    })
+  })
+
   it('a flagged reading is never dressed as clear — heads up (Rule #1)', () => {
     const v = deriveVerdict(card({ conditionLines: [line({ confidence: 'flagged' })] }))
     expect(v.tone).toBe('unverified')
@@ -75,6 +134,9 @@ describe('deriveVerdict — the go/no-go headline (presentation only, R2)', () =
     const v = deriveVerdict(card({ conditionSilence: { state: 'checked-clear' } }))
     expect(v.tone).toBe('go')
     expect(v.provenance).toBe('live')
+    // Six-state vocabulary, not a sky-word: the source answered "nothing to
+    // flag" — that is the whole claim (F2).
+    expect(v.detail).toBe('checked — nothing to flag')
   })
 
   it('carries the driving signal’s provenance so a sample verdict can demote (R1)', () => {
