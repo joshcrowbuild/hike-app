@@ -19,6 +19,7 @@ import pytest
 import orchestration.curator as curator
 from evals.replay import (
     SCENARIOS_DIR,
+    check_verdict_consistency,
     evaluate_scenario,
     list_scenario_dirs,
     load_scenario,
@@ -31,6 +32,7 @@ _EXPECTED_SCENARIOS = {
     "hazard-warning-flashflood",
     "adapter-outage",
     "sparse-cold",
+    "regional-alert-verdict-consistency",
 }
 
 
@@ -111,6 +113,37 @@ def test_fabricated_kind_is_caught() -> None:
     result = evaluate_scenario(tampered, n=1)
     assert not result.passed
     assert "no_fabricated_kinds" in result.failures
+
+
+def test_partial_alert_coverage_is_caught() -> None:
+    # F1 (ux-review-conditions-2026-07, "one sky, one verdict"): a region-wide
+    # alert reaching only SOME cards must red verdict_consistency — the card
+    # missing it would derive "Good to go" while the feed banner (and its own
+    # Detail, had the payload carried it) said "Caution". Tampering strips the
+    # warning off one planned trail post-run, simulating exactly that partial
+    # coverage.
+    scenario = _by_name("regional-alert-verdict-consistency")
+    batch = run_scenario(scenario)
+    assert batch.trails, "scenario must surface cards to tamper with"
+    stripped = dataclasses.replace(
+        batch.trails[0], verdict=dataclasses.replace(batch.trails[0].verdict, warnings=())
+    )
+    tampered = dataclasses.replace(batch, trails=[stripped, *batch.trails[1:]])
+    violations = check_verdict_consistency(tampered, scenario.expected["hard"])
+    assert violations, "stripping a region-wide warning off one card must red the check"
+    assert any("Beach Hazards Statement" in v for v in violations)
+
+
+def test_regional_alert_rides_every_surfaced_card() -> None:
+    # The green half of the same invariant: in the untampered golden run the
+    # alert is on EVERY card's own warning set, source-stamped — the wire-level
+    # guarantee that lets card and Detail derive one identical verdict.
+    batch = run_scenario(_by_name("regional-alert-verdict-consistency"))
+    assert len(batch.trails) >= 3
+    for trail in batch.trails:
+        texts = [w.text for w in trail.verdict.warnings]
+        assert any("Beach Hazards Statement" in t for t in texts), texts
+        assert all(w.source for w in trail.verdict.warnings)
 
 
 def test_missing_expected_card_is_caught() -> None:

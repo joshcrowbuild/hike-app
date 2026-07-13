@@ -197,6 +197,7 @@ _REQUIRED_HARD_KEYS = frozenset(
         "corpus_corroboration",
         "expected_warnings",
         "expected_unavailable_kinds",
+        "region_wide_warnings",
         "condition_states",
     }
 )
@@ -342,6 +343,23 @@ def check_unavailable_disclosed(batch: PlannedBatch, hard: dict[str, Any]) -> li
     return out
 
 
+def check_verdict_consistency(batch: PlannedBatch, hard: dict[str, Any]) -> list[str]:
+    """One sky, one verdict (ux-review-conditions-2026-07 F1): a region-wide alert
+    must ride EVERY surfaced card's own warning set, source-stamped — not just the
+    feed banner. The card verdict and the Detail verdict are both derived from the
+    same per-card payload on the surface, so this is the wire-level invariant that
+    makes them provably equal: if the alert reached only some cards, a card without
+    it would say "Good to go" while the banner (and its own Detail) said "Caution" —
+    the live-DOM contradiction this gate now pins (Ocracoke, 2026-07-12)."""
+    out: list[str] = []
+    for needle in hard.get("region_wide_warnings", []):
+        for trail in batch.trails:
+            cid = trail.candidate.canonical_id
+            if not any(needle in w.text and w.source for w in trail.verdict.warnings):
+                out.append(f"{cid}: region-wide warning {needle!r} missing from this card")
+    return out
+
+
 def check_condition_states(batch: PlannedBatch, hard: dict[str, Any]) -> list[str]:
     """CDP-02 at the gate (Epic 018 S4f): every surfaced card's per-kind disposition
     must match the pinned state, through the same `feed_card` path production serves.
@@ -397,6 +415,7 @@ _CHECKS: list[tuple[str, Callable[[PlannedBatch, dict[str, Any]], list[str]]]] =
     ("corroboration_wired", check_corroboration_wired),
     ("warnings_expected", check_warnings_expected),
     ("unavailable_disclosed", check_unavailable_disclosed),
+    ("verdict_consistency", check_verdict_consistency),
     ("condition_states", check_condition_states),
 ]
 

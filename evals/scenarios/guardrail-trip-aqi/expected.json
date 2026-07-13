@@ -24,6 +24,7 @@
     "corpus_corroboration": {},
     "expected_warnings": [],
     "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
     "condition_states": {}
   }
 }

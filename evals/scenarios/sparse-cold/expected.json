@@ -23,6 +23,7 @@
     },
     "expected_warnings": [],
     "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
     "condition_states": {
       "weather": "present",
       "air": "not_fetched",
