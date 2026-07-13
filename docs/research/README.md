@@ -57,6 +57,7 @@
 | [home-curation-prototype-spec-v0.2.md](archive/home-curation-prototype-spec-v0.2.md) | `SUPERSEDED` by v0.3 (archived) | Older Home/Curation draft. **Read** the v0.3 successor instead; kept for design provenance. |
 | [outcome-card-ux.md](outcome-card-ux.md) | `ACTIVE` (pre-Stage-10 exploration) | Outcome Card / Belief Store / Readiness Filter wireframes + durable invariants. **Read when** designing the personal-intelligence UI. |
 | [ui-brief-v0.2.md](ui-brief-v0.2.md) | `IMPLEMENTED (PR #22)` | UX north-star brief: "quiet premium utility" posture, card model, trust + belief layers, visual language. **Read when** designing app UX or visual language. |
+| [ux-review-craft-2026-07.md](ux-review-craft-2026-07.md) | `ACTIVE` (point-in-time; fix lanes proposed) | Harsh craft-layer review of the LIVE deployed UI (readability · usability · visual aesthetic): 14 measured findings (broken origin sheet, bare cold-load gate, one-fact cards, amplitude-normalized terrain glyph, one-way duration beside round-trip distance, 12-size type sprawl, off-grid spacing, missing identity) + 3 fix lanes. Companion to the conditions review — does not repeat its 12 findings. **Read when** scoping frontend polish/craft lanes or re-reviewing the surface. |
 | [ux-assembly-plan-v1.md](ux-assembly-plan-v1.md) | `IMPLEMENTED (PR #22; PR-E/F deferred)` | Frontend UX assembly plan: VM/adapter seam, mock/http adapters, persona-review (R1–R12) binding constraints. **Read when** working the frontend screens or VM seam. |
 
 ## Archived (provenance only)
