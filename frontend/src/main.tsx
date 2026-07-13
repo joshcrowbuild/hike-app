@@ -5,6 +5,7 @@ import App from './App'
 import { Gallery } from './Gallery'
 import { PlannerProvider } from './data/PlannerProvider'
 import { resolveScope } from './data/resolveScope'
+import { BootShell } from './screens/BootShell'
 import './design/tokens.css'
 import './styles.css'
 
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     {isGallery ? (
       <Gallery />
     ) : (
-      <PlannerProvider scope={scope}>
+      // BootShell is the designed cold-start first paint (craft review H1):
+      // staged loading copy + skeleton chrome while /regions wakes the API.
+      <PlannerProvider scope={scope} fallback={<BootShell />}>
         <App />
       </PlannerProvider>
     )}

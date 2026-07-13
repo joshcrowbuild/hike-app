@@ -543,6 +543,7 @@ def verify_before_prune(
     iv: str,
     elevation_expected: bool,
     pre_load_count: int,
+    run_id: str | None = None,
 ) -> tuple[int, int]:
     """The gate that MUST pass before `prune_stale_trails` runs — positioned between the
     load and the prune (post-run is too late: prune already committed). Raises
@@ -560,6 +561,13 @@ def verify_before_prune(
         stragglers (a silent half-wipe). Comparing against `pre_load_count` is
         scale-correct and turns a truncated re-ingest into a loud abort. `pre_load_count
         == 0` (first-ever ingest) has no denominator and passes.
+
+        With `run_id` (the pipeline's per-run marker — always passed by `run_pipeline`),
+        `n_cur` counts the nodes THIS RUN actually stamped rather than the current
+        `ingest_version`. That distinction is what arms this check in production:
+        `ingest_version` is a constant per region, so the version-keyed `n_cur` read the
+        whole region no matter what the run touched and the collapse could never
+        register. A truncated fetch now stamps few nodes → small `n_cur` → loud abort.
     (b) ELEVATION — only when `elevation_expected`: coverage (nodes that got a 3DEP
         profile / the geometry-bearing canonical nodes that are ELIGIBLE for one) must be
         ≥ threshold (default 0.8, env `ADVENTURE_ELEV_MIN_COVERAGE`). This promotes today's
@@ -567,7 +575,7 @@ def verify_before_prune(
     """
     from graph.load import count_region_versions, prune_min_ratio
 
-    n_cur, n_prev = count_region_versions(runner, iv, region_id=region.region_id)
+    n_cur, n_prev = count_region_versions(runner, iv, region_id=region.region_id, run_id=run_id)
     counts["verify_n_cur"] = n_cur
     counts["verify_n_prev"] = n_prev
     counts["verify_pre_load"] = pre_load_count
@@ -634,6 +642,7 @@ def _load_matches(
     tier_by_name: dict[str, int],
     iv: str,
     boundary: BaseGeometry | None = None,
+    run_id: str | None = None,
 ) -> dict[str, int]:
     """Persist auto-accept matches + unmatched spine features via the idempotent
     MERGE loaders. The spine side is read generically from the `Feature.source`
@@ -645,7 +654,12 @@ def _load_matches(
     `boundary` is the region's protected-area polygon (Phase 2). Each trail's point
     is classified inside/outside it and persisted as `outside_boundary` for the
     Curator's soft-demote. `None` (no real boundary) → the flag is `None` and nothing
-    is demoted — the spatial signal degrades to today's name-only filter."""
+    is demoted — the spatial signal degrades to today's name-only filter.
+
+    `run_id` (the per-run marker, `graph.load.new_ingest_run_id`) is stamped on every
+    CanonicalTrail and SourceRecord written here; `prune_stale_trails` later treats
+    "region member not stamped by this run" as stale. Every write in this loop MUST
+    carry it — an unstamped write would look stale to its own run's prune."""
     from graph.load import load_canonical_trail, load_source_record, merge_same_as
 
     # `load_segment` is imported lazily inside `_persist_segments` (same module).
@@ -727,6 +741,7 @@ def _load_matches(
             way_type=m.a.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
+            ingest_run_id=run_id,
             length_mi=length_mi,
             length_source=length_source,
             gain_ft=gain_ft,
@@ -745,6 +760,7 @@ def _load_matches(
             source_id=m.a.ref,
             raw_name=m.a.name,
             ingest_version=iv,
+            ingest_run_id=run_id,
             extra=_tier_extra(m.a.source),
         )
         merge_same_as(
@@ -765,6 +781,7 @@ def _load_matches(
             source_id=m.b.ref,
             raw_name=m.b.name,
             ingest_version=iv,
+            ingest_run_id=run_id,
             extra=_tier_extra(m.b.source),
         )
         merge_same_as(
@@ -810,6 +827,7 @@ def _load_matches(
             way_type=feat.way_type,
             outside_boundary=classify_outside_boundary(lat, lon, boundary),
             ingest_version=iv,
+            ingest_run_id=run_id,
             length_mi=length_mi,
             length_source=length_source,
             gain_ft=feat.gain_ft,
@@ -828,6 +846,7 @@ def _load_matches(
             source_id=feat.ref,
             raw_name=feat.name,
             ingest_version=iv,
+            ingest_run_id=run_id,
             extra=_tier_extra(feat.source),
         )
         merge_same_as(
@@ -926,6 +945,7 @@ def run_pipeline(
             count_version_facets,
             load_enrichment_facts,
             make_runner,
+            new_ingest_run_id,
             prune_stale_trails,
         )
     except ImportError as exc:
@@ -938,6 +958,13 @@ def run_pipeline(
             runner = make_runner(session)
             version_suffix = region.props.get("ingest_version", "")
             iv = f"{region.region_id}-{version_suffix}" if version_suffix else region.region_id
+            # The per-run marker: stamped on every node this run touches, and the key
+            # the verify gate + prune use for "current". `iv` alone cannot serve — it
+            # is a constant per region (no geojson sets the suffix), so a node a
+            # tightened filter drops keeps the current iv forever and the version-keyed
+            # prune can never see it (the manual-delete incident of 2026-07-12).
+            run_id = new_ingest_run_id(iv)
+            log.info("Ingest run %s (region %s)", run_id, region.region_id)
             tier_by_name = {s.name: s.authority_tier for s in geometry_sources}
             # Snapshot the region's prior corpus total BEFORE the load — the collapse
             # gate's correct denominator (post-load counts can't recover it: a MERGE by
@@ -961,6 +988,7 @@ def run_pipeline(
                 tier_by_name=tier_by_name,
                 iv=iv,
                 boundary=boundary,
+                run_id=run_id,
             )
             counts["loaded"] = load_counts["loaded"]
             counts["skipped_hygiene"] = load_counts["skipped_hygiene"]
@@ -987,11 +1015,12 @@ def run_pipeline(
             # would be too late, the prune already committed). verify_before_prune checks
             # for a collapsed trail count (scale-safe, supersedes absolute bands) and, when
             # elevation is expected, adequate coverage. On FAIL it RAISES: prune never runs,
-            # the last-good corpus stays intact (the new iv nodes coexist additively rather
+            # the last-good corpus stays intact (the new nodes coexist additively rather
             # than a half-wipe), and the bad run surfaces loudly (nonzero) instead of
             # silently self-wiping. A tighter filter (e.g. dropping a TIGER-misimported
-            # state route) still self-heals: the stale node is pruned only once the gate
-            # confirms the run is healthy.
+            # state route) self-heals via the per-run marker: the dropped node is not
+            # stamped this run, so — once the gate confirms the run is healthy — the
+            # prune retires it even though its (constant) ingest_version still matches.
             counts["pruned"] = 0
             verify_before_prune(
                 region,
@@ -1000,6 +1029,7 @@ def run_pipeline(
                 iv=iv,
                 elevation_expected=_elevation_expected(enrichment_sources, settings),
                 pre_load_count=pre_load_count,
+                run_id=run_id,
             )
             # Epic 027 finer tier: a per-facet hard breach (a class-specific collapse
             # the scalar ratio/verify gates above can't see, e.g. one source silently
@@ -1031,7 +1061,11 @@ def run_pipeline(
                 )
             else:
                 prune_outcome = prune_stale_trails(
-                    runner, iv, region_id=region.region_id, pre_load_count=pre_load_count
+                    runner,
+                    iv,
+                    region_id=region.region_id,
+                    pre_load_count=pre_load_count,
+                    run_id=run_id,
                 )
                 counts["pruned"] = int(prune_outcome.pruned)
                 counts["prune_protected"] = int(prune_outcome.protected)

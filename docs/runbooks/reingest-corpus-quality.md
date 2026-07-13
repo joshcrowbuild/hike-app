@@ -35,6 +35,18 @@ in-browser render of the actual USGS topo tiles.
 
 ## Re-ingest (apply the fixes to Aura)
 
+> **Superseded (2026-07-13): the manual wipe in step 2 is no longer needed for filter
+> drift.** `prune_stale_trails` now keys on a per-run marker (`ingest_run_id`, stamped
+> on every node a run touches), so a node a *tightened* filter newly excludes is
+> pruned automatically on the next healthy re-ingest — including legacy nodes that
+> predate the marker (no `ingest_run_id` = stale by construction). Previously this did
+> **not** self-heal: `ingest_version` is a constant per region, so drift victims were
+> invisible to the version-keyed prune and needed exactly this wipe (or a manual
+> scoped delete, as on 2026-07-12). Keep step 2 only for structural resets a prune
+> can't express — e.g. the canonical-id scheme change below, where the old ids must
+> vanish wholesale. For ordinary filter tightening: just re-run step 3 and let the
+> guarded prune retire the drops.
+
 Both fixes change what gets written at ingest, so the live graph keeps the old
 geometry until a re-ingest. The connectivity change also mints **new** canonical ids
 for split components (`ct:osm:appalachian-trail` → per-section `ct:osm:way_…`), so the

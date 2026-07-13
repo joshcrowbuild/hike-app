@@ -20,8 +20,9 @@ import os
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
+from uuid import uuid4
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +112,29 @@ def make_runner(neo4j_session: Any) -> Runner:
         return neo4j_session.run(cypher, **params)
 
     return run
+
+
+def new_ingest_run_id(ingest_version: str) -> str:
+    """Mint the per-run marker (`ingest_run_id`) an ingest run stamps on every node it
+    touches — the key `prune_stale_trails` uses to find filter-drift victims ("not
+    stamped by THIS run" = stale candidate).
+
+    Why a per-run marker at all: in production `ingest_version` is a CONSTANT per
+    region (the region id — no region geojson sets the optional suffix), so the
+    version-keyed stale predicate (`ingest_version <> $iv`) can never see a node a
+    *tightened* filter newly excludes: the node just stops being re-written, its
+    version still equals the current one, and the junk lives forever (the twice-bitten
+    "prune-doesn't-self-heal-constant-iv" gotcha). The marker changes every run by
+    construction, so an untouched node is always detectable.
+
+    Format: `"{ingest_version}@{UTC timestamp}-{uuid8}"` — the version prefix is for
+    human debuggability (which region/run stamped this node?), the timestamp orders
+    runs in ad-hoc queries, and the uuid suffix makes collisions between concurrent
+    runs practically impossible. `@` cannot appear in a region id, so the prefix is
+    unambiguous. Deliberately NOT env-overridable: a pinned/reused marker would
+    recreate the constant-version bug this replaces."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"{ingest_version}@{stamp}-{uuid4().hex[:8]}"
 
 
 # Cypher reserved words that are also valid Python identifiers would produce invalid
@@ -206,9 +230,16 @@ def load_canonical_trail(
     psurface: str | None = _UNSET,
     foot_access: str | None = _UNSET,
     ingest_version: str | None = None,
+    ingest_run_id: str | None = None,
 ) -> None:
     params: dict[str, Any] = {"cid": canonical_id, "name": name, "iv": ingest_version or _today()}
     set_clauses = ["t.name = $name", "t.ingest_version = $iv"]
+    if ingest_run_id is not None:
+        # The per-run marker (`new_ingest_run_id`) — the key `prune_stale_trails` uses
+        # to spot filter-drift victims ("not stamped by this run" = stale candidate).
+        # Optional so pre-marker callers keep writing exactly what they wrote before.
+        params["run_id"] = ingest_run_id
+        set_clauses.append("t.ingest_run_id = $run_id")
     if region:
         params["region"] = region
         set_clauses.append("t.region = $region")
@@ -331,12 +362,37 @@ def clear_trail_segments(runner: Runner, canonical_id: str) -> None:
 # "shen" match region "shenandoah-gwj" (a silent cross-region wipe) — so the prefix must
 # end on the `-` boundary. Used version-independently by `count_region_trails` (the
 # pre-load corpus snapshot) …
-_REGION_PRED = "(node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix)"
 
-# … and, with the current-version exclusion, as the stale-candidate predicate shared by
-# `count_region_versions` and `prune_stale_trails` so the candidate set the guards count
-# is EXACTLY the set the delete passes act on.
+
+def _region_membership_pred(alias: str) -> str:
+    return f"({alias}.ingest_version = $region_id OR {alias}.ingest_version STARTS WITH $prefix)"
+
+
+_REGION_PRED = _region_membership_pred("node")
+
+# … and, with the current-version exclusion, as the LEGACY stale-candidate predicate
+# shared by `count_region_versions` and `prune_stale_trails` so the candidate set the
+# guards count is EXACTLY the set the delete passes act on. Legacy because in production
+# `ingest_version` is a constant per region, which blinds this predicate to filter drift
+# (see `new_ingest_run_id`); the run-marker predicate below supersedes it whenever the
+# caller supplies a `run_id`.
 _REGION_VERSION_PRED = f"{_REGION_PRED}\n  AND node.ingest_version <> $iv"
+
+# Run-marker stale-candidate predicate: a region member NOT stamped by the current run.
+# `IS NULL` matters twice over — (a) migration: the pre-marker corpus carries no
+# `ingest_run_id`, so accumulated drift heals on the first marker-aware run with no
+# backfill; (b) region scoping still comes ONLY from `_REGION_PRED`, so other regions'
+# unstamped (NULL) nodes are never candidates and a marker collision can never cross a
+# region boundary. Shared by `count_region_versions` and `prune_stale_trails` for the
+# same counts-what-it-deletes invariant as the legacy predicate.
+_RUN_STALE_PRED = "(node.ingest_run_id IS NULL OR node.ingest_run_id <> $run_id)"
+_REGION_RUN_STALE_PRED = f"{_REGION_PRED}\n  AND {_RUN_STALE_PRED}"
+
+# Current-run membership for the `n_cur` counts and the in-query empty-run belt (alias
+# `cur` keeps the count queries distinguishable from the stale-candidate ones — test
+# fakes and log greps key on it). Region-scoped for the same belt-and-suspenders reason
+# as above: even a colliding marker cannot make another region's nodes count as "ours".
+_RUN_CUR_PRED = f"{_region_membership_pred('cur')}\n  AND cur.ingest_run_id = $run_id"
 
 # A stale world CanonicalTrail with a LIVE incoming owned edge — a personal
 # `(:Episode)-[:ON]->(t)` reference — must NEVER be DETACH-DELETEd: severing it is
@@ -354,34 +410,55 @@ _OWNED_REF_PRED = "(node)<-[:ON]-(:Episode)"
 
 
 def _region_version_params(
-    ingest_version: str, region_id: str, min_current: int = 1
+    ingest_version: str, region_id: str, min_current: int = 1, run_id: str | None = None
 ) -> dict[str, Any]:
-    return {
+    params: dict[str, Any] = {
         "iv": ingest_version,
         "region_id": region_id,
         "prefix": f"{region_id}-",
         "min_current": min_current,
     }
+    if run_id is not None:
+        params["run_id"] = run_id
+    return params
 
 
 def count_region_versions(
-    runner: Runner, ingest_version: str, *, region_id: str
+    runner: Runner, ingest_version: str, *, region_id: str, run_id: str | None = None
 ) -> tuple[int, int]:
-    """`(n_cur, n_prev)`: this region's current-`ingest_version` CanonicalTrail count,
-    and its prior-version (stale-candidate) count. The two numbers the prune guards —
-    and the pre-prune verify gate (`ingestion.pipeline.verify_before_prune`) — decide
-    on, factored out so both compute them identically from the SAME candidate
-    predicate. Read-only; issues no writes."""
-    n_cur = _scalar_count(
-        runner(
-            "MATCH (cur:CanonicalTrail {ingest_version: $iv})\nRETURN count(cur) AS n",
-            {"iv": ingest_version},
+    """`(n_cur, n_prev)`: this region's current CanonicalTrail count and its
+    stale-candidate count — the two numbers the prune guards and the pre-prune verify
+    gate (`ingestion.pipeline.verify_before_prune`) decide on, factored out so both
+    compute them identically from the SAME candidate predicate.
+
+    With `run_id` (the pipeline's per-run marker — see `new_ingest_run_id`), "current"
+    means "stamped by THIS run" and "stale" means "region member NOT stamped by this
+    run" (unstamped legacy nodes included). This is what lets the collapse guards
+    actually see a truncated run: under the constant-per-region `ingest_version` the
+    version-keyed `n_cur` counted the whole region no matter what the run touched, so
+    the gate could never trip and drift victims never counted as stale. Without
+    `run_id` the legacy version-keyed behavior is unchanged. Read-only; issues no
+    writes."""
+    if run_id is None:
+        n_cur = _scalar_count(
+            runner(
+                "MATCH (cur:CanonicalTrail {ingest_version: $iv})\nRETURN count(cur) AS n",
+                {"iv": ingest_version},
+            )
         )
-    )
+        stale_pred = _REGION_VERSION_PRED
+    else:
+        n_cur = _scalar_count(
+            runner(
+                f"MATCH (cur:CanonicalTrail)\nWHERE {_RUN_CUR_PRED}\nRETURN count(cur) AS n",
+                _region_version_params(ingest_version, region_id, run_id=run_id),
+            )
+        )
+        stale_pred = _REGION_RUN_STALE_PRED
     n_prev = _scalar_count(
         runner(
-            f"MATCH (node:CanonicalTrail)\nWHERE {_REGION_VERSION_PRED}\nRETURN count(node) AS n",
-            _region_version_params(ingest_version, region_id),
+            f"MATCH (node:CanonicalTrail)\nWHERE {stale_pred}\nRETURN count(node) AS n",
+            _region_version_params(ingest_version, region_id, run_id=run_id),
         )
     )
     return n_cur, n_prev
@@ -544,6 +621,7 @@ def prune_stale_trails(
     min_current: int = 1,
     min_ratio: float | None = None,
     pre_load_count: int | None = None,
+    run_id: str | None = None,
 ) -> PruneOutcome:
     """Delete CanonicalTrails (+ their Segments and SourceRecords) left behind by a
     PRIOR ingest of this region — the nodes a now-tighter filter stopped refreshing.
@@ -551,24 +629,39 @@ def prune_stale_trails(
     The loaders are MERGE-only (idempotent upsert), so a re-ingest that newly *drops*
     a way — e.g. a TIGER-misimported state route the trail filter now rejects (finding
     #1) — never deletes the node last month's run created. It just stops touching it,
-    leaving a stale CanonicalTrail serving forever in /plan. This prunes every
-    same-region trail whose `ingest_version` is not the current run's, closing that gap
-    so a tighter filter actually self-heals on re-ingest.
+    leaving a stale CanonicalTrail serving forever in /plan.
+
+    Stale-candidate key — `run_id` (the per-run marker, `new_ingest_run_id`) when
+    given, `ingest_version` otherwise. The version key is structurally blind to filter
+    drift in production: `ingest_version` is a CONSTANT per region (no region geojson
+    sets the optional suffix), so a node the tightened filter newly excludes keeps the
+    current version forever and `ingest_version <> $iv` never matches it (the
+    twice-bitten "prune-doesn't-self-heal-constant-iv" gotcha; 2026-07-12's manual
+    scoped delete). With `run_id`, stale = "region member NOT stamped by this run"
+    (`ingest_run_id IS NULL OR <> $run_id`) — unstamped pre-marker nodes are candidates
+    by construction, so accumulated drift heals on the first marker-aware run with no
+    backfill. The pipeline always passes `run_id`; the version-keyed path remains for
+    callers that predate the marker. Every guard below applies identically to both.
 
     Guard 1 (empty-ingest) — a failed or empty ingest must NEVER wipe the graph (the
     whole point of the prune is to delete *non-current* nodes, which is everything if
     the current run wrote nothing). The delete fires only when at least `min_current`
-    trails carry the current `ingest_version`: an ingest that loaded nothing (Overpass
-    down, region misconfigured) leaves `n_cur = 0 < min_current`, the in-query WHERE
-    drops the only row, and the downstream MATCH/DELETE never runs.
+    trails count as current (stamped by this run, or carrying the current
+    `ingest_version` in legacy mode): an ingest that loaded nothing (Overpass down,
+    region misconfigured) leaves `n_cur = 0 < min_current`, the in-query WHERE drops
+    the only row, and the downstream MATCH/DELETE never runs.
 
     Guard 2 (ratio, finding M1 + collapse-gate correction) — a *truncated* ingest is a
     different failure mode: it loads a nonzero-but-tiny count (e.g. Overpass times out
     mid-fetch and returns 750 of ~1500 trails), which sails past guard 1 (n_cur=750 >=
     min_current=1) and would then prune the ~750 stragglers as "stale" — a silent corpus
     wipe, not a loud failure. Before either DELETE pass runs, this aborts the WHOLE prune
-    in Python — no query even fires — if `n_cur` (current-version trails) has collapsed
-    below `min_ratio * pre_load_count` (default ratio 0.5, env `ADVENTURE_PRUNE_MIN_RATIO`).
+    in Python — no query even fires — if `n_cur` (current trails) has collapsed below
+    `min_ratio * pre_load_count` (default ratio 0.5, env `ADVENTURE_PRUNE_MIN_RATIO`).
+    The run marker makes this guard MORE sensitive, exactly the right direction: a
+    truncated fetch stamps fewer nodes, so more of the region looks stale AND `n_cur`
+    (touched-this-run) collapses against the pre-load total — under the constant
+    version key `n_cur` counted the whole region and the guard could never trip.
 
     The denominator is `pre_load_count` — the caller's PRE-load snapshot of the region's
     total CanonicalTrail count (`count_region_trails`) — NOT the post-load `n_prev`. Because
@@ -601,20 +694,40 @@ def prune_stale_trails(
     `(:Episode)-[:ON]->(t)` still references. DETACH-deleting such a node would sever a
     personal→world reference (the viewer-path 500). Skipped nodes are counted into
     `PruneOutcome.protected` and logged; they simply wait for a future re-ingest to
-    refresh (and thus retire) them, rather than being wiped out from under an Episode."""
-    guard = (
-        "MATCH (cur:CanonicalTrail {ingest_version: $iv})\n"
-        "WITH count(cur) AS n_cur\n"
-        "WHERE n_cur >= $min_current\n"
-    )
-    region_pred = _REGION_VERSION_PRED
-    params = _region_version_params(ingest_version, region_id, min_current)
+    refresh (and thus retire) them, rather than being wiped out from under an Episode.
 
-    n_cur, n_prev = count_region_versions(runner, ingest_version, region_id=region_id)
+    Concurrency — one ingest per region at a time, as ever. Concurrent ingests of
+    DIFFERENT regions are fully isolated (candidates are region-scoped; markers are
+    unique). Two overlapping runs of the SAME region were never supported: under the
+    marker, each run sees the other's freshly-stamped nodes as stale, so an interleaved
+    prune could transiently delete nodes the other run just wrote (bounded by the ratio
+    guard, restored by the next healthy run) — don't do that."""
+    if run_id is None:
+        guard = (
+            "MATCH (cur:CanonicalTrail {ingest_version: $iv})\n"
+            "WITH count(cur) AS n_cur\n"
+            "WHERE n_cur >= $min_current\n"
+        )
+        region_pred = _REGION_VERSION_PRED
+    else:
+        guard = (
+            f"MATCH (cur:CanonicalTrail)\nWHERE {_RUN_CUR_PRED}\n"
+            "WITH count(cur) AS n_cur\n"
+            "WHERE n_cur >= $min_current\n"
+        )
+        region_pred = _REGION_RUN_STALE_PRED
+    # For guard messages: run mode counts what THIS RUN stamped; legacy counts the
+    # current-version nodes. Naming it honestly matters when reading incident logs.
+    cur_label = "current-version" if run_id is None else "current-run"
+    params = _region_version_params(ingest_version, region_id, min_current, run_id=run_id)
+
+    n_cur, n_prev = count_region_versions(
+        runner, ingest_version, region_id=region_id, run_id=run_id
+    )
 
     if n_cur < min_current:
         reason = (
-            f"prune skipped: region {region_id!r} current-version count {n_cur} "
+            f"prune skipped: region {region_id!r} {cur_label} count {n_cur} "
             f"below min_current {min_current} (leaving all {n_prev} stale-candidate "
             "trail(s) intact)"
         )
@@ -624,7 +737,7 @@ def prune_stale_trails(
     ratio = prune_min_ratio() if min_ratio is None else min_ratio
     if pre_load_count is not None and pre_load_count > 0 and n_cur < ratio * pre_load_count:
         reason = (
-            f"prune skipped: region {region_id!r} current-version count {n_cur} is below "
+            f"prune skipped: region {region_id!r} {cur_label} count {n_cur} is below "
             f"{ratio:.0%} of the prior corpus total {pre_load_count} "
             f"(ratio {n_cur / pre_load_count:.3f} below min_ratio {ratio:.3f}) — looks like "
             "a truncated ingest; leaving all nodes intact"
@@ -683,6 +796,7 @@ def load_source_record(
     surface: str | None = None,
     length_mi: float | None = None,
     ingest_version: str | None = None,
+    ingest_run_id: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
     params: dict[str, Any] = {
@@ -692,6 +806,11 @@ def load_source_record(
         "iv": ingest_version or _today(),
     }
     set_clauses = ["r.source = $source", "r.source_id = $sid", "r.ingest_version = $iv"]
+    if ingest_run_id is not None:
+        # Same per-run marker as `load_canonical_trail` — prune pass 2 (orphaned
+        # SourceRecords) keys its stale test on it.
+        params["run_id"] = ingest_run_id
+        set_clauses.append("r.ingest_run_id = $run_id")
     if raw_name:
         params["raw_name"] = raw_name
         set_clauses.append("r.raw_name = $raw_name")

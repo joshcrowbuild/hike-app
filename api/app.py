@@ -19,7 +19,7 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +48,7 @@ from api.schemas import (
     EPISODE_ID_PATTERN,
     VIEWER_ID_PATTERN,
     CardWarningResponse,
+    ConditionPatchResponse,
     ConditionStatusResponse,
     ConditionUnavailableResponse,
     ElevationProfile,
@@ -64,19 +65,28 @@ from api.schemas import (
     OriginResponse,
     OutcomeBody,
     OutcomeResponse,
+    PlanConditionsRequest,
+    PlanConditionsResponse,
     PlanRequest,
     RegionResponse,
     RegionsResponse,
     SetAsideReasonResponse,
     SetAsideResponse,
     StatusResponse,
+    TrailWaterResponse,
     TripDetailResponse,
+    WaterSourceResponse,
 )
 from graph.client import GraphClient
 from graph.queries import trail_detail as trail_detail_query
 from graph.queries import trails_detail as trails_detail_query
+from graph.queries import water_sources_near
 from ingestion.checks.facet_diff import LEVELS, ingest_stats_path, sorted_by_abs_delta
-from ingestion.elevation import DEFAULT_NOISE_THRESHOLD_M, compute_gain_loss_grade
+from ingestion.elevation import (
+    DEFAULT_NOISE_THRESHOLD_M,
+    compute_gain_loss_grade,
+    haversine_m,
+)
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
@@ -308,12 +318,12 @@ def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:
         raise HTTPException(status_code=403, detail="viewer_id requires authentication")
 
 
-def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
-    return FeedCardResponse(
-        canonical_id=card.canonical_id,
-        name=card.name,
-        distance_mi=card.distance_mi,
-        lines=[
+def _condition_fields(card: FeedCard) -> dict[str, Any]:
+    """The condition-bearing wire fields of one card — shared verbatim by the full
+    feed card and the Epic 040 phase-2 patch (`ConditionPatchResponse`), so the two
+    responses can never render a condition differently (AC-2.1)."""
+    return {
+        "lines": [
             FeedLineResponse(
                 text=line.text,
                 source=line.source,
@@ -322,7 +332,7 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for line in card.lines
         ],
-        warnings=[
+        "warnings": [
             CardWarningResponse(
                 text=w.text,
                 source=w.source,
@@ -331,11 +341,11 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for w in card.warnings
         ],
-        unavailable=[
+        "unavailable": [
             ConditionUnavailableResponse(text=u.text, source=u.source, kind=u.kind)
             for u in card.unavailable
         ],
-        conditions=[
+        "conditions": [
             ConditionStatusResponse(
                 kind=s.kind,
                 state=s.state,
@@ -345,6 +355,15 @@ def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
             )
             for s in card.conditions
         ],
+    }
+
+
+def _card_response(card: FeedCard, maps: dict[str, Any]) -> FeedCardResponse:
+    return FeedCardResponse(
+        canonical_id=card.canonical_id,
+        name=card.name,
+        distance_mi=card.distance_mi,
+        **_condition_fields(card),
         **maps,  # geometry / trailhead / geometry_confidence / summit / elevation_profile
     )
 
@@ -359,13 +378,16 @@ def _set_aside_response(trail: Any) -> SetAsideResponse:
     )
 
 
-def _feed_response(feed: Feed, maps_by_cid: dict[str, dict[str, Any]]) -> FeedResponse:
+def _feed_response(
+    feed: Feed, maps_by_cid: dict[str, dict[str, Any]], *, conditions_complete: bool = True
+) -> FeedResponse:
     return FeedResponse(
         query=feed.query,
         cards=[_card_response(c, maps_by_cid.get(c.canonical_id, {})) for c in feed.cards],
         card_count=len(feed.cards),
         notices=list(feed.notices),
         set_aside=[_set_aside_response(t) for t in feed.set_aside],
+        conditions_complete=conditions_complete,
     )
 
 
@@ -590,17 +612,35 @@ def plan(
     started = time.perf_counter()
     try:
         runtime = build_runtime(_settings, _graph_client, body.viewer_id)
-        from orchestration.engine import plan as engine_plan
 
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)
-        feed = engine_plan(
-            body.query,
-            (body.lat, body.lon),
-            runtime,
-            k=body.k,
-            viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
-        )
+        # Two-phase render (Epic 040): phase:"cards" runs the graph-only phase-1
+        # path unless the server kill switch is off (D6) or the anonymous key is
+        # already warm (D7) — either way the response self-describes completeness
+        # via `conditions_complete` so the client knows whether to follow up on
+        # POST /plan/conditions. `phase` absent stays byte-identical to today.
+        if body.phase == "cards" and _settings.two_phase_enabled:
+            from orchestration.two_phase import plan_cards
+
+            feed, conditions_complete = plan_cards(
+                body.query,
+                (body.lat, body.lon),
+                runtime,
+                k=body.k,
+                viewer_id=body.viewer_id,
+            )
+        else:
+            from orchestration.engine import plan as engine_plan
+
+            conditions_complete = True
+            feed = engine_plan(
+                body.query,
+                (body.lat, body.lon),
+                runtime,
+                k=body.k,
+                viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
+            )
         # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
         # request-local on Runtime (set by plan()), never a before/after delta on
         # the shared FeedCacheStats counter — under threadpool concurrency a delta
@@ -610,7 +650,7 @@ def plan(
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
         session = _graph_client.scoped_session(body.viewer_id)
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
-        response = _feed_response(feed, maps_by_cid)
+        response = _feed_response(feed, maps_by_cid, conditions_complete=conditions_complete)
         cache_after = cache_size(runtime.cache)
         stats_after = probe_stats_snapshot(runtime.cache)
     except HTTPException:
@@ -660,6 +700,85 @@ def plan(
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")
+    return response
+
+
+@app.post("/plan/conditions", response_model=PlanConditionsResponse)
+@limiter.limit(plan_limit)
+def plan_conditions(
+    request: Request,  # required by slowapi for per-IP keying
+    body: PlanConditionsRequest,
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> PlanConditionsResponse:
+    """The Epic 040 phase-2 patch call: the verified live overlay for exactly the
+    canonical_ids a phase-1 `/plan` (phase:"cards") returned. Shares `/plan`'s
+    rate-limit class, auth posture (anonymous-allowed; a non-anonymous viewer is
+    gated exactly like `/plan` — AC-2.4), probe registry, TTL cache, and worker
+    bound (shared engine code path, never a re-implementation — AC-2.3). This
+    call never ranks: zero LLM spend by construction."""
+    if _settings is None or _graph_client is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    _authorize_viewer(body.viewer_id, x_dev_viewer_secret)
+    started = time.perf_counter()
+    try:
+        runtime = build_runtime(_settings, _graph_client, body.viewer_id)
+        from orchestration.two_phase import plan_conditions as engine_plan_conditions
+
+        cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
+        patch = engine_plan_conditions(
+            body.query,
+            (body.lat, body.lon),
+            runtime,
+            body.canonical_ids,
+            k=body.k,
+            viewer_id=body.viewer_id,
+        )
+        response = PlanConditionsResponse(
+            patches=[
+                ConditionPatchResponse(canonical_id=c.canonical_id, **_condition_fields(c))
+                for c in patch.cards
+            ],
+            set_aside=[_set_aside_response(t) for t in patch.set_aside],
+            unknown=list(patch.unknown),
+        )
+        cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "plan/conditions failed cid=%s error_class=%s query=%r viewer=%s",
+            correlation_id,
+            type(exc).__name__,
+            body.query,
+            scrub_viewer(body.viewer_id),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
+    # Metrics AFTER the response is built and OUTSIDE the 500-mapping try (same
+    # discipline as /plan): the probe spend is already spent — a metrics bug must
+    # never turn a good patch into a 500.
+    try:
+        PlanMetrics(
+            viewer_tag=scrub_viewer(body.viewer_id),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(patch.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            # This call NEVER runs an LLM (AC-2.3: the rank happened in phase 1) —
+            # est_tokens is honestly 0, not an estimate fabricated from card text.
+            est_tokens=0,
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
+            feed_cache_hit=patch.from_cache,
+        ).emit()
+    except Exception:
+        logger.exception("plan/conditions observability emit failed (response already sent)")
     return response
 
 
@@ -894,10 +1013,111 @@ def _fetch_maps_by_canonical(session: Any, canonical_ids: list[str]) -> dict[str
     return {r["canonical_id"]: _maps_fields(r) for r in rows if r.get("canonical_id")}
 
 
-def _trip_detail_response(canonical_id: str, row: dict[str, Any]) -> TripDetailResponse:
+# ── Water overlay (Epic 041): the read surface over Epic 035's :WaterSource ──
+#
+# `water_sources_near` measures from ONE point, so "near the route" must be
+# earned here: fetch coarsely around the trail, then compute each source's
+# minimum great-circle distance to the route vertices. The coarse radius doubles
+# as the CDP-02 coverage probe — an empty coarse read means the region was never
+# water-ingested, which is SILENCE (null), never an answered-empty claim.
+
+# The user-facing "near" threshold (~650 ft) — echoed on the wire as `radius_m`
+# so the client renders the number actually applied, not a hardcoded twin.
+WATER_NEAR_RADIUS_M = 200.0
+# Region-coverage probe scale: comfortably beyond any day-hike route span, and
+# small enough that another region's overlay (regions sit far apart) can't
+# masquerade as local coverage.
+WATER_COVERAGE_RADIUS_M = 30_000.0
+# The whole corpus holds ~hundreds of water nodes; this cap keeps the coarse
+# read bounded without ever truncating a real region's overlay.
+WATER_COARSE_LIMIT = 500
+# Detail shows the nearest few, not a ledger (the UX-review discipline).
+WATER_MAX_SOURCES = 12
+
+
+def _water_sources(session: Any, row: dict[str, Any]) -> TrailWaterResponse | None:
+    """The water answer for one trail (Epic 041), or `None` for honest silence.
+
+    Three-way outcome (CDP-02): sources within `WATER_NEAR_RADIUS_M` → an
+    answer; corpus coverage but nothing near → an answered-empty
+    (`none_nearby`); no coverage at all, no anchor, or a failed read → `None`
+    (rendered as no row — never a fabricated "no water" claim, Rule #1).
+    Distances are honest to their basis: minimum distance to the route
+    vertices when a route is drawable (`basis="route"`), else the graph's own
+    point distance from the trail's start (`basis="start"`). Degrades to
+    silence on any error — water is enrichment on the detail payload, never a
+    dependency (the `_fetch_maps_by_canonical` posture)."""
+    try:
+        vertices = _route_coords_for_export(row)  # ordered (lon, lat) or None
+        basis: Literal["route", "start"]
+        if vertices:
+            mid_lon, mid_lat = vertices[len(vertices) // 2]
+            anchor_lat, anchor_lon = mid_lat, mid_lon
+            basis = "route"
+        else:
+            start = _trailhead(row)
+            if start is None:
+                return None  # nothing honest to anchor a proximity claim to
+            anchor_lat, anchor_lon = start.lat, start.lon
+            basis = "start"
+        rows = session.run(
+            water_sources_near(
+                anchor_lat, anchor_lon, WATER_COVERAGE_RADIUS_M, limit=WATER_COARSE_LIMIT
+            )
+        )
+        if not rows:
+            return None  # region never water-ingested → silence, not answered-empty
+        near: list[tuple[float, float, float, dict[str, Any]]] = []
+        for r in rows:
+            latlon = _point_latlon(r.get("point"))
+            if latlon is None:
+                continue  # unusable node → skipped, never raised on
+            w_lat, w_lon = latlon
+            if basis == "route" and vertices:
+                dist = min(haversine_m((lon, lat), (w_lon, w_lat)) for lon, lat in vertices)
+            else:
+                stored = r.get("distance_m")
+                dist = (
+                    float(stored)
+                    if stored is not None
+                    else haversine_m((anchor_lon, anchor_lat), (w_lon, w_lat))
+                )
+            if dist <= WATER_NEAR_RADIUS_M:
+                near.append((dist, w_lat, w_lon, r))
+        near.sort(key=lambda item: item[0])
+        sources = [
+            WaterSourceResponse(
+                water_id=str(r.get("water_id") or ""),
+                water_type=str(r.get("water_type") or ""),
+                name=r.get("name"),
+                lat=w_lat,
+                lon=w_lon,
+                distance_m=round(dist, 1),
+                seasonal=r.get("seasonal"),
+                source=str(r.get("source") or ""),
+            )
+            for dist, w_lat, w_lon, r in near[:WATER_MAX_SOURCES]
+        ]
+        corpus_source = ", ".join(sorted({str(r.get("source")) for r in rows if r.get("source")}))
+        return TrailWaterResponse(
+            state="sources" if sources else "none_nearby",
+            basis=basis,
+            radius_m=WATER_NEAR_RADIUS_M,
+            source=corpus_source,
+            sources=sources,
+        )
+    except Exception:
+        logger.exception("water overlay read failed; detail renders water-free")
+        return None
+
+
+def _trip_detail_response(
+    canonical_id: str, row: dict[str, Any], water: TrailWaterResponse | None = None
+) -> TripDetailResponse:
     return TripDetailResponse(
         canonical_id=canonical_id,
         name=row.get("name") or canonical_id,
+        water_sources=water,
         **_maps_fields(row),
     )
 
@@ -927,7 +1147,9 @@ def trail_detail(
         raise HTTPException(status_code=500, detail="Internal error") from exc
     if not rows:
         raise HTTPException(status_code=404, detail="Trail not found")
-    return _trip_detail_response(canonical_id, rows[0])
+    # The water answer (Epic 041) — enrichment on the detail payload: it
+    # degrades to null (silence) inside `_water_sources`, never a 500.
+    return _trip_detail_response(canonical_id, rows[0], _water_sources(session, rows[0]))
 
 
 def _route_coords_for_export(row: dict[str, Any]) -> list[tuple[float, float]] | None:

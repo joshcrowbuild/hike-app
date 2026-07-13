@@ -44,7 +44,15 @@ export function Sheet({ isOpen, onClose, title, onBack, children }: SheetProps) 
               Done
             </button>
           </div>
-          {children}
+          {/* The ONLY scrollable region (C1): content taller than the capped
+              sheet scrolls here while the Back/Done header above stays pinned
+              and reachable. `data-sheet-body` is the public seam for content
+              that needs to scroll this region programmatically (the origin
+              picker revealing the current selection) — scrolling THIS element
+              can never leak into the page behind the modal. */}
+          <div className={styles.body} data-sheet-body="">
+            {children}
+          </div>
         </Dialog>
       </Modal>
     </ModalOverlay>

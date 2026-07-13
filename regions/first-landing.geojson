@@ -48,9 +48,9 @@
         "lon": -75.978
       }
     ],
-    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Only OSM (geometry) is floor-gated here; USGS is 3DEP elevation enrichment and never fetches. This floor is a CONSERVATIVE pre-calibration estimate \u2014 this config-only lane cannot run a live Overpass fetch, so unlike the pilot regions there is no measured baseline yet. Recalibrate to ~70% of the measured live baseline after the first successful ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Only OSM (geometry) is floor-gated here; USGS is 3DEP elevation enrichment and never fetches. RECALIBRATED 2026-07-13: the original 250 was a conservative pre-calibration guess made with no live Overpass baseline; an independent Overpass verification against this bbox found exactly 81 named trail-highway ways (matching the pipeline's own fetch: 62 kept + 19 filtered = 81), so 250 was gating out a real, complete fetch. New floor is 60, ~70% of the 81-way measured inventory, per the calibration convention used for other pilot regions. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
     "min_fetch_counts": {
-      "osm": 250
+      "osm": 60
     }
   },
   "geometry": {

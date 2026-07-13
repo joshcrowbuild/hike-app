@@ -1,0 +1,76 @@
+{
+  "type": "Feature",
+  "properties": {
+    "region_id": "york-river",
+    "name": "York River & Waller Mill (Williamsburg corridor, VA)",
+    "region_label": "York River",
+    "description": "The York River side of the Williamsburg corridor: York River State Park at Croaker \u2014 ~2,550 acres of estuarine bluffs and ravines where Taskinas Creek meets the York (Taskinas Creek, Mattaponi and Backbone trails, fossil beach) \u2014 plus Waller Mill Park's reservoir loops just outside Williamsburg. Coastal-plain forest with modest ravine relief. Urban-adjacent: Williamsburg/Lightfoot suburbs sit in the bbox's south half, so expect residential-street noise for the filters to shed.",
+    "bbox": [
+      -76.8,
+      37.23,
+      -76.58,
+      37.47
+    ],
+    "bbox_comment": "[west, south, east, north] in decimal degrees (WGS84)",
+    "sources": [
+      "OSM",
+      "USGS"
+    ],
+    "area_ids": [
+      "va:york-river-sp",
+      "local:waller-mill-park"
+    ],
+    "origins_comment": "Named search origins the frontend picker offers for this region (Phase 2: config-driven \u2014 adding/removing an origin is a config edit, not a frontend deploy). key is the wire/UI identifier; lat/lon WGS84.",
+    "origins": [
+      {
+        "key": "yorkRiverSP",
+        "label": "York River State Park",
+        "lat": 37.4126,
+        "lon": -76.7128
+      },
+      {
+        "key": "wallerMill",
+        "label": "Waller Mill Park",
+        "lat": 37.3123,
+        "lon": -76.735
+      },
+      {
+        "key": "williamsburg",
+        "label": "Williamsburg",
+        "lat": 37.2707,
+        "lon": -76.7075
+      }
+    ],
+    "min_fetch_counts_comment": "Per-source raw-fetch floors (a source fetching below its floor aborts the run BEFORE any load/prune \u2014 a truncated/partial fetch can't self-wipe). Keys match registry source names (only OSM fetches geometry here; USGS is 3DEP elevation enrichment, which never fetches). NOT live-measured in this config-only lane \u2014 set to a deliberately conservative low floor so it catches gross truncation without false-tripping; recalibrate to ~70% of the measured live Overpass baseline on first ingest. Env-overridable via ADVENTURE_FETCH_MIN_OSM.",
+    "min_fetch_counts": {
+      "osm": 30
+    }
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -76.8,
+          37.23
+        ],
+        [
+          -76.58,
+          37.23
+        ],
+        [
+          -76.58,
+          37.47
+        ],
+        [
+          -76.8,
+          37.47
+        ],
+        [
+          -76.8,
+          37.23
+        ]
+      ]
+    ]
+  }
+}
