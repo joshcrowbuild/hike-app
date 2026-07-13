@@ -1,0 +1,4 @@
+{
+  "note": "Pinned render clock (GLM red-team F2): render-time checks run at wall-clock + render_age_s, opening a deterministic age gap over the weather stale horizon (7200 s = 2h) with a wide margin for replay runtime. Harness-only injection through feed_card's production `now` seam (the same mechanism a cache re-render uses, Epic 039 S2) — production always renders at real time.",
+  "render_age_s": 14400
+}
