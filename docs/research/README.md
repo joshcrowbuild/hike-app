@@ -58,6 +58,7 @@
 | [outcome-card-ux.md](outcome-card-ux.md) | `ACTIVE` (pre-Stage-10 exploration) | Outcome Card / Belief Store / Readiness Filter wireframes + durable invariants. **Read when** designing the personal-intelligence UI. |
 | [ui-brief-v0.2.md](ui-brief-v0.2.md) | `IMPLEMENTED (PR #22)` | UX north-star brief: "quiet premium utility" posture, card model, trust + belief layers, visual language. **Read when** designing app UX or visual language. |
 | [ux-assembly-plan-v1.md](ux-assembly-plan-v1.md) | `IMPLEMENTED (PR #22; PR-E/F deferred)` | Frontend UX assembly plan: VM/adapter seam, mock/http adapters, persona-review (R1–R12) binding constraints. **Read when** working the frontend screens or VM seam. |
+| [ux-review-conditions-2026-07.md](ux-review-conditions-2026-07.md) | `ACTIVE` (findings await lane green-light) | Live-app design review after the condition-data wave (6 kinds × 6 states, water, GPX): 12 severity-ordered findings from the rendered product at both viewports — card/Detail verdict disagreement, "conditions look clear" copy, region-scope condition repetition ×10, triple-stated Detail provenance, gauge-address-not-reading — each tied to a vision/design-system standard, + 4 proposed lanes. **Read when** green-lighting or building the condition-surface UX lanes. |
 
 ## Archived (provenance only)
 
