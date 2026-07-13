@@ -16,6 +16,7 @@ from graph.load import (
     load_source_record,
     load_trailhead,
     merge_same_as,
+    new_ingest_run_id,
     prune_stale_trails,
 )
 
@@ -516,6 +517,228 @@ def test_prune_stale_trails_bad_env_ratio_falls_back_to_safe_default(
 
     assert outcome.pruned is False
     assert calls == []
+
+
+# ── Filter-drift prune: the per-run marker (`ingest_run_id`) ───────────────────────
+#
+# The structural gap (twice-bitten, the "prune-doesn't-self-heal-constant-iv" gotcha):
+# `ingest_version` for a region is a CONSTANT string (no region geojson sets the optional
+# suffix), so a node a *tightened* filter newly excludes is simply never re-written — its
+# `ingest_version` still equals the current one, the version-keyed stale predicate
+# (`ingest_version <> $iv`) matches nothing (`verify_n_prev: 0` on every region, every
+# run), and the junk node lives forever. The fix keys the prune on a per-run marker
+# instead: every node the run touches is stamped `ingest_run_id`, and "not stamped by
+# this run" = stale candidate. These tests falsify the OLD mechanism (a constant-iv
+# node untouched by the run MUST be a candidate) and pin the preserved safety
+# semantics (ratio guard, min_current, owned-ref skip, anchored region scope).
+
+
+def test_new_ingest_run_id_embeds_version_and_is_unique():
+    a = new_ingest_run_id("shenandoah-gwj")
+    b = new_ingest_run_id("shenandoah-gwj")
+    # Embeds the ingest_version for human debuggability ("which region/run stamped
+    # this node?"), separated by a char that can't appear in a region id.
+    assert a.startswith("shenandoah-gwj@")
+    assert b.startswith("shenandoah-gwj@")
+    # Unique per call — a constant marker is the exact bug this mechanism replaces.
+    assert a != b
+
+
+def test_load_canonical_trail_stamps_ingest_run_id():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_canonical_trail(
+        runner, "ct:x", "X", ingest_version="r", ingest_run_id="r@20260713T000000Z-abc"
+    )
+
+    cypher, params = calls[0]
+    assert "t.ingest_run_id = $run_id" in cypher
+    assert params["run_id"] == "r@20260713T000000Z-abc"
+
+    # Omitting the arg leaves the property untouched (no clause, no param) — legacy
+    # callers keep writing exactly what they wrote before.
+    calls.clear()
+    load_canonical_trail(runner, "ct:x", "X", ingest_version="r")
+    cypher, params = calls[0]
+    assert "ingest_run_id" not in cypher
+    assert "run_id" not in params
+
+
+def test_load_source_record_stamps_ingest_run_id():
+    calls: list[tuple[str, dict]] = []
+    runner = lambda c, p: calls.append((c, p))  # noqa: E731
+
+    load_source_record(
+        runner, "OSM:way/1", "OSM", ingest_version="r", ingest_run_id="r@20260713T000000Z-abc"
+    )
+
+    cypher, params = calls[0]
+    assert "r.ingest_run_id = $run_id" in cypher
+    assert params["run_id"] == "r@20260713T000000Z-abc"
+
+    calls.clear()
+    load_source_record(runner, "OSM:way/1", "OSM", ingest_version="r")
+    cypher, params = calls[0]
+    assert "ingest_run_id" not in cypher
+    assert "run_id" not in params
+
+
+def test_prune_run_marker_targets_untouched_nodes_not_version():
+    # THE falsification of the old mechanism: with a constant per-region
+    # `ingest_version`, the version-keyed predicate (`ingest_version <> $iv`) can never
+    # see a filter-drift victim. In run-marker mode the stale predicate must key on
+    # `ingest_run_id` — "not stamped by this run" — and must NOT exclude candidates by
+    # current version (a drift victim's version EQUALS the current one).
+    runner, calls = _make_prune_runner(n_cur=1400, n_prev=10)
+
+    outcome = prune_stale_trails(
+        runner,
+        "shenandoah-gwj",
+        region_id="shenandoah-gwj",
+        pre_load_count=1410,
+        run_id="shenandoah-gwj@20260713T000000Z-abc",
+    )
+
+    assert outcome.pruned is True
+    assert len(calls) == 2
+    for cypher, params in calls:
+        # Stale = region member NOT stamped by this run (legacy unstamped nodes — the
+        # pre-marker corpus — are candidates too, so drift heals without a backfill).
+        assert "(node.ingest_run_id IS NULL OR node.ingest_run_id <> $run_id)" in cypher
+        # The version-keyed exclusion must be GONE: a drift victim carries the CURRENT
+        # ingest_version, so this clause would exempt it forever (the bug).
+        assert "node.ingest_version <> $iv" not in cypher
+        # Region scope unchanged: anchored membership predicate, never bare STARTS WITH.
+        assert (
+            "node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix" in cypher
+        )
+        # The in-query empty-run belt counts THIS RUN's stamps, not a version.
+        assert "cur.ingest_run_id = $run_id" in cypher
+        assert "n_cur >= $min_current" in cypher
+        assert params["run_id"] == "shenandoah-gwj@20260713T000000Z-abc"
+        assert params["prefix"] == "shenandoah-gwj-"
+
+    # Owned-ref safety unchanged: pass 1 still excludes Episode-referenced trails.
+    assert "AND NOT (node)<-[:ON]-(:Episode)" in calls[0][0]
+    # Pass 2 still only deletes orphaned SourceRecords.
+    assert "NOT (node)-[:SAME_AS]->(:CanonicalTrail)" in calls[1][0]
+
+
+def test_prune_run_marker_count_and_delete_share_one_stale_predicate():
+    # Idempotency/no-self-wipe hinges on the guards counting EXACTLY the set the delete
+    # passes act on. Pin that the module builds both from one shared predicate constant
+    # rather than two strings that could drift apart.
+    import graph.load as gl
+
+    assert gl._REGION_RUN_STALE_PRED.startswith(gl._REGION_PRED)
+    assert "(node.ingest_run_id IS NULL OR node.ingest_run_id <> $run_id)" in (
+        gl._REGION_RUN_STALE_PRED
+    )
+
+
+def test_prune_run_marker_truncated_ingest_trips_ratio_guard():
+    # The guard interaction the design must prove: under the run marker, a truncated
+    # fetch stamps FEWER nodes, so n_cur (touched-this-run) collapses against the
+    # pre-load total and MORE nodes look stale — which is exactly when the ratio guard
+    # must abort. (Under the constant-iv scheme this guard could never trip: n_cur
+    # counted the whole region regardless of what the run touched.)
+    runner, calls = _make_prune_runner(n_cur=100, n_prev=1400)
+
+    outcome = prune_stale_trails(
+        runner,
+        "shenandoah-gwj",
+        region_id="shenandoah-gwj",
+        pre_load_count=1500,
+        run_id="shenandoah-gwj@20260713T000000Z-abc",
+    )
+
+    assert outcome.pruned is False
+    assert outcome.reason is not None
+    assert "is below 50% of the prior corpus total 1500" in outcome.reason
+    assert calls == []  # nothing hit the database
+
+
+def test_prune_run_marker_empty_run_trips_min_current():
+    # A run that stamped nothing (fetch failed entirely) must no-op via guard 1 — with
+    # the run marker EVERY region node looks stale, the exact case the guard exists for.
+    runner, calls = _make_prune_runner(n_cur=0, n_prev=1500)
+
+    outcome = prune_stale_trails(
+        runner, "r", region_id="r", run_id="r@20260713T000000Z-abc", pre_load_count=1500
+    )
+
+    assert outcome.pruned is False
+    assert "below min_current" in outcome.reason
+    assert calls == []
+
+
+def test_prune_run_marker_owned_ref_protected_count():
+    # Owned-ref safety is orthogonal to the marker change: a run-stale trail a live
+    # Episode references is counted into `protected` and excluded from the delete.
+    def runner(cypher: str, params: dict) -> Any:
+        if "RETURN count(cur)" in cypher:
+            return [{"n": 100}]
+        if "(node)<-[:ON]-(:Episode)" in cypher:
+            return [{"n": 3}]
+        if "RETURN count(node)" in cypher:
+            return [{"n": 10}]
+        return None
+
+    outcome = prune_stale_trails(
+        runner, "r", region_id="r", run_id="r@20260713T000000Z-abc", pre_load_count=100
+    )
+    assert outcome.pruned is True
+    assert outcome.protected == 3
+
+
+def test_count_region_versions_run_mode_keys_on_marker():
+    # Run mode: n_cur = region members stamped by this run; n_prev = region members NOT
+    # stamped (NULL counts — legacy corpus). Both stay region-scoped by the anchored
+    # ingest_version membership predicate, so a marker collision can never leak a count
+    # (or a prune) across regions.
+    from graph.load import count_region_versions
+
+    seen: list[tuple[str, dict]] = []
+
+    def runner(cypher: str, params: dict) -> Any:
+        seen.append((cypher, params))
+        if "count(cur)" in cypher:
+            return [{"n": 7}]
+        return [{"n": 2}]
+
+    n_cur, n_prev = count_region_versions(
+        runner, "r", region_id="r", run_id="r@20260713T000000Z-abc"
+    )
+
+    assert (n_cur, n_prev) == (7, 2)
+    cur_cypher, cur_params = seen[0]
+    prev_cypher, prev_params = seen[1]
+    assert "cur.ingest_run_id = $run_id" in cur_cypher
+    assert "cur.ingest_version = $region_id OR cur.ingest_version STARTS WITH $prefix" in cur_cypher
+    assert cur_params["run_id"] == "r@20260713T000000Z-abc"
+    assert "(node.ingest_run_id IS NULL OR node.ingest_run_id <> $run_id)" in prev_cypher
+    assert (
+        "node.ingest_version = $region_id OR node.ingest_version STARTS WITH $prefix" in prev_cypher
+    )
+    assert prev_params["prefix"] == "r-"
+
+
+def test_prune_legacy_mode_without_run_id_is_unchanged():
+    # Back-compat seam: a caller that passes no run_id gets the version-keyed behavior
+    # byte-for-byte (the existing shape tests above pin its details; this pins that the
+    # new marker predicate does NOT leak into legacy mode).
+    runner, calls = _make_prune_runner(n_cur=1400, n_prev=100)
+
+    outcome = prune_stale_trails(
+        runner, "shenandoah-gwj-v11", region_id="shenandoah-gwj", pre_load_count=1500
+    )
+
+    assert outcome.pruned is True
+    for cypher, params in calls:
+        assert "node.ingest_version <> $iv" in cypher
+        assert "ingest_run_id" not in cypher
+        assert "run_id" not in params
 
 
 # ── Schema-drift guard: owned→CanonicalTrail edges vs. the prune skip predicate ───
