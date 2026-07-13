@@ -9,7 +9,7 @@
  * methods are added by their own epics so each stays one logical change.
  */
 import type { OutcomeBody, ScopeContext } from './api'
-import type { CardVM, EpisodeVM, FeedVM, OutcomeVM } from './vm'
+import type { CardVM, ConditionsPatchVM, EpisodeVM, FeedVM, OutcomeVM } from './vm'
 import type { TuningState } from '../types'
 
 export interface PlanInput {
@@ -21,6 +21,18 @@ export interface PlanInput {
 export interface PlannerClient {
   /** The curated feed for a tuning frame and viewer scope. */
   plan(input: PlanInput, scope: ScopeContext): Promise<FeedVM>
+  /**
+   * The phase-2 verified overlay for a phase-1 feed's card ids (Epic 040 S2).
+   * Optional: only the HTTP adapter implements it — the mock always returns
+   * complete feeds, so `useFeed` runs phase 2 only when the resolved feed says
+   * `conditionsPending` AND the client can. Rejects on failure — the caller
+   * owns the calm retry surface, never a fake-clear.
+   */
+  planConditions?(
+    input: PlanInput,
+    scope: ScopeContext,
+    canonicalIds: string[],
+  ): Promise<ConditionsPatchVM>
   /**
    * A single card by id, for when the caller (`useCard`) can't resolve it from
    * the feed already in memory — a true deep-link, or an id outside the current
