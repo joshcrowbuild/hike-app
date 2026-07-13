@@ -351,8 +351,14 @@ def check_verdict_consistency(batch: PlannedBatch, hard: dict[str, Any]) -> list
     makes them provably equal: if the alert reached only some cards, a card without
     it would say "Good to go" while the banner (and its own Detail) said "Caution" —
     the live-DOM contradiction this gate now pins (Ocracoke, 2026-07-12)."""
+    expected = hard.get("region_wide_warnings", [])
+    if expected and not batch.trails:
+        # Non-empty pins with zero surfaced cards must not quiet-green (the same
+        # vacuous-pass class the condition_states guard closes): there is no card
+        # to carry the alert, so the invariant was never exercised.
+        return ["region_wide_warnings pinned but no trail surfaced to carry them"]
     out: list[str] = []
-    for needle in hard.get("region_wide_warnings", []):
+    for needle in expected:
         for trail in batch.trails:
             cid = trail.candidate.canonical_id
             if not any(needle in w.text and w.source for w in trail.verdict.warnings):
