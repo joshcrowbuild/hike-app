@@ -1,0 +1,20 @@
+{
+  "adapter": "ridb",
+  "source": "Recreation.gov RIDB",
+  "note": "Recorded facilities lookup near Ocracoke. The apikey travels in a request header, never the response body, so no secret is recorded here.",
+  "interactions": [
+    {
+      "match": "ridb.recreation.gov",
+      "status": 200,
+      "json": {
+        "RECDATA": [
+          {
+            "FacilityID": "232463",
+            "FacilityName": "Ocracoke Campground",
+            "Reservable": true
+          }
+        ]
+      }
+    }
+  ]
+}

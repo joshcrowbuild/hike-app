@@ -349,6 +349,34 @@ export interface FeedVM {
   /** Whether this whole feed is live or sample data — drives the calm sample strip. */
   dataSource: 'live' | 'mock'
   error?: FeedError
+  /**
+   * Two-phase render (Epic 040 D2): `true` when this feed is a phase-1 response
+   * whose verified conditions are still to be fetched via the conditions call.
+   * A CLIENT state signal, exactly like `FeedState.stale`/`revalidating` — the
+   * cards themselves stay honest on their own (`not-fetched` per kind), so this
+   * never fabricates a VM fact; it only tells `useFeed` to run phase 2.
+   * Absent/false → complete (the classic path, a warm key, or the kill switch).
+   */
+  conditionsPending?: boolean
+}
+
+/**
+ * The phase-2 verified overlay (Epic 040 S2), mapped to VM vocabulary by the
+ * same helpers that map a full feed card — never a second mapping truth.
+ * `patches` is keyed by card id and applied IN PLACE (order never changes);
+ * `heldBack` is the disclosed removal list (a hard guardrail block, D5).
+ */
+export interface ConditionsPatchVM {
+  patches: CardConditionsPatch[]
+  heldBack: HeldBackVM[]
+}
+
+/** One card's verified condition fields, replacing the phase-1 silence in place. */
+export interface CardConditionsPatch {
+  id: string
+  conditionLines: LineVM[]
+  conditions?: ConditionStatusVM[]
+  warnings: WarningVM[]
 }
 
 // ---- Post-hike loop (Outcome) --------------------------------------------

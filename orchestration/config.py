@@ -207,6 +207,13 @@ class Settings:
     # continuously rather than in on/off windows.
     feed_warm_interval_s: float = 240.0
 
+    # Two-phase render (Epic 040 D6): the SERVER kill switch. When False, `/plan`
+    # with phase:"cards" serves today's full single-pass response (the client
+    # detects completeness and skips the conditions call) and no phase-1 holding
+    # pen is wired. The client-side twin is the build-time VITE_TWO_PHASE flag;
+    # either side alone fully reverts the flow.
+    two_phase_enabled: bool = True
+
     def for_region(self, region_id: str, env: Mapping[str, str] | None = None) -> "Settings":
         """A copy of these settings bound to the region actually being ingested.
 
@@ -316,6 +323,10 @@ class Settings:
                 allow_zero=True,
             ),
             feed_cache_max_entries=int(e.get("ADVENTURE_ANON_FEED_CACHE_MAX_ENTRIES", "512")),
+            # "0"/"false"/"no"/"off" disable; anything else (incl. unset) keeps the
+            # two-phase flow on — D6's documented convention is =0.
+            two_phase_enabled=e.get("ADVENTURE_TWO_PHASE_ENABLED", "1").strip().lower()
+            not in {"0", "false", "no", "off"},
             feed_warm_interval_s=_finite_positive(
                 "ADVENTURE_FEED_WARM_INTERVAL_S",
                 e.get("ADVENTURE_FEED_WARM_INTERVAL_S", "240"),

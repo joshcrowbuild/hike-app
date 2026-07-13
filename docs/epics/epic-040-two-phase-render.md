@@ -1,6 +1,6 @@
 # Epic 040 — Two-phase render (cards first, conditions verified behind)
 
-**Status:** DEFINED (2026-07-12 · designed in latency Wave 4; ready for a build wave — no product code in this epic's authoring lane)
+**Status:** REVIEW (2026-07-12 · S1–S4 built + gated in one lane; PO review pending. Post-merge measured verdict vs the SLO table still owed per the DoD — A2 fast-curate model not yet configured, so the honest phase-1 target is <2.5s until it lands)
 **Phase:** A
 **Spec refs:** Epic 039 mitigation ladder **B1** (design record [`../research/feed-first-paint-latency-wave1.md`](../research/feed-first-paint-latency-wave1.md), incl. its S2 "Two-phase-render compatibility" section, honored below) · Epic 018 S4 / CDP-02 (the six-state `ConditionStatus` vocabulary this design wears) · CLAUDE.md rules #1/#2/#3/#5/#6
 

@@ -579,6 +579,119 @@ describe('HttpPlannerClient /plan cold-start timeout', () => {
   })
 })
 
+describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function ok(json: unknown) {
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+  }
+  function bodyOf(call: unknown): Record<string, unknown> {
+    return JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body)
+  }
+  function urlOf(call: unknown): string {
+    return (call as [string, RequestInit])[0]
+  }
+
+  it('asks /plan for phase:"cards" (two-phase enabled by default)', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(bodyOf(fetchMock.mock.calls[0]).phase).toBe('cards')
+  })
+
+  it('marks the VM pending ONLY on an explicit conditions_complete:false', async () => {
+    fetchMock.mockReturnValueOnce(ok({ ...FEED, conditions_complete: false }))
+    const pending = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(pending.conditionsPending).toBe(true)
+
+    // Absent (older backend) and explicit true both mean complete — absence is
+    // never read as pending (the additive-contract posture).
+    fetchMock.mockReturnValueOnce(ok(FEED))
+    const legacy = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(legacy.conditionsPending).toBeUndefined()
+
+    fetchMock.mockReturnValueOnce(ok({ ...FEED, conditions_complete: true }))
+    const complete = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(complete.conditionsPending).toBeUndefined()
+  })
+
+  it('planConditions POSTs the same key inputs plus the ids, and maps the patch through the shared mappers', async () => {
+    fetchMock.mockReturnValue(
+      ok({
+        patches: [
+          {
+            canonical_id: 'ct:a',
+            lines: [{ text: 'Clear skies', source: 'nws', confidence_level: 'stated', sources: ['NWS'] }],
+            warnings: [
+              { text: 'weather alert: Heat', source: 'NWS', observed_at: new Date().toISOString(), kind: 'weather' },
+            ],
+            conditions: [
+              { kind: 'weather', state: 'present', source: 'NWS', checked_at: new Date().toISOString(), detail: '' },
+            ],
+          },
+        ],
+        set_aside: [
+          {
+            canonical_id: 'ct:smoky',
+            name: 'Smoky',
+            reasons: [{ text: 'air quality hazardous (AirNow)', source: 'AirNow', kind: 'air' }],
+          },
+        ],
+        unknown: ['ct:ghost'],
+      }),
+    )
+
+    const patch = await client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a', 'ct:smoky', 'ct:ghost'])
+
+    expect(urlOf(fetchMock.mock.calls[0])).toBe('http://api/plan/conditions')
+    const body = bodyOf(fetchMock.mock.calls[0])
+    expect(body.canonical_ids).toEqual(['ct:a', 'ct:smoky', 'ct:ghost'])
+    expect(body.lat).toBeCloseTo(38.918) // same origin resolution as plan()
+    expect(patch.patches[0].id).toBe('ct:a')
+    expect(patch.patches[0].conditionLines[0]).toMatchObject({
+      text: 'Clear skies',
+      provenance: 'live',
+      sources: ['NWS'],
+    })
+    expect(patch.patches[0].conditions?.[0]).toMatchObject({ kind: 'weather', state: 'present', source: 'NWS' })
+    expect(patch.patches[0].warnings[0].source).toBe('NWS')
+    expect(patch.heldBack[0]).toMatchObject({ id: 'ct:smoky', name: 'Smoky' })
+  })
+
+  it('planConditions rejects on a non-OK response — the caller owns the calm retry, never a fake-clear', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 500 } as Response))
+    await expect(client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a'])).rejects.toThrow('500')
+  })
+})
+
+describe('HttpPlannerClient getCard stays single-pass (Epic 040 self-review)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('the deep-link refetch never asks for phase:"cards" — Detail must get verified conditions', async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
+    )
+    await client().getCard('ct:a', ANON_SCOPE, TUNING)
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
+    expect(body.phase).toBeUndefined()
+  })
+})
+
 describe('HttpPlannerClient trailWater (Epic 041) — the water slice of GET /trail/{id}', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

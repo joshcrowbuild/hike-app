@@ -19,6 +19,7 @@ import pytest
 import orchestration.curator as curator
 from evals.replay import (
     SCENARIOS_DIR,
+    check_verdict_consistency,
     evaluate_scenario,
     list_scenario_dirs,
     load_scenario,
@@ -31,6 +32,7 @@ _EXPECTED_SCENARIOS = {
     "hazard-warning-flashflood",
     "adapter-outage",
     "sparse-cold",
+    "regional-alert-verdict-consistency",
 }
 
 
@@ -113,6 +115,37 @@ def test_fabricated_kind_is_caught() -> None:
     assert "no_fabricated_kinds" in result.failures
 
 
+def test_partial_alert_coverage_is_caught() -> None:
+    # F1 (ux-review-conditions-2026-07, "one sky, one verdict"): a region-wide
+    # alert reaching only SOME cards must red verdict_consistency — the card
+    # missing it would derive "Good to go" while the feed banner (and its own
+    # Detail, had the payload carried it) said "Caution". Tampering strips the
+    # warning off one planned trail post-run, simulating exactly that partial
+    # coverage.
+    scenario = _by_name("regional-alert-verdict-consistency")
+    batch = run_scenario(scenario)
+    assert batch.trails, "scenario must surface cards to tamper with"
+    stripped = dataclasses.replace(
+        batch.trails[0], verdict=dataclasses.replace(batch.trails[0].verdict, warnings=())
+    )
+    tampered = dataclasses.replace(batch, trails=[stripped, *batch.trails[1:]])
+    violations = check_verdict_consistency(tampered, scenario.expected["hard"])
+    assert violations, "stripping a region-wide warning off one card must red the check"
+    assert any("Beach Hazards Statement" in v for v in violations)
+
+
+def test_regional_alert_rides_every_surfaced_card() -> None:
+    # The green half of the same invariant: in the untampered golden run the
+    # alert is on EVERY card's own warning set, source-stamped — the wire-level
+    # guarantee that lets card and Detail derive one identical verdict.
+    batch = run_scenario(_by_name("regional-alert-verdict-consistency"))
+    assert len(batch.trails) >= 3
+    for trail in batch.trails:
+        texts = [w.text for w in trail.verdict.warnings]
+        assert any("Beach Hazards Statement" in t for t in texts), texts
+        assert all(w.source for w in trail.verdict.warnings)
+
+
 def test_missing_expected_card_is_caught() -> None:
     # An empty feed must never read as green when the bundle should yield cards —
     # the anti-vacuous-pass criterion.
@@ -145,6 +178,67 @@ def test_unknown_condition_kind_reds_fidelity_not_a_traceback() -> None:
     result = evaluate_scenario(tampered, n=1)
     assert not result.passed
     assert any("wether" in v for v in result.failures.get("fact_fidelity", []))
+
+
+# ── Epic 040 S4: the two-phase criteria hold AND bite ─────────────────────────
+
+
+def test_two_phase_criteria_run_in_every_scenario_report() -> None:
+    # AC-4.1: the three D3 criteria are live in the same report the single-pass
+    # criteria fill — never a separate opt-in path a scenario could silently skip.
+    result = evaluate_scenario(_by_name("nominal-old-rag"), n=1)
+    names = {c.name for c in result.report.criteria}
+    assert {"phase1_silence", "two_phase_composition", "phase_order_stable"} <= names
+    assert result.passed
+
+
+def test_phase1_silence_bites_on_a_fact_bearing_phase1() -> None:
+    # A single-pass batch (which carries verified facts + sourced dispositions) run
+    # through the phase-1 silence predicate must red loudly — proving the predicate
+    # can actually tell verified content from honest silence.
+    from evals.replay import check_phase1_silence
+
+    single = run_scenario(_by_name("nominal-old-rag"))
+    violations = check_phase1_silence(single)
+    assert violations  # fabricated facts / attributions detected
+
+
+def test_two_phase_composition_bites_on_a_dropped_fact() -> None:
+    # Strip one composed trail's facts after the fold: the composition check must
+    # name the drift against the single-pass truth, not average it away.
+    from evals.replay import check_two_phase_composition, run_scenario_two_phase
+
+    scenario = _by_name("nominal-old-rag")
+    single = run_scenario(scenario)
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    tampered = [dataclasses.replace(composed[0], facts={}, confidences={})] + composed[1:]
+    violations = check_two_phase_composition(single, phase1, tampered, removed)
+    assert any("fact kinds drifted" in v for v in violations)
+
+
+def test_phase_order_stable_bites_on_a_reorder() -> None:
+    # D5: a composed order that isn't the phase-1 order minus removals must red.
+    from evals.replay import check_phase_order_stable, run_scenario_two_phase
+
+    scenario = _by_name("nominal-old-rag")
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    assert len(composed) >= 2  # a reorder needs two cards to swap
+    violations = check_phase_order_stable(phase1, list(reversed(composed)), removed)
+    assert violations
+
+
+def test_two_phase_removal_matches_single_pass_set_aside() -> None:
+    # The guardrail-trip bundle through the split: the hard-blocked trails are
+    # REMOVED into the disclosed set-aside list (D5), and the composition check
+    # holds that equal to the single-pass truth.
+    from evals.replay import run_scenario_two_phase
+
+    scenario = _by_name("guardrail-trip-aqi")
+    single = run_scenario(scenario)
+    phase1, composed, removed = run_scenario_two_phase(scenario)
+    assert phase1.trails  # phase 1 surfaced them — nothing was verified yet
+    assert not composed  # …and phase 2 removed every hazardous-AQI trail
+    assert {t.canonical_id for t in removed} == {t.canonical_id for t in single.set_aside}
 
 
 # ── fixture hygiene (mirrors tests/test_adapter_cassettes.py) ─────────────────

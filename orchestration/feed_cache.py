@@ -183,3 +183,32 @@ def default_feed_cache(ttl_s: float, max_entries: int) -> FeedCache:
         if _singleton is None:
             _singleton = FeedCache(ttl_s=ttl_s, max_entries=max_entries)
         return _singleton
+
+
+# ── Phase-1 holding pen (Epic 040 D7) ─────────────────────────────────────────
+#
+# A SECOND, deliberately separate FeedCache instance holding anonymous phase-1
+# plans (all point kinds `not_fetched`) between the `/plan` phase:"cards" call and
+# its `/plan/conditions` follow-up. Separate by construction — never the same
+# instance as the real feed cache — so a half-verified plan can never be served to
+# a later full `/plan` (that would silently skip verification, rule #1). Short TTL:
+# the pen only needs to outlive the client's second call; an expired entry degrades
+# to the graph-lookup fallback in `orchestration/two_phase.py`, never an error.
+
+PENDING_PHASE1_TTL_S = 180.0
+PENDING_PHASE1_MAX_ENTRIES = 128
+
+_pending_singleton: FeedCache | None = None
+
+
+def default_pending_store() -> FeedCache:
+    """The process-wide phase-1 holding pen (same singleton discipline as
+    `default_feed_cache` — a per-request instance would never carry a plan across
+    the two calls)."""
+    global _pending_singleton
+    with _singleton_lock:
+        if _pending_singleton is None:
+            _pending_singleton = FeedCache(
+                ttl_s=PENDING_PHASE1_TTL_S, max_entries=PENDING_PHASE1_MAX_ENTRIES
+            )
+        return _pending_singleton
