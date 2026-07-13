@@ -18,7 +18,9 @@ import type {
   OutcomeResponse,
   PlanRequest,
   ScopeContext,
+  TrailDetailWaterSlice,
   WireElevationProfile,
+  WireTrailWater,
 } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
 import type {
@@ -31,6 +33,7 @@ import type {
   FeedVM,
   OutcomeVM,
   TrailGeo,
+  TrailWaterVM,
 } from '../vm'
 import type { Coords, TuningState } from '../../types'
 
@@ -47,6 +50,12 @@ const FALLBACK_COORDS: Coords = { lat: 38.918, lon: -78.194 }
 // /plan (and getCard, which reruns plan) carries this budget — recordOutcome has
 // no timeout — so a single constant suffices.
 const PLAN_TIMEOUT_MS = 60_000
+
+// The water read (Epic 041) is a small per-trail GET on an already-warm host
+// (Detail is only reachable after a feed landed), so it never needs the /plan
+// cold-start budget; past this it degrades to silence rather than keeping a
+// stale spinner region alive on the commitment view.
+const WATER_TIMEOUT_MS = 15_000
 
 /**
  * Scoped requests carry the dev-viewer secret so the backend's fail-closed
@@ -194,6 +203,39 @@ function mapGeo(c: FeedCardResponse): TrailGeo | undefined {
 const isApproximate = (level: ConfidenceLevel | undefined): boolean =>
   level === 'hedged' || level === 'flagged'
 
+/**
+ * Wire → VM for the water answer (Epic 041). A null/absent wire field is the
+ * CDP-02 not-fetched silence and maps to null (no row); the two answered
+ * states pass through with the snake_case → kebab-case rename. Optional
+ * per-source fields collapse `null` → `undefined` at this boundary so the VM
+ * stays idiomatic. Everything here is `provenance: 'live'` — it came off the
+ * real API — even though the FACT is corpus data the surface must still hedge
+ * as "not verified live" (the hedge is copy-level, not provenance-level).
+ */
+function mapTrailWater(wire: WireTrailWater | null | undefined): TrailWaterVM | null {
+  if (!wire) return null
+  // Only the two known answered states pass; anything else (a future wire
+  // state this client can't render) degrades to silence rather than guessing
+  // a disposition it can't stand behind (the mapConditions posture, Rule #1).
+  if (wire.state !== 'sources' && wire.state !== 'none_nearby') return null
+  return {
+    state: wire.state === 'none_nearby' ? 'none-nearby' : 'sources',
+    basis: wire.basis,
+    radiusM: wire.radius_m,
+    source: wire.source,
+    sources: wire.sources.map((w) => ({
+      id: w.water_id,
+      type: w.water_type,
+      name: w.name ?? undefined,
+      lat: w.lat,
+      lon: w.lon,
+      distanceM: w.distance_m,
+      seasonal: w.seasonal ?? undefined,
+    })),
+    provenance: 'live',
+  }
+}
+
 function mapElevationProfile(p: WireElevationProfile | null | undefined): ElevationProfile | null {
   if (!p) return null
   return {
@@ -262,6 +304,29 @@ export class HttpPlannerClient implements PlannerClient {
     // maps it to a retryable error state, not an authoritative absence (R1).
     if (feed.error) throw new Error(feed.error.message)
     return feed.cards.find((c) => c.id === id) ?? null
+  }
+
+  async trailWater(id: string, scope: ScopeContext): Promise<TrailWaterVM | null> {
+    // GET /trail/{id} → the `water_sources` slice (Epic 041). Every failure
+    // path — network, 404, 5xx, timeout — degrades to null (honest silence:
+    // Detail renders no water row), never an error surface: water is
+    // enrichment on the commitment view, not a dependency.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), WATER_TIMEOUT_MS)
+    try {
+      const params = new URLSearchParams({ viewer_id: scope.viewerId })
+      const resp = await fetch(`${this.baseUrl}/trail/${encodeURIComponent(id)}?${params}`, {
+        headers: authHeaders(scope),
+        signal: controller.signal,
+      })
+      if (!resp.ok) return null
+      const detail = (await resp.json()) as TrailDetailWaterSlice
+      return mapTrailWater(detail.water_sources)
+    } catch {
+      return null
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async recentEpisodes(): Promise<EpisodeVM[]> {

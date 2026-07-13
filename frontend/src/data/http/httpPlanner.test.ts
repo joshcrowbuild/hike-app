@@ -578,3 +578,104 @@ describe('HttpPlannerClient /plan cold-start timeout', () => {
     expect(feed.cards).toEqual([])
   })
 })
+
+describe('HttpPlannerClient trailWater (Epic 041) — the water slice of GET /trail/{id}', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function ok(json: unknown) {
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+  }
+
+  const WIRE_WATER = {
+    state: 'sources',
+    basis: 'route',
+    radius_m: 200.0,
+    source: 'OSM',
+    sources: [
+      {
+        water_id: 'water:osm:node/1',
+        water_type: 'spring',
+        name: 'Furnace Spring',
+        lat: 38.5,
+        lon: -78.4,
+        distance_m: 63.7,
+        seasonal: 'yes',
+        source: 'OSM',
+      },
+      {
+        water_id: 'water:osm:node/2',
+        water_type: 'water_tap',
+        name: null,
+        lat: 38.51,
+        lon: -78.39,
+        distance_m: 21.9,
+        seasonal: null,
+        source: 'OSM',
+      },
+    ],
+  }
+
+  it('GETs /trail/{id} and maps the answered state to the VM (live provenance)', async () => {
+    fetchMock.mockReturnValue(ok({ canonical_id: 'ct:osm:x', name: 'X', water_sources: WIRE_WATER }))
+    const vm = await client().trailWater('ct:osm:x', ANON_SCOPE)
+
+    const url = (fetchMock.mock.calls[0] as [string, RequestInit])[0]
+    expect(url).toContain('/trail/ct%3Aosm%3Ax?')
+    expect(url).toContain('viewer_id=anonymous')
+
+    expect(vm).not.toBeNull()
+    expect(vm?.state).toBe('sources')
+    expect(vm?.basis).toBe('route')
+    expect(vm?.radiusM).toBe(200)
+    expect(vm?.provenance).toBe('live')
+    // null wire optionals collapse to undefined at the boundary (idiomatic VM).
+    expect(vm?.sources[1]).toEqual({
+      id: 'water:osm:node/2',
+      type: 'water_tap',
+      name: undefined,
+      lat: 38.51,
+      lon: -78.39,
+      distanceM: 21.9,
+      seasonal: undefined,
+    })
+  })
+
+  it('maps the wire none_nearby to the VM none-nearby (an answered-empty, not silence)', async () => {
+    fetchMock.mockReturnValue(
+      ok({ canonical_id: 'ct:osm:x', name: 'X', water_sources: { ...WIRE_WATER, state: 'none_nearby', sources: [] } }),
+    )
+    const vm = await client().trailWater('ct:osm:x', ANON_SCOPE)
+    expect(vm?.state).toBe('none-nearby')
+    expect(vm?.sources).toEqual([])
+  })
+
+  it('maps a null/absent water_sources field to null (CDP-02 not-fetched silence)', async () => {
+    fetchMock.mockReturnValue(ok({ canonical_id: 'ct:osm:x', name: 'X', water_sources: null }))
+    expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+    fetchMock.mockReturnValue(ok({ canonical_id: 'ct:osm:x', name: 'X' }))
+    expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+  })
+
+  it('degrades EVERY failure to null silence — 404, 5xx, and a network throw', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 404 } as Response))
+    expect(await client().trailWater('ct:osm:gone', ANON_SCOPE)).toBeNull()
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 500 } as Response))
+    expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+    fetchMock.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')))
+    expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+  })
+
+  it('degrades an UNKNOWN wire state to null silence rather than guessing an answer', async () => {
+    fetchMock.mockReturnValue(
+      ok({ canonical_id: 'ct:osm:x', name: 'X', water_sources: { ...WIRE_WATER, state: 'seasonal_estimate' } }),
+    )
+    expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+  })
+})

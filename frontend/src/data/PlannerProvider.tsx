@@ -16,7 +16,7 @@ import { MockPlannerClient } from './mock/mockPlanner'
 import { originCoordsMap, useOrigins } from './regionsCatalog'
 import type { PlanInput, PlannerClient } from './source'
 import { USE_MOCK } from './useMock'
-import type { CardVM, EpisodeVM, FeedError, FeedVM } from './vm'
+import type { CardVM, EpisodeVM, FeedError, FeedVM, TrailWaterVM } from './vm'
 
 const useMockDefault = USE_MOCK
 const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000'
@@ -373,4 +373,40 @@ export function useCard(id: string | null): CardState {
   }, [id, scopeKey, nonce])
 
   return { ...state, reload: () => setNonce((n) => n + 1) }
+}
+
+/**
+ * The water answer for one trail (Epic 041) — resolved through the client seam
+ * so mock and live behave identically. Two-value envelope, no error state by
+ * design: `trailWater` degrades every failure to null (silence), and Detail
+ * renders a null answer as NO row (CDP-02 not-fetched) — water is enrichment
+ * on the commitment view, never a dependency. `loading` lets the surface
+ * simply wait (render nothing) rather than flash an answer in.
+ */
+export function useTrailWater(id: string | null): { water: TrailWaterVM | null; loading: boolean } {
+  const { client, scope } = usePlanner()
+  const [state, setState] = useState<{ water: TrailWaterVM | null; loading: boolean }>({
+    water: null,
+    loading: true,
+  })
+  const scopeKey = scopeKeyOf(scope)
+
+  useEffect(() => {
+    if (!id) {
+      setState({ water: null, loading: false })
+      return
+    }
+    let live = true
+    setState({ water: null, loading: true })
+    client
+      .trailWater(id, scope)
+      .then((water) => live && setState({ water, loading: false }))
+      .catch(() => live && setState({ water: null, loading: false }))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, scopeKey])
+
+  return state
 }

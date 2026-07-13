@@ -599,6 +599,49 @@ button {
   border-top: 1px solid var(--border-faint);
 }
 
+/* ---- water trail fact (Epic 041) ----
+   ONE quiet answer line in the facts area — an answer, not a ledger row (the
+   ux-review-conditions discipline). Both answered states (sources and the calm
+   answered-empty) share this same muted treatment: an answered-empty is an
+   ANSWER, never the flagged couldn't-verify styling. Sizes come from the
+   semantic type scale (Epic 019 AC-19.2.1: no new hardcoded rems). */
+.detail-water {
+  margin-top: 0.9rem;
+}
+
+.detail-water-line {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: var(--type-condition-size);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+/* The row label mirrors .decision-label (glyph + muted word) so the facts
+   area reads as one family; the glyph inherits the label's muted colour. */
+.detail-water-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--type-fact-label-size);
+  font-weight: var(--type-fact-label-weight);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.detail-water-icon {
+  font-size: 1.15em;
+}
+
+.detail-water-note {
+  margin: 0.15rem 0 0;
+  font-size: var(--type-fact-label-size);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .condition--detail {
   margin-top: 0.9rem;
 }
@@ -748,6 +791,20 @@ button {
   width: 14px;
   height: 14px;
   background: #2b6cb0;
+}
+
+/* Mapped water source (Epic 041): a small droplet — distinct by SHAPE from
+   every round marker (§4.3: never color alone), quiet by size and a muted
+   water-blue. Deliberately smaller than the trailhead dot: secondary fact,
+   not a destination. */
+.map-marker--water {
+  display: block;
+  width: 11px;
+  height: 11px;
+  background: #3a7ca5;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 0 2px var(--surface-raised);
 }
 
 /* ---- persistent attribution (non-dismissable, D7) ----

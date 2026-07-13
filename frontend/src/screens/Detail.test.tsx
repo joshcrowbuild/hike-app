@@ -6,7 +6,7 @@ import { ANON_SCOPE } from '../data/api'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { resetSavedTrailsForTests } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
-import type { CardVM } from '../data/vm'
+import type { CardVM, TrailWaterVM } from '../data/vm'
 import { Detail } from './Detail'
 
 afterEach(() => resetSavedTrailsForTests())
@@ -28,19 +28,21 @@ function card(overrides: Partial<CardVM> = {}): CardVM {
   }
 }
 
-function readyClient(vm: CardVM): PlannerClient {
+function readyClient(vm: CardVM, water: TrailWaterVM | null = null): PlannerClient {
   return {
     plan: () => Promise.resolve({ query: '', cards: [], notices: [], setAside: [], heldBack: [], readiness: { on: false, state: 'off' }, dataSource: 'live' as const }),
     getCard: () => Promise.resolve(vm),
+    // The water answer (Epic 041); null = the not-fetched silence (no row).
+    trailWater: () => Promise.resolve(water),
     recentEpisodes: () => Promise.resolve([]),
     getEpisode: () => Promise.resolve(null),
     recordOutcome: () => Promise.reject(new Error('not used')),
   } as unknown as PlannerClient
 }
 
-async function renderDetail(vm: CardVM) {
+async function renderDetail(vm: CardVM, water: TrailWaterVM | null = null) {
   const result = render(
-    <PlannerProvider scope={ANON_SCOPE} client={readyClient(vm)}>
+    <PlannerProvider scope={ANON_SCOPE} client={readyClient(vm, water)}>
       <Detail id={vm.id} onBack={vi.fn()} onReplan={vi.fn()} />
     </PlannerProvider>,
   )
@@ -196,6 +198,62 @@ describe('Detail uses a real screen title, not the quiet .wordmark slot (Epic 02
     const { container } = await renderDetail(card())
     expect(container.querySelector('.wordmark')).not.toBeInTheDocument()
     expect(container.querySelector('.screen-title')).toBeInTheDocument()
+  })
+})
+
+describe('Detail water fact (Epic 041) — one answer line, CDP-02 three ways', () => {
+  const answered: TrailWaterVM = {
+    state: 'sources',
+    basis: 'route',
+    radiusM: 200,
+    source: 'OSM',
+    sources: [
+      { id: 'water:osm:node/1', type: 'spring', name: 'Furnace Spring', lat: 38.5, lon: -78.4, distanceM: 64, seasonal: 'yes' },
+      { id: 'water:osm:node/2', type: 'spring', lat: 38.51, lon: -78.39, distanceM: 118 },
+      { id: 'water:osm:node/3', type: 'water_tap', lat: 38.5, lon: -78.41, distanceM: 22 },
+    ],
+    provenance: 'live',
+  }
+
+  it('answered: renders ONE water line with counts, radius, basis, and the not-verified-live hedge', async () => {
+    const { container } = await renderDetail(card(), answered)
+    expect(screen.getByText('2 springs, 1 tap within ~650 ft of the route')).toBeInTheDocument()
+    // The row label carries "Water" exactly once for AT (sr-only via Icon; the
+    // visible twin is aria-hidden — the DecisionItem pattern).
+    const label = container.querySelector('.detail-water-label')
+    expect(label?.textContent).toContain('Water')
+    expect(label?.querySelector('span[aria-hidden="true"]')?.textContent).toBe('Water')
+    const note = container.querySelector('.detail-water-note')
+    expect(note?.textContent).toContain('OpenStreetMap')
+    expect(note?.textContent).toContain('not verified live')
+    expect(note?.textContent).toContain('springs may be seasonal')
+    // One row, not a ledger.
+    expect(container.querySelectorAll('.detail-water')).toHaveLength(1)
+  })
+
+  it('answered-empty: renders the calm carry-what-you-need answer, never the flagged treatment', async () => {
+    const { container } = await renderDetail(card(), { ...answered, state: 'none-nearby', sources: [] })
+    expect(
+      screen.getByText('No mapped water within ~650 ft of the route — carry what you need.'),
+    ).toBeInTheDocument()
+    // An answered-empty is an ANSWER: it must not wear the couldn't-verify signal.
+    expect(container.querySelector('.detail-water .signal')).not.toBeInTheDocument()
+    expect(container.querySelector('.detail-water-note')?.textContent).toContain('not verified live')
+  })
+
+  it('silence: a null answer renders NO water row at all (not an empty claim)', async () => {
+    const { container } = await renderDetail(card(), null)
+    expect(container.querySelector('.detail-water')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No mapped water/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Water')).not.toBeInTheDocument()
+  })
+
+  it('never claims potability in either answered state', async () => {
+    const { container } = await renderDetail(card(), answered)
+    const text = (container.querySelector('.detail-water')?.textContent ?? '').toLowerCase()
+    for (const banned of ['potable', 'drinkable', 'safe']) {
+      expect(text).not.toContain(banned)
+    }
   })
 })
 
