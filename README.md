@@ -2,9 +2,9 @@
 
 A personal, agentic, self-verifying hiking/backpacking trip planner. A calm, private **utility** — not social, not engagement-seeking.
 
-**Last verified:** 2026-06-26 · **Owner:** project
+**Last verified:** 2026-07-13 · **Owner:** project
 
-> **Status: Phase-1 build complete.** The engine (Scout→Verifier→Curator), the ingestion/corpus pipeline, backend personalization (Epics 001–005, 010–015), and the personal-intelligence **app UX** (Home/Detail/Tuning/Outcome) are all shipped on `main`. **Live status, open risks & next work live in [`docs/process/roadmap.md`](./docs/process/roadmap.md)** — the single source of truth for status.
+> **Status: Phase-1 build + Phase-A OSS-borrow wave shipped.** The engine (Scout→Verifier→Curator), the ingestion/corpus pipeline, backend personalization (Epics 001–005, 010–015), the personal-intelligence **app UX** (Home/Detail/Tuning/Outcome), Maps/terrain (016/017), the CoMaps-borrow ingestion/duration/GPX wave (022–036, 028), and latency waves (039/040) are all shipped on `main`. **Hosted end-to-end** (Vercel → Render → Aura). **Live status, open risks & next work live in [`docs/process/roadmap.md`](./docs/process/roadmap.md)** — the single source of truth for status.
 
 ## The one-line thesis
 AllTrails has no trail-data moat (the map is open data). The differentiation is **temporal + personal, not volumetric** — *live, verified synthesis at decision time* ("right now, for me and my party"), which a static app structurally can't be.
@@ -18,7 +18,7 @@ Four layers — indexed **corpus** → background **ranking** → **JIT live ver
 - [`docs/workplan.md`](./docs/workplan.md) — **process**: the dependency-ordered 11-stage agenda + cross-cutting threads.
 
 ## Current position
-**Phase-1 build complete** — the end-to-end verified-synthesis slice plus personal intelligence (belief pipeline, outcome loop, context assembly, device seam, commons fork) and the app UX are on `main`. For live status, open risks, and what's next, see **[`docs/process/roadmap.md`](./docs/process/roadmap.md)** — the single source of truth for status.
+**Phase-1 build + Phase-A OSS-borrow wave shipped on `main`** — the end-to-end verified-synthesis slice, personal intelligence (belief pipeline, outcome loop, context assembly, device seam, commons fork), the app UX, Maps/terrain (016/017), the CoMaps-borrow ingestion/duration/GPX wave (022–036, 028), and latency waves (039/040). **Hosted end-to-end** (Vercel → Render → Aura) and serving live data. For live status, open risks, and what's next, see **[`docs/process/roadmap.md`](./docs/process/roadmap.md)** — the single source of truth for status.
 
 ## Repo layout (monorepo)
 `ingestion/` (Stage-3 pipeline) · `orchestration/` (engine + provider seam + live adapters) · `graph/` (schema + access wrapper) · `api/` (FastAPI app) · `frontend/` (React/Vite web app) · `evals/` · `regions/` (boundary polygons).

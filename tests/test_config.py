@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from orchestration.config import Settings, TierConfig, default_dem_path
+from orchestration.config import RoleOverride, Settings, TierConfig, default_dem_path
 
 
 def test_settings_env_defaults() -> None:
@@ -68,6 +68,38 @@ def test_settings_tiers_env_override() -> None:
     assert s.tiers["judgment"] == TierConfig(
         provider="anthropic", model="claude-opus-4", local_model="llama3.3"
     )
+
+
+# ── Epic 040 operator-lever seam: per-role overrides on top of tier config ──
+
+
+def test_settings_role_overrides_default_to_unset() -> None:
+    s = Settings.from_env({})
+    assert set(s.role_overrides) == {"extract", "normalize", "judge", "curate"}
+    for role in s.role_overrides:
+        assert s.role_overrides[role] == RoleOverride(provider=None, model=None, local_model=None)
+
+
+def test_settings_role_overrides_env_parses_per_role() -> None:
+    s = Settings.from_env(
+        {
+            "ADVENTURE_MODEL_CURATE": "fast-model",
+            "ADVENTURE_PROVIDER_CURATE": "anthropic",
+            "ADVENTURE_LOCAL_MODEL_CURATE": "local-fallback",
+            "ADVENTURE_MODEL_JUDGE": "judge-model",
+        }
+    )
+    assert s.role_overrides["curate"] == RoleOverride(
+        provider="anthropic", model="fast-model", local_model="local-fallback"
+    )
+    assert s.role_overrides["judge"] == RoleOverride(
+        provider=None, model="judge-model", local_model=None
+    )
+    # Unrelated roles stay fully unset — no cross-role leakage at the parse layer.
+    assert s.role_overrides["extract"] == RoleOverride()
+    assert s.role_overrides["normalize"] == RoleOverride()
+    # tiers dict is unaffected by role overrides (still the existing SSOT for tier defaults).
+    assert s.tiers["judgment"] == TierConfig(provider="local", model="", local_model="")
 
 
 def test_settings_secrets_are_hidden_from_repr() -> None:

@@ -1,6 +1,6 @@
 # Adventure Planner — Design Workplan (Working Agenda)
 
-*Companion to the Decision Log. Last updated June 18, 2026.*
+*Companion to the Decision Log. Last updated July 13, 2026.*
 
 **Roles of the two docs.** The **Decision Log** = system-of-record for *what we've decided* (state). This **Workplan** = system-of-record for *the ordered path through what's still open* (process). We work the stages below one at a time; each session's outputs get written back into the Log.
 

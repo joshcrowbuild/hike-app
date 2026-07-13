@@ -73,6 +73,20 @@ class TierConfig:
 
 
 @dataclass(frozen=True)
+class RoleOverride:
+    """Optional per-role knobs layered on top of a tier's `TierConfig` (Epic 040
+    operator-lever seam). Each field is `None` when unset, meaning "defer to the
+    role's tier" — `registry.resolve()` computes provider/model/local_model per
+    field independently (role override wins only for the field actually set), so
+    e.g. `ADVENTURE_MODEL_CURATE` can pin `curate` to a cheaper model without
+    touching `judge`'s (tier-shared) model or either role's provider."""
+
+    provider: str | None = None
+    model: str | None = None
+    local_model: str | None = None
+
+
+@dataclass(frozen=True)
 class Settings:
     """Resolved runtime settings. Build with `Settings.from_env()`."""
 
@@ -86,6 +100,10 @@ class Settings:
     local_openai_base_url: str
     anthropic_api_key: str | None = field(repr=False)
     tiers: Mapping[str, TierConfig] = field()
+    # Per-role overrides (Epic 040 operator-lever seam — `registry.resolve()`
+    # reads these). Additive on top of `tiers`; a role absent or with all-None
+    # fields resolves exactly as it did before this seam existed.
+    role_overrides: Mapping[str, RoleOverride] = field()
 
     # Geographic scope (Stage 3: polygon-bounded region).
     region: str = field()
@@ -242,6 +260,23 @@ class Settings:
                 local_model=e.get(f"ADVENTURE_LOCAL_MODEL_{up}", ""),
             )
 
+        def role_override(name: str) -> RoleOverride:
+            # `None` (not "") when unset, so `registry.resolve()` can tell "no
+            # override" apart from "explicitly overridden to blank" and fall
+            # through to the tier value per field (Epic 040 operator-lever seam).
+            up = name.upper()
+            return RoleOverride(
+                provider=e.get(f"ADVENTURE_PROVIDER_{up}"),
+                model=e.get(f"ADVENTURE_MODEL_{up}"),
+                local_model=e.get(f"ADVENTURE_LOCAL_MODEL_{up}"),
+            )
+
+        # Kept in sync with `ROLE_TIER` in orchestration/providers/registry.py by
+        # convention (config.py can't import registry — registry imports config).
+        role_overrides = {
+            role: role_override(role) for role in ("extract", "normalize", "judge", "curate")
+        }
+
         watch_raw = e.get("ADVENTURE_WATCH_ADAPTERS", "")
         watch_adapters = tuple(s.strip() for s in watch_raw.split(",") if s.strip())
 
@@ -266,6 +301,7 @@ class Settings:
             local_openai_base_url=e.get("LOCAL_OPENAI_BASE_URL", "http://localhost:11434/v1"),
             anthropic_api_key=e.get("ANTHROPIC_API_KEY") or None,
             tiers={"mechanical": tier("mechanical"), "judgment": tier("judgment")},
+            role_overrides=role_overrides,
             region=region,
             dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
             cors_allow_origins=cors_allow_origins,

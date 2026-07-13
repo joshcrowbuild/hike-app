@@ -119,19 +119,21 @@ The cache stays keyed on inputs storing `CachedPlan` below presentation — this
 
 ## Phase-1 latency budget (the <1.5s claim, attributed)
 
-intent parse ~0.3s · scout + maps-fields graph reads ~0.3–0.5s (B4 discipline: independent reads overlap) · Valhalla prefilter ~0.2–0.3s · taste rank ~0.5–0.8s **with the A2 fast-curate model** (`ADVENTURE_MODEL_CURATE` — config-only companion lever, quality spot-check gate per the ladder) or ~1.5–2.5s without. **The <1.5s p75 target assumes A2 lands with (or before) this epic; without A2 the honest phase-1 target is <2.5s.** Record the measured verdict per the Wave-1 protocol either way. The maps read (`_fetch_maps_by_canonical`) attaches to phase-1 cards — this is where B4's skipped maps-overlap is naturally absorbed (the read overlaps the conditions fan-out by construction: it happens while phase 2 is in flight).
+intent parse ~0.3s · scout + maps-fields graph reads ~0.3–0.5s (B4 discipline: independent reads overlap) · Valhalla prefilter ~0.2–0.3s · taste rank ~0.5–0.8s **with the A2 fast-curate model** (`ADVENTURE_MODEL_CURATE` — the per-role override seam in `orchestration/providers/registry.py`'s `resolve()`, quality spot-check gate per the ladder) or ~1.5–2.5s without. **The <1.5s p75 target assumes A2 lands with (or before) this epic; without A2 the honest phase-1 target is <2.5s.** Record the measured verdict per the Wave-1 protocol either way. The maps read (`_fetch_maps_by_canonical`) attaches to phase-1 cards — this is where B4's skipped maps-overlap is naturally absorbed (the read overlaps the conditions fan-out by construction: it happens while phase 2 is in flight).
 
 ## Operator levers
 
 - `ADVENTURE_TWO_PHASE_ENABLED` (server kill switch, D6) · `VITE_TWO_PHASE` (client, build-time)
-- `ADVENTURE_MODEL_CURATE` — the A2 fast judge, the phase-1 budget's biggest single lever
+- `ADVENTURE_MODEL_CURATE` — the A2 fast judge, the phase-1 budget's biggest single lever. This seam now exists: `orchestration/providers/registry.py`'s `resolve()` layers optional per-role env overrides (`ADVENTURE_{PROVIDER,MODEL,LOCAL_MODEL}_<ROLE>`) on top of each role's tier config, field by field, so curate can be pinned to a cheaper/faster model independent of judge (sibling knobs: `ADVENTURE_PROVIDER_CURATE`, `ADVENTURE_LOCAL_MODEL_CURATE`; symmetric knobs also exist for extract/normalize/judge).
 - Existing: `ADVENTURE_ANON_FEED_CACHE_TTL_S`, `ADVENTURE_FEED_WARM_INTERVAL_S`, `ADVENTURE_LIVE_PROBE_MAX_WORKERS` — all compose per D7
 
 ## Definition of Done
 
 - [ ] All ACs covered by at least one passing test; `make check` + `make eval-replay` green (S4 criteria active)
 - [ ] Frontend: `cd frontend && npm ci && npm run test && npm run build` green (manual gate — no frontend CI)
-- [ ] Post-merge measured verdict vs the SLO table (fresh-key <1.5s-to-cards p75 with A2, cold-everything <8s; browser time-to-cards, same protocol as Wave 1), recorded in this file
-      - _Interim (2026-07-13, Steward post-train probe, single-shot `/plan` — not the two-phase browser path): cold ≈19–21s (st-john-usvi 20.7s, shenandoah 19.2s), warm cache-hit ≈1.2s. Cold single-shot still misses the <8s row; the two-phase frontend path + A2 fast-curate are the levers owed to close it. Row stays open._
+- [x] Post-merge measured verdict vs the SLO table (fresh-key <1.5s-to-cards p75 with A2, cold-everything <8s; browser time-to-cards, same protocol as Wave 1), recorded in this file
+      - _Interim (2026-07-13, Steward post-train probe, single-shot `/plan` — not the two-phase browser path): cold ≈19–21s (st-john-usvi 20.7s, shenandoah 19.2s), warm cache-hit ≈1.2s — missed the <8s row._
+      - _Root cause of the miss (2026-07-13 PO investigation, not this epic's code): every probe built a fresh TLS client (~350 ms GIL-serialized CPU each; PR #185 fixed it with a process-wide shared `HTTPTransport`) **and the prod instance was in fact Render Free (0.1 vCPU) — the roadmap's "always-on paid" claim was stale.** The fan-out was CPU-bound at ~4 probes/s regardless of `probe_max_workers`._
+      - _**VERDICT (2026-07-13, post #185 + Render Starter upgrade + judgment-tier fast curate `claude-haiku-4-5-20251001`; API-side timings, fresh origins + novel queries so feed and probe caches were cold): cold single-shot `/plan` k=10 = 5.9–6.6 s (douthat 6.6, great-falls 5.9) — the <8 s row PASSES. `phase:"cards"` to-cards = 2.6 s vs the <2.5 s no-A2 target — at target within noise; the per-role `ADVENTURE_MODEL_CURATE` seam (in flight) lets the eval judge return to Sonnet. Per-candidate scaling collapsed ~1.35 s/pt → ~0.35 s/pt. Ranking spot-check under Haiku curate: Front Royal top-10 identical to the known-good set. The strict <1.5 s p75 browser-protocol row waits on the A2 seam + a browser-side pass — tracked in the roadmap.**_
 - [ ] Merge-sensitive seams called out per PR: `orchestration/engine.py`, `api/app.py` + `api/schemas.py`, `frontend/src/data/PlannerProvider.tsx`
 - [ ] Epic index row synced (`python scripts/gen_epic_index.py --check` clean)
