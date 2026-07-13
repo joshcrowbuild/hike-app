@@ -33,6 +33,10 @@ _EXPECTED_SCENARIOS = {
     "adapter-outage",
     "sparse-cold",
     "regional-alert-verdict-consistency",
+    # GLM red-team fixes (2026-07): both joined the blocking gate when their fixes
+    # landed — losing either would silently reopen a confirmed finding.
+    "closure-alert-no-warning",
+    "stale-degraded-untestable",
 }
 
 
@@ -178,6 +182,68 @@ def test_unknown_condition_kind_reds_fidelity_not_a_traceback() -> None:
     result = evaluate_scenario(tampered, n=1)
     assert not result.passed
     assert any("wether" in v for v in result.failures.get("fact_fidelity", []))
+
+
+# ── GLM red-team F1/F2 (2026-07): the fixed findings hold AND bite ────────────
+
+
+def test_closure_alert_rides_every_surfaced_card_as_a_warning() -> None:
+    # F1 (HIGH): a verified NPS Closure alert is a prominent, source-stamped
+    # CardWarning on every surfaced card — the frontend's deriveVerdict reads
+    # warnings kind-agnostically, so the headline is "Caution", never "Good to go"
+    # beside an active closure.
+    batch = run_scenario(_by_name("closure-alert-no-warning"))
+    assert batch.trails, "the closure scenario must surface cards"
+    for trail in batch.trails:
+        hits = [w for w in trail.verdict.warnings if "Old Rag Area Closure" in w.text]
+        assert hits, [w.text for w in trail.verdict.warnings]
+        assert all(w.kind == "closures" and w.source for w in hits)
+    # Never a block and never a set-aside: safety is presentation (rule #2).
+    assert not batch.set_aside
+
+
+def test_stale_scenario_actually_exercises_the_stale_arm() -> None:
+    # F2 (MEDIUM): with the scenario's pinned render clock (clock.json), the six-
+    # state vocabulary's stale arm is finally exercised through the REAL feed_card
+    # path — the same production mechanism a cache re-render uses (Epic 039 S2).
+    result = evaluate_scenario(_by_name("stale-degraded-untestable"), n=1)
+    assert result.passed, result.failures
+
+
+def test_gutted_stale_horizon_is_caught(monkeypatch) -> None:
+    # The falsifiability half of F2: the exact bug class the finding named — a
+    # horizon value silently inflated (or the comparison inverted) — must red the
+    # gate now that the stale arm has coverage.
+    import orchestration.engine as engine
+
+    monkeypatch.setattr(
+        engine, "_STALE_HORIZON_S", {k: float("inf") for k in engine._STALE_HORIZON_S}
+    )
+    result = evaluate_scenario(_by_name("stale-degraded-untestable"), n=1)
+    assert not result.passed
+    assert "condition_states" in result.failures
+
+
+def test_clock_pin_never_leaks_into_unpinned_scenarios() -> None:
+    # The clock seam is harness-injected per scenario: a scenario without clock.json
+    # keeps real wall-clock rendering (age ~0 — 'present', exactly as before).
+    scenario = _by_name("nominal-old-rag")
+    assert scenario.render_age_s == 0.0
+    result = evaluate_scenario(scenario, n=1)
+    assert result.passed
+
+
+def test_malformed_clock_is_rejected_loudly(tmp_path) -> None:
+    # Fail loudly at the boundary: a negative / non-numeric render_age_s aborts the
+    # scenario load rather than quietly rendering at some accidental time.
+    import shutil
+
+    src = SCENARIOS_DIR / "stale-degraded-untestable"
+    dst = tmp_path / "bad-clock"
+    shutil.copytree(src, dst)
+    (dst / "clock.json").write_text(json.dumps({"render_age_s": -5}), encoding="utf-8")
+    with pytest.raises(ValueError, match="render_age_s"):
+        load_scenario(dst)
 
 
 # ── Epic 040 S4: the two-phase criteria hold AND bite ─────────────────────────

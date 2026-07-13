@@ -133,6 +133,97 @@ def test_fire_hotspots_warn_not_block() -> None:
     assert any("3 active-fire" in w.text for w in v.warnings)
 
 
+def _closure_fact(alerts: list[Any], *, park: str | None = "Shenandoah National Park") -> Any:
+    value: dict[str, Any] = {"alerts": alerts, "count": len(alerts)}
+    if park is not None:
+        value["park"] = park
+        value["park_code"] = "shen"
+    return VerifiedFact(value=value, source="NPS api.nps.gov", fetched_at=_NOW)
+
+
+def test_closure_alert_warns_instead_of_blocking() -> None:
+    # GLM red-team F1 (HIGH): a verified NPS Closure alert must become a prominent
+    # CardWarning — never a block, never a ranking penalty (2026-07-01 decision,
+    # rule #2). Before this branch existed the closure rode only as a condition
+    # line while the verdict said "Good to go" beside it.
+    fact = _closure_fact([{"title": "Old Rag Area Closure", "category": "Closure"}])
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    assert not v.blocked
+    assert not v.blocks
+    assert any("closure alert: Old Rag Area Closure" in w.text for w in v.warnings)
+
+
+def test_closure_warning_is_source_stamped_and_park_scoped() -> None:
+    # Mirrors the weather-warning contract: cause + SHORT provider name + observed-at.
+    # The NPS fact is park-level (nearest unit within 50 mi, not trail-specific), so
+    # the park name rides the text — the scope stays legible on the card itself.
+    fact = _closure_fact([{"title": "Old Rag Area Closure", "category": "Closure"}])
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    (warning,) = v.warnings
+    assert warning.kind == "closures"
+    assert warning.source == "NPS"
+    assert warning.observed_at == _NOW
+    assert "Shenandoah National Park" in warning.text
+
+
+def test_danger_alert_warns_with_its_category() -> None:
+    # The adapter keeps only the Closure/Danger categories; both classes warn, each
+    # naming its own category so a danger alert never masquerades as a closure.
+    fact = _closure_fact([{"title": "Bear Activity", "category": "Danger"}])
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    assert any("danger alert: Bear Activity" in w.text for w in v.warnings)
+
+
+def test_zero_closure_alerts_stay_silent() -> None:
+    # A checked-clear closures fact (count 0) is the CDP-02 no_hazard state — calm
+    # silence, never a warning.
+    v = evaluate_guardrails({ConditionKind.closures: _closure_fact([])})
+    assert not v.blocked
+    assert not v.warnings
+
+
+def test_no_park_in_range_closures_fact_stays_silent() -> None:
+    # The sourced "no NPS unit within the radius" answer (no_data) carries no alerts
+    # key at all — no warning, no block.
+    fact = VerifiedFact(
+        value={"in_range": False, "radius_miles": 50.0},
+        source="NPS api.nps.gov",
+        fetched_at=_NOW,
+    )
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    assert not v.blocked
+    assert not v.warnings
+
+
+def test_duplicate_closure_alerts_collapse_to_one_warning() -> None:
+    # Same discipline as the NWS dedupe: a card never wears the same warning twice.
+    fact = _closure_fact(
+        [
+            {"title": "Old Rag Area Closure", "category": "Closure"},
+            {"title": "Old Rag Area Closure", "category": "Closure"},
+        ]
+    )
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    assert len(v.warnings) == 1
+
+
+def test_untitled_closure_alert_still_warns() -> None:
+    # A count>0 fact must never quietly produce zero warnings — a missing/blank
+    # title degrades to a generic pointer, never to silence (rule #1's spirit).
+    fact = _closure_fact([{"title": None, "category": "Closure"}])
+    v = evaluate_guardrails({ConditionKind.closures: fact})
+    assert len(v.warnings) == 1
+    assert "closure alert" in v.warnings[0].text
+
+
+def test_malformed_closure_alerts_never_crash() -> None:
+    # Defensive at the boundary: non-dict entries and a non-list alerts value no-op.
+    v = evaluate_guardrails({ConditionKind.closures: _closure_fact(["junk", 42])})
+    assert not v.blocked
+    bad = VerifiedFact(value={"alerts": "junk", "count": 1}, source="NPS", fetched_at=_NOW)
+    assert not evaluate_guardrails({ConditionKind.closures: bad}).blocked
+
+
 def test_clean_conditions_pass() -> None:
     v = evaluate_guardrails({ConditionKind.weather: _fact({"active_alerts": []})})
     assert not v.blocked

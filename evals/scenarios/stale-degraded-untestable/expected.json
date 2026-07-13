@@ -2,9 +2,7 @@
   "meta": {
     "ingest_version": "fixture-2026-07",
     "review_by": "2026-10-13",
-    "note": "GLM adversarial red-team finding F2 (MEDIUM): the stale_degraded state is untestable in the replay gate. The cassette player creates adapters via probe(point) which calls fetch() without `now`, so fetched_at = datetime.now(utc). check_condition_states calls feed_card(trail) without `now`, so render_now is also current time. age_s is always ~0, always less than any _STALE_HORIZON_S. Pinning 'stale_degraded' here FAILS by design — the staleness classification logic (engine.py:643-644) has zero replay coverage. A bug in the horizon values or comparison operator would go undetected.",
-    "skip": true,
-    "skip_reason": "F2 MEDIUM: stale_degraded untestable in replay — condition_states fails by design (GLM red-team 2026-07-13)"
+    "note": "GLM adversarial red-team finding F2 (MEDIUM), FIXED 2026-07-13: the replay gate can now pin a render clock (clock.json render_age_s), injected harness-side through feed_card's existing production `now` parameter \u2014 the same seam a cache re-render uses (Epic 039 S2); production code keeps real wall-clock time. With a 4h pinned age over the 2h weather horizon, the weather fact classifies 'stale_degraded' (source + checked_at still attached \u2014 an answered state), while the fire checked-clear stays 'no_hazard' (age-independent). This is the six-state vocabulary's stale arm gate-defended for the first time: a horizon-value or comparison-operator bug in engine._condition_summary now reds this scenario."
   },
   "hard": {
     "min_cards": 5,

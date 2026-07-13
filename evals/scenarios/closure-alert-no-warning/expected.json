@@ -2,9 +2,7 @@
   "meta": {
     "ingest_version": "fixture-2026-07",
     "review_by": "2026-10-13",
-    "note": "GLM adversarial red-team finding F1 (HIGH): NPS closure/danger alerts are NOT routed to CardWarning by evaluate_guardrails (curator.py). The adapter produces a sourced fact with count=1, the engine classifies it 'present', and a condition line renders ('1 NPS closure/danger alert(s) — Shenandoah National Park'). But no warning is generated, so the frontend verdict says 'Good to go' beside an active closure. This scenario pins the warning that SHOULD exist — it FAILS on purpose to document the hole.",
-    "skip": true,
-    "skip_reason": "F1 HIGH: closures not routed to CardWarning — expected_warnings fails by design (GLM red-team 2026-07-13)"
+    "note": "GLM adversarial red-team finding F1 (HIGH), FIXED 2026-07-13: evaluate_guardrails (curator.py) now routes a verified NPS Closure/Danger alert to a CardWarning (kind 'closures', short provider source, fetched_at, park-scoped text) \u2014 never a block, never a ranking penalty (rule #2). This scenario pins the warning permanently: the adapter returns one Closure-category alert for Shenandoah NP, the condition line renders AND the card wears 'closure alert: Old Rag Area Closure \u2014 Shenandoah National Park', so the frontend verdict derives 'Caution', never 'Good to go' beside an active closure."
   },
   "hard": {
     "min_cards": 5,
