@@ -44,7 +44,10 @@ export function Sheet({ isOpen, onClose, title, onBack, children }: SheetProps) 
               Done
             </button>
           </div>
-          {children}
+          {/* The ONLY scrollable region (C1): content taller than the capped
+              sheet scrolls here while the Back/Done header above stays pinned
+              and reachable. */}
+          <div className={styles.body}>{children}</div>
         </Dialog>
       </Modal>
     </ModalOverlay>
