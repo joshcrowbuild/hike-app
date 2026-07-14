@@ -18,7 +18,8 @@ import pytest
 
 from graph import queries
 from graph.client import ScopedSession
-from graph.queries import OWNED_LABELS, UnscopedWriteError
+from graph.queries import OWNED_LABELS, UnscopedReadError, UnscopedWriteError
+from orchestration import context_assembly
 
 # ── Existing read-builder coverage (pre-Epic-011) ────────────────────────────
 
@@ -200,6 +201,179 @@ def test_s1_ac6_free_owner_param_does_not_satisfy_guard() -> None:
     """AC-1.6: binding owner_id to a free $owner (≠ $viewer_id) fails the guard."""
     with pytest.raises(UnscopedWriteError):
         queries.assert_scoped_write("MERGE (e:Episode {episode_id: $eid}) SET e.owner_id = $owner")
+
+
+# ── The owned-READ guard (assert_scoped_read) — the read-side mirror (M10) ────
+#
+# `run_write` refuses an owned WRITE missing the owner-scope clause; `run` must
+# likewise refuse an owned READ missing a viewer-scope token, on the WHOLE
+# assembled query. Before M10, the static lint (#201) checked physical Cypher
+# *fragments*, so a builder that concatenated the owned `MATCH` and its `WHERE
+# owner_scope(...)` into separate strings slipped past — these tests assert on
+# the joined query the seam actually executes, so concatenation cannot fool it.
+# The point is falsifiability: the guard must BITE on an unscoped read, pass a
+# scoped one, and honor the explicit bypass.
+
+
+def _capture_read_cypher(call) -> str:
+    """Run a context_assembly ``fetch_*`` with a capturing runner and return the
+    exact Cypher it issued — so the guard is tested against the REAL production
+    read string, not a hand-copied one that could drift."""
+    captured: list[str] = []
+
+    def runner(query: tuple[str, dict]):
+        captured.append(query[0])
+        return []
+
+    call(runner)
+    assert len(captured) == 1, "expected the fetch to issue exactly one read"
+    return captured[0]
+
+
+def test_read_guard_unscoped_owned_read_raises() -> None:
+    """The guard BITES: an owned-label MATCH with no viewer-scope token raises."""
+    with pytest.raises(UnscopedReadError):
+        queries.assert_scoped_read("MATCH (b:Belief) RETURN b.value AS value")
+    with pytest.raises(UnscopedReadError):
+        queries.assert_scoped_read("MATCH (pp:PhysicalProfile) RETURN pp.owner_id AS owner_id")
+
+
+def test_read_guard_viewer_key_read_passes() -> None:
+    """A read keyed `{owner_id: $viewer_id}` passes (belief_update's profile read)."""
+    cypher, _ = queries.physical_profile_pace_read()
+    queries.assert_scoped_read(cypher)  # must not raise
+
+
+def test_read_guard_where_owner_id_read_passes() -> None:
+    """A `WHERE e.owner_id = $viewer_id` read passes (outcome's ownership pre-check)."""
+    queries.assert_scoped_read(
+        "MATCH (e:Episode {episode_id: $eid})\n"
+        "WHERE e.owner_id = $viewer_id\n"
+        "RETURN e.episode_id AS episode_id"
+    )
+
+
+def test_read_guard_owner_scope_granted_read_passes() -> None:
+    """A read carrying owner_scope (both $viewer_id AND $granted_ids) passes — the
+    genuine cross-owner grant read (episode_fields_read)."""
+    cypher, _ = queries.episode_fields_read("ep:x")
+    assert "$granted_ids" in cypher  # owner_scope admits granted members
+    queries.assert_scoped_read(cypher)  # must not raise
+
+
+def test_read_guard_granted_ids_only_read_passes() -> None:
+    """A read of ONLY granted members (`owner_id IN $granted_ids`, never self) is a
+    valid cross-owner-but-scoped read — $granted_ids alone satisfies the guard."""
+    queries.assert_scoped_read(
+        "MATCH (b:Belief) WHERE b.owner_id IN $granted_ids RETURN b.value AS value"
+    )
+
+
+def test_read_guard_most_recent_episode_created_at_passes() -> None:
+    """The watch_sync watermark read (M10 fix: was a free $owner param outside
+    graph.queries, invisible to the static lint since scripts/ isn't scanned, and
+    would have raised under the runtime guard) is keyed `owner_id: $viewer_id` and
+    passes."""
+    cypher, _ = queries.most_recent_episode_created_at_read()
+    assert "$viewer_id" in cypher
+    queries.assert_scoped_read(cypher)  # must not raise
+
+
+def test_read_guard_world_read_passes_untouched() -> None:
+    """World-only reads (no owned label) pass regardless of scope tokens."""
+    for cypher, _ in (
+        queries.trail_detail("ct:old-rag-loop"),
+        queries.trail_source_corroboration(["ct:x"]),
+        queries.candidate_trails_near(38.5, -78.4, 40_000, 5),
+    ):
+        assert "$viewer_id" not in cypher  # world reads carry no viewer scope…
+        queries.assert_scoped_read(cypher)  # …and the guard leaves them untouched
+
+
+def test_read_guard_covers_every_production_owned_read() -> None:
+    """Every owned read the app actually issues passes the guard: the three builders
+    plus the three inline context_assembly reads (Belief / PhysicalProfile / Episode
+    via the {member_id: $viewer_id} identity anchor) and the outcome ownership
+    pre-check. If any owned read forgot its scope token this reds — the coverage the
+    hollow fragment lint never delivered."""
+    owned_reads = [
+        queries.physical_profile_pace_read()[0],
+        queries.episode_fields_read("ep:x")[0],
+        queries.most_recent_episode_created_at_read()[0],
+        _capture_read_cypher(lambda r: context_assembly.fetch_beliefs("mem:josh", r)),
+        _capture_read_cypher(lambda r: context_assembly.fetch_profile("mem:josh", r)),
+        _capture_read_cypher(
+            lambda r: context_assembly.fetch_relevant_episodes("mem:josh", ["ct:x"], r)
+        ),
+        # outcome.py record_outcome ownership pre-check (kept in sync with the source)
+        "MATCH (e:Episode {episode_id: $eid})\n"
+        "WHERE e.owner_id = $viewer_id\n"
+        "RETURN e.episode_id AS episode_id",
+    ]
+    for cypher in owned_reads:
+        assert any(re.search(rf":\s*{label}\b", cypher) for label in OWNED_LABELS), (
+            "expected an owned-label read (else the test is tautological)"
+        )
+        queries.assert_scoped_read(cypher)  # must not raise
+
+
+# ── The read guard at the ScopedSession seam (run) — fail closed + bypass ─────
+
+
+def test_read_guard_run_rejects_unscoped_owned_read_before_runner() -> None:
+    """ScopedSession.run raises UnscopedReadError BEFORE the runner is invoked — fail
+    closed, exactly as run_write does for an unscoped write."""
+    session, calls = _recording_session("mem:josh", [])
+    with pytest.raises(UnscopedReadError):
+        session.run(("MATCH (b:Belief) RETURN b.value AS value", {}))
+    assert calls == []  # runner never reached
+
+
+def test_read_guard_run_passes_viewer_scoped_read() -> None:
+    """A viewer-scoped owned read reaches the runner and gets the scope merged — the
+    guard does not over-block the legitimate personal-overlay read path."""
+    session, calls = _recording_session("mem:josh", [])
+    session.run(queries.physical_profile_pace_read())
+    assert len(calls) == 1
+    assert calls[0][1]["viewer_id"] == "mem:josh"  # scope merged as before the guard
+
+
+def test_read_guard_explicit_bypass_allows_unscoped_owned_read() -> None:
+    """The explicit, named bypass lets an intentional cross-owner owned read through —
+    the escape hatch for a legitimate owner-scoped aggregate / verification read. It is
+    a keyword argument (visible in review), never a silent `# noqa`."""
+    session, calls = _recording_session("mem:josh", [])
+    session.run(
+        ("MATCH (pp:PhysicalProfile) RETURN pp.owner_id AS owner_id", {}),
+        allow_unscoped_owned_read=True,
+    )
+    assert len(calls) == 1  # runner reached — the bypass is honored
+
+
+def test_read_guard_leaves_pentest_safe_write_path_unaffected() -> None:
+    """The pentest-confirmed-safe owned WRITES go through run_write (guarded by
+    assert_scoped_write), never run — the read guard cannot fire on them. And even fed
+    to the read guard directly they pass (they carry owner_id: $viewer_id), so adding
+    the read guard cannot break the write path the pentest proved safe."""
+    session, calls = _recording_session("mem:josh", [])
+    ep_query = queries.upsert_episode(
+        "ep:mem:josh:1",
+        watch_activity_id="g:1",
+        source="fit_file",
+        distance_m=1.0,
+        ascent_m=1.0,
+        descent_m=1.0,
+        moving_min=1.0,
+        duration_min=1.0,
+        avg_heart_rate=1,
+        pace_on_grade=1.0,
+        now="t",
+    )
+    session.run_write(ep_query)  # write path: passes assert_scoped_write, unaffected
+    assert len(calls) == 1
+    # the read guard, applied to the same write Cypher, also passes (carries $viewer_id)
+    queries.assert_scoped_read(ep_query[0])
+    queries.assert_scoped_read(queries.wire_episode_has_outcome("ep:mem:josh:1")[0])
 
 
 # ── S3 — every builder is pure and passes the guard ──────────────────────────

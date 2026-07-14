@@ -28,8 +28,21 @@ from ingestion.sources.base import EnrichmentFact, Region
 
 
 def _runner(sess: Any) -> Any:
+    """Adapt a `ScopedSession` to ingestion's `Runner` interface (`(cypher, params) ->
+    Any`), the same shape `graph.load.make_runner` gives a raw `neo4j.Session` in
+    production. In production, ingestion runs over `gc._ensure_driver().session()`
+    directly (see `ingestion/pipeline.py`) — a raw driver session with no owner-scope
+    guard at all — never through `ScopedSession`; this test-only wrapper exists purely
+    so the hermetic + live-Neo4j ingestion tests can share the `clean_graph` fixture.
+    Ingestion Cypher is world-label by construction, with one deliberate exception:
+    `_OWNED_REF_PRED` (`graph.load`) crosses into `:Episode` on purpose, to check
+    whether ANY owner still references a world trail before pruning it — a structural
+    safety check, not a viewer-scoped personal read. So every statement ingestion
+    issues opts through the explicit bypass here, matching what "no owner-scope guard
+    at all" means for the real raw-driver runner."""
+
     def run(cypher: str, params: dict) -> Any:
-        return sess.run((cypher, params))
+        return sess.run((cypher, params), allow_unscoped_owned_read=True)
 
     return run
 
@@ -186,11 +199,18 @@ def test_personal_nodes_survive_prune(clean_graph):
     _seed_trails(runner, region, f"{region}-v1", 20)
     pre = count_region_trails(runner, region_id=region)
     _seed_trails(runner, region, f"{region}-v2", 19)
+    # Seeding a DIFFERENT owner's ("mem:test") personal nodes than the session's own
+    # viewer ("ingest"), to prove prune leaves personal-overlay nodes alone regardless
+    # of whose they are. A hardcoded literal owner_id can never satisfy run_write's
+    # $viewer_id-pinned guard by construction, so this deliberately goes through `run`
+    # (the read choke point) with the explicit bypass — an intentional, review-visible
+    # non-viewer write path for test fixtures, never a silent lint-escape comment.
     sess.run(
         (
             "MERGE (pp:PhysicalProfile {owner_id: 'mem:test'}) SET pp.pace_on_grade = 12.0",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
     sess.run(
         (
@@ -198,17 +218,21 @@ def test_personal_nodes_survive_prune(clean_graph):
             "MERGE (e:Episode {episode_id: 'ep:test', owner_id: 'mem:test'}) "
             "MERGE (p)-[:DID]->(e)",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
 
     outcome = prune_stale_trails(runner, f"{region}-v2", region_id=region, pre_load_count=pre)
 
     assert outcome.pruned is True
+    # Maintenance verification read: scans owned labels across all owners to confirm
+    # the prune left the personal overlay untouched — an intentional unscoped owned read.
     survivors = sess.run(
         (
             "MATCH (n) WHERE n:PhysicalProfile OR n:Person OR n:Episode RETURN labels(n) AS labels",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
     assert len(survivors) == 3  # PhysicalProfile + Person + Episode all untouched
 
@@ -226,6 +250,10 @@ def test_owned_referenced_trail_survives_prune(clean_graph):
     pre = count_region_trails(runner, region_id=region)
     _seed_trails(runner, region, f"{region}-v2", 19)  # healthy re-ingest
     stale_cid = f"ct:{region}-v1:0"  # one now-stale v1 trail is personally referenced
+    # Seeding a test owner ("mem:test") distinct from the session's own viewer
+    # ("ingest") — a hardcoded literal owner_id can never satisfy run_write's
+    # $viewer_id-pinned guard, so this intentionally goes through `run` with the
+    # explicit bypass (never a silent lint-escape comment).
     sess.run(
         (
             "MATCH (t:CanonicalTrail {canonical_id: $cid}) "
@@ -233,7 +261,8 @@ def test_owned_referenced_trail_survives_prune(clean_graph):
             "MERGE (e:Episode {episode_id: 'ep:test', owner_id: 'mem:test'}) "
             "MERGE (p)-[:DID]->(e) MERGE (e)-[:ON]->(t)",
             {"cid": stale_cid},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
 
     outcome = prune_stale_trails(runner, f"{region}-v2", region_id=region, pre_load_count=pre)
@@ -250,12 +279,16 @@ def test_owned_referenced_trail_survives_prune(clean_graph):
     )
     assert [r["cid"] for r in survivor] == [stale_cid]
     # The read path still resolves Episode -> its world trail (no severed ref → no 500).
+    # Maintenance verification read across the (test-seeded) Episode label; unscoped
+    # by intent (there is no viewer identity in this check), so it opts through the
+    # explicit bypass.
     linked = sess.run(
         (
             "MATCH (:Episode {episode_id: 'ep:test'})-[:ON]->(t:CanonicalTrail) "
             "RETURN t.canonical_id AS cid",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
     assert [r["cid"] for r in linked] == [stale_cid]
 
@@ -557,6 +590,8 @@ def test_run_marker_owned_referenced_trail_survives(clean_graph):
 
     run_a = new_ingest_run_id(region)
     _seed_stamped_trails(runner, region, 10, run_id=run_a)
+    # Seeding a test owner ("mem:test") via a hardcoded literal owner_id, which can
+    # never satisfy run_write's $viewer_id-pinned guard — intentional bypass, as above.
     sess.run(
         (
             "MATCH (t:CanonicalTrail {canonical_id: 'ct:osm:trail-9'}) "
@@ -564,7 +599,8 @@ def test_run_marker_owned_referenced_trail_survives(clean_graph):
             "MERGE (e:Episode {episode_id: 'ep:test', owner_id: 'mem:test'}) "
             "MERGE (p)-[:DID]->(e) MERGE (e)-[:ON]->(t)",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
 
     run_b = new_ingest_run_id(region)
@@ -575,12 +611,15 @@ def test_run_marker_owned_referenced_trail_survives(clean_graph):
     assert outcome.pruned is True
     assert outcome.protected == 1
     assert _count_trails(sess) == 10  # the referenced trail was kept
+    # Maintenance verification read across the test-seeded Episode label; unscoped by
+    # intent, so it opts through the explicit bypass.
     linked = sess.run(
         (
             "MATCH (:Episode {episode_id: 'ep:test'})-[:ON]->(t:CanonicalTrail) "
             "RETURN t.canonical_id AS cid",
             {},
-        )
+        ),
+        allow_unscoped_owned_read=True,
     )
     assert [r["cid"] for r in linked] == ["ct:osm:trail-9"]
 

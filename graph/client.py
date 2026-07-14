@@ -3,13 +3,17 @@
 Every read **and write** of an owned node goes through a `ScopedSession`, which
 injects the viewer's identity (`$viewer_id` / `$granted_ids`) into every
 statement's params. `run` is the read choke point; `run_write` is the write
-choke point (Epic 011) — it additionally *refuses* an owned-label write that
-carries no owner-scope clause, so no writer can create or overwrite another
-owner's node by forgetting the clause. Combined with the `graph.queries`
-builders — the only sanctioned place to author Cypher touching owned nodes —
-this is the single seam that guarantees no statement reads or writes ungranted
-nodes. Phase 0 is single-user, but the seam exists now so it can't be
-retrofitted later.
+choke point (Epic 011). Both *refuse* an owned-label statement that carries no
+viewer scope: `run_write` rejects a write missing the owner-scope clause, and
+`run` rejects a read missing the viewer-scope token — each on the whole assembled
+query, so a builder that concatenates the owned `MATCH` and its scope clause into
+separate fragments cannot slip past (the gap that made the physical-fragment M9
+lint hollow before M10 made it join-aware). No statement can therefore read or
+write another owner's node by forgetting the clause. Combined with the
+`graph.queries` builders — the only sanctioned place to author Cypher touching
+owned nodes — this is the single seam that guarantees no statement reads or
+writes ungranted nodes. Phase 0 is single-user, but the seam exists now so it
+can't be retrofitted later.
 
 `viewer_id` is **unauthenticated** today (gap-audit C3): `run_write` scopes to
 whatever viewer it is handed; a forged `viewer_id` is still a forged write. This
@@ -30,7 +34,7 @@ from typing import Any
 
 import certifi
 
-from graph.queries import assert_scoped_write
+from graph.queries import assert_scoped_read, assert_scoped_write
 
 # Aura is reached over neo4j+s:// (strict TLS). Python's ssl module verifies the
 # server certificate against the OS trust store, which on some hosts (incl.
@@ -114,8 +118,25 @@ class ScopedSession:
         # only one fake runner keeps today's behavior: `run_write` falls back to it.
         self._write_runner = write_runner or runner
 
-    def run(self, query: tuple[str, dict[str, Any]]) -> Rows:
+    def run(
+        self,
+        query: tuple[str, dict[str, Any]],
+        *,
+        allow_unscoped_owned_read: bool = False,
+    ) -> Rows:
+        """Read choke point for owned nodes (rule #4, mirror of `run_write`). Refuses
+        an owned-label read that carries no viewer-scope token — raising
+        `UnscopedReadError` *before* the runner is ever called — then merges
+        `$viewer_id` / `$granted_ids` into the params exactly as before. World-only
+        reads pass through unguarded (they are correctly unowned).
+
+        `allow_unscoped_owned_read=True` is the explicit, named bypass for a
+        legitimate non-viewer owned read (an owner-scoped aggregate / maintenance
+        read that crosses owners on purpose). It is a keyword argument at the call
+        site — visible in review — not a silent `# noqa`."""
         cypher, params = query
+        if not allow_unscoped_owned_read:
+            assert_scoped_read(cypher)
         merged = {"viewer_id": self._viewer_id, "granted_ids": self._granted_ids, **params}
         return self._runner(cypher, merged)
 

@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from graph import queries
+from graph.queries import UnscopedReadError
 
 pytestmark = pytest.mark.neo4j
 
@@ -78,15 +79,39 @@ def test_s3_ac3_unscoped_read_leaks_both_owners(clean_graph: Any) -> None:
     isolation. If owner_scope were removed from `physical_profile_pace_read`, AC-3.2 would
     start returning B's node; this affirms the data is present and only the clause hides it.
     The scoped builder is the only sanctioned reader; this raw query is the deliberate
-    counter-example that earns the scope clause its keep."""
+    counter-example that earns the scope clause its keep.
+
+    The owned-read guard now REFUSES this exact unscoped read (see
+    `test_read_guard_refuses_unscoped_owned_read_at_the_seam`), so the counter-example
+    must opt out through the explicit `allow_unscoped_owned_read=True` bypass — the
+    intended, review-visible escape hatch for a deliberate cross-owner read."""
     client = clean_graph
     _seed_owned_nodes(client, A, pace=11.0, eid="ep:a:1", belief_value="A")
     _seed_owned_nodes(client, B, pace=22.0, eid="ep:b:1", belief_value="B")
 
     leaked = client.scoped_session(A).run(
-        ("MATCH (pp:PhysicalProfile) RETURN pp.owner_id AS owner_id", {})
+        ("MATCH (pp:PhysicalProfile) RETURN pp.owner_id AS owner_id", {}),
+        allow_unscoped_owned_read=True,
     )
     assert {r["owner_id"] for r in leaked} == {A, B}  # both owners leak through the unscoped read
 
     scoped = client.scoped_session(A).run(queries.physical_profile_pace_read())
     assert len(scoped) == 1  # the scoped builder, by contrast, returns only A's
+
+
+def test_read_guard_refuses_unscoped_owned_read_at_the_seam(clean_graph: Any) -> None:
+    """The owned-read guard BITES on a live driver: the same all-owners :PhysicalProfile
+    scan that AC-3.3 proves would leak BOTH owners is now REFUSED by `ScopedSession.run` —
+    it raises UnscopedReadError before the query reaches Neo4j (fail closed). The explicit
+    bypass is the only way through, and with it the read returns both owners — proving the
+    data is genuinely present and it is the guard, not empty data, that blocks the leak."""
+    client = clean_graph
+    _seed_owned_nodes(client, A, pace=11.0, eid="ep:a:1", belief_value="A")
+    _seed_owned_nodes(client, B, pace=22.0, eid="ep:b:1", belief_value="B")
+
+    leak = ("MATCH (pp:PhysicalProfile) RETURN pp.owner_id AS owner_id", {})
+    with pytest.raises(UnscopedReadError):
+        client.scoped_session(A).run(leak)  # no bypass → fail closed, never hits the DB
+
+    leaked = client.scoped_session(A).run(leak, allow_unscoped_owned_read=True)
+    assert {r["owner_id"] for r in leaked} == {A, B}  # bypass runs it; data was really there

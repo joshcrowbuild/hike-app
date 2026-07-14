@@ -11,9 +11,11 @@ ScopedSession at run time.
 
 `OWNED_LABELS` is the shared manifest of owner-keyed labels; `assert_scoped_write`
 is the boundary guard `ScopedSession.run_write` calls so no writer can create or
-overwrite an owned node by forgetting the scope clause (gap-audit C2). The same
-manifest is importable by a future owned-label CI lint (gap-audit M9) and by the
-write-path fuzz test.
+overwrite an owned node by forgetting the scope clause (gap-audit C2), and
+`assert_scoped_read` is its read-side mirror, called by `ScopedSession.run` (M10).
+The same manifest is importable by the owned-label CI lint (`scripts/
+lint_owned_reads.py`, gap-audit M9 / join-aware since M10) and by the write-path
+fuzz test.
 """
 
 from __future__ import annotations
@@ -37,6 +39,19 @@ OWNED_LABELS: frozenset[str] = frozenset(
 _OWNED_LABEL_RE = re.compile(r":\s*(?:" + "|".join(sorted(OWNED_LABELS)) + r")\b")
 _OWNER_SCOPE_RE = re.compile(r"(?:\.owner_id\s*=\s*\$viewer_id|\bowner_id\s*:\s*\$viewer_id)")
 
+# A *read* touching an owned label must constrain it to the viewer's identity, but
+# the safe set is broader than for writes. A write must PIN `owner_id` to the viewer
+# (or it could create/re-own another owner's node), so `assert_scoped_write` only
+# accepts `owner_id = $viewer_id`. A read is safe as soon as the query is bound to
+# the viewer's identity — via the viewer key (`{owner_id: $viewer_id}` /
+# `owner_id = $viewer_id`), an identity anchor (`{member_id: $viewer_id}` reached by
+# an edge, as context_assembly's episode read does), or a grant (`owner_id IN
+# $granted_ids`, the second disjunct of `owner_scope`). So the read guard admits any
+# viewer-scope TOKEN — `$viewer_id` or `$granted_ids` — anywhere in the assembled
+# query. `$granted_ids` alone (a read of only granted members, never self) is a valid
+# cross-owner-but-scoped read.
+_READ_SCOPE_RE = re.compile(r"\$viewer_id|\$granted_ids")
+
 
 class UnscopedWriteError(ValueError):
     """An owned-label write reached the seam without an owner-scope clause.
@@ -55,6 +70,47 @@ def assert_scoped_write(cypher: str) -> None:
             "owned-label write reached run_write without an owner-scope clause "
             "(owner_scope(var) or owner_id = $viewer_id). Author it via "
             f"graph.queries so the scope cannot be forgotten. Cypher:\n{cypher}"
+        )
+
+
+class UnscopedReadError(ValueError):
+    """An owned-label read reached the seam without a viewer-scope token.
+
+    A subclass of ValueError: an unscoped owned read is a programming error
+    (fail loudly at the boundary, rule #4), never a runtime degrade. The read-side
+    mirror of `UnscopedWriteError`.
+    """
+
+
+def assert_scoped_read(cypher: str) -> None:
+    """Guard for `ScopedSession.run`: refuse a read that MATCHes an owned label
+    without a viewer-scope token (`$viewer_id` / `owner_id = $viewer_id` /
+    `$granted_ids`), so no read can return another owner's nodes by forgetting the
+    scope clause (rule #4, the read-side mirror of `assert_scoped_write`). World-
+    only reads pass untouched.
+
+    The check runs on the WHOLE assembled query, not a physical Cypher fragment —
+    the same join-aware discipline the M10 static lint (`scripts/lint_owned_reads.py`)
+    now applies. `graph.queries` builders concatenate multi-line fragments (the owned
+    `MATCH` and its `WHERE owner_scope(...)` land in different string pieces), so a
+    fragment-level check would either false-positive — inviting a blanket lint escape
+    comment — or miss an unscoped read hiding behind an unrelated sibling. Asserting
+    on the joined string the seam is about to execute closes that gap: concatenation
+    cannot separate the owned `MATCH` from its scope token once the query is
+    assembled.
+
+    Legitimate non-viewer owned reads (an owner-scoped aggregate / maintenance read
+    that crosses owners on purpose) opt out via
+    `ScopedSession.run(..., allow_unscoped_owned_read=True)` — an explicit, named
+    argument at the call site, never a silent lint escape comment, so the exemption
+    is visible in review."""
+    if _OWNED_LABEL_RE.search(cypher) and not _READ_SCOPE_RE.search(cypher):
+        raise UnscopedReadError(
+            "owned-label read reached run without a viewer-scope token "
+            "($viewer_id / owner_id = $viewer_id / $granted_ids). Author it via "
+            "graph.queries so the scope cannot be forgotten, or pass "
+            "allow_unscoped_owned_read=True at the call site for an intentional "
+            f"cross-owner read. Cypher:\n{cypher}"
         )
 
 
@@ -243,12 +299,22 @@ def physical_profile_pace_read() -> tuple[str, dict[str, Any]]:
 def episode_fields_read(episode_id: str) -> tuple[str, dict[str, Any]]:
     """The viewer's Episode distance/ascent/pace, for `process_episode`."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid})\n"  # noqa
+        "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('e')}\n"
         "RETURN e.distance_m AS distance_m, e.ascent_m AS ascent_m,\n"
         "       e.pace_on_grade AS pace_on_grade"
     )
     return cypher, {"eid": episode_id}
+
+
+def most_recent_episode_created_at_read() -> tuple[str, dict[str, Any]]:
+    """The viewer's own most-recent Episode.created_at, for `watch_sync`'s AC-4.2
+    since-window (bound the device API's activity fetch to only what's newer than
+    the last synced episode). Keyed strictly on `owner_id = $viewer_id` (not
+    `owner_scope`): this is a self-only watermark, so it must never widen with a
+    granted member's episodes into the viewer's own sync window."""
+    cypher = "MATCH (e:Episode {owner_id: $viewer_id})\nRETURN max(e.created_at) AS latest"
+    return cypher, {}
 
 
 # ── Owned-node write builders (every owned write binds to $viewer_id — rule #4) ─
@@ -285,7 +351,7 @@ def upsert_episode(
     `date($start_date)` is null-safe — a `None` start_date leaves `e.date` null, so an
     undated episode is simply absent from the recency window rather than crashing."""
     cypher = (
-        "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
+        "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
         "ON CREATE SET e.created_at = $now\n"
         "SET e.watch_activity_id = $wid,\n"
         "    e.source            = $source,\n"
@@ -320,7 +386,7 @@ def upsert_episode(
 def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Person to their Episode. The Episode is matched under
     owner scope (the Person anchor is an identity match, $viewer_id-keyed)."""
-    cypher = (  # noqa
+    cypher = (
         "MATCH (p:Person {member_id: $viewer_id})\n"
         "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('e')}\n"
@@ -332,7 +398,7 @@ def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:
 def wire_episode_on_trail(episode_id: str, canonical_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Episode to the (world, unowned) CanonicalTrail it was on."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid})\n"  # noqa
+        "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('e')}\n"
         "MATCH (t:CanonicalTrail {canonical_id: $cid})\n"
         "MERGE (e)-[:ON]->(t)"
@@ -397,7 +463,7 @@ def upsert_pace_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]
     is part of the MERGE key, so the ON MATCH value update can only ever touch the
     viewer's own belief — a foreign `belief_id` can never MATCH (and clobber) it."""
     cypher = (
-        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"  # noqa
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
         "ON CREATE SET\n"
         "    b.subject_id           = $viewer_id,\n"
         "    b.subject_type         = 'person',\n"
@@ -423,7 +489,7 @@ def wire_belief_derived_from_episode(belief_id: str, episode_id: str) -> tuple[s
     """Provenance edge Belief-[:DERIVED_FROM]->Episode (rule #7). Both owned ends
     are matched under owner scope so the edge can never cross owners."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
+        "MATCH (b:Belief {belief_id: $bid})\n"
         "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('b')} AND {owner_scope('e')}\n"
         "MERGE (b)-[:DERIVED_FROM]->(e)"
@@ -436,7 +502,7 @@ def recount_belief_corroboration(belief_id: str, threshold: int) -> tuple[str, d
     re-promote confidence (gap-audit M8 — the count was owner-unscoped). The
     confidence `CASE` (n≥threshold → 0.7) survives the rewrite."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
+        "MATCH (b:Belief {belief_id: $bid})\n"
         "MATCH (b)-[:DERIVED_FROM]->(e:Episode)\n"
         f"WHERE {owner_scope('e')}\n"
         "WITH b, count(e) AS n\n"
@@ -450,7 +516,7 @@ def wire_belief_about_person(belief_id: str) -> tuple[str, dict[str, Any]]:
     """Ownership edge Belief-[:ABOUT]->Person. The Belief is matched under owner
     scope; the Person anchor is the viewer's identity match."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
+        "MATCH (b:Belief {belief_id: $bid})\n"
         f"WHERE {owner_scope('b')}\n"
         "MATCH (p:Person {member_id: $viewer_id})\n"
         "MERGE (b)-[:ABOUT]->(p)"
@@ -475,7 +541,7 @@ def upsert_outcome(
     re-own another member's Outcome — ownership is structural, not an id-naming
     convention. ON MATCH refreshes the mutable fields so a re-post updates in place."""
     cypher = (
-        "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
+        "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
         "ON CREATE SET\n"
         "    o.outcome_id     = $oid,\n"
         "    o.overall        = $overall,\n"
@@ -506,7 +572,7 @@ def wire_episode_has_outcome(episode_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Episode to its Outcome (AC-2.1). Both owned ends are matched
     on the viewer's owner-key, so the edge can never cross owners."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
+        "MATCH (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
         "MATCH (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
         "MERGE (e)-[:HAS_OUTCOME]->(o)"
     )
@@ -520,7 +586,7 @@ def upsert_stated_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any
     clobber another member's belief — ownership is enforced by the seam, not by the
     id-naming convention the seam forbids."""
     cypher = (
-        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"  # noqa
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
         "ON CREATE SET\n"
         "    b.subject_id         = $viewer_id,\n"
         "    b.subject_type       = 'person',\n"
