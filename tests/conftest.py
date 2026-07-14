@@ -194,7 +194,12 @@ def neo4j_client() -> Any:
     )
     bootstrap = client.scoped_session("schema-bootstrap")
     for statement in _iter_statements(_SCHEMA.read_text()):
-        bootstrap.run((statement, {}))  # autocommit; unused viewer params are ignored
+        # autocommit; unused viewer params are ignored. schema.cypher's illustrative
+        # seed block (M10) MERGEs owned nodes (Episode/Belief/PhysicalProfile/Outcome/
+        # PartyProfile) under hardcoded demo literals ("mem:josh"), not $viewer_id — a
+        # one-time fixture bootstrap replay, not a genuine viewer-scoped read/write, so
+        # it opts through the explicit bypass rather than a silent lint-escape comment.
+        bootstrap.run((statement, {}), allow_unscoped_owned_read=True)
     try:
         yield client
     finally:

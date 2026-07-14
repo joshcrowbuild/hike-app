@@ -25,6 +25,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from graph.queries import most_recent_episode_created_at_read
 from ingestion.watch.base import AdapterHealth, DeviceAdapter
 
 log = logging.getLogger(__name__)
@@ -149,13 +150,14 @@ def _parse_fit_bytes(fit_bytes: bytes) -> Any:
 
 
 def most_recent_episode_time(owner_id: str, session: Any) -> datetime | None:
-    """AC-4.2: bound the API window to activities newer than the latest Episode."""
-    rows = session.run(
-        (
-            "MATCH (e:Episode {owner_id: $owner}) RETURN max(e.created_at) AS latest",
-            {"owner": owner_id},
-        )
-    )
+    """AC-4.2: bound the API window to activities newer than the latest Episode.
+
+    `owner_id` is unused directly in the query — the read is scoped through the
+    ScopedSession's own `$viewer_id` (the session was built for this owner), via the
+    sanctioned `graph.queries` builder (rule #4). Kept as a parameter for the
+    call-site signature / test fixture compatibility."""
+    del owner_id  # scope comes from the session's own viewer_id, not a free param
+    rows = session.run(most_recent_episode_created_at_read())
     if rows and rows[0].get("latest"):
         latest = rows[0]["latest"]
         # create_episode stores created_at as an ISO STRING (ingest_episode.py),

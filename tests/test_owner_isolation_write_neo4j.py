@@ -49,8 +49,11 @@ def test_s4_ac2_unscoped_owned_write_rejected_before_db(clean_graph: Any) -> Non
     with pytest.raises(UnscopedWriteError):
         client.scoped_session(A).run_write(sneaky)
 
+    # Verification read scans :Episode across all owners to confirm nothing persisted;
+    # it is an intentional unscoped owned read, so it opts through the explicit bypass.
     leftovers = client.scoped_session(A).run(
-        ("MATCH (e:Episode {episode_id: 'ep:sneaky'}) RETURN e.owner_id AS owner_id", {})
+        ("MATCH (e:Episode {episode_id: 'ep:sneaky'}) RETURN e.owner_id AS owner_id", {}),
+        allow_unscoped_owned_read=True,
     )
     assert leftovers == []  # the guard fired before the runner — nothing was written
 
