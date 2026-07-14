@@ -19,6 +19,10 @@ const base = {
   // siblings in the same row (e.g. card foot: "Conditions 2h old." next to
   // "OPEN DETAIL").
   textTransform: 'uppercase',
+  // A stamp never breaks mid-phrase (F12, ux-review-conditions 2026-07 —
+  // "JUST" / "NOW" splitting across two lines in the condition ledger): the
+  // row around it still wraps normally, just never inside the stamp itself.
+  whiteSpace: 'nowrap',
 } as const
 
 export const fresh = style({ ...base, color: vars.text.muted })

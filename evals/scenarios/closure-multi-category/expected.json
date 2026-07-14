@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM red-team round 2 F11 (LOW, passing): NPS alerts return BOTH a Closure and a Danger alert for Shenandoah NP. evaluate_guardrails generates a separate CardWarning per category — dict.fromkeys dedupes on (category, title), so different categories are not duplicates. Both warnings carry park scope. The closures condition state is 'present' (count=2). No trails are blocked (closures are presentation-only, rule #2)."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "closures"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "closures": {
+        "source_prefix": "NPS",
+        "value": {
+          "count": 2
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [
+      "closure alert: Old Rag Area Closure",
+      "danger alert: Hazardous Trail Conditions on Whiteoak Canyon"
+    ],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "present",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "present",
+      "permits": "not_fetched"
+    }
+  }
+}

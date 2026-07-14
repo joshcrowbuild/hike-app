@@ -46,16 +46,16 @@ describe('RecommendationCard feed glyph (S4)', () => {
     expect(container.querySelector('svg.glyph')).toBeInTheDocument()
   })
 
-  it('drops the glyph with no profile — ascent is a Detail-only fact now (DD1)', () => {
+  it('drops the glyph with no profile, but keeps the curated decision facts (H2/H3, ux-review-craft 2026-07)', () => {
     const { container } = render(<RecommendationCard card={card({ geo: undefined })} onOpen={vi.fn()} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
-    // The lean card owns ascent through the glyph only; with no glyph there is no
-    // separate Ascent fact (it lives on Detail). Distance + Drive remain.
+    // The glyph is decoration, never the sole home of a decision fact (H3) — a
+    // card with no profile still shows its curated Ascent, Distance, and Drive.
     // Each label now carries a leading icon whose sr-only text echoes the word
     // (Epic 021), so a label's textContent reads the word twice — assert the word
     // is present rather than an exact string match.
     const labels = [...container.querySelectorAll('.decision-label')].map((el) => el.textContent ?? '')
-    expect(labels.every((l) => !l.includes('Ascent'))).toBe(true)
+    expect(labels.some((l) => l.includes('Ascent'))).toBe(true)
     expect(labels.some((l) => l.includes('Distance'))).toBe(true)
     expect(labels.some((l) => l.includes('Drive'))).toBe(true)
   })
@@ -69,7 +69,7 @@ describe('RecommendationCard feed glyph (S4)', () => {
   })
 })
 
-describe('RecommendationCard is lean — Detail-only fields are relocated off it (Epic 019 AC-19.1.1)', () => {
+describe('RecommendationCard is lean — Detail-only fields are relocated off it, decision facts stay (Epic 019 AC-19.1.1 / H2, ux-review-craft 2026-07)', () => {
   const enriched = card({
     enrichment: {
       placeCue: 'the granite dome above the valley',
@@ -88,18 +88,19 @@ describe('RecommendationCard is lean — Detail-only fields are relocated off it
     },
   })
 
-  it('renders none of {placeCue, fitLine, practicalNote, caution Signal, duration, character, difficulty}', () => {
+  it('renders none of {placeCue, fitLine, practicalNote, caution Signal, character, difficulty} but keeps duration as a decision fact', () => {
     const { container } = render(<RecommendationCard card={enriched} onOpen={vi.fn()} />)
     const text = container.textContent ?? ''
     expect(text).not.toContain('the granite dome above the valley') // placeCue
     expect(text).not.toContain('Matches your taste') // fitLine
     expect(text).not.toContain('Arrive early') // practicalNote
     expect(text).not.toContain('Verify the creek crossing') // caution Signal
-    expect(text).not.toContain('3–4 hr') // duration
+    expect(text).toContain('3–4 hr') // duration is a decision fact again (H2)
     // Character (derived summary) and the difficulty badge are Detail-only now.
     expect(container.querySelector('.trail-summary')).not.toBeInTheDocument()
     expect(container.querySelector('.difficulty')).not.toBeInTheDocument()
-    // What DOES stay: name, the two decision facts, and the single Now value.
+    // What DOES stay: name, the decision facts (incl. Ascent + Duration, H2),
+    // the glyph, and the single Now value.
     expect(container.querySelector('.card-name')?.textContent).toBe('Stony Man Loop')
     expect(container.querySelector('.condition-value')?.textContent).toContain('54°F · clear')
   })
@@ -190,30 +191,70 @@ describe('RecommendationCard accessible name carries the warning state (report #
   })
 })
 
-describe('RecommendationCard ascent is owned by the glyph, never a separate fact (DD1)', () => {
-  it('shows the glyph and the Distance fact, but no Ascent decision fact', () => {
-    const { container } = render(
+describe('RecommendationCard decision facts — Ascent + Duration restored (H2, ux-review-craft 2026-07)', () => {
+  it('shows Distance, Ascent, and Duration together from curated enrichment', () => {
+    render(
       <RecommendationCard
         card={card({
-          enrichment: undefined,
-          distanceMi: 3.2,
+          // No geo: an out-and-back geometry would double-count the curated
+          // distance (summary.ts's own doubling rule) — this case isolates the
+          // "shape can't be confirmed, take the curated figure at face value" path.
+          geo: undefined,
+          enrichment: {
+            area: 'Shenandoah',
+            distanceMiles: 3.7,
+            ascentFeet: 1050,
+            durationHours: '2–3 hr',
+            provenance: 'mock',
+          },
         })}
         onOpen={vi.fn()}
       />,
     )
-    // The profile drives the elevation glyph (which owns ascent); there is no
-    // separate Ascent fact on the lean card — that figure lives on Detail.
-    expect(container.querySelector('svg.glyph')).toBeInTheDocument()
-    expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
-    // The Distance label's icon (Epic 021) adds a second, sr-only "Distance"
-    // node, so match one-or-more rather than exactly one.
+    // Each label's icon (Epic 021) adds a second, sr-only node with the same
+    // word, so match one-or-more rather than exactly one.
     expect(screen.getAllByText('Distance').length).toBeGreaterThan(0)
-    expect(screen.getByText('3.2 mi')).toBeInTheDocument()
+    expect(screen.getByText('3.7 mi')).toBeInTheDocument()
+    expect(screen.getAllByText('Ascent').length).toBeGreaterThan(0)
+    expect(screen.getByText('1,050 ft')).toBeInTheDocument()
+    expect(screen.getAllByText('Duration').length).toBeGreaterThan(0)
+    expect(screen.getByText('2–3 hr')).toBeInTheDocument()
+  })
+
+  it('derives Ascent from the live elevation profile when no curated figure exists', () => {
+    const { container } = render(<RecommendationCard card={card({ enrichment: undefined })} onOpen={vi.fn()} />)
+    expect(container.querySelector('svg.glyph')).toBeInTheDocument()
+    // The fixture profile climbs 1000 m → 1200 m = 200 m ≈ 656 ft.
+    expect(screen.getAllByText('Ascent').length).toBeGreaterThan(0)
+    expect(screen.getByText('656 ft')).toBeInTheDocument()
   })
 
   it('renders no Ascent figure when there is no elevation profile at all', () => {
     render(<RecommendationCard card={card({ enrichment: undefined, geo: undefined })} onOpen={vi.fn()} />)
     expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
+  })
+
+  it('renders all four facts together (Drive + Distance + Ascent + Duration) — the `.decision` grid must have a column for each', () => {
+    // A signed-in personal frame supplies Drive alongside the other three
+    // (mockPlanner always does) — the card must not silently drop or strand one.
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          geo: undefined,
+          enrichment: {
+            distanceMiles: 3.7,
+            ascentFeet: 1050,
+            durationHours: '2–3 hr',
+            driveMinutes: 28,
+            provenance: 'mock',
+          },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(container.querySelectorAll('.decision-item')).toHaveLength(4)
+    expect(screen.getAllByText('Drive').length).toBeGreaterThan(0)
+    expect(screen.getByText('28 min')).toBeInTheDocument()
   })
 })
 

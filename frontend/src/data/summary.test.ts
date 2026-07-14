@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deriveDifficulty, deriveSummary } from './summary'
+import { deriveDifficulty, deriveSummary, resolveDurationMinutes } from './summary'
 import type { CardVM, ElevationProfile, RouteGeometry, TrailGeo } from './vm'
 
 /** A minimal live card; override the fact-bearing bits per case. */
@@ -172,5 +172,43 @@ describe('deriveDifficulty — a transparent, derived estimate (never a rank inp
     expect(d).not.toBeNull()
     expect(d?.band).toBe('easy')
     expect(d?.provenance).toBe('live')
+  })
+})
+
+describe('resolveDurationMinutes — one geometry SSOT for the fact row (H4/F7, ux-review 2026-07)', () => {
+  it('doubles a one-way profile duration for a confident out-and-back — matches resolveMiles’s own doubling', () => {
+    // OPEN's round-trip length is the same ~2.6 mi `deriveSummary` states; 60 min
+    // over 2.6 mi ≈ 2.6 mph, a plausible pace.
+    const c = card({ geo: geo(OPEN, { elevationProfile: { ...profile(90, 10), estimatedDurationMin: 30 } }) })
+    expect(resolveDurationMinutes(c)).toBe(60)
+  })
+
+  it('never doubles a loop’s duration — the loop already covers the full walk', () => {
+    const c = card({ geo: geo(LOOP, { elevationProfile: { ...profile(90, 90), estimatedDurationMin: 40 } }) })
+    expect(resolveDurationMinutes(c)).toBe(40)
+  })
+
+  it('drops the fact when the implied pace falls outside a plausible hiking band (0.5–4 mph)', () => {
+    // Doubled to 10 min round-trip over ~2.6 mi ≈ 15.6 mph — not a hike.
+    const c = card({ geo: geo(OPEN, { elevationProfile: { ...profile(90, 10), estimatedDurationMin: 5 } }) })
+    expect(resolveDurationMinutes(c)).toBeNull()
+  })
+
+  it('keeps a plausible estimate whose pace holds together with the shown distance', () => {
+    // Doubled to 104 min round-trip over ~2.6 mi ≈ 1.5 mph — comfortably inside the band.
+    const c = card({ geo: geo(OPEN, { elevationProfile: { ...profile(90, 10), estimatedDurationMin: 52 } }) })
+    expect(resolveDurationMinutes(c)).toBe(104)
+  })
+
+  it('skips the pace check (but still returns the raw estimate) when no distance is resolvable at all', () => {
+    const c = card({
+      geo: { geometry: null, trailhead: { lat: 0, lon: 0 }, quality: 'confident', elevationProfile: { ...profile(90, 10), estimatedDurationMin: 5 } },
+    })
+    expect(resolveDurationMinutes(c)).toBe(5)
+  })
+
+  it('returns null with no live estimate present', () => {
+    expect(resolveDurationMinutes(card({ geo: geo(OPEN, { elevationProfile: profile(90, 10) }) }))).toBeNull()
+    expect(resolveDurationMinutes(card())).toBeNull()
   })
 })

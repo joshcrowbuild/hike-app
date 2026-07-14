@@ -122,6 +122,11 @@ export function deriveDifficulty(card: CardVM): DifficultyVM | null {
  * Trail length in miles: the curated `distanceMiles` when present (mock), else
  * the honest per-segment mapped length of the live geometry — NEVER the API's
  * `distanceMi`, which is the crow-flies origin→trailhead hop, not the trail.
+ * This is the ONE geometry SSOT for every distance-shaped fact a card or
+ * Detail shows (H4/F7, ux-review 2026-07 — `cardParts.DecisionFacts` and this
+ * module's own `deriveSummary`/`deriveDifficulty` all resolve through it), so
+ * the Character line and the Distance/Duration facts can never disagree about
+ * how long the trail is.
  *
  * For a confidently-detected out-and-back (Josh's call, 2026-07-03) this is the
  * ROUND-TRIP figure — 2× the one-way path length — because that's what the
@@ -129,10 +134,45 @@ export function deriveDifficulty(card: CardVM): DifficultyVM | null {
  * never doubled; when the shape can't be read (no geometry) we stay
  * conservative and report the one-way figure rather than guess.
  */
-function resolveMiles(card: CardVM): number | null {
+export function resolveMiles(card: CardVM): number | null {
   const oneWay = resolveOneWayMiles(card)
   if (oneWay == null) return null
   return isConfidentOutAndBack(card) ? oneWay * 2 : oneWay
+}
+
+/** Below this, an estimate's implied pace is no longer a plausible hike —
+ *  the two figures describing it (distance vs. duration) don't hold together,
+ *  most often because they were read off two different geometries (H4/F7). */
+const MIN_PLAUSIBLE_PACE_MPH = 0.5
+const MAX_PLAUSIBLE_PACE_MPH = 4
+
+/**
+ * Duration estimate (minutes), resolved over the SAME geometry `resolveMiles`
+ * used for the Distance fact (H4/F7, ux-review 2026-07): the backend's
+ * `estimatedDurationMin` is a Naismith integral over the profile's own
+ * samples, which — like the mapped geometry length — cover only the ONE-WAY
+ * path for an out-and-back. Doubling it here for a confident out-and-back
+ * mirrors `resolveMiles`'s own doubling, so the two facts always describe the
+ * same walk; a loop's estimate already covers its one full circuit and is
+ * never doubled.
+ *
+ * As a backstop, a pace outside `[MIN_PLAUSIBLE_PACE_MPH, MAX_PLAUSIBLE_PACE_MPH]`
+ * signals the two figures don't hold together (e.g. a stale/mismatched
+ * profile) — the honest move is to drop the fact rather than publish a 13 mph
+ * "hike" (Rule #1), so this returns `null` rather than a number nobody should
+ * trust.
+ */
+export function resolveDurationMinutes(card: CardVM): number | null {
+  const oneWayMin = card.geo?.elevationProfile?.estimatedDurationMin
+  if (oneWayMin == null) return null
+  const minutes = isConfidentOutAndBack(card) ? oneWayMin * 2 : oneWayMin
+  if (minutes <= 0) return null
+  const miles = resolveMiles(card)
+  if (miles != null) {
+    const paceMph = miles / (minutes / 60)
+    if (paceMph < MIN_PLAUSIBLE_PACE_MPH || paceMph > MAX_PLAUSIBLE_PACE_MPH) return null
+  }
+  return minutes
 }
 
 function resolveOneWayMiles(card: CardVM): number | null {

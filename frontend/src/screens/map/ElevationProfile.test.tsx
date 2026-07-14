@@ -21,9 +21,10 @@ describe('ElevationProfile (S5b)', () => {
     // 200 m gain ≈ 656 ft, 100 m loss ≈ 328 ft.
     expect(screen.getByText('↑ 656 ft')).toBeInTheDocument()
     expect(screen.getByText('↓ 328 ft')).toBeInTheDocument()
-    expect(screen.getByText(/max 25%/)).toBeInTheDocument()
+    // One decimal, never raw float precision (F6, ux-review-conditions 2026-07).
+    expect(screen.getByText(/max 25\.0%/)).toBeInTheDocument()
     // The sr-only summary restates the chart for assistive tech.
-    expect(screen.getByText(/Climbs 656 ft, descends 328 ft, steepest grade 25%/)).toBeInTheDocument()
+    expect(screen.getByText(/Climbs 656 ft, descends 328 ft, steepest grade 25\.0%/)).toBeInTheDocument()
   })
 
   it('is an accessible slider whose value text starts at the summary', () => {
@@ -56,5 +57,16 @@ describe('ElevationProfile (S5b)', () => {
     // Midpoint ≈ 0.5 mi, elevation interpolated to the peak (~1200 m ≈ 3,937 ft).
     expect(slider.getAttribute('aria-valuetext')).toMatch(/0\.5 mi/)
     expect(slider.getAttribute('aria-valuetext')).toMatch(/ft/)
+  })
+
+  it('rounds a raw-float grade to one decimal, in both the visible label and the sr-only summary (F6)', () => {
+    // A live DEM-derived grade never arrives this precise in practice, but the
+    // backend's field is an untrusted float — the surface must never echo it
+    // verbatim (`max 20.35806406360465%`).
+    const jittery = { ...profile, maxGradePercent: 20.35806406360465 }
+    render(<ElevationProfile profile={jittery} cursorFraction={null} onScrub={vi.fn()} />)
+    expect(screen.getByText(/max 20\.4%/)).toBeInTheDocument()
+    expect(screen.queryByText(/20\.35806406360465/)).not.toBeInTheDocument()
+    expect(screen.getByText(/steepest grade 20\.4%/)).toBeInTheDocument()
   })
 })

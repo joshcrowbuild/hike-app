@@ -5,9 +5,10 @@ import { ToggleButton } from 'react-aria-components'
 
 import { Icon, Signal, Staleness } from '../components'
 import { glyphs } from './glyphs'
+import { formatEstimatedDuration } from '../data/duration'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
-import { deriveDifficulty, deriveSummary } from '../data/summary'
+import { deriveDifficulty, deriveSummary, resolveDurationMinutes, resolveMiles } from '../data/summary'
 import type {
   CardVM,
   ConditionSilence as ConditionSilenceVM,
@@ -212,6 +213,40 @@ export function DecisionItem({ label, value, glyph }: { label: string; value: st
 export const formatDrive = (minutes: number): string => `${minutes} min`
 export const formatTrail = (miles: number, ascentFeet: number): string =>
   `${miles.toFixed(1)} mi · ${ascentFeet.toLocaleString()} ft`
+
+/**
+ * The decision-fact row — Drive → Distance → Ascent → Duration — rendered
+ * IDENTICALLY by the card and Detail (H2/H4/F7, ux-review 2026-07). A single
+ * shared component is the fix, not just a shared value: Distance and Duration
+ * both resolve through `../data/summary`'s one geometry SSOT (`resolveMiles` /
+ * `resolveDurationMinutes`), so the two facts can never describe two different
+ * hikes — never a round-trip distance beside a one-way duration, and never a
+ * 13 mph "hike" (the pace sanity check lives in `resolveDurationMinutes`).
+ * Restoring Ascent + Duration on the card (H2) makes the feed comparable at a
+ * glance again, per Epic 019's own "2–3 decision facts" spine — the glyph
+ * shows the shape, these facts show the numbers.
+ */
+export function DecisionFacts({ card, className }: { card: CardVM; className: string }) {
+  const e = card.enrichment
+  const distanceMiles = resolveMiles(card)
+  const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
+  const durationMinutes = resolveDurationMinutes(card)
+  const duration = e?.durationHours ?? (durationMinutes != null ? formatEstimatedDuration(durationMinutes) : null)
+  return (
+    <div className={className}>
+      {e?.driveMinutes != null ? (
+        <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
+      ) : null}
+      {distanceMiles != null ? (
+        <DecisionItem label="Distance" value={`${distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
+      ) : null}
+      {ascentFeet != null ? (
+        <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
+      ) : null}
+      {duration != null ? <DecisionItem label="Duration" value={duration} glyph={glyphs.duration} /> : null}
+    </div>
+  )
+}
 
 /**
  * A driving-directions deep link to the trailhead — the same
