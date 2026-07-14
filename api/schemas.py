@@ -51,6 +51,22 @@ class PlanRequest(BaseModel):
     phase: Literal["cards"] | None = None
 
 
+class SearchRequest(BaseModel):
+    """`POST /search` (Epic 038 / B001 Problem A — the Omnibox's trail-name search).
+    `query` is trail-name text (e.g. "Old Rag", "Rivanna") — there is NO lat/lon;
+    unlike `PlanRequest` this is a name match over the curated corpus, not an
+    origin-relative search. Same length bound as `PlanRequest.query` (flows into a
+    Cypher param and a log line, never a provider prompt on this path)."""
+
+    query: str = Field(
+        ...,
+        max_length=500,
+        description="Trail-name text, e.g. 'Old Rag' or 'Rivanna'",
+    )
+    # Same product norm/cap as PlanRequest.k (AH3: bounded probe fan-out per candidate).
+    k: int = Field(default=10, ge=1, le=20, description="Max results")
+
+
 class FeedLineResponse(BaseModel):
     text: str
     source: str

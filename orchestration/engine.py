@@ -64,7 +64,7 @@ from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
-from orchestration.scout import Candidate, scout
+from orchestration.scout import Candidate, scout, scout_by_name
 from orchestration.verifier import DEFAULT_MAX_WORKERS, verify_batch
 
 log = logging.getLogger(__name__)
@@ -371,49 +371,37 @@ def _drive_minutes(fact: VerifiedFact | None) -> float | None:
     return None
 
 
-def plan_from_origin(
-    lat: float,
-    lon: float,
+def _plan_from_candidates(
+    candidates: list[Candidate],
     session: ScopedSession,
     probes: dict[ConditionKind, list[LiveAdapter]],
     *,
-    radius_m: float = DEFAULT_RADIUS_M,
-    k: int = 10,
+    fallback_lat: float,
+    fallback_lon: float,
+    drive_facts: dict[str, VerifiedFact] | None = None,
+    notices: tuple[str, ...] = (),
     cache: TTLCache | None = None,
-    drive_time: DriveTimeComputer | None = None,
-    budget_s: float | None = None,
     probe_max_workers: int = DEFAULT_MAX_WORKERS,
     verify: bool = True,
 ) -> PlannedBatch:
-    """Scout near (lat, lon); optionally prune to drive-time reachability; verify each
-    survivor's conditions; drop any that trip a hard guardrail. Drive-time facts are
-    folded in at construction (after the guardrail check — they never reach
-    `evaluate_guardrails`, AC-5.3). Live-condition verification runs as one batched,
-    concurrent fan-out (`verify_batch`) across every candidate rather than probing
-    them one at a time — the dominant cost of `/plan` (latency follow-up to Epic 018
-    S6); `probe_max_workers` bounds total in-flight probes.
+    """The post-Scout tail shared by every candidate-generation path (origin-relative
+    `plan_from_origin` and name-search `search_trails`, Epic 038): verify each
+    candidate's conditions, drop any that trip a hard guardrail, fold in corpus
+    corroboration + (when supplied) drive-time facts. Live-condition verification
+    runs as one batched, concurrent fan-out (`verify_batch`) across every candidate
+    rather than probing them one at a time — the dominant cost of `/plan` (latency
+    follow-up to Epic 018 S6); `probe_max_workers` bounds total in-flight probes.
+
+    `fallback_lat`/`fallback_lon` stand in for a candidate with no `point` of its own
+    (a query-origin fallback on the spatial path; a first-candidate fallback on the
+    name-search path, where there is no query origin at all — see `search_trails`).
 
     `verify=False` is the Epic 040 phase-1 path: the live-probe fan-out is skipped
     entirely (zero `probe()` calls for any point kind) and `probed_kinds` stays
     empty, so every point kind honestly classifies `not_fetched` — nothing was
     fetched, so nothing is asserted, warned about, disclosed, or set aside (rule
-    #1's contrapositive). Scout, the drive prefilter (its facts are origin-relative,
-    not point conditions), and the corroboration read run exactly as the full path."""
-    candidates = scout(lat, lon, session, radius_m=radius_m, k=k)
-
-    drive_facts: dict[str, VerifiedFact] = {}
-    notices: tuple[str, ...] = ()
-    if drive_time is not None and budget_s is not None:
-        res = prefilter(
-            (lat, lon),
-            candidates,
-            drive_time,
-            budget_s,
-            coord_of=lambda c: _latlon(c.trailhead_point) or _latlon(c.point),
-        )
-        candidates = res.kept
-        drive_facts = res.facts_by_id
-        notices = (res.disclosure,) if res.disclosure else ()
+    #1's contrapositive)."""
+    drive_facts = drive_facts or {}
 
     # CDP-01: distinct-origin corroboration per candidate from the SAME_AS corpus layer.
     # B4 (Epic 039 mitigation ladder): this read is independent of the live-probe
@@ -450,7 +438,7 @@ def plan_from_origin(
                 log.debug(
                     "candidate %s has no point; probing at query origin", candidate.canonical_id
                 )
-                probe_points.append(Point(lat, lon))
+                probe_points.append(Point(fallback_lat, fallback_lon))
             else:
                 probe_points.append(Point(*coord))
         # The live-condition fan-out: every candidate's (point, kind) probes run
@@ -516,6 +504,123 @@ def plan_from_origin(
             )
         )
     return PlannedBatch(trails=planned, notices=notices, set_aside=tuple(set_aside))
+
+
+def plan_from_origin(
+    lat: float,
+    lon: float,
+    session: ScopedSession,
+    probes: dict[ConditionKind, list[LiveAdapter]],
+    *,
+    radius_m: float = DEFAULT_RADIUS_M,
+    k: int = 10,
+    cache: TTLCache | None = None,
+    drive_time: DriveTimeComputer | None = None,
+    budget_s: float | None = None,
+    probe_max_workers: int = DEFAULT_MAX_WORKERS,
+    verify: bool = True,
+) -> PlannedBatch:
+    """Scout near (lat, lon); optionally prune to drive-time reachability; verify each
+    survivor's conditions; drop any that trip a hard guardrail. Drive-time facts are
+    folded in at construction (after the guardrail check — they never reach
+    `evaluate_guardrails`, AC-5.3).
+
+    `verify=False` is the Epic 040 phase-1 path (see `_plan_from_candidates`). Scout
+    and the drive prefilter (its facts are origin-relative, not point conditions) run
+    exactly as the full path; the rest — live verification, corroboration, guardrail
+    filtering, PlannedTrail construction — is `_plan_from_candidates` (Epic 038: shared
+    with the name-search path, `search_trails`)."""
+    candidates = scout(lat, lon, session, radius_m=radius_m, k=k)
+
+    drive_facts: dict[str, VerifiedFact] = {}
+    notices: tuple[str, ...] = ()
+    if drive_time is not None and budget_s is not None:
+        res = prefilter(
+            (lat, lon),
+            candidates,
+            drive_time,
+            budget_s,
+            coord_of=lambda c: _latlon(c.trailhead_point) or _latlon(c.point),
+        )
+        candidates = res.kept
+        drive_facts = res.facts_by_id
+        notices = (res.disclosure,) if res.disclosure else ()
+
+    return _plan_from_candidates(
+        candidates,
+        session,
+        probes,
+        fallback_lat=lat,
+        fallback_lon=lon,
+        drive_facts=drive_facts,
+        notices=notices,
+        cache=cache,
+        probe_max_workers=probe_max_workers,
+        verify=verify,
+    )
+
+
+def search_trails(
+    query_text: str,
+    session: ScopedSession,
+    probes: dict[ConditionKind, list[LiveAdapter]],
+    *,
+    k: int = 10,
+    cache: TTLCache | None = None,
+    probe_max_workers: int = DEFAULT_MAX_WORKERS,
+    verify: bool = True,
+) -> PlannedBatch:
+    """Trail-name search (Epic 038 / B001 Problem A): `scout_by_name` -> the same
+    verify/guardrail/corroboration tail `plan_from_origin` uses, so name-matched
+    trails flow through the identical Scout -> Verifier -> Curator pipeline as
+    origin-based `/plan` — cards carry sourced+timestamped conditions and confidence
+    (rule #1), never a raw graph dump. No name match -> an honest empty `PlannedBatch`
+    (never an error; the API layer's `/search` renders that as an empty `FeedResponse`).
+
+    There is no query origin on this path, so a point-less candidate's probe
+    fallback is the FIRST candidate in the batch that DOES have a resolvable point
+    (arbitrary but stable — any matched trail's neighborhood is a reasonable place to
+    probe from) rather than a lat/lon the caller never supplied. In the pathological
+    case where NO candidate in the whole batch has a point (an ingest gap, never
+    observed in practice — `CanonicalTrail.point`/`Trailhead.point` are populated by
+    every ingestion path), there is no sane fallback coordinate at all: rather than
+    probe a real-but-meaningless location (e.g. Null Island, `(0, 0)`), live
+    verification is skipped entirely for this batch (`verify=False` — every point kind
+    honestly classifies `not_fetched`, mirroring the Epic 040 phase-1 disclosure
+    rather than fabricating a location no candidate is actually near)."""
+    candidates = scout_by_name(query_text, session, k=k)
+    if not candidates:
+        return PlannedBatch(trails=[])
+
+    fallback = next(
+        (
+            coord
+            for c in candidates
+            if (coord := (_latlon(c.point) or _latlon(c.trailhead_point))) is not None
+        ),
+        None,
+    )
+    if fallback is None:
+        log.warning(
+            "search_trails: no candidate in a %d-result batch has a resolvable point; "
+            "skipping live verification rather than probing a fabricated location",
+            len(candidates),
+        )
+        fallback_lat, fallback_lon = 0.0, 0.0
+        verify = False
+    else:
+        fallback_lat, fallback_lon = fallback
+
+    return _plan_from_candidates(
+        candidates,
+        session,
+        probes,
+        fallback_lat=fallback_lat,
+        fallback_lon=fallback_lon,
+        cache=cache,
+        probe_max_workers=probe_max_workers,
+        verify=verify,
+    )
 
 
 def rank_plan(

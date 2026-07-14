@@ -70,6 +70,7 @@ from api.schemas import (
     PlanRequest,
     RegionResponse,
     RegionsResponse,
+    SearchRequest,
     SetAsideReasonResponse,
     SetAsideResponse,
     StatusResponse,
@@ -90,7 +91,7 @@ from ingestion.elevation import (
 from ingestion.route import assemble_route, wkt_to_geojson
 from orchestration.adapters import registry
 from orchestration.config import Settings
-from orchestration.engine import Feed, FeedCard, build_runtime
+from orchestration.engine import Feed, FeedCard, build_runtime, feed_card
 from orchestration.logsafe import scrub_episode, setup_logging
 from orchestration.providers.registry import resolve
 from orchestration.regions import list_regions
@@ -779,6 +780,82 @@ def plan_conditions(
         ).emit()
     except Exception:
         logger.exception("plan/conditions observability emit failed (response already sent)")
+    return response
+
+
+@app.post("/search", response_model=FeedResponse)
+@limiter.limit(plan_limit)
+def search(
+    request: Request,  # required by slowapi for per-IP keying (also gives us the edge)
+    body: SearchRequest,
+) -> FeedResponse:
+    """Trail-name search (Epic 038 / B001 Problem A — the Omnibox backend). `query` is
+    trail-name text ("Old Rag", "Rivanna"); there is no lat/lon. Name-matched trails
+    flow through the SAME verify -> present pipeline as `/plan` (`search_trails` ->
+    `_plan_from_candidates`, the shared tail `plan_from_origin` uses) so cards carry
+    sourced+timestamped conditions and confidence (rule #1) — never a raw graph dump.
+    No match -> an honest empty `FeedResponse` (never an error). Anonymous-only by
+    contract (no viewer_id in the request; a name search has no personal-overlay
+    concept), same rate-limit class as `/plan`."""
+    if _settings is None or _graph_client is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    started = time.perf_counter()
+    try:
+        runtime = build_runtime(_settings, _graph_client, "anonymous")
+        from orchestration.engine import search_trails
+
+        cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
+        batch = search_trails(
+            body.query,
+            runtime.session,
+            runtime.probes,
+            k=body.k,
+            cache=runtime.cache,
+            probe_max_workers=runtime.probe_max_workers,
+        )
+        feed = Feed(
+            query=body.query,
+            cards=[feed_card(p) for p in batch.trails],
+            notices=batch.notices,
+            set_aside=batch.set_aside,
+        )
+        session = _graph_client.scoped_session("anonymous")
+        maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
+        response = _feed_response(feed, maps_by_cid, conditions_complete=True)
+        cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "search failed cid=%s error_class=%s query=%r",
+            correlation_id,
+            type(exc).__name__,
+            body.query,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
+    try:
+        line_texts = [line.text for card in feed.cards for line in card.lines]
+        est_tokens = estimate_tokens(body.query, *line_texts)
+        PlanMetrics(
+            viewer_tag=scrub_viewer("anonymous"),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(feed.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            est_tokens=est_tokens,
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
+            feed_cache_hit=False,
+        ).emit()
+    except Exception:
+        logger.exception("search observability emit failed (response already sent)")
     return response
 
 
