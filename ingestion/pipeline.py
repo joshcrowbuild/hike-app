@@ -427,13 +427,35 @@ def _run_enrichment(
             len(enrichment_sources),
             len(canonical_nodes),
         )
-    _log_elevation_coverage(enrichment_sources, facts, len(canonical_nodes))
+    # Distinct-eligible denominator (see _elevation_coverage_counts): duplicate
+    # canonical_ids from an ambiguous merge would otherwise understate the logged rate.
+    _log_elevation_coverage(
+        enrichment_sources, facts, len({n.canonical_id for n in canonical_nodes if n.geom_wkt})
+    )
     return facts
 
 
 # Elevation attributes carry this marker (the always-emitted scalar) so we can count
 # how many nodes actually received a profile this run — distinct from the raw fact count.
 _ELEV_MARKER_ATTR = "total_gain_m"
+
+
+def _elevation_coverage_counts(
+    canonical_nodes: list[CanonicalNode], facts: list[EnrichmentFact]
+) -> tuple[int, int]:
+    """`(eligible, covered)` DISTINCT-canonical_id counts for `verify_before_prune`'s
+    elevation gate. `eligible` = canonical nodes carrying geometry (a point-only trail can
+    never receive a 3DEP profile, so counting it would falsely drag coverage down and skip
+    a prune for a healthy region); `covered` = ids that got a 3DEP elevation fact this run.
+
+    BOTH dedupe by canonical_id. An ambiguous same-source merge (see `_flag_if_ambiguous`)
+    stamps two features onto one canonical_id, so `canonical_nodes` can hold duplicate ids —
+    a list-length denominator inflates it and understates coverage (e.g. 93 nodes → 64
+    distinct trails, all covered, would read 64/93 = 69% and false-trip the gate on a
+    fully-covered corpus)."""
+    eligible = len({n.canonical_id for n in canonical_nodes if n.geom_wkt})
+    covered = len({f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR})
+    return eligible, covered
 
 
 def _log_elevation_coverage(
@@ -997,14 +1019,10 @@ def run_pipeline(
             # enrichment sources; a failing source degrades inside _run_enrichment.
             facts = _run_enrichment(enrichment_sources, canonical_nodes)
             counts["enrichment_facts"] = load_enrichment_facts(runner, facts)
-            # Elevation coverage for the verify gate: nodes that actually got a 3DEP
-            # profile this run vs. the canonical nodes ELIGIBLE for one — i.e. those with
-            # geometry (a point-only trail can never receive a 3DEP profile, so counting it
-            # in the denominator would falsely drag coverage below the gate and skip a prune
-            # for a perfectly healthy region). Distinct from the raw fact count.
-            counts["elev_nodes"] = sum(1 for n in canonical_nodes if n.geom_wkt)
-            counts["elev_covered"] = len(
-                {f.canonical_id for f in facts if f.attribute == _ELEV_MARKER_ATTR}
+            # Elevation coverage for the verify gate (distinct-canonical_id counts — see
+            # _elevation_coverage_counts for why the denominator must dedupe).
+            counts["elev_nodes"], counts["elev_covered"] = _elevation_coverage_counts(
+                canonical_nodes, facts
             )
             # POST-load facet snapshot (Epic 027): current-`iv` trails only, taken
             # after enrichment (so has_elevation reflects this run) and before the
