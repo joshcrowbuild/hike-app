@@ -16,7 +16,7 @@ A recurring correction from the verifiers, worth stating once up front: **CoMaps
 ## 2. The plan, by wave
 
 ### WAVE A — Phase A substrate correctness (`path-to-complete.md:124-146`)
-*The honest-substrate layer. Note: Phase A's own BLOCKING items are the `_build_canonical_id` slug-collision audit, the 1643→1458 conflation-delta audit, corroboration-off-constant-1, and MIN-fused confidence. Nothing below is a Phase-A blocker; these are substrate-completeness wins schedulable alongside that work, and several are explicitly "prep just ahead of Phase D."*
+*The honest-substrate layer. Note: Phase A's own BLOCKING items are the 1643→1458 conflation-delta audit and MIN-fused confidence (the slug-collision guard itself and corroboration wiring have since shipped — see `path-to-complete.md`). Nothing below is a Phase-A blocker; these are substrate-completeness wins schedulable alongside that work, and several are explicitly "prep just ahead of Phase D."*
 
 ---
 
@@ -206,7 +206,7 @@ A recurring correction from the verifiers, worth stating once up front: **CoMaps
 - **Verifier corrections — the geometry half was badly misread:**
   1. `feature_merger` is a **World.mwm low-zoom rendering generalizer** (`world_map_generator.hpp:96,117-120`), keyed on feature **TYPE** only, with **no name/identity gate**. Its `DoMerge` explicitly picks the **SHORTEST** continuation "to avoid producing too long lines" — the **opposite** of assembling one long named route. Ported as-is it fuses distinct same-type connected trails (a dense park path network all tagged `highway=path` collapses into one blob) — structurally **worse** than name-grouping. `borrow_type` should be **borrow-idiom**, not port-algorithm. The same-name/same-relation guard has **no CoMaps prior art** — build it net-new.
   2. **Do NOT retire Scout name-dedupe** (`scout.py:60-89`): D11 exists precisely for **disconnected** same-name segments (a canal walk split into pieces), which endpoint-stitch **cannot** merge (it requires connectivity). Complementary, not substitutes — name-dedupe stays.
-  3. **Does not fix the slug-collision** — `_build_canonical_id` collision (`pipeline.py:72-91`) is a string-hashing problem between two *distinct* trails; geometry stitching doesn't touch it. The audit fix is the hash-suffix guard, orthogonal.
+  3. **Does not fix the slug-collision** — `_build_canonical_id` collision (`pipeline.py:130-145`) is a string-hashing problem between two *distinct* trails; geometry stitching doesn't touch it. The fix was the hash-suffix guard (Epic 030, shipped), orthogonal.
   4. `route.py:119-139` (`_assemble_lines`, shapely `linemerge`) **already** provides ordered-polyline stitching — not a missing capability. The genuine deltas are O(n) vs O(n²) and name-agnostic stitching (the latter is itself invariant-risky — it's the "Lead 2 map-nonsense" the pipeline docstring warns produced wrongly-fused trails).
   5. Relation fetch is partial in the US (`stage-1-data-sources.md:90`) — must fall back to guarded stitching.
 - **Sequencing:** **next-phase, NOT now.** Adding relation-based identity changes `canonical_id` derivation, which collides head-on with Phase A's in-flight 1643→1458 slug-merge audit + `canonical_id` back-fill (`path-to-complete.md:139` — re-keying orphans Episode/Belief/grant edges). Sequence at Phase-E B001/B005 **after** the identity scheme is stable; scope as a spike first.

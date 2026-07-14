@@ -29,7 +29,7 @@ Two distinct same-source trails whose names collide under slugification (identic
 - **The `canonical_id` back-fill / corpus re-key is OUT (explicit).** Correcting `_build_canonical_id` changes the `canonical_id` of every already-loaded trail, which can orphan any `Episode`/`Belief`/grant edge keyed on the old id. At current state (mock episodes, no real auth) back-fill risk is minimal, so this epic **scopes the back-fill OUT and flags it in the PR body** as the named follow-up. The fix takes effect on the next ingest; already-loaded Aura nodes keep their old ids until a re-ingest.
 - **The 1643→1458 conflation-delta row-by-row audit is OUT (explicit).** That ~185-node collapse can only be audited against the live Aura corpus, which is **not reproducible from `main`**. It depends on the re-runnable Aura ingest verification (a separate Phase-A item). Name it in the PR as the follow-up; this epic ships only the *re-runnable audit script itself*, which runs against whatever corpus is loaded in the target Neo4j.
 - **Geometry stitching / conflation geometry.** BINDING (E1 verifier correction 3): geometry stitching does NOT touch this — it is a pure string-hashing problem, orthogonal to the spatial `consolidate_osm_segments` / `_connected_components` merge. Do not modify `consolidate_osm_segments`, `_connected_components`, or `assemble_geometry`.
-- **CDP-01 corroboration wiring** (`engine.py:172`), **CDP-06 MIN-fusion**, the owned-Cypher CI lint (M9) — separate Phase-A items.
+- **CDP-01 corroboration wiring** (shipped separately — `engine.py:320,491,497`), **CDP-06 MIN-fusion**, the owned-Cypher CI lint (M9) — separate Phase-A items.
 
 ---
 
