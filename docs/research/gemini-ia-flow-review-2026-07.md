@@ -155,6 +155,35 @@ To solve this, the `CardVM` must expose the engine's matching rationale, and the
 This single UI addition closes the loop, proving the engine's intelligence and drastically reducing the user's decision fatigue.
 
 ---
+
+## Part 5: The Spatial Disconnect (Map Critique)
+
+Applying the same critical lens to the spatial UI reveals a tension between the app's "curation first" philosophy and the user's need for spatial context. 
+
+### Map Interaction Breakdown
+- **Location**: Maps exist *only* on the Detail view, pushed below the fold beneath text descriptions and stats.
+- **Controls**: Housed in the document flow below the map, rather than floating over the canvas.
+- **Interactions**: Fullscreen modal expansion, base layer switching (Topo/Imagery), and a brilliant bi-directional scrub (the map cursor syncs with the elevation profile).
+
+### Friction Points & Analysis
+
+1. **[HIGH] The Island Map (Zero Feed-Level Spatial Context)**
+   The most jarring spatial friction is that the Home feed has no map. A user cannot see their curated options relative to one another or relative to their origin. To compare the location of three trails, the user must pogo-stick in and out of the Detail view for each one and construct a mental map in their head. The app assumes text ("Shenandoah") is sufficient spatial context for a decision. It is not.
+   *Fix*: This strongly reinforces the need for **Paradigm 2 (Map-First Isochrone Picker)** or at minimum, a "Map View" toggle on the Home feed that plots the curated cards together.
+
+2. **[MODERATE] The Map as an Afterthought (Hierarchy)**
+   The code comments state that pushing the map below the fold honors the "decision first, navigation second" hierarchy. However, for outdoor routing, the map *is* a primary decision tool. Users need to know: Does it follow a highway? Is it entirely in a dense forest? Is it exposed on a ridge? Hiding this behind prose forces unnecessary scrolling.
+   *Fix*: Elevate a static map snippet or a 3D terrain preview higher up in the Detail hierarchy, perhaps alongside the elevation glyph.
+
+3. **[LOW] Document-Flow Controls in Fullscreen**
+   When the map enters fullscreen, it operates as a modal overlay, but the controls (Topo, Locate Me) remain in the document flow below the map image. This artificially restricts the map's height and feels unpolished compared to native map experiences.
+   *Fix*: In fullscreen mode, controls should float over the map canvas to maximize the spatial viewport.
+
+### The Bright Spot
+**[EXCELLENT] Bi-directional Elevation Scrubbing**
+The synchronization between the elevation profile and the MapLibre cursor is a best-in-class interaction. It perfectly embodies the "cockpit-grade utility" vision, allowing a user to instantly see exactly where the steepest 15% grade occurs on the physical terrain. This interaction must be preserved in any redesign.
+
+---
 ### Ranked Recommendation & First Step
 
 1. **Unified Intent Line (Omnibox)**: Best alignment with the product's calm, utility-first vision. Fast, zero dead-ends, leverages the existing NLP engine.
