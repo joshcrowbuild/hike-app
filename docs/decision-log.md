@@ -1,6 +1,6 @@
 # Adventure Planner — Design & Decision Log
 
-*Working title. Living document — last updated July 2, 2026.*
+*Working title. Living document — last updated 2026-07-14.*
 
 **Last verified:** 2026-06-26 · **Owner:** project (decisions of record)
 
@@ -66,6 +66,8 @@ The crawl-vs-fetch question resolves by splitting data by rate of change.
 - **NON-thing:** confidence must **not** penalize ranking. Uncertainty ≠ low quality; burying low-confidence trails punishes the lesser-traveled ones we made first-class. Confidence shapes *how honestly we show* a trail, not *whether it ranks*.
 
 **Unification:** crowd facts carry sample-size confidence intrinsically, and **the commons k-anonymity threshold (§11) doubles as the confidence floor** — below k contributors, a fact is both privacy-unsafe and too thin to trust. One gate, two jobs.
+
+**Refined 2026-07-14 (§42):** the three axes now fuse by **weakest-link `min(a,f,c)`** (not a weighted mean), and a **`source_kind` primary/aggregated** split lets an authoritative single source reach "stated" — this section's principles are unchanged; the fusion + presentation mechanics are in §42.
 
 ## 8. System architecture — what runs where ✅/🔶
 Three distinct pieces; don't conflate them.
@@ -358,3 +360,24 @@ Fine-tuning open UI-gen models + verifiable design-system reward (frontier produ
 - **Set-aside is reserved for the UNVERIFIABLE class** (source-or-silence, Rule #1): a failed weather probe or a failed alerts sub-call means the alert state is *unknown*, and unknown never reads as "clear" — the trail is held back **with disclosure** (cause + source), surfaced as a quiet feed-level note. Non-weather hard thresholds (hazardous AQI ≥ 201) keep their block semantics.
 - **The dogfood that forced it:** `/plan` near Front Royal during the 2026-07-01 Extreme Heat Warning returned 1 card and set aside 9 trails, and the frontend rendered neither the set-aside disclosures nor card warnings — the user saw one lonely hike with no explanation. Hiding a verified hazard threw away exactly the live-synthesis value the product exists for; showing it *with the warning* is the honest behavior.
 - **The Compton Gap Road anomaly, resolved:** the one surviving trail was *legitimately* clear — its probe point sits in NWS forecast zone VAZ507 ("Northern Virginia Blue Ridge"), which the warning's zone list (VAZ027–031 + WV zones, the valley floors) deliberately excludes. A verified per-point "no alert," not a false-clear. The investigation did surface a latent Rule-#1 violation, now fixed: the old guardrail collapsed `active_alerts: None` (alerts sub-call failed) into "no alerts", and a fully-failed weather probe passed a trail clean with no disclosure — both now set the trail aside as unverifiable.
+
+## 42. Confidence fusion — weakest-link MIN + primary/aggregated source split (CDP-06) ✅ *(2026-07-14 — PRs #197 #215; code: `orchestration/confidence.py`; refines §7)*
+- **The decision:** the three axes (freshness · authority · corroboration) now fuse by **weakest-link `min(a,f,c)`**, not the old weighted mean — a comfortable middle is a lie; two strong axes cannot paper over a weak third.
+- **The re-tune that made "stated" reachable:** MIN alone left *every* card hedged (single-source live is corroboration-capped; slow corpus is freshness-capped). A **`source_kind` primary/aggregated** split fixes it: a single *authoritative* origin (one NWS gridpoint, USGS gauge, FIRMS satellite, NPS unit) is single-origin but not under-corroborated → it can reach **"stated"**; an *aggregated/unverified* single source (AirNow's blend; a single-provider corpus fact not yet `SAME_AS`-matched) keeps the lower baseline and must earn "stated" via real cross-provider corroboration. `for_fact()` defaults **fail-closed** to `aggregated` (an untagged source is treated as unverified). Verified live: the NWS weather line renders `stated`.
+- **Unchanged:** confidence still never penalizes ranking (Rule #2, guarded by `test_rank_plan_is_confidence_invariant`); the source-or-silence floor is intact.
+
+## 43. Trail-name search — in-graph FULLTEXT (Epic 038 / B001 Problem A); geocoder deferred ✅ *(2026-07-14 — PRs #218 #219 #221; code: `graph/queries.py`, `orchestration/scout.py`+`engine.py`, `api/app.py`, `frontend/src/screens/Home.tsx`)*
+- **The decision:** the Omnibox's first capability is **trail-name search over our corpus** — a Neo4j FULLTEXT index (`trail_name_fts`) + `scout_by_name` feeding the *same* verify→present pipeline as `/plan` (via an extracted, behaviour-preserving `_plan_from_candidates`), exposed as `POST /search {query,k?}→FeedResponse`. Results are our verified curated cards, relevance-ordered, honest-empty on no match — **never a raw graph dump** (B001 discipline). Operational tail: the `trail_name_fts` index is created on Aura by hand (the API doesn't auto-apply schema).
+- **Relevance (interim):** AND-semantics + length-gated fuzz + a relative-score floor so "old rag" returns just the Old Rag trails; the CoMaps `GetNameScores` scorer (S2) is the eventual graded-relevance answer.
+- **Deferred, deliberately:** **Problem B place-name geocoding** (a thin swappable seam) → gated on the provider decision (**Open Decision #3** / B002); the **full unified intent line** (one box routing name vs. intent vs. place) → a separate epic. Note: `origins.ts` was never a fixed enum — origins are already config-driven + "near me" (the B001 spec corrected that premise).
+
+## 44. Access control enforced by construction — M10 closed ✅ *(2026-07-14 — PR #216; code: `scripts/lint_owned_reads.py`, `graph/queries.py`, `graph/client.py`)*
+- **The decision:** Rule #4 (every owned-label read viewer-scoped at the query/data layer) is now held **by construction — statically and at runtime**. The owned-read lint became join-aware (assembles multi-fragment Cypher before scope-checking) so all 11 interim `# noqa` markers were removed, and a runtime `assert_scoped_read` guard in `ScopedSession.run` refuses an unscoped owned-label read (explicit `allow_unscoped_owned_read=True` bypass, test-infra only). Fixed a hidden unscoped Episode read in `watch_sync.py` en route.
+
+## 45. Elevation truth — seam-gain + bbox-edge coverage fixes ✅ *(2026-07-14 — PRs #214 #217; code: `ingestion/elevation.py`, `scripts/fetch_dem.py`, `ingestion/pipeline.py`)*
+- **The decisions:** (1) multi-part MultiLineString **seam bridges no longer credit their elevation jump to gain/loss** (they were inflating `estimated_duration` 2–5× on 12 trails); (2) the DEM raster is **clipped with a 0.05° (~5.5 km) buffer** beyond the region bbox so boundary-crossing trails keep coverage — the real cause of the "21 null profiles", falsified against live data (an earlier short-trail-brittleness guess was wrong); (3) the coverage gate counts **distinct** canonical_ids. Re-ingested PWF/Douthat/Shenandoah/St-John to Aura → 99.1% elevation coverage.
+- **Chose NOT to mass-re-ingest** all regions for the 0.9% residual (23 nulls, thinly spread); the frontend renders a null-elevation trail's missing facts honestly instead, and the buffer clears each region on its next ingest.
+
+## 46. UX direction — "The Confident Call + Quiet Context" 🔶 *(2026-07-14 — design: `docs/research/ux-vision-2026-07.md` (#222); brief: `docs/research/ux-vision-brief.md`; adopting incrementally)*
+- **Recommended direction (confirm as we build):** from a live UX review + a divergent design spike (Gemini via Antigravity), the app moves from "a feed of ten near-equal verdict cards" toward **one confident hero recommendation ("The Call")** + docked alternatives, **region context stated once** (the Context Ribbon), Detail conditions as one row/kind + a provenance "inspection layer", and a real desktop layout. Protects the refusals (source-or-silence, anti-engagement, calm, private).
+- **Adopting incrementally:** the **Context Ribbon shipped** (#224, honest shared/per-trail split preserved); next lanes — the hero "Call" card, the desktop map-split, and a backend region-conditions probe (so the ribbon can carry a *true* region-level weather/AQI line, flagged not faked). Prior HIGH/MEDIUM UX fixes (#220 #221 #223) already moved the surface toward this.
