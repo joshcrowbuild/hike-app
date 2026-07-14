@@ -1,0 +1,43 @@
+{
+  "adapter": "nps_alerts",
+  "source": "developer.nps.gov",
+  "note": "GLM red-team round 2 F11: the alerts endpoint returns BOTH a Closure and a Danger alert for Shenandoah NP. The adapter keeps only Closure/Danger categories (_RELEVANT_CATEGORIES), so both pass. evaluate_guardrails must generate a separate CardWarning for each (dict.fromkeys dedupes on (category, title) — different categories are not duplicates). Both warnings carry the park scope in their text.",
+  "interactions": [
+    {
+      "match": "/parks",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "fullName": "Shenandoah National Park",
+            "parkCode": "shen",
+            "latLong": "lat:38.5153, long:-78.4257"
+          },
+          {
+            "fullName": "Acadia National Park",
+            "parkCode": "acad",
+            "latLong": "lat:44.409286, long:-68.247501"
+          }
+        ]
+      }
+    },
+    {
+      "match": "/alerts",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "title": "Old Rag Area Closure",
+            "category": "Closure",
+            "url": "https://www.nps.gov/shen/learn/news/old-rag-closure.htm"
+          },
+          {
+            "title": "Hazardous Trail Conditions on Whiteoak Canyon",
+            "category": "Danger",
+            "url": "https://www.nps.gov/shen/learn/news/whiteoak-danger.htm"
+          }
+        ]
+      }
+    }
+  ]
+}

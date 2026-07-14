@@ -1,0 +1,12 @@
+{
+  "adapter": "firms",
+  "source": "NASA FIRMS",
+  "note": "Header-only CSV — zero fire detections (no_hazard). No fire warning to distract from the closures checked-clear finding.",
+  "interactions": [
+    {
+      "match": "firms.modaps",
+      "status": 200,
+      "text": "country_id,latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight\n"
+    }
+  ]
+}
