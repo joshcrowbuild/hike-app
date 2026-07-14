@@ -14,7 +14,7 @@ import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
-import { FeedConditionsRibbon } from './FeedConditions'
+import { ContextRibbon } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
 import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
 
@@ -142,12 +142,18 @@ export function Home({
             </button>
           ) : null}
 
-          <section className="frame">
-            <button className="context" type="button" onClick={onOpenTuning}>
-              <span className="context-text">{contextSentence(tuning, anonymous, cards, origins)}</span>
-              <span className="context-adjust">Adjust</span>
-            </button>
-          </section>
+          {/* The Context Ribbon (ux-vision-2026-07 §9 item 1): the region + when +
+              origin frame sentence and the region-scope conditions read as ONE
+              confident unit, once, before the cards — not a tappable button
+              followed by a disconnected "In this area" band two elements down.
+              Still tappable in full (opens Tuning); the shared conditions are
+              exactly what `splitFeedConditions` hoisted below (F3/F9a) — the
+              cards keep their own per-trail deltas via the same hoist keys. */}
+          <ContextRibbon
+            contextText={contextSentence(tuning, anonymous, cards, origins)}
+            onOpenTuning={onOpenTuning}
+            conditions={feedConditions}
+          />
 
           {feed?.dataSource === 'mock' ? (
             <p className="sample-strip" role="note">
@@ -259,10 +265,6 @@ export function Home({
                     <WarningBlock warnings={banner} label="Regional alert" />
                   </div>
                 ) : null}
-
-                {/* The safety banner keeps the top slot; the quiet region-scope
-                    conditions read once, directly below it, before the cards. */}
-                <FeedConditionsRibbon conditions={feedConditions} />
 
                 {shown.length > 0 ? (
                   <div className="card-stack">

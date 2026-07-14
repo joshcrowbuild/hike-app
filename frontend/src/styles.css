@@ -69,6 +69,23 @@ button {
     width: min(100%, 34rem);
     padding-top: 2.4rem;
   }
+
+  /* The Context Ribbon gets a touch more breathing room at the 34rem column —
+     still the same single card, same hierarchy, just proportioned for a
+     pointer-and-keyboard viewport instead of a thumb-width one (no new
+     layout, no grid: the vision's "sensible treatment at desktop width" is
+     read here as generous spacing, not a structural change). */
+  .context-ribbon-head {
+    padding: 1.15rem 1.3rem;
+  }
+
+  .context-ribbon-text {
+    font-size: 1.05rem;
+  }
+
+  .feed-conditions-body {
+    padding: 0.85rem 1.3rem 1rem;
+  }
 }
 
 /* ---- shared cartographic primitives ---- */
@@ -176,30 +193,37 @@ button {
   outline-offset: 2px;
 }
 
-/* ---- frame / context sentence ---- */
-.frame {
+/* ---- Context Ribbon (ux-vision-2026-07 §9 item 1) ----
+   The unified Home header: the region + when + origin frame sentence and the
+   region-scope conditions read as ONE confident card, once, before the cards
+   — not a tappable button followed by a disconnected "In this area" band
+   further down (the pre-vision `.frame`/`.context` + `.feed-conditions`
+   split). One outer surface, one border, so the eye reads it as a single
+   region-context unit; the tappable head and the quiet conditions body are
+   still visually distinct rows inside it. */
+.context-ribbon {
   margin-bottom: 1.25rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
 }
 
-.context {
+.context-ribbon-head {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   text-align: left;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
   padding: 0.95rem 1rem;
-  transition: background 130ms ease, border-color 130ms ease;
+  transition: background 130ms ease;
 }
 
-.context:active {
+.context-ribbon-head:active {
   background: var(--surface-press);
 }
 
-.context-text {
+.context-ribbon-text {
   font-size: 1rem;
   font-weight: 500;
   color: var(--text-primary);
@@ -209,6 +233,25 @@ button {
   font-size: 0.68rem;
   color: var(--text-muted);
   flex: none;
+}
+
+/* The region-scope conditions body: a quiet second row inside the same card,
+   set off from the tappable head by a hairline rather than its own border —
+   the reading and the silent dispositions reuse the card's own condition
+   treatments (their type sizes are theirs), so the three silences stay
+   exactly as distinct here as on a card. Never the accent hue — the feed's
+   regional-alert banner owns that. */
+.feed-conditions-body {
+  padding: 0.7rem 1rem 0.85rem;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.feed-conditions-scope {
+  margin: 0 0 0.35rem;
+}
+
+.feed-conditions-body .condition-states--compact {
+  margin-top: 0.3rem;
 }
 
 /* The tuned-state note is a quiet confirmation, not a caution: it stays in the
@@ -238,27 +281,6 @@ button {
    spacing differs since this sits above the stack, not inside a card. */
 .feed-alert-banner {
   margin: 0 0 0.85rem;
-}
-
-/* ---- feed-level conditions ribbon (region-scope facts stated once — report
-   F3/F9a) — a quiet raised panel below the safety banner: the reading and the
-   silent dispositions reuse the card's own condition treatments (their type
-   sizes are theirs), so the three silences stay exactly as distinct here as on
-   a card. Never the accent hue — the banner above owns that. */
-.feed-conditions {
-  margin: 0 0 0.85rem;
-  padding: 0.7rem 0.85rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
-}
-
-.feed-conditions-scope {
-  margin: 0 0 0.35rem;
-}
-
-.feed-conditions .condition-states--compact {
-  margin-top: 0.3rem;
 }
 
 .card-stack {

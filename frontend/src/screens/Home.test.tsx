@@ -392,7 +392,7 @@ describe('Home hoists a region-wide alert to one feed banner instead of a per-ca
   })
 })
 
-describe('Home hoists region-scope conditions to one feed ribbon (F3: region facts once, deltas on cards)', () => {
+describe('Home Context Ribbon (ux-vision-2026-07 §9 item 1: region + when + origin and region-scope conditions unified in one band)', () => {
   const weatherLine = (text = 'Mostly Cloudy 61°F · NWS, just now') => ({
     text,
     source: 'NWS api.weather.gov',
@@ -415,12 +415,50 @@ describe('Home hoists region-scope conditions to one feed ribbon (F3: region fac
     ...over,
   })
 
-  it('states the shared reading, the checked-clear sweep and the outage ONCE, in a named region landmark', async () => {
+  it('renders the frame (when · region · from origin) exactly once, inside the named ribbon landmark', async () => {
+    const cards = [regionCard('a'), regionCard('b'), regionCard('c')]
+    await renderHomeWith(feedWith({ cards }))
+
+    const ribbon = screen.getByRole('region', { name: 'This frame' })
+    expect(ribbon).toBeInTheDocument()
+    expect(ribbon.textContent).toMatch(/Weekend morning/)
+    expect(ribbon.textContent).toMatch(/Shenandoah/)
+    expect(ribbon.textContent).toMatch(/from Front Royal/)
+    // Exactly one frame sentence on the page — never a second copy anywhere else.
+    expect(screen.getAllByText(/from Front Royal/).length).toBe(1)
+  })
+
+  it('opens Tuning when the ribbon head is activated', async () => {
+    const user = userEvent.setup()
+    const onOpenTuning = vi.fn()
+    const feed = feedWith({ cards: [regionCard('a')] })
+    render(
+      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feed)}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={onOpenTuning}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await screen.findByRole('region', { name: 'This frame' })
+
+    await user.click(screen.getByRole('button', { name: /Weekend morning.*Adjust/s }))
+    expect(onOpenTuning).toHaveBeenCalledTimes(1)
+  })
+
+  it('states the shared reading, the checked-clear sweep and the outage ONCE, inside the same ribbon as the frame sentence', async () => {
     const cards = [regionCard('a'), regionCard('b'), regionCard('c')]
     const { container } = await renderHomeWith(feedWith({ cards }))
 
-    const ribbon = screen.getByRole('region', { name: 'Conditions across this area' })
-    expect(ribbon).toBeInTheDocument()
+    const ribbon = screen.getByRole('region', { name: 'This frame' })
+    // The frame sentence and the region-scope conditions read as ONE unit —
+    // both live inside the same landmark, not two separate elements.
+    expect(ribbon.textContent).toMatch(/from Front Royal/)
+    expect(ribbon.textContent).toMatch(/In this area/)
     // Each region-scope fact appears exactly once on the whole feed — with its
     // source + stamp preserved (honesty is kept, just not repeated ×3).
     expect(screen.getAllByText(/Mostly Cloudy 61°F/).length).toBe(1)
@@ -438,7 +476,7 @@ describe('Home hoists region-scope conditions to one feed ribbon (F3: region fac
     }
   })
 
-  it('keeps a differing per-trail reading on its own card as the Now delta', async () => {
+  it('keeps a differing per-trail reading on its own card as the Now delta, never hoisted to the ribbon', async () => {
     const cards = [
       regionCard('a'),
       regionCard('b'),
@@ -450,15 +488,22 @@ describe('Home hoists region-scope conditions to one feed ribbon (F3: region fac
     expect(screen.getAllByText(/61°F/).length).toBe(1)
     const cardTexts = [...container.querySelectorAll('.card')].map((el) => el.textContent ?? '')
     expect(cardTexts.filter((t) => t.includes('64°F')).length).toBe(1)
+    // The per-trail-distinct reading never leaks into the ribbon itself.
+    const ribbon = screen.getByRole('region', { name: 'This frame' })
+    expect(ribbon.textContent).not.toMatch(/64°F/)
   })
 
-  it('renders no ribbon when nothing is region-shared', async () => {
+  it('still renders the ribbon (frame sentence) with no "In this area" body when nothing is region-shared', async () => {
     const cards = [
       regionCard('a', { conditionLines: [weatherLine('Sunny 60°F · NWS')], conditions: undefined }),
       regionCard('b', { conditionLines: [weatherLine('Cloudy 55°F · NWS')], conditions: undefined }),
     ]
     await renderHomeWith(feedWith({ cards }))
-    expect(screen.queryByRole('region', { name: 'Conditions across this area' })).not.toBeInTheDocument()
+
+    // The ribbon itself never disappears — it always carries the frame sentence.
+    const ribbon = screen.getByRole('region', { name: 'This frame' })
+    expect(ribbon.textContent).toMatch(/from Front Royal/)
+    expect(ribbon.textContent).not.toMatch(/In this area/)
   })
 })
 

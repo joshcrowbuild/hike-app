@@ -26,10 +26,11 @@ const suites = [
   // safety-relevant honesty surface: a user reads them to judge whether an
   // absent condition was checked-clear, unreachable, or never checked.
   ['ConditionStates', composeStories(ConditionStatesStories)],
-  // The feed-level conditions ribbon (F3) is the same honesty surface hoisted
-  // to feed scope — a named region landmark whose silence states must stay
+  // The Context Ribbon (ux-vision-2026-07 §9 item 1) is the same honesty
+  // surface hoisted to feed scope, now unified with the tappable frame
+  // sentence — a named region landmark whose silence states must stay
   // distinct to assistive tech exactly as they are on a card.
-  ['FeedConditionsRibbon', composeStories(FeedConditionsStories)],
+  ['ContextRibbon', composeStories(FeedConditionsStories)],
 ] as const
 
 async function runAxe(container: HTMLElement) {
