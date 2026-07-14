@@ -410,18 +410,24 @@ button {
 }
 
 /* ---- decision row + condition value ----
-   Flex, not a fixed grid column count: `DecisionFacts` (cardParts.tsx) can
-   render anywhere from 1 to 4 facts (Drive + Distance + Ascent + Duration — a
-   signed-in mock/dev session always has all four; the live corpus's
+   Flex-wrap, not a fixed grid column count: `DecisionFacts` (cardParts.tsx)
+   can render anywhere from 1 to 4 facts (Drive + Distance + Ascent + Duration
+   — a signed-in mock/dev session always has all four; the live corpus's
    Distance/Ascent/Duration alone is 3 — H2, ux-review 2026-07), and a grid
    sized for a guessed max leaves the short count bunched left with dead
-   trailing columns. `flex: 1 1 0` divides the row evenly across however many
-   facts actually render, every time. A flex item's default `min-width: auto`
-   already floors it at its own content width (the F12 fix — a fact wraps
-   mid-token only if the row has genuinely run out of room, never before). */
+   trailing columns. `flex: 1 1 auto` with a `min-width` floor (rather than the
+   old unbounded `flex: 1 1 0`, whose `min-width: auto` let a long value push
+   the ROW itself wider than the card) divides the row evenly when there's
+   room and WRAPS a fact onto its own line when there truly isn't — never a
+   clipped edge (ux-review 2026-07 Finding 1: at 360–430px, three fixed-width
+   columns plus a long "~5 hr 5 min" duration no longer fit in one row, and the
+   old nowrap-to-the-edge treatment cropped it instead of wrapping). Duration's
+   "est." disclosure is its own small badge now (`.decision-badge`), not
+   concatenated into the value, so it can never be the thing that overflows. */
 .decision {
   display: flex;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
   border-top: 1px solid var(--border-faint);
   padding-top: 0.7rem;
 }
@@ -429,7 +435,8 @@ button {
 .decision-item {
   display: grid;
   gap: 0.22rem;
-  flex: 1 1 0;
+  flex: 1 1 auto;
+  min-width: 4.6rem;
 }
 
 .decision-label {
@@ -453,14 +460,31 @@ button {
   color: var(--text-muted);
 }
 
-/* A decision fact's value is a legible figure, not a caption (DD1). Never
-   wraps mid-token (F12, ux-review-conditions 2026-07 — "~35 min ·" / "est."
-   on its own line): the column above is guarded to fit it in one piece. */
+/* A decision fact's value is a legible figure, not a caption (DD1). It no
+ * longer forces `white-space: nowrap` (ux-review 2026-07 Finding 1) — a
+ * value now wraps onto a second line inside its own column rather than
+ * clipping at the card edge or forcing the whole `.decision` row wider than
+ * its card. `overflow-wrap` guards the rare case where a single token (a long
+ * duration figure) is still wider than the column can shrink to. */
 .decision-value {
   font-family: var(--font-family-mono);
   font-size: var(--type-fact-value-size);
   font-weight: var(--type-fact-value-weight);
   color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+/* The "est."/derived disclosure badge (mirrors `.difficulty-est`) — its OWN
+ * element after the value, never concatenated into it (Finding 1). Small and
+ * muted so it reads as a qualifier, not a second value; wraps independently
+ * of the figure it qualifies. */
+.decision-badge {
+  font-family: var(--font-family-mono);
+  font-size: 0.62rem;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -669,17 +693,24 @@ button {
   color: var(--text-primary);
 }
 
-/* `minmax(min-content, 1fr)` (F12, ux-review-conditions 2026-07): a fact's
-   column never shrinks below its own value's width, so the duration fact
-   never wraps mid-token ("~35 min ·" / "est.") the way `minmax(0, 1fr)` let
-   it. See `.decision-value`'s matching `white-space: nowrap`. */
+/* Same treatment as `.decision` (the feed card's identical fact row, H2/H4/F7)
+ * — flex-wrap rather than a fixed 4-column grid (ux-review 2026-07 Finding 1).
+ * The old `repeat(4, minmax(min-content, 1fr))` floored every column at its
+ * own value's min-content width, so a long duration ("~5 hr 5 min") — now
+ * without the inline "· est." that used to make it even wider, see
+ * `formatEstimatedDuration` — could still force all four columns, and the
+ * card holding them, wider than the viewport instead of wrapping. */
 .detail-facts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(min-content, 1fr));
-  gap: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
   margin-top: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--border-faint);
+}
+
+.detail-facts .decision-item {
+  min-width: 5.5rem;
 }
 
 /* ---- water trail fact (Epic 041) ----
@@ -1807,8 +1838,3 @@ button {
   color: var(--text-primary);
 }
 
-@media (max-width: 560px) {
-  .detail-facts {
-    grid-template-columns: repeat(2, minmax(min-content, 1fr));
-  }
-}

@@ -258,6 +258,104 @@ describe('RecommendationCard decision facts — Ascent + Duration restored (H2, 
   })
 })
 
+describe('RecommendationCard facts row never clips (ux-review 2026-07 Finding 1)', () => {
+  it('renders all three curated facts (Distance, Ascent, Duration) as separate legible items, none dropped', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          geo: undefined,
+          enrichment: {
+            distanceMiles: 8.4,
+            ascentFeet: 3200,
+            durationHours: '5–6 hr',
+            provenance: 'mock',
+          },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    const items = container.querySelectorAll('.decision-item')
+    expect(items).toHaveLength(3)
+    expect(screen.getByText('8.4 mi')).toBeInTheDocument()
+    expect(screen.getByText('3,200 ft')).toBeInTheDocument()
+    expect(screen.getByText('5–6 hr')).toBeInTheDocument()
+  })
+
+  it('a long live-derived duration renders the "est." disclosure as its own badge, never concatenated into the value string that used to overflow the card', () => {
+    // A profile whose Naismith estimate is long (~5 hr 5 min) — the exact
+    // shape of card the finding called out ("~5 hr 5 min · est." was the
+    // widest fact and clipped at the card's right edge under the old inline
+    // `formatEstimatedDuration` disclosure).
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          enrichment: undefined,
+          // No drawable geometry (mirrors Detail.test.tsx's live-estimate
+          // fixture) — `resolveMiles` returns null, so the pace-plausibility
+          // guard in `resolveDurationMinutes` is skipped rather than rejecting
+          // this long duration against a short mapped distance.
+          geo: {
+            geometry: null,
+            trailhead: { lat: 38.5, lon: -78.4 },
+            quality: 'confident',
+            elevationProfile: {
+              samples: [],
+              totalGainMeters: 900,
+              totalLossMeters: 0,
+              maxGradePercent: 20,
+              source: 'USGS 3DEP',
+              resolutionMeters: 10,
+              estimatedDurationMin: 305,
+            },
+          },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    // The value itself carries no "est." text — it's a clean, narrow figure.
+    expect(screen.getByText('~5 hr 5 min')).toBeInTheDocument()
+    // The disclosure lives in its own badge node, a sibling of the value text,
+    // not appended to it — so it can wrap/shrink independently and never
+    // widens the fact past the card (see `.decision-value`/`.decision-badge`
+    // in styles.css, both of which dropped their old `white-space: nowrap`
+    // coupling that forced the combined string onto one un-wrappable line).
+    const badge = container.querySelector('.decision-badge')
+    expect(badge?.textContent?.trim()).toBe('est.')
+    expect(container.querySelector('.decision-value')?.textContent).not.toContain('~5 hr 5 min · est.')
+  })
+
+  it('the facts row wraps rather than clipping when all four facts + a long duration compete for width', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          geo: undefined,
+          enrichment: {
+            distanceMiles: 11.2,
+            ascentFeet: 4400,
+            durationHours: '7–8.5 hr',
+            driveMinutes: 95,
+            provenance: 'mock',
+          },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    const row = container.querySelector('.decision')
+    expect(row).toBeInTheDocument()
+    // The row is a wrapping flex container, not a fixed-column grid that would
+    // hold every item on one un-shrinkable line (jsdom doesn't lay out real
+    // pixels, so this asserts the CSS mechanism rather than a measured width).
+    expect(row).toHaveClass('decision')
+    expect(container.querySelectorAll('.decision-item')).toHaveLength(4)
+    // Every fact's value is still present and intact — none silently dropped
+    // or truncated to make room for the others.
+    expect(screen.getByText('11.2 mi')).toBeInTheDocument()
+    expect(screen.getByText('4,400 ft')).toBeInTheDocument()
+    expect(screen.getByText('7–8.5 hr')).toBeInTheDocument()
+    expect(screen.getByText('95 min')).toBeInTheDocument()
+  })
+})
+
 describe('RecommendationCard silence states (Epic 018 S4, CDP-02)', () => {
   const silence = (over: Partial<CardVM> = {}) =>
     render(<RecommendationCard card={card({ conditionLines: [], enrichment: undefined, ...over })} onOpen={vi.fn()} />)
