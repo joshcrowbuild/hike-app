@@ -1,7 +1,9 @@
 """Confidence — one property, computed on read (rules #2, #7; Stage 2 §4).
 
 Confidence combines three axes — **freshness · authority · corroboration** — into
-a single 0..1 score. That score does three things and *only* these three:
+a single 0..1 score by **weakest-link fusion** (the MIN of the three, not a mean:
+CDP-06 — a comfortable middle is a lie). That score does three things and *only*
+these three:
 
   1. sets a **floor** (below it, a fact is flagged / not stated as fact),
   2. sets the **presentation** (stated / hedged / flagged),
@@ -61,7 +63,23 @@ def compute(
     # 1 independent source = baseline; more corroboration helps, with diminishing
     # returns (1 -> 0.6, 2 -> 0.8, 3+ -> 1.0).
     c = min(1.0, 0.6 + 0.2 * max(0, corroboration - 1))
-    score = round(0.4 * a + 0.3 * f + 0.3 * c, 3)
+    # Weakest-link fusion (CDP-06): a fact is only as trustworthy as its *weakest*
+    # axis — freshness, authority, and corroboration must EACH hold up. The former
+    # weighted mean (0.4a + 0.3f + 0.3c) let two strong axes paper over a weak third
+    # (stale-but-authoritative, single-source-but-fresh) into a "comfortable middle"
+    # that overstated trust; taking the MIN refuses that lie.
+    #
+    # AGGREGATE CONSEQUENCE (surfaced for review, never hidden): given today's axis
+    # weights + corroboration curve, "stated" (score ≥ 0.75) is now UNREACHABLE for
+    # every user-facing fact the engine emits — live conditions are single-source by
+    # construction (c=0.6 → caps at 0.6 → hedged) and corpus facts are slow-freshness
+    # (f=0.7 → caps at 0.7 → hedged), so the whole feed presents "hedged"/"flagged".
+    # That is the honest floor: nothing here is verified by an independent second
+    # origin. compute() itself still returns "stated" when all three axes clear 0.75
+    # (see test_high_authority_live_corroborated_is_stated) — it is the *wiring* that
+    # never feeds it such inputs. Restoring a reachable "stated" is a curve/weight
+    # re-tune, deliberately OUT OF SCOPE for this fusion-only change (see PR body).
+    score = round(min(a, f, c), 3)
 
     level = "high" if score >= 0.75 else "medium" if score >= 0.5 else "low"
     presentation = {"high": "stated", "medium": "hedged", "low": "flagged"}[level]

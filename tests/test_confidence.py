@@ -23,10 +23,23 @@ def test_low_authority_stale_single_is_flagged_below_floor() -> None:
     assert not c.floor_met  # below the floor -> never stated as fact
 
 
-def test_corroboration_raises_score_without_changing_axes() -> None:
-    one = compute(authority="mid", freshness="slow", corroboration=1)
-    three = compute(authority="mid", freshness="slow", corroboration=3)
+def test_corroboration_raises_score_when_it_is_the_weakest_link() -> None:
+    # Under weakest-link fusion (CDP-06) corroboration lifts the score only when it is
+    # the binding (weakest) axis — so hold authority + freshness strong and vary it.
+    one = compute(authority="tier1_gov", freshness="live", corroboration=1)
+    three = compute(authority="tier1_gov", freshness="live", corroboration=3)
     assert three.score > one.score
+
+
+def test_weakest_link_is_min_not_weighted_mean() -> None:
+    # A comfortable middle is a lie (CDP-06): stale data, however authoritative and
+    # corroborated, is only as trustworthy as its weakest axis (freshness here). The
+    # old weighted mean produced ~0.79 ("stated"); weakest-link tells the truth.
+    c = compute(authority="tier1_gov", freshness="stale", corroboration=3)
+    assert c.score == 0.3  # min(1.0, 0.3, 1.0) — the stale-freshness floor wins
+    assert c.presentation == "flagged"
+    old_weighted_mean = round(0.4 * 1.0 + 0.3 * 0.3 + 0.3 * 1.0, 3)  # 0.79
+    assert old_weighted_mean >= 0.75 > c.score  # the mean overstated; MIN corrects it
 
 
 def test_for_fact_reads_confidence_inputs() -> None:
@@ -37,7 +50,9 @@ def test_for_fact_reads_confidence_inputs() -> None:
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
     )
     c = for_fact(fact)
-    assert c.level == "high"
+    # A single-source live fact reads its inputs (tier1_gov + live) but is capped at
+    # the corroboration=1 floor (0.6) → medium/hedged under weakest-link fusion.
+    assert c.level == "medium"
 
 
 def test_missing_inputs_fall_back_to_defaults() -> None:

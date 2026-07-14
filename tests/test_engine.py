@@ -22,7 +22,7 @@ from orchestration.adapters.base import (
     Point,
     VerifiedFact,
 )
-from orchestration.confidence import compute, for_fact
+from orchestration.confidence import Confidence, compute, for_fact
 from orchestration.curator import GuardrailVerdict
 from orchestration.engine import (
     CachedPlan,
@@ -410,6 +410,37 @@ def test_rank_plan_reorders_by_taste() -> None:
     assert [p.candidate.canonical_id for p in out] == ["b", "a"]
 
 
+def test_rank_plan_is_confidence_invariant() -> None:
+    # Rule #2 / module boundary (HARD CONSTRAINT): the Curator's taste ranking is BLIND
+    # to confidence — varying a candidate's per-fact confidence AND its corpus_confidence
+    # must never reorder the feed. Confidence sets presentation + a safety floor, never
+    # rank. A future change that (wrongly) threads a Confidence into rank_plan breaks this.
+    high = compute(authority="tier1_gov", freshness="live", corroboration=3)
+    low = compute(authority="low", freshness="stale", corroboration=1)
+    assert high.score > low.score  # the two confidences are genuinely different
+
+    def _with_conf(cid: str, dist: float, conf: Confidence) -> PlannedTrail:
+        return PlannedTrail(
+            Candidate(cid, cid.upper(), "th", dist),
+            {ConditionKind.weather: _fact({"short_forecast": "Clear"})},
+            {ConditionKind.weather: conf},
+            GuardrailVerdict(False),
+            corpus_confidence=conf,
+        )
+
+    judge = _FakeJudge('["b","a"]')  # a fixed taste order the judge always returns
+    a_confident = [
+        p.candidate.canonical_id
+        for p in rank_plan([_with_conf("a", 10.0, high), _with_conf("b", 20.0, low)], judge, "m")
+    ]
+    b_confident = [
+        p.candidate.canonical_id
+        for p in rank_plan([_with_conf("a", 10.0, low), _with_conf("b", 20.0, high)], judge, "m")
+    ]
+    # Flipping which trail carries high confidence changes nothing about rank order.
+    assert a_confident == b_confident == ["b", "a"]
+
+
 # ── Intent.filters as soft rank signals (Sonnet lane) ──
 
 
@@ -675,7 +706,9 @@ def test_corpus_corroboration_counts_distinct_origins_live_facts_stay_one() -> N
     live = trail.confidences[ConditionKind.weather]
     live_fact = trail.facts[ConditionKind.weather]
     assert live.score == for_fact(live_fact, corroboration=1).score
-    assert live.score < for_fact(live_fact, corroboration=2).score
+    # The corroboration lift lives on the corpus identity, never on the live fact: the
+    # 2-origin corpus confidence sits ABOVE the honest single-source live score.
+    assert trail.corpus_confidence.score > live.score
 
 
 def _clear_weather(lat: float, lon: float) -> Any:
