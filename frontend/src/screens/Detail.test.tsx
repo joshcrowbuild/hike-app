@@ -132,9 +132,32 @@ describe('Detail Duration — live estimate disclosed as such (Epic 022)', () =>
     expect(container.querySelector('.decision-badge')?.textContent?.trim()).toBe('est.')
   })
 
-  it('renders no Duration fact when neither a mock duration nor a live estimate is present', async () => {
+  it('renders no Duration fact when NOTHING resolves (no distance either) — nothing to disclose a gap in', async () => {
     await renderDetail(card({ geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null } }))
     expect(screen.queryByText(/Duration/)).not.toBeInTheDocument()
+  })
+
+  it('discloses Ascent + Duration as honestly unavailable ("—"), never a silent omission, once Distance anchors the row (Finding 6)', async () => {
+    const { container } = await renderDetail(
+      card({
+        // A real Distance (via enrichment, independent of geometry) with a null
+        // elevation profile — exactly the null-elevation shape Finding 6 named:
+        // Ascent/Duration have no figure, but the trail is real and Distance shows.
+        enrichment: { distanceMiles: 4.2, provenance: 'live' },
+        geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null },
+      }),
+    )
+    expect(screen.getByText('4.2 mi')).toBeInTheDocument()
+    // Ascent and Duration stay in the row — as a disclosed gap, not a vanished fact.
+    expect(screen.getAllByText('Ascent').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Duration').length).toBeGreaterThan(0)
+    const gaps = container.querySelectorAll('.decision-value--unavailable')
+    expect(gaps).toHaveLength(2)
+    for (const gap of gaps) {
+      expect(gap.querySelector('[aria-hidden="true"]')?.textContent).toBe('—')
+    }
+    expect(screen.getByText('Ascent not available')).toBeInTheDocument()
+    expect(screen.getByText('Duration not available')).toBeInTheDocument()
   })
 })
 
@@ -264,7 +287,7 @@ describe('Detail water fact (Epic 041) — one answer line, CDP-02 three ways', 
 })
 
 describe('Detail per-kind condition coverage (Epic 018 S4f, CDP-02)', () => {
-  it('renders the full row-per-kind coverage list beneath the condition lines', async () => {
+  it('renders the full row-per-kind coverage list, one row per kind', async () => {
     const { container } = await renderDetail(
       card({
         conditionLines: [{ text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' }],
@@ -299,5 +322,66 @@ describe('Detail per-kind condition coverage (Epic 018 S4f, CDP-02)', () => {
     )
     expect(container.querySelector('.condition-silence')).not.toBeInTheDocument()
     expect(container.querySelector('.condition-state--no-hazard')).toBeInTheDocument()
+  })
+})
+
+describe('Detail conditions render ONCE — no duplicate prose+table for the same fact (ux-review 2026-07 Finding 4/7)', () => {
+  const merged = card({
+    conditionLines: [
+      { text: 'Sunny 90°F', source: 'NWS', confidence: 'stated', provenance: 'live' },
+      { text: 'AQI 45 (Good)', source: 'EPA', confidence: 'hedged', provenance: 'live' },
+    ],
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '4m ago' },
+      { kind: 'air', state: 'present', source: 'EPA', checkedAgo: '4m ago' },
+      { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+    ],
+  })
+
+  it('never renders the legacy prose <ul> alongside the per-kind table', async () => {
+    const { container } = await renderDetail(merged)
+    // The table is present…
+    expect(container.querySelector('.condition-states')).toBeInTheDocument()
+    // …and the old prose list is gone — no second representation of the same facts.
+    expect(container.querySelector('.condition-lines')).not.toBeInTheDocument()
+  })
+
+  it('folds each line\'s value into its matching per-kind row instead of dropping it', async () => {
+    const { container } = await renderDetail(merged)
+    const weatherRow = container.querySelector('.condition-state--present')
+    expect(weatherRow?.textContent).toContain('Sunny 90°F')
+    const rows = [...container.querySelectorAll('.condition-state')]
+    const airRow = rows.find((r) => r.textContent?.includes('Air quality'))
+    expect(airRow?.textContent).toContain('AQI 45 (Good)')
+    // No value is dropped in the merge: both prose facts appear exactly once each.
+    expect(container.textContent?.match(/Sunny 90°F/g)).toHaveLength(1)
+    expect(container.textContent?.match(/AQI 45 \(Good\)/g)).toHaveLength(1)
+  })
+
+  it('a matched row uses ONE honest framing — the row still confirms via its disposition label, not the line\'s own separately-hedged copy', async () => {
+    const { container } = await renderDetail(merged)
+    // The hedged AQI line ("AQI 45 (Good)") merges into a `present` row, which
+    // reads with the table's own confident "reported" framing — never the
+    // prose's separate hedge ("Likely: …") duplicating the same fact.
+    expect(container.querySelector('.condition-states')?.textContent).not.toContain('Likely')
+    const airRow = [...container.querySelectorAll('.condition-state')].find((r) =>
+      r.textContent?.includes('Air quality'),
+    )
+    expect(airRow?.textContent).toContain('reported')
+  })
+
+  it('a line with no matching per-kind row (a divergent payload) still surfaces as a residual line, never silently dropped', async () => {
+    const { container } = await renderDetail(
+      card({
+        conditionLines: [{ text: 'Sunny 90°F', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+        conditions: [{ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' }],
+      }),
+    )
+    // No conditions row claims this line's source (no weather kind at all) —
+    // the table still renders as authoritative for the kinds it does cover…
+    expect(container.querySelector('.condition-states')).toBeInTheDocument()
+    // …and the unclaimed fact is never dropped: it surfaces as its own residual line.
+    expect(container.querySelector('.condition-lines--residual')).toBeInTheDocument()
+    expect(screen.getByText('Sunny 90°F')).toBeInTheDocument()
   })
 })
