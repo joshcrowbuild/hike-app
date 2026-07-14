@@ -158,19 +158,46 @@ def candidate_trails_near(
 _LUCENE_SPECIAL_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
 
 
+# Below this length a token is a short, common word ("old", "the", "run") that fuzz-
+# matching would blow wide open: edit-distance-1 against a 3-letter token reaches an
+# enormous neighborhood of unrelated words, which is exactly how "old rag" pulled in
+# "Old Craig Road" / "Old Drowning Ford Road" / "Old Shawl Pond Road" — none of them
+# misspellings, just short-token fuzz noise. Longer tokens have a narrower edit-
+# distance-1 neighborhood, so the typo-tolerance requirement (`docs/research/
+# b001-search-geocoder.md`, "Rivana" -> "Rivanna") still holds for the tokens that
+# actually need it.
+_FUZZY_MIN_TOKEN_LEN = 4
+
+# Relative-score floor applied in `candidate_trails_by_name` (MEDIUM UX finding on
+# #219): keep a hit only if its Lucene `score` is at least this fraction of the TOP
+# hit's score in the same result set. A strong top match (a real "Old Rag" trail)
+# drags this floor up and drops the long tail of weak fuzzy/OR hits; an ambiguous
+# query where every hit scores similarly (all genuinely close matches) keeps its
+# whole set, because the floor scales with the top score rather than being a fixed
+# cutoff. Chosen over an absolute threshold because Lucene scores aren't normalized
+# across queries/corpora — a fixed number would be too strict for short queries and
+# too loose for long ones.
+_RELEVANCE_FLOOR_RATIO = 0.4
+
+
 def _sanitize_fulltext_query(query_text: str) -> str:
-    """Escape Lucene special characters in `query_text`, then append a per-token
-    fuzzy `~` (edit-distance-1 tolerance) so a typo ("Rivana") still matches ("Rivanna")
-    — the fuzzy-match requirement `docs/research/b001-search-geocoder.md` calls for.
-    An empty/whitespace-only query sanitizes to a lone `~`-less empty string — an empty
-    Lucene query string that `db.index.fulltext.queryNodes` rejects at query time, so
+    """Escape Lucene special characters in `query_text`, then require every token to
+    contribute (AND semantics, `+`) so "old rag" needs an "old"-ish AND a "rag"-ish
+    hit rather than either alone — the dominant source of the over-match this fixes
+    (OR previously kept any document matching just one token). Tokens `>=
+    _FUZZY_MIN_TOKEN_LEN` chars get a fuzzy `~` (edit-distance-1 tolerance) so a typo
+    ("Rivana") still matches ("Rivanna") — the fuzzy-match requirement
+    `docs/research/b001-search-geocoder.md` calls for; shorter tokens stay exact so a
+    common short word doesn't fuzz-match half the corpus (see `_FUZZY_MIN_TOKEN_LEN`).
+    An empty/whitespace-only query sanitizes to an empty string — an empty Lucene
+    query string that `db.index.fulltext.queryNodes` rejects at query time, so
     `orchestration.scout.scout_by_name` short-circuits that case before it ever reaches
     this builder (never a raw graph dump on a blank search, never a 500)."""
     escaped = _LUCENE_SPECIAL_RE.sub(r"\\\1", query_text.strip())
     tokens = escaped.split()
     if not tokens:
         return ""
-    return " ".join(f"{tok}~" for tok in tokens)
+    return " ".join(f"+{tok}~" if len(tok) >= _FUZZY_MIN_TOKEN_LEN else f"+{tok}" for tok in tokens)
 
 
 def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[str, Any]]:
@@ -186,10 +213,28 @@ def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[st
     `candidate_trails_near_direct`'s point/area handling, since a name match has no
     accessing Trailhead traversal). Ranking is FULLTEXT relevance (`score DESC`), a
     NAME-MATCH signal — never re-sorted by distance, and never confused with the
-    confidence axis (rule #2)."""
+    confidence axis (rule #2).
+
+    Relevance floor (MEDIUM UX finding on #219 — "old rag" returned 10 hits, only 3
+    real): `db.index.fulltext.queryNodes` OR-matches every fuzzy token, so a query
+    like "old rag" kept any trail matching just "old" OR just "rag" fuzzily, padding
+    the result with weak noise. `_sanitize_fulltext_query` now requires every token
+    to contribute (`+`/AND), and this query additionally collects all hits first to
+    find the top score, then keeps only rows scoring >= `_RELEVANCE_FLOOR_RATIO` of
+    that top score — so a strong top match drops the long fuzzy tail, but a
+    genuinely ambiguous query (every hit scoring similarly) still returns its full
+    set. Honest-over-padded (rule #1 spirit): fewer/no results when nothing matches
+    well is correct, never padded to `k` with noise."""
     lucene_q = _sanitize_fulltext_query(query_text)
     cypher = (
         "CALL db.index.fulltext.queryNodes('trail_name_fts', $q) YIELD node AS t, score\n"
+        "WITH t, score\n"
+        "ORDER BY score DESC\n"
+        "WITH collect({t: t, score: score}) AS hits\n"
+        "WITH hits, hits[0].score AS top_score\n"
+        "UNWIND hits AS hit\n"
+        "WITH hit.t AS t, hit.score AS score, top_score\n"
+        "WHERE score >= top_score * $floor_ratio\n"
         "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
         "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
         "       t.point AS trailhead_point,\n"
@@ -201,7 +246,7 @@ def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[st
         "ORDER BY score DESC\n"
         "LIMIT $k"
     )
-    params: dict[str, Any] = {"q": lucene_q, "k": k}
+    params: dict[str, Any] = {"q": lucene_q, "k": k, "floor_ratio": _RELEVANCE_FLOOR_RATIO}
     return cypher, params
 
 
