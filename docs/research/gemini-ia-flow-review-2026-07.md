@@ -184,6 +184,26 @@ Applying the same critical lens to the spatial UI reveals a tension between the 
 The synchronization between the elevation profile and the MapLibre cursor is a best-in-class interaction. It perfectly embodies the "cockpit-grade utility" vision, allowing a user to instantly see exactly where the steepest 15% grade occurs on the physical terrain. This interaction must be preserved in any redesign.
 
 ---
+
+## Part 6: Deep UX Review (The Skipped Edges)
+
+Looking beyond the core feed and maps, a deep dive into the peripheral interactions (`Outcome`, `Tuning`, and `FeedConditions`) reveals both friction points and excellent implementations of the product's core principles.
+
+### 1. The Outcome Screen (The Black Box of Learning)
+- **Current State**: The `Outcome.tsx` screen asks "How was it?" with a simple 3-face rating (Good, Okay, Rough). It writes this outcome to the backend to update the user's `belief_store`.
+- **The Friction**: This creates a massive "Curation-Intent Gap" on the input side. If a user taps "Rough," the engine learns *something*, but the user has no idea what. Did the engine learn they hate distance? Ascent? That specific region? Hiking with Ruby? When the learning is a black box, the user cannot trust it.
+- **The Fix (Explicit Hypothesis)**: The feedback loop must be transparent. When a user taps a face, the UI should explicitly state the hypothesis the engine is forming. *Example: "Noted. You seemed to struggle with the 1,500ft ascent today. I'll look for gentler climbs next time."*
+
+### 2. The Tuning Sheets (Navigation Friction)
+- **Current State**: `Tuning.tsx` uses a two-level modal sheet pattern. A user taps "When" on the main `AdjustSheet`, which pushes a second `PanelSheet` to pick "Tomorrow Morning".
+- **The Friction**: Every single facet change requires 3 distinct taps (Open facet -> Pick value -> Close/Back to main sheet). If a user wants to change "When" and "Effort", it requires navigating a modal hierarchy. This is far too slow for a "cockpit-grade" utility.
+- **The Fix (Surface Volatility)**: The engine's NLP prompt (the Omnibox) solves much of this, but for structured data, the top 2 most volatile facets (e.g., Effort, When) should be exposed directly on the Home feed as quick-toggles, bypassing the sheets entirely.
+
+### 3. The "Near Me" Control (A Win for Honesty)
+- **Current State**: The `NearMeControl` uses device geolocation to set the origin.
+- **The UX Win**: This component perfectly executes the "source-or-silence" rule. If geolocation fails or permission is denied, it does not silently fail or fabricate an approximate location. It immediately surfaces an honest, calm error ("Location permission denied — pick a starting point below"). This is a textbook example of the product's trust principles in action.
+
+---
 ### Ranked Recommendation & First Step
 
 1. **Unified Intent Line (Omnibox)**: Best alignment with the product's calm, utility-first vision. Fast, zero dead-ends, leverages the existing NLP engine.
