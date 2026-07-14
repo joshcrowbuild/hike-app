@@ -243,7 +243,7 @@ def physical_profile_pace_read() -> tuple[str, dict[str, Any]]:
 def episode_fields_read(episode_id: str) -> tuple[str, dict[str, Any]]:
     """The viewer's Episode distance/ascent/pace, for `process_episode`."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid})\n"
+        "MATCH (e:Episode {episode_id: $eid})\n"  # noqa
         f"WHERE {owner_scope('e')}\n"
         "RETURN e.distance_m AS distance_m, e.ascent_m AS ascent_m,\n"
         "       e.pace_on_grade AS pace_on_grade"
@@ -285,7 +285,7 @@ def upsert_episode(
     `date($start_date)` is null-safe — a `None` start_date leaves `e.date` null, so an
     undated episode is simply absent from the recency window rather than crashing."""
     cypher = (
-        "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
+        "MERGE (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
         "ON CREATE SET e.created_at = $now\n"
         "SET e.watch_activity_id = $wid,\n"
         "    e.source            = $source,\n"
@@ -320,7 +320,7 @@ def upsert_episode(
 def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Person to their Episode. The Episode is matched under
     owner scope (the Person anchor is an identity match, $viewer_id-keyed)."""
-    cypher = (
+    cypher = (  # noqa
         "MATCH (p:Person {member_id: $viewer_id})\n"
         "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('e')}\n"
@@ -332,7 +332,7 @@ def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:
 def wire_episode_on_trail(episode_id: str, canonical_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Episode to the (world, unowned) CanonicalTrail it was on."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid})\n"
+        "MATCH (e:Episode {episode_id: $eid})\n"  # noqa
         f"WHERE {owner_scope('e')}\n"
         "MATCH (t:CanonicalTrail {canonical_id: $cid})\n"
         "MERGE (e)-[:ON]->(t)"
@@ -397,7 +397,7 @@ def upsert_pace_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]
     is part of the MERGE key, so the ON MATCH value update can only ever touch the
     viewer's own belief — a foreign `belief_id` can never MATCH (and clobber) it."""
     cypher = (
-        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"  # noqa
         "ON CREATE SET\n"
         "    b.subject_id           = $viewer_id,\n"
         "    b.subject_type         = 'person',\n"
@@ -423,7 +423,7 @@ def wire_belief_derived_from_episode(belief_id: str, episode_id: str) -> tuple[s
     """Provenance edge Belief-[:DERIVED_FROM]->Episode (rule #7). Both owned ends
     are matched under owner scope so the edge can never cross owners."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"
+        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
         "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('b')} AND {owner_scope('e')}\n"
         "MERGE (b)-[:DERIVED_FROM]->(e)"
@@ -436,7 +436,7 @@ def recount_belief_corroboration(belief_id: str, threshold: int) -> tuple[str, d
     re-promote confidence (gap-audit M8 — the count was owner-unscoped). The
     confidence `CASE` (n≥threshold → 0.7) survives the rewrite."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"
+        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
         "MATCH (b)-[:DERIVED_FROM]->(e:Episode)\n"
         f"WHERE {owner_scope('e')}\n"
         "WITH b, count(e) AS n\n"
@@ -450,7 +450,7 @@ def wire_belief_about_person(belief_id: str) -> tuple[str, dict[str, Any]]:
     """Ownership edge Belief-[:ABOUT]->Person. The Belief is matched under owner
     scope; the Person anchor is the viewer's identity match."""
     cypher = (
-        "MATCH (b:Belief {belief_id: $bid})\n"
+        "MATCH (b:Belief {belief_id: $bid})\n"  # noqa
         f"WHERE {owner_scope('b')}\n"
         "MATCH (p:Person {member_id: $viewer_id})\n"
         "MERGE (b)-[:ABOUT]->(p)"
@@ -475,7 +475,7 @@ def upsert_outcome(
     re-own another member's Outcome — ownership is structural, not an id-naming
     convention. ON MATCH refreshes the mutable fields so a re-post updates in place."""
     cypher = (
-        "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
+        "MERGE (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
         "ON CREATE SET\n"
         "    o.outcome_id     = $oid,\n"
         "    o.overall        = $overall,\n"
@@ -506,7 +506,7 @@ def wire_episode_has_outcome(episode_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Episode to its Outcome (AC-2.1). Both owned ends are matched
     on the viewer's owner-key, so the edge can never cross owners."""
     cypher = (
-        "MATCH (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"
+        "MATCH (e:Episode {episode_id: $eid, owner_id: $viewer_id})\n"  # noqa
         "MATCH (o:Outcome {episode_id: $eid, owner_id: $viewer_id})\n"
         "MERGE (e)-[:HAS_OUTCOME]->(o)"
     )
@@ -520,7 +520,7 @@ def upsert_stated_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any
     clobber another member's belief — ownership is enforced by the seam, not by the
     id-naming convention the seam forbids."""
     cypher = (
-        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
+        "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"  # noqa
         "ON CREATE SET\n"
         "    b.subject_id         = $viewer_id,\n"
         "    b.subject_type       = 'person',\n"

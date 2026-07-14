@@ -1022,6 +1022,7 @@ def run_pipeline(
             # stamped this run, so — once the gate confirms the run is healthy — the
             # prune retires it even though its (constant) ingest_version still matches.
             counts["pruned"] = 0
+            counts["prune_ran"] = 0
             verify_before_prune(
                 region,
                 counts,
@@ -1049,6 +1050,7 @@ def run_pipeline(
             prune_blocked = bool(hard_breaches)
             if prune_blocked:
                 counts["pruned"] = 0
+                counts["prune_ran"] = 0
                 counts["prune_blocked_facets"] = len(hard_breaches)
                 log.warning(
                     "Facet-diff hard breach for region %r — skipping prune (%d bucket(s)): %s",
@@ -1067,7 +1069,14 @@ def run_pipeline(
                     pre_load_count=pre_load_count,
                     run_id=run_id,
                 )
-                counts["pruned"] = int(prune_outcome.pruned)
+                # `counts["pruned"]` is the TRUE number of CanonicalTrail nodes DETACH
+                # DELETEd — NOT `int(prune_outcome.pruned)` (a 0/1 "did the delete pass
+                # run" flag). That conflation was the 2026-07-12 bug: two live runs that
+                # deleted 36 and 5 nodes respectively both printed `pruned: 1` in the
+                # summary. `prune_ran` carries the boolean "did the delete pass execute"
+                # signal on its own key for any caller that wants it.
+                counts["pruned"] = int(prune_outcome.deleted)
+                counts["prune_ran"] = int(prune_outcome.pruned)
                 counts["prune_protected"] = int(prune_outcome.protected)
                 if not prune_outcome.pruned:
                     log.warning(prune_outcome.reason)
