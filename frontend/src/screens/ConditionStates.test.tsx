@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import type { ConditionStatusVM } from '../data/vm'
+import type { ConditionStatusVM, LineVM } from '../data/vm'
 import { ConditionStates } from './ConditionStates'
 
 /**
@@ -108,6 +108,58 @@ describe('ConditionStates (full coverage list)', () => {
   it('renders nothing for an empty payload', () => {
     const { container } = render(<ConditionStates conditions={[]} />)
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('ConditionStates folds a matching line\'s value into its row (ux-review 2026-07 Finding 4/7)', () => {
+  const lines: LineVM[] = [
+    { text: 'Sunny 90°F', source: 'NWS', confidence: 'stated', provenance: 'live' },
+    { text: 'AQI 45 (Good)', source: 'EPA', confidence: 'hedged', provenance: 'live' },
+  ]
+
+  it('folds a present row\'s matching line by source, ahead of the disposition label', () => {
+    const { container } = render(
+      <ConditionStates conditions={[{ kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '4m ago' }]} lines={lines} />,
+    )
+    const row = container.querySelector('.condition-state--present')
+    expect(row?.querySelector('.condition-state-value')?.textContent).toBe('Sunny 90°F · ')
+    expect(row?.textContent).toContain('reported')
+  })
+
+  it('folds a stale-degraded row\'s matching line too', () => {
+    const { container } = render(
+      <ConditionStates
+        conditions={[{ kind: 'weather', state: 'stale-degraded', source: 'NWS', checkedAgo: '3h ago' }]}
+        lines={lines}
+      />,
+    )
+    expect(container.querySelector('.condition-state-value')?.textContent).toBe('Sunny 90°F · ')
+  })
+
+  it('never folds a value into a no-hazard/no-data/unavailable/not-fetched row — only present/stale-degraded carry a value', () => {
+    const { container } = render(
+      <ConditionStates conditions={[{ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' }]} lines={lines} />,
+    )
+    expect(container.querySelector('.condition-state-value')).not.toBeInTheDocument()
+  })
+
+  it('a repeated source is consumed by only the FIRST matching row — never fanned to every row sharing it', () => {
+    const twoNWS: ConditionStatusVM[] = [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '4m ago' },
+      { kind: 'fire', state: 'present', source: 'NWS', checkedAgo: '4m ago' },
+    ]
+    const oneLine: LineVM[] = [{ text: 'Sunny 90°F', source: 'NWS', confidence: 'stated', provenance: 'live' }]
+    const { container } = render(<ConditionStates conditions={twoNWS} lines={oneLine} />)
+    const values = [...container.querySelectorAll('.condition-state-value')]
+    expect(values).toHaveLength(1)
+    expect(values[0].textContent).toBe('Sunny 90°F · ')
+  })
+
+  it('a row with no matching source folds no value (never fabricates one)', () => {
+    const { container } = render(
+      <ConditionStates conditions={[{ kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '4m ago' }]} lines={[]} />,
+    )
+    expect(container.querySelector('.condition-state-value')).not.toBeInTheDocument()
   })
 })
 

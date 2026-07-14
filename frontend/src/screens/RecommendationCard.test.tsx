@@ -234,6 +234,32 @@ describe('RecommendationCard decision facts — Ascent + Duration restored (H2, 
     expect(screen.queryByText('Ascent')).not.toBeInTheDocument()
   })
 
+  it('a null-elevation trail (Distance known, profile null) discloses Ascent/Duration as unavailable instead of a lone Distance (ux-review 2026-07 Finding 6)', () => {
+    const { container } = render(
+      <RecommendationCard
+        card={card({
+          // Distance is knowable (curated), but the trail's elevation profile is
+          // null — no total_gain_m → no ascent, no Naismith duration. The old
+          // behaviour: Ascent and Duration silently vanish, leaving a lone
+          // "1.5 mi" that reads like a broken card.
+          enrichment: { distanceMiles: 1.5, provenance: 'mock' },
+          geo: { geometry: null, trailhead: { lat: 38.5, lon: -78.4 }, quality: 'confident', elevationProfile: null },
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('1.5 mi')).toBeInTheDocument()
+    // The row stays structurally complete: three slots, not one.
+    expect(container.querySelectorAll('.decision-item')).toHaveLength(3)
+    const gaps = container.querySelectorAll('.decision-value--unavailable')
+    expect(gaps).toHaveLength(2)
+    for (const gap of gaps) {
+      expect(gap.querySelector('[aria-hidden="true"]')?.textContent).toBe('—')
+    }
+    expect(screen.getByText('Ascent not available')).toBeInTheDocument()
+    expect(screen.getByText('Duration not available')).toBeInTheDocument()
+  })
+
   it('renders all four facts together (Drive + Distance + Ascent + Duration) — the `.decision` grid must have a column for each', () => {
     // A signed-in personal frame supplies Drive alongside the other three
     // (mockPlanner always does) — the card must not silently drop or strand one.

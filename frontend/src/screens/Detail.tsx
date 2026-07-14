@@ -1,4 +1,5 @@
 import { Confidence, Icon, Signal, Staleness } from '../components'
+import { unclaimedLines } from '../data/feedConditions'
 import { gpxExportUrl } from '../data/geo'
 import { useCard, useTrailWater } from '../data/PlannerProvider'
 import type { CardVM, TrailWaterVM } from '../data/vm'
@@ -191,10 +192,20 @@ function WaterFact({ water }: { water: TrailWaterVM | null }) {
 }
 
 /**
- * The full "Now" conditions, each carrying its own source + confidence tier —
- * the commitment view (Epic 019) shows every line, not just the card's single
- * slot. The empty case and the residual-silence note (the shown set isn't
- * exhaustive, AC-4.3) render here through the shared <ConditionSilence>.
+ * The full "Now" conditions — the commitment view (Epic 019) shows every
+ * kind's disposition, not just the card's single slot.
+ *
+ * ONE representation per fact (ux-review 2026-07 Finding 4/7): the per-kind
+ * coverage table (`ConditionStates`) is authoritative whenever a `conditions`
+ * payload exists — it is scannable, sourced, per-kind, and shows the
+ * "checked — nothing to flag" silence state honestly, none of which the prose
+ * list added. The prose value isn't dropped, though: each `present`/
+ * `stale-degraded` row folds its matching line's text INTO the row
+ * (`ConditionStates`' `lines` prop), so the same six facts are stated once,
+ * not twice, and with one honest framing (the row's own state) rather than
+ * the line's separately-hedged copy. The bare `<ul>` of prose lines now
+ * renders ONLY as the legacy fallback, for the older/mock shape that carries
+ * lines but no per-kind payload at all.
  */
 function ConditionLines({ card }: { card: CardVM }) {
   const e = card.enrichment
@@ -211,14 +222,41 @@ function ConditionLines({ card }: { card: CardVM }) {
     )
   }
   // The per-kind coverage list (Epic 018 S4f): every kind's disposition, row
-  // per kind — present rows quietly confirm the lines above; each silence state
-  // renders visibly distinct (no_hazard = calm sourced silence; unavailable =
-  // the flagged couldn't-verify; not_fetched = quiet not-checked). The payload
-  // supersedes the legacy blanket silence.
-  const coverage = card.conditions && card.conditions.length > 0 ? <ConditionStates conditions={card.conditions} /> : null
-  if (card.conditionLines.length === 0) {
-    return coverage ?? <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
+  // per kind — a present/stale-degraded row now carries its own folded value,
+  // so it needs no companion prose line; each silence state still renders
+  // visibly distinct (no_hazard = calm sourced silence; unavailable = the
+  // flagged couldn't-verify; not_fetched = quiet not-checked). The payload
+  // supersedes the legacy blanket silence AND the legacy prose list.
+  if (card.conditions && card.conditions.length > 0) {
+    // Rule #1 safety net: a line whose source matches no present/stale-degraded
+    // row (a divergent payload — never expected from today's backend, which
+    // builds both lists from the same fact, but never assumed) must still
+    // surface somewhere rather than silently vanish in the merge. Anything the
+    // table didn't claim renders as its own residual line below it.
+    const residual = unclaimedLines(card.conditions, card.conditionLines)
+    return (
+      <>
+        <ConditionStates conditions={card.conditions} lines={card.conditionLines} />
+        {residual.length > 0 ? (
+          <ul className="condition-lines condition-lines--detail condition-lines--residual">
+            {residual.map((line, i) => (
+              <li key={i} className="condition-line">
+                <Confidence level={line.confidence} provenance={line.provenance}>
+                  {line.text}
+                </Confidence>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </>
+    )
   }
+  if (card.conditionLines.length === 0) {
+    return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
+  }
+  // Legacy fallback: no per-kind payload at all (an older backend, or the
+  // mock) — the prose list is the only representation of these facts, so it
+  // renders here rather than vanishing.
   return (
     <>
       <ul className="condition-lines condition-lines--detail">
@@ -230,7 +268,7 @@ function ConditionLines({ card }: { card: CardVM }) {
           </li>
         ))}
       </ul>
-      {coverage ?? (card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null)}
+      {card.conditionSilence ? <ConditionSilence silence={card.conditionSilence} partial /> : null}
     </>
   )
 }

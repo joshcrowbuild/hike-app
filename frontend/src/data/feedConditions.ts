@@ -117,3 +117,46 @@ export function splitFeedConditions(cards: CardVM[]): FeedConditions {
     sharedStateKeys: new Set(sharedStates.map(conditionStateKey)),
   }
 }
+
+/**
+ * Detail's per-kind coverage row for a `present`/`stale-degraded` kind carries
+ * no human-readable VALUE of its own — only the sourced fact's disposition
+ * (state/source/age). The prose in `card.conditionLines` (e.g. "Sunny 90°F")
+ * is that same fact's value, just shaped as a sentence instead of a table
+ * cell. Rendering both was Finding 4/7 (ux-review 2026-07): the commitment
+ * view stated every condition TWICE, once as prose and again as a table row —
+ * redundant, and the two framed the SAME fact differently ("Likely: AQI 45"
+ * hedged in prose vs. "✓ reported" confident in the table).
+ *
+ * The fix folds the line's value into its row instead of dropping either
+ * representation. There is no explicit per-line `kind` on the wire (this stays
+ * client-side rather than adding one — presentation only, Rule #2), but a
+ * `present`/`stale-degraded` row and its line both come from the SAME answered
+ * fact, so they share a `source` — matched here by source identity, one line
+ * consumed per row (`claimed` exhausts a matched line so a repeated source
+ * never fans one line's value to every row that shares it).
+ */
+export function foldLineValue(
+  status: ConditionStatusVM,
+  lines: LineVM[],
+  claimed: Set<LineVM>,
+): LineVM | undefined {
+  if (status.state !== 'present' && status.state !== 'stale-degraded') return undefined
+  const match = lines.find((l) => !claimed.has(l) && l.source === status.source)
+  if (match) claimed.add(match)
+  return match
+}
+
+/**
+ * The Rule #1 safety net for the Finding 4/7 merge: runs the exact same
+ * source-matching claim `ConditionStates` performs (so the two can never
+ * disagree about what got folded) and returns whichever lines NO row claimed —
+ * never expected from today's backend (which builds `conditions` and `lines`
+ * from the same per-kind loop), but a divergent/older payload must still
+ * surface its fact somewhere rather than have the merge silently drop it.
+ */
+export function unclaimedLines(conditions: ConditionStatusVM[], lines: LineVM[]): LineVM[] {
+  const claimed = new Set<LineVM>()
+  for (const status of conditions) foldLineValue(status, lines, claimed)
+  return lines.filter((l) => !claimed.has(l))
+}

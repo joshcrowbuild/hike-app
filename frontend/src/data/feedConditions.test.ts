@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CardVM, ConditionStatusVM, LineVM } from './vm'
-import { conditionStateKey, lineKey, splitFeedConditions } from './feedConditions'
+import { conditionStateKey, foldLineValue, lineKey, splitFeedConditions, unclaimedLines } from './feedConditions'
 
 const line = (over: Partial<LineVM> = {}): LineVM => ({
   text: 'Mostly Cloudy 61°F · NWS, just now',
@@ -164,5 +164,72 @@ describe('splitFeedConditions (F3: region-scope facts stated once, per-trail del
     const { sharedLines } = splitFeedConditions(cards)
 
     expect(sharedLines).toEqual([])
+  })
+})
+
+describe('foldLineValue / unclaimedLines (ux-review 2026-07 Finding 4/7 — Detail states each condition once)', () => {
+  it('folds a present row\'s matching-source line and marks it claimed', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const claimed = new Set<LineVM>()
+    const match = foldLineValue(status({ kind: 'weather', state: 'present', source: 'NWS' }), [weather], claimed)
+    expect(match).toBe(weather)
+    expect(claimed.has(weather)).toBe(true)
+  })
+
+  it('folds a stale-degraded row the same way as present', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const match = foldLineValue(
+      status({ kind: 'weather', state: 'stale-degraded', source: 'NWS' }),
+      [weather],
+      new Set(),
+    )
+    expect(match).toBe(weather)
+  })
+
+  it('never folds for no-hazard/no-data/unavailable/not-fetched — those states carry no value', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    for (const state of ['no-hazard', 'no-data', 'unavailable', 'not-fetched'] as const) {
+      expect(foldLineValue(status({ kind: 'weather', state, source: 'NWS' }), [weather], new Set())).toBeUndefined()
+    }
+  })
+
+  it('matches by source, not position — order-independent', () => {
+    const air = line({ text: 'AQI 45 (Good)', source: 'EPA' })
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const match = foldLineValue(status({ kind: 'weather', state: 'present', source: 'NWS' }), [air, weather], new Set())
+    expect(match).toBe(weather)
+  })
+
+  it('a source with no matching line folds nothing — never fabricates a value', () => {
+    const air = line({ text: 'AQI 45 (Good)', source: 'EPA' })
+    expect(foldLineValue(status({ kind: 'weather', state: 'present', source: 'NWS' }), [air], new Set())).toBeUndefined()
+  })
+
+  it('a repeated source is exhausted by the first claim — a second row sharing it gets no match', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const claimed = new Set<LineVM>()
+    const first = foldLineValue(status({ kind: 'weather', state: 'present', source: 'NWS' }), [weather], claimed)
+    const second = foldLineValue(status({ kind: 'fire', state: 'present', source: 'NWS' }), [weather], claimed)
+    expect(first).toBe(weather)
+    expect(second).toBeUndefined()
+  })
+
+  it('unclaimedLines returns lines no condition row claimed, in original order', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const air = line({ text: 'AQI 45 (Good)', source: 'EPA' })
+    const conditions = [status({ kind: 'weather', state: 'present', source: 'NWS' })]
+    expect(unclaimedLines(conditions, [weather, air])).toEqual([air])
+  })
+
+  it('unclaimedLines returns everything when no condition kind matches any line', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const conditions = [status({ kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS' })]
+    expect(unclaimedLines(conditions, [weather])).toEqual([weather])
+  })
+
+  it('unclaimedLines returns nothing when every line is claimed', () => {
+    const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
+    const conditions = [status({ kind: 'weather', state: 'present', source: 'NWS' })]
+    expect(unclaimedLines(conditions, [weather])).toEqual([])
   })
 })

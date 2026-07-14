@@ -19,9 +19,16 @@
  * Presentation only — never a ranking input (Rule #2). `compact` renders the
  * card's grouped one-row-per-state summary; the default renders Detail's
  * row-per-kind coverage list.
+ *
+ * Detail's default (non-compact) list additionally takes `lines` (ux-review
+ * 2026-07 Finding 4/7): the human-readable VALUE a `present`/`stale-degraded`
+ * row's line carries ("Sunny 90°F") is folded into that row via
+ * `foldLineValue`, so the value is stated once, in the table, framed by the
+ * row's own honest state — never a second prose sentence repeating it.
  */
 import { Confidence, Staleness } from '../components'
-import type { ConditionStateVM, ConditionStatusVM } from '../data/vm'
+import { foldLineValue } from '../data/feedConditions'
+import type { ConditionStateVM, ConditionStatusVM, LineVM } from '../data/vm'
 import { glyphs } from './glyphs'
 
 /** Human labels for the wire condition kinds. An unknown kind falls back to the
@@ -68,19 +75,29 @@ const COMPACT_ORDER: ConditionStateVM[] = [
 export function ConditionStates({
   conditions,
   compact = false,
+  lines = [],
 }: {
   conditions: ConditionStatusVM[]
   /** Card mode: one grouped row per state, kinds joined — the lean summary. */
   compact?: boolean
+  /**
+   * The card's condition-line prose (Detail mode only) — each `present`/
+   * `stale-degraded` row claims its matching line's value by source (Finding
+   * 4/7), so the value renders once, inside the row. Unclaimed lines (no
+   * `conditions` payload covers them, an older backend) are the caller's own
+   * fallback to render, never silently dropped.
+   */
+  lines?: LineVM[]
 }) {
   if (conditions.length === 0) return null
   if (compact) return <CompactStates conditions={conditions} />
+  const claimed = new Set<LineVM>()
   return (
     <ul className="condition-states">
       {conditions.map((s) => (
         <li key={s.kind} className={`condition-state condition-state--${s.state}`}>
           <span className="condition-state-kind">{kindLabel(s.kind)}</span>
-          <StateBody status={s} />
+          <StateBody status={s} value={foldLineValue(s, lines, claimed)} />
         </li>
       ))}
     </ul>
@@ -143,8 +160,14 @@ const compactLabel = (state: ConditionStateVM): string =>
         ? 'No coverage here'
         : 'Not checked here'
 
-/** One kind's full-row body (Detail's coverage list). */
-function StateBody({ status }: { status: ConditionStatusVM }) {
+/**
+ * One kind's full-row body (Detail's coverage list). `value` is the folded
+ * line for a `present`/`stale-degraded` row (Finding 4/7) — its text renders
+ * ahead of the disposition label ("Sunny 90°F · reported"), so the row states
+ * the actual fact once, framed by its own honest state (never the line's own
+ * separately-hedged framing, which the merge retires along with the line).
+ */
+function StateBody({ status, value }: { status: ConditionStatusVM; value?: LineVM }) {
   const copy = STATE_COPY[status.state]
   if (status.state === 'unavailable') {
     // The design system's owned couldn't-verify treatment: flagged <Confidence>
@@ -177,6 +200,7 @@ function StateBody({ status }: { status: ConditionStatusVM }) {
         {copy.glyph ?? <HistoryGlyph />}
       </span>
       <span className="condition-state-text">
+        {value ? <span className="condition-state-value">{value.text} · </span> : null}
         {copy.label}
         {status.state === 'stale-degraded' ? (
           // The hedge is unconditional — a stale row without an age must still

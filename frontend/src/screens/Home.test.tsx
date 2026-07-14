@@ -754,18 +754,18 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     return result
   }
 
-  it('renders a labeled, always-visible search input at the top of the feed', async () => {
+  it('renders a labeled, always-visible search input at the top of the feed, its accessible name spelling out "by name" (ux-review 2026-07 Finding 3)', async () => {
     await renderHomeSearch(vi.fn())
-    const input = screen.getByRole('searchbox', { name: 'Search a trail' })
+    const input = screen.getByRole('searchbox', { name: 'Search a trail by name' })
     expect(input).toBeInTheDocument()
-    expect(input).toHaveAttribute('placeholder', 'Search a trail by name…')
+    expect(input).toHaveAttribute('placeholder', 'Trail name, e.g. “Old Rag”…')
   })
 
   it('submitting calls the search client with the typed query', async () => {
     const search = vi.fn().mockResolvedValue({ ...feedWith({}), cards: [] })
     await renderHomeSearch(search)
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail by name' }), 'old rag')
     await userEvent.keyboard('{Enter}')
 
     expect(search).toHaveBeenCalledWith('old rag', ANON_SCOPE)
@@ -777,7 +777,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     )
     await renderHomeSearch(search)
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail by name' }), 'old rag')
     await userEvent.keyboard('{Enter}')
     await act(async () => {})
 
@@ -791,7 +791,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     const search = vi.fn().mockResolvedValue({ ...feedWith({}), cards: [] })
     await renderHomeSearch(search)
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'nonexistent trail xyz')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail by name' }), 'nonexistent trail xyz')
     await userEvent.keyboard('{Enter}')
     await act(async () => {})
 
@@ -806,7 +806,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     })
     await renderHomeSearch(search)
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail by name' }), 'old rag')
     await userEvent.keyboard('{Enter}')
     await act(async () => {})
 
@@ -820,7 +820,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     const search = vi.fn().mockReturnValue(pending)
     await renderHomeSearch(search)
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail by name' }), 'old rag')
     await userEvent.keyboard('{Enter}')
 
     expect(screen.getByText('Searching…')).toBeInTheDocument()
@@ -832,7 +832,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     )
     await renderHomeSearch(search)
 
-    const input = screen.getByRole('searchbox', { name: 'Search a trail' })
+    const input = screen.getByRole('searchbox', { name: 'Search a trail by name' })
     await userEvent.type(input, 'old rag')
     await userEvent.keyboard('{Enter}')
     await act(async () => {})

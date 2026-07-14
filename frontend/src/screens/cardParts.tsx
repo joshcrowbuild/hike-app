@@ -205,17 +205,27 @@ export function geoAscentFeet(geo: TrailGeo | undefined): number | undefined {
  * `nowrap` string was the single widest fact and clipped the card's right edge
  * at every viewport; a value ("~5 hr 5 min") plus a separate small badge wraps
  * or shrinks independently instead of forcing the whole row wider than the card.
+ *
+ * `unavailable` (ux-review 2026-07 Finding 6) renders a muted "—" in place of a
+ * real value, italicised like `.condition-state--no-data` — the honest
+ * source-or-silence disclosure for a fact this trail genuinely has no figure
+ * for (a null elevation profile), rather than omitting the item outright. An
+ * omitted item is indistinguishable from a rendering glitch when its siblings
+ * (Distance) still show; a disclosed gap reads as an honest, calm absence.
  */
 export function DecisionItem({
   label,
   value,
   glyph,
   badge,
+  unavailable,
 }: {
   label: string
   value: string
   glyph?: LucideIcon
   badge?: string
+  /** When true, `value` is ignored and a muted "not available" disclosure renders instead. */
+  unavailable?: boolean
 }) {
   return (
     <div className="decision-item">
@@ -223,15 +233,22 @@ export function DecisionItem({
         {glyph ? <Icon glyph={glyph} label={label} className="decision-icon" /> : null}
         <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
       </span>
-      <span className="decision-value">
-        {value}
-        {badge ? (
-          <span className="decision-badge" aria-label={`derived ${badge}`}>
-            {' '}
-            {badge}
-          </span>
-        ) : null}
-      </span>
+      {unavailable ? (
+        <span className="decision-value decision-value--unavailable">
+          <span className="sr-only">{label} not available</span>
+          <span aria-hidden="true">—</span>
+        </span>
+      ) : (
+        <span className="decision-value">
+          {value}
+          {badge ? (
+            <span className="decision-badge" aria-label={`derived ${badge}`}>
+              {' '}
+              {badge}
+            </span>
+          ) : null}
+        </span>
+      )}
     </div>
   )
 }
@@ -251,6 +268,16 @@ export const formatTrail = (miles: number, ascentFeet: number): string =>
  * Restoring Ascent + Duration on the card (H2) makes the feed comparable at a
  * glance again, per Epic 019's own "2–3 decision facts" spine — the glyph
  * shows the shape, these facts show the numbers.
+ *
+ * A null elevation profile (no `totalGainMeters` → no Ascent, no Naismith
+ * Duration) used to make Ascent/Duration vanish silently, leaving a lone
+ * "1.5 mi" that reads like a broken card (ux-review 2026-07 Finding 6). Once
+ * Distance is known — there IS a real trail to show facts for — the missing
+ * pair now renders as an honest `unavailable` disclosure ("—") instead of
+ * omitting the items: the row stays structurally complete (three/four slots,
+ * every time) and the gap is legible, not a glitch. A card with NO resolvable
+ * facts at all (no geo, nothing) still renders nothing, same as before —
+ * there's no trail-shaped row to disclose a gap in.
  */
 export function DecisionFacts({ card, className }: { card: CardVM; className: string }) {
   const e = card.enrichment
@@ -268,6 +295,10 @@ export function DecisionFacts({ card, className }: { card: CardVM; className: st
   // clipped the card's right edge).
   const duration = e?.durationHours ?? (durationMinutes != null ? formatEstimatedDuration(durationMinutes) : null)
   const durationBadge = e?.durationHours == null && durationMinutes != null ? 'est.' : undefined
+  // The disclosure gate (Finding 6): only once Distance anchors the row as a
+  // real trail's facts do the missing pair disclose "unavailable" rather than
+  // just not existing — a fact-less card (no geo at all) still renders nothing.
+  const discloseGap = distanceMiles != null
   return (
     <div className={className}>
       {e?.driveMinutes != null ? (
@@ -278,9 +309,13 @@ export function DecisionFacts({ card, className }: { card: CardVM; className: st
       ) : null}
       {ascentFeet != null ? (
         <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
+      ) : discloseGap ? (
+        <DecisionItem label="Ascent" value="" glyph={glyphs.ascent} unavailable />
       ) : null}
       {duration != null ? (
         <DecisionItem label="Duration" value={duration} glyph={glyphs.duration} badge={durationBadge} />
+      ) : discloseGap ? (
+        <DecisionItem label="Duration" value="" glyph={glyphs.duration} unavailable />
       ) : null}
     </div>
   )

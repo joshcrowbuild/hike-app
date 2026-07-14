@@ -314,6 +314,17 @@ export function Home({
  * named for assistive tech with no extra ARIA plumbing — an unlabeled input is
  * exactly what the repo's blocking axe gate would catch.
  *
+ * The label itself now spells out "by name" (ux-review 2026-07 Finding 3):
+ * this box and the Adjust sheet's refine input (`AdjustSheet`, this file's
+ * sibling in `./Tuning.tsx`) are two separate free-text fields with
+ * overlapping look, easy to mistake for one unified box. The fix is
+ * signposting only (the unified intent line is a separate, deferred epic) —
+ * the accessible NAME itself, not just the placeholder (which a filled-in box
+ * no longer shows), now says what this box does: find one trail by its name.
+ * The refine input's own label, "Describe this feed, in your own words", is
+ * the other half of that signpost — it reads as adding nuance to the CURRENT
+ * feed, never as a second way to look up a trail.
+ *
  * Deliberately uncontrolled-on-every-keystroke submit: typing alone never
  * fires a request (no place-name geocoding / unified intent routing here —
  * explicitly deferred). `onSubmit` is the one trigger; clearing the box to
@@ -348,13 +359,13 @@ function SearchLine({
   return (
     <form className="search-line" role="search" onSubmit={handleSubmit}>
       <label className="search-label-wrap">
-        <span className="search-label">Search a trail</span>
+        <span className="search-label">Search a trail by name</span>
         <input
           className="search-input"
           type="search"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Search a trail by name…"
+          placeholder="Trail name, e.g. “Old Rag”…"
         />
       </label>
       {active ? (
