@@ -11,7 +11,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [005](epic-005-valhalla-drive-time.md) | Valhalla drive-time integration (post-Scout prune + ranking input) | DONE ✅ | 0 | — (via Epic 013) |
 | [006](epic-006-novelty-filter.md) | Novelty filter in Curator | DEFINED | 1 | Epic 003 |
 | 007 | Readiness filter (Body Battery → Curator parameter) | BACKLOG | 1 | Epic 004 |
-| 008 | API tests (FastAPI TestClient, /plan + /health) | DONE ✅ | 0 | — |
+| 008 | API tests (FastAPI TestClient, /plan + /health) — shipped via PR #57 without a dedicated epic file | DONE ✅ | 0 | — |
 | [009](epic-009-eval-harness-expansion.md) | Stage-7 eval-harness expansion (fixtures, golden trips, judge, N-run regression, security/privacy) | IN_PROGRESS | 1→2 | Stage 7 methodology |
 | [010](epic-010-commons-fork-write.md) | Commons fork write (de-identified `:CommonsObservation`) | DONE ✅ | 1 | Epic 001 |
 | [011](epic-011-scoped-write-seam.md) | Scoped-write seam (`run_write` guard + owned-node builders) | DONE ✅ | 1 | Epic 001 |
@@ -24,6 +24,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [018](epic-018-live-conditions-on-the-card.md) | Live conditions on the card (JIT overlay wiring; sourced conditions + six-state legible silence — open scope closed 2026-07-12) | DONE ✅ | 1 | Epic 013 · #53/#54 |
 | [022](epic-022-duration-truth.md) | Duration truth (wire the dead-computed Naismith estimate through the live feed with a render-layer estimate disclosure) | DONE ✅ | 1 | Epic 016 · 017 |
 | [023](epic-023-agency-length.md) | Capture authoritative USFS/NPS length + re-assemble NPS multi-part trails | DONE ✅ | A | — |
+| [026](epic-026-tag-classification.md) | Classify OSM sac_scale/surface/access tags at ingest into path_grade/psurface/foot_access | DONE ✅ | 1 | Epic 023 |
 | [030](epic-030-slug-collision.md) | Guard the unguarded short-slug canonical_id collision + re-runnable audit | DONE ✅ | A | — |
 | [025](epic-025-validity-exclusions.md) | Wire geometry/null-island validity into the load path + externalize trail-filter denylists to config | DONE ✅ | A | Epics 023 · 030 |
 
