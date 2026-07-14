@@ -22,6 +22,15 @@ export interface PlannerClient {
   /** The curated feed for a tuning frame and viewer scope. */
   plan(input: PlanInput, scope: ScopeContext): Promise<FeedVM>
   /**
+   * Trail-name search (Epic 038/B001 build lane, frontend half): a finite
+   * lookup through the engine, returning the SAME `FeedVM` shape `plan` does
+   * (same cards, same mapping — never a second presentation truth). Optional
+   * so a fixture client predating search still satisfies the interface;
+   * `useSearch` calls it only when present and degrades to a calm "search
+   * unavailable" disclosure otherwise (Rule #6 posture).
+   */
+  search?(query: string, scope: ScopeContext, k?: number): Promise<FeedVM>
+  /**
    * The phase-2 verified overlay for a phase-1 feed's card ids (Epic 040 S2).
    * Optional: only the HTTP adapter implements it — the mock always returns
    * complete feeds, so `useFeed` runs phase 2 only when the resolved feed says

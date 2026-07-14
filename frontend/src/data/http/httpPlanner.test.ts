@@ -692,6 +692,89 @@ describe('HttpPlannerClient getCard stays single-pass (Epic 040 self-review)', (
   })
 })
 
+describe('HttpPlannerClient search (Epic 038/B001 build lane — the Home Omnibox search line)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  function bodyOf(call: unknown): Record<string, unknown> {
+    return JSON.parse(((call as [string, RequestInit])[1] as { body: string }).body)
+  }
+  function urlOf(call: unknown): string {
+    return (call as [string, RequestInit])[0]
+  }
+
+  it('POSTs /search with the query and default k, and maps the response through the shared mapFeed', async () => {
+    const feed: FeedResponse = {
+      query: 'old rag',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'old-rag',
+          name: 'Old Rag Loop',
+          distance_mi: 3.7,
+          lines: [{ text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS', confidence_level: 'stated', sources: ['NWS'] }],
+          warnings: [],
+          unavailable: [],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await client().search('old rag', ANON_SCOPE)
+
+    expect(urlOf(fetchMock.mock.calls[0])).toBe('http://api/search')
+    const body = bodyOf(fetchMock.mock.calls[0])
+    expect(body).toEqual({ query: 'old rag', k: 10 })
+    expect(result.cards).toHaveLength(1)
+    expect(result.cards[0].id).toBe('old-rag')
+    // Same mapping truth as /plan: provenance + sources carry through unchanged.
+    expect(result.cards[0].conditionLines[0].provenance).toBe('live')
+    expect(result.cards[0].conditionLines[0].sources).toEqual(['NWS'])
+  })
+
+  it('passes a caller-supplied k straight through', async () => {
+    fetchMock.mockReturnValue(ok(FEED))
+    await client().search('rivanna', ANON_SCOPE, 5)
+    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ query: 'rivanna', k: 5 })
+  })
+
+  it('sends the dev-viewer secret for a non-anonymous viewer, same as /plan', async () => {
+    vi.stubEnv('VITE_DEV_VIEWER_SECRET', 'dev-secret-value')
+    fetchMock.mockReturnValue(ok(FEED))
+    await client().search('old rag', { viewerId: 'josh', grantedIds: [] })
+    const init = (fetchMock.mock.calls[0] as [string, RequestInit])[1]
+    expect((init.headers as Record<string, string>)['X-Dev-Viewer-Secret']).toBe('dev-secret-value')
+    vi.unstubAllEnvs()
+  })
+
+  it('returns an honest empty FeedVM (no cards) rather than an error when the backend returns zero matches', async () => {
+    fetchMock.mockReturnValue(ok({ query: 'zzznotrail', card_count: 0, notices: [], cards: [] }))
+    const result = await client().search('zzznotrail', ANON_SCOPE)
+    expect(result.cards).toEqual([])
+    expect(result.error).toBeUndefined()
+  })
+
+  it('classifies a non-OK response the same way /plan does (server/auth), never throwing', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 500 } as Response))
+    const result = await client().search('old rag', ANON_SCOPE)
+    expect(result.cards).toEqual([])
+    expect(result.error?.kind).toBe('server')
+  })
+
+  it('classifies a network throw as offline, never propagating the raw exception', async () => {
+    fetchMock.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')))
+    const result = await client().search('old rag', ANON_SCOPE)
+    expect(result.error?.kind).toBe('offline')
+  })
+})
+
 describe('HttpPlannerClient trailWater (Epic 041) — the water slice of GET /trail/{id}', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {

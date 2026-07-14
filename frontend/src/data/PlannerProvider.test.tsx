@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
-import { PlannerProvider, useCard, useFeed } from './PlannerProvider'
+import { PlannerProvider, useCard, useFeed, useSearch } from './PlannerProvider'
 import { ANON_SCOPE } from './api'
 import type { ScopeContext } from './api'
 import { feedKey, readFeedCache, resetFeedCacheForTests, writeFeedCache } from './feedCache'
@@ -597,5 +597,171 @@ describe('Epic 040 S3 — two-phase flow (cards first, conditions patched behind
     expect(hit).not.toBeNull()
     expect(hit?.feed.conditionsPending).toBeUndefined()
     expect(hit?.feed.cards[0].conditions?.[0].state).toBe('present')
+  })
+})
+
+describe('useSearch — the Home Omnibox trail-name search hook (Epic 038/B001)', () => {
+  it('starts idle and never calls the client until search() is invoked', () => {
+    const search = vi.fn()
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    expect(result.current.status).toBe('idle')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('goes loading then ready with cards on a successful resolve, keyed to the searched query', async () => {
+    const feed = feedWithCard('old-rag')
+    const search = vi.fn().mockResolvedValue(feed)
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('old rag')
+    })
+    expect(result.current.status).toBe('loading')
+    expect(result.current.query).toBe('old rag')
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(search).toHaveBeenCalledWith('old rag', ANON_SCOPE)
+    expect(result.current.status).toBe('ready')
+    expect(result.current.feed?.cards[0].id).toBe('old-rag')
+  })
+
+  it('resolves to the honest empty status on a zero-card match — never fabricated', async () => {
+    const empty: FeedVM = { ...feedWithCard('x'), cards: [] }
+    const search = vi.fn().mockResolvedValue(empty)
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('no such trail')
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.status).toBe('empty')
+    expect(result.current.query).toBe('no such trail')
+  })
+
+  it('surfaces a calm error state on a resolved FeedVM.error or a rejection, mirroring useFeed', async () => {
+    const errored: FeedVM = { ...feedWithCard('x'), cards: [], error: { kind: 'offline', message: 'offline msg' } }
+    const search = vi.fn().mockResolvedValue(errored)
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('old rag')
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.status).toBe('error')
+    expect(result.current.error?.message).toBe('offline msg')
+
+    const rejecting = { plan: vi.fn(), search: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as PlannerClient
+    const { result: r2 } = renderHook(() => useSearch(), { wrapper: wrapperWith(rejecting) })
+    act(() => {
+      r2.current.search('old rag')
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(r2.current.status).toBe('error')
+    expect(r2.current.error?.message).not.toContain('boom') // never the raw exception (NNG)
+  })
+
+  it('degrades to a calm error when the injected client has no search seam at all', async () => {
+    const client = { plan: vi.fn() } as unknown as PlannerClient // predates search — no `search` key
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('old rag')
+    })
+    expect(result.current.status).toBe('error')
+    expect(result.current.error?.message).toBeTruthy()
+  })
+
+  it('a blank/whitespace-only query resolves straight to idle without calling the client', () => {
+    const search = vi.fn()
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('   ')
+    })
+    expect(result.current.status).toBe('idle')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('clear() returns to idle and drops any in-flight result', async () => {
+    let resolveSearch!: (feed: FeedVM) => void
+    const pending = new Promise<FeedVM>((r) => {
+      resolveSearch = r
+    })
+    const search = vi.fn().mockReturnValue(pending)
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('old rag')
+    })
+    expect(result.current.status).toBe('loading')
+
+    act(() => {
+      result.current.clear()
+    })
+    expect(result.current.status).toBe('idle')
+
+    // The stale in-flight response landing after clear() must not resurrect the search.
+    await act(async () => {
+      resolveSearch(feedWithCard('old-rag'))
+      await pending
+      await Promise.resolve()
+    })
+    expect(result.current.status).toBe('idle')
+  })
+
+  it('a stale in-flight search response never overwrites a newer submitted query', async () => {
+    let resolveFirst!: (feed: FeedVM) => void
+    const firstPending = new Promise<FeedVM>((r) => {
+      resolveFirst = r
+    })
+    const search = vi
+      .fn()
+      .mockReturnValueOnce(firstPending)
+      .mockResolvedValueOnce(feedWithCard('new-query-trail'))
+    const client = { plan: vi.fn(), search } as unknown as PlannerClient
+    const { result } = renderHook(() => useSearch(), { wrapper: wrapperWith(client) })
+
+    act(() => {
+      result.current.search('first')
+    })
+    act(() => {
+      result.current.search('second')
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.query).toBe('second')
+    expect(result.current.feed?.cards[0].id).toBe('new-query-trail')
+
+    // The first (now-stale) request resolving afterwards must not clobber "second"'s result.
+    await act(async () => {
+      resolveFirst(feedWithCard('first-query-trail'))
+      await firstPending
+      await Promise.resolve()
+    })
+    expect(result.current.query).toBe('second')
+    expect(result.current.feed?.cards[0].id).toBe('new-query-trail')
   })
 })

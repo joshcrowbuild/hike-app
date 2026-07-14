@@ -95,6 +95,32 @@ describe('MockPlannerClient — post-hike loop', () => {
   })
 })
 
+describe('MockPlannerClient — search (Epic 038/B001, frontend half — mock parity)', () => {
+  it('fuzzy/substring-matches a trail name, case-insensitively', async () => {
+    const feed = await client.search('stony', JOSH)
+    expect(feed.cards.length).toBeGreaterThan(0)
+    expect(feed.cards.every((c) => c.name.toLowerCase().includes('stony'))).toBe(true)
+  })
+
+  it('returns an honest empty FeedVM for a query matching nothing — never fabricated', async () => {
+    const feed = await client.search('zzz-no-such-trail-zzz', JOSH)
+    expect(feed.cards).toEqual([])
+    expect(feed.error).toBeUndefined()
+  })
+
+  it('caps results at k', async () => {
+    // Every mock trail name contains a vowel; 'a' matches broadly enough to
+    // exercise the cap without depending on the exact fixture count.
+    const feed = await client.search('a', JOSH, 1)
+    expect(feed.cards.length).toBeLessThanOrEqual(1)
+  })
+
+  it('marks results as mock provenance, same as plan()', async () => {
+    const feed = await client.search('stony', JOSH)
+    expect(feed.dataSource).toBe('mock')
+  })
+})
+
 describe('MockPlannerClient — getCard resolves independent of the feed', () => {
   it('resolves a known id and returns null for an unknown one', async () => {
     expect(await client.getCard('stony-man', JOSH, frame)).not.toBeNull()

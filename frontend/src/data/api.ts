@@ -233,6 +233,25 @@ export interface FeedResponse {
   conditions_complete?: boolean
 }
 
+// ---- POST /search (Epic 038/B001: trail-name search, frontend half) ------
+
+/**
+ * Trail-name search request. Deliberately thin: no origin/tuning — a name
+ * search is a finite lookup through the engine (Scout/Verifier/Curator), not
+ * a re-plan (epic-038 S3). `k` mirrors `PlanRequest.k`'s optional cap.
+ */
+export interface SearchRequest {
+  query: string
+  k?: number
+}
+
+/**
+ * The response shape is IDENTICAL to `FeedResponse` (epic-038 S3 AC-3.3: search
+ * results are engine-curated cards, same shape as `/plan` cards) — no separate
+ * type, so `mapFeed` applies unchanged and the two surfaces can never drift.
+ */
+export type SearchResponse = FeedResponse
+
 // ---- POST /plan/conditions (Epic 040 S2: the phase-2 patch) ---------------
 
 export interface PlanConditionsRequest {

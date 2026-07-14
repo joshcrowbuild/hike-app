@@ -724,3 +724,131 @@ describe('Home two-phase pending + patch-failure surfaces (Epic 040 S3)', () => 
     expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
   })
 })
+
+describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () => {
+  /** A client whose plan() resolves with the tuned feed and whose search()
+   *  is the caller-supplied stub — so each test controls the search leg
+   *  independently of the always-present tuned feed underneath it. */
+  function clientWith(feed: FeedVM, search: PlannerClient['search']): PlannerClient {
+    return {
+      plan: () => Promise.resolve(feed),
+      search,
+      recentEpisodes: () => Promise.resolve([]),
+    } as unknown as PlannerClient
+  }
+
+  async function renderHomeSearch(search: PlannerClient['search'], feed: FeedVM = feedWith({})) {
+    const result = render(
+      <PlannerProvider scope={ANON_SCOPE} client={clientWith(feed, search)}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {}) // let the tuned feed's plan() commit first
+    return result
+  }
+
+  it('renders a labeled, always-visible search input at the top of the feed', async () => {
+    await renderHomeSearch(vi.fn())
+    const input = screen.getByRole('searchbox', { name: 'Search a trail' })
+    expect(input).toBeInTheDocument()
+    expect(input).toHaveAttribute('placeholder', 'Search a trail by name…')
+  })
+
+  it('submitting calls the search client with the typed query', async () => {
+    const search = vi.fn().mockResolvedValue({ ...feedWith({}), cards: [] })
+    await renderHomeSearch(search)
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.keyboard('{Enter}')
+
+    expect(search).toHaveBeenCalledWith('old rag', ANON_SCOPE)
+  })
+
+  it('renders the matched cards using the same card component the tuned feed uses', async () => {
+    const search = vi.fn().mockResolvedValue(
+      feedWith({ cards: [{ id: 'old-rag', name: 'Old Rag', distanceMi: 3, conditionLines: [], warnings: [] }] }),
+    )
+    await renderHomeSearch(search)
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.keyboard('{Enter}')
+    await act(async () => {})
+
+    expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
+    expect(screen.getByText(/1 match/)).toBeInTheDocument()
+    // The tuned feed's own card (Compton Peak) is replaced while search is active.
+    expect(screen.queryByRole('button', { name: 'Open Compton Peak' })).not.toBeInTheDocument()
+  })
+
+  it('shows the honest empty state naming the query when nothing matches — never fabricated', async () => {
+    const search = vi.fn().mockResolvedValue({ ...feedWith({}), cards: [] })
+    await renderHomeSearch(search)
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'nonexistent trail xyz')
+    await userEvent.keyboard('{Enter}')
+    await act(async () => {})
+
+    expect(screen.getByText('No trails match “nonexistent trail xyz”.')).toBeInTheDocument()
+  })
+
+  it('shows a calm error state mirroring the httpPlanner error mapping on failure', async () => {
+    const search = vi.fn().mockResolvedValue({
+      ...feedWith({}),
+      cards: [],
+      error: { kind: 'offline' as const, message: 'Couldn’t reach the planner. Showing nothing live right now.' },
+    })
+    await renderHomeSearch(search)
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.keyboard('{Enter}')
+    await act(async () => {})
+
+    expect(
+      screen.getByText('Couldn’t reach the planner. Showing nothing live right now.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a loading state while the search is in flight', async () => {
+    const pending = new Promise<FeedVM>(() => {})
+    const search = vi.fn().mockReturnValue(pending)
+    await renderHomeSearch(search)
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search a trail' }), 'old rag')
+    await userEvent.keyboard('{Enter}')
+
+    expect(screen.getByText('Searching…')).toBeInTheDocument()
+  })
+
+  it('restores the normal tuned feed when the search box is cleared', async () => {
+    const search = vi.fn().mockResolvedValue(
+      feedWith({ cards: [{ id: 'old-rag', name: 'Old Rag', distanceMi: 3, conditionLines: [], warnings: [] }] }),
+    )
+    await renderHomeSearch(search)
+
+    const input = screen.getByRole('searchbox', { name: 'Search a trail' })
+    await userEvent.type(input, 'old rag')
+    await userEvent.keyboard('{Enter}')
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: 'Open Old Rag' })).toBeInTheDocument()
+
+    await userEvent.clear(input)
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+
+    // Back to the normal intent/origin feed — its own card is visible again.
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open Old Rag' })).not.toBeInTheDocument()
+  })
+
+  it('never breaks the existing tuned feed while search is idle', async () => {
+    await renderHomeSearch(vi.fn())
+    // The normal context sentence + card stack render exactly as before search existed.
+    expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+  })
+})

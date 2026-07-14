@@ -110,6 +110,30 @@ export class MockPlannerClient implements PlannerClient {
     }
   }
 
+  /**
+   * Trail-name search (Epic 038/B001, frontend half): a simple case-insensitive
+   * substring match over the sample fixtures — enough to exercise the Home
+   * search UI in mock mode. Anonymous-safe: neutralized tuning, no fit line,
+   * exactly like `getCard`. Never throws; an unmatched query is an honest
+   * empty `FeedVM`, mirroring the real endpoint's sourced empty-state (S3
+   * AC-3.4) rather than an error.
+   */
+  async search(query: string, scope: ScopeContext, k = 10): Promise<FeedVM> {
+    const anon = isAnonymous(scope)
+    const needle = query.trim().toLowerCase()
+    const matches = needle ? trails.filter((t) => t.name.toLowerCase().includes(needle)) : []
+    const cards = matches.slice(0, k).map((trail) => toCardVM(trail, neutralize(defaultFrame), undefined, anon))
+    return {
+      query,
+      cards,
+      notices: [],
+      setAside: [],
+      heldBack: [],
+      readiness: { on: false, state: 'off' },
+      dataSource: 'mock',
+    }
+  }
+
   async getCard(id: string, scope: ScopeContext, tuning?: TuningState): Promise<CardVM | null> {
     const trail = trails.find((t) => t.id === id)
     if (!trail) return null
