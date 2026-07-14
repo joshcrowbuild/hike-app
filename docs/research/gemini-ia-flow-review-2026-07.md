@@ -189,10 +189,13 @@ The synchronization between the elevation profile and the MapLibre cursor is a b
 
 Looking beyond the core feed and maps, a deep dive into the peripheral interactions (`Outcome`, `Tuning`, and `FeedConditions`) reveals both friction points and excellent implementations of the product's core principles.
 
-### 1. The Outcome Screen (The Black Box of Learning)
-- **Current State**: The `Outcome.tsx` screen asks "How was it?" with a simple 3-face rating (Good, Okay, Rough). It writes this outcome to the backend to update the user's `belief_store`.
-- **The Friction**: This creates a massive "Curation-Intent Gap" on the input side. If a user taps "Rough," the engine learns *something*, but the user has no idea what. Did the engine learn they hate distance? Ascent? That specific region? Hiking with Ruby? When the learning is a black box, the user cannot trust it.
-- **The Fix (Explicit Hypothesis)**: The feedback loop must be transparent. When a user taps a face, the UI should explicitly state the hypothesis the engine is forming. *Example: "Noted. You seemed to struggle with the 1,500ft ascent today. I'll look for gentler climbs next time."*
+### 1. The Outcome Screen (The Black Box & The Hardware Blocker)
+- **Current State**: The `Outcome.tsx` screen asks "How was it?" with a simple 3-face rating. It relies entirely on a mock `sample-strip` to pretend it has watch telemetry (moving time, pace). 
+- **The Hardware Blocker**: Because this app refuses to track live navigation, the *entire learning loop* is dependent on a future Garmin/Apple Health webhook firing to say a hike was completed. If that integration isn't built for Day 1, or a user denies permission, the engine can never trigger this screen and therefore *never learns*.
+- **The Friction**: On the input side, the 3-face rating creates a "Curation-Intent Gap". If a user taps "Rough," the engine learns *something*, but the user has no idea what. Did it learn they hate distance? Ascent? When the learning is a black box, the user cannot trust it.
+- **The Fix**: 
+  1. **Manual Fallback**: The UI *must* have a manual "Log this hike" button on saved trails so the learning loop isn't blocked by hardware integration.
+  2. **Explicit Hypothesis**: When a user taps a face, the UI must explicitly state what it learned (e.g., *"Noted. You seemed to struggle with the 1,500ft ascent today. I'll look for gentler climbs next time."*)
 
 ### 2. The Tuning Sheets (Navigation Friction)
 - **Current State**: `Tuning.tsx` uses a two-level modal sheet pattern. A user taps "When" on the main `AdjustSheet`, which pushes a second `PanelSheet` to pick "Tomorrow Morning".
