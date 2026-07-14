@@ -141,6 +141,20 @@ Here are 3 distinct paradigms for how a user expresses location + intent, and ho
 
 ---
 
+## Part 4: The Curation-Intent Gap (Closing the "Why" Loop)
+
+The most glaring omission in the UX becomes obvious when looking at the `RecommendationCard`. 
+
+The engine uses a sophisticated `parse-intent` pipeline and `belief_update` store to score trails based on the user's highly specific natural language prompt (e.g., "cooler, quieter, good with Ruby"). However, **the UI presents the result identically to a standard database query**. 
+
+The card displays standard stats (Distance, Ascent, Duration) and current conditions (54°F). It **completely fails to explain *why* the trail was chosen** or how it matches the user's specific context. If the app is a "cockpit-grade utility" functioning as an expert guide, it currently hands the user a route without any rationale.
+
+**The Fix: The "Curator's Note"**
+To solve this, the `CardVM` must expose the engine's matching rationale, and the UI must present it prominently on the card. 
+- *Example*: A 1-sentence dynamically generated note directly below the trail name: *"The high ridge runs cooler, and the wide loop is ideal for Ruby. Crowds are lighter before mid-morning."*
+This single UI addition closes the loop, proving the engine's intelligence and drastically reducing the user's decision fatigue.
+
+---
 ### Ranked Recommendation & First Step
 
 1. **Unified Intent Line (Omnibox)**: Best alignment with the product's calm, utility-first vision. Fast, zero dead-ends, leverages the existing NLP engine.
