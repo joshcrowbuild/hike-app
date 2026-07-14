@@ -675,7 +675,9 @@ def test_corpus_corroboration_counts_distinct_origins_live_facts_stay_one() -> N
     live = trail.confidences[ConditionKind.weather]
     live_fact = trail.facts[ConditionKind.weather]
     assert live.score == for_fact(live_fact, corroboration=1).score
-    assert live.score < for_fact(live_fact, corroboration=2).score
+    # The corroboration lift lives on the corpus identity, never on the live fact: the
+    # 2-origin corpus confidence sits ABOVE the honest single-source live score.
+    assert trail.corpus_confidence.score > live.score
 
 
 def _clear_weather(lat: float, lon: float) -> Any:
