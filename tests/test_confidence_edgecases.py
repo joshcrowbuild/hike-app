@@ -107,11 +107,14 @@ def test_unknown_authority_and_freshness_map_to_defaults() -> None:
 
 
 # ── source_kind defaults (CDP-06 retune) ──
-# `compute()`'s bare default is the conservative "aggregated" (n=1 -> 0.6): a caller
-# that doesn't know what it's scoring gets the old, safe baseline. `for_fact()`'s
-# default is "primary", because every real live-adapter caller today names a single
-# designated institutional origin (NWS/USGS/FIRMS/NPS/RIDB) — AirNow is the one
-# adapter that opts into "aggregated" explicitly via its own confidence_inputs.
+# Both compute() and for_fact() default source_kind to the fail-closed "aggregated"
+# (n=1 -> 0.6): a caller/fact that doesn't say which kind of source it is gets the
+# conservative baseline and must earn "stated" via real corroboration, never the
+# single-authoritative-origin pass. Every real live adapter tags source_kind
+# explicitly in its confidence_inputs (NWS/USGS/FIRMS/NPS/RIDB -> "primary"; AirNow
+# -> "aggregated"), and that explicit tag always wins — so the flip is zero behavior
+# change for every real fact and only hardens the untagged path (see
+# test_for_fact_bare_default_is_fail_closed_aggregated).
 
 
 def test_compute_bare_default_is_conservative_aggregated() -> None:
@@ -120,12 +123,29 @@ def test_compute_bare_default_is_conservative_aggregated() -> None:
     assert c.presentation == "hedged"
 
 
-def test_for_fact_bare_default_is_primary() -> None:
+def test_for_fact_bare_default_is_fail_closed_aggregated() -> None:
+    # An untagged fact (no source_kind in confidence_inputs) hedges, not "stated":
+    # source-or-silence treats an unlabeled source as unverified.
     fact = VerifiedFact(
         value={},
         source="test",
         fetched_at=datetime.now(timezone.utc),
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+    )
+    c = for_fact(fact, corroboration=1)
+    assert c.score == 0.6
+    assert c.presentation == "hedged"
+
+
+def test_for_fact_explicit_primary_tag_reaches_stated() -> None:
+    # The counterpart to the fail-closed default: a fact that DOES tag itself
+    # "primary" (as every real live adapter does) reaches "stated" at n=1 — the tag
+    # wins over the aggregated default.
+    fact = VerifiedFact(
+        value={},
+        source="test",
+        fetched_at=datetime.now(timezone.utc),
+        confidence_inputs={"authority": "tier1_gov", "freshness": "live", "source_kind": "primary"},
     )
     c = for_fact(fact, corroboration=1)
     assert c.score == 0.85
@@ -151,7 +171,10 @@ def test_for_fact_honors_explicit_source_kind_in_confidence_inputs() -> None:
     assert c.presentation == "hedged"
 
 
-def test_for_fact_invalid_source_kind_falls_back_to_default() -> None:
+def test_for_fact_invalid_source_kind_falls_back_to_fail_closed_default() -> None:
+    # An unrecognized source_kind tag is treated as if absent — it falls back to
+    # for_fact's fail-closed "aggregated" default and hedges, rather than being
+    # coerced into the authoritative "primary" baseline.
     fact = VerifiedFact(
         value={},
         source="test",
@@ -163,4 +186,4 @@ def test_for_fact_invalid_source_kind_falls_back_to_default() -> None:
         },
     )
     c = for_fact(fact, corroboration=1)
-    assert c.presentation == "stated"  # falls back to for_fact's "primary" default
+    assert c.presentation == "hedged"  # falls back to for_fact's "aggregated" default

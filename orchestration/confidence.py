@@ -118,12 +118,16 @@ def compute(
 
 
 def for_fact(
-    fact: VerifiedFact, *, corroboration: int = 1, source_kind: SourceKind = "primary"
+    fact: VerifiedFact, *, corroboration: int = 1, source_kind: SourceKind = "aggregated"
 ) -> Confidence:
-    """`source_kind` defaults to "primary" because every live-adapter caller today
-    (NWS/USGS/FIRMS/NPS/RIDB) names a single designated institutional origin; an
-    adapter that is itself an aggregate of unnamed origins (e.g. AirNow) passes
-    `source_kind="aggregated"` explicitly at the call site."""
+    """The `source_kind` default is fail-closed "aggregated" (source-or-silence in
+    spirit, rule #1): an *untagged* source is treated as unverified — it must earn
+    "stated" through real corroboration, and can never falsely reach "stated" on the
+    single-authoritative-origin baseline just because someone forgot to tag it. Every
+    real adapter today tags explicitly in its `confidence_inputs["source_kind"]`
+    (NWS/USGS/FIRMS/NPS/RIDB -> "primary"; AirNow -> "aggregated"), and that explicit
+    tag always wins over this default — so the reachability of every real fact is
+    unchanged; only an unlabeled future fact hedges instead of over-trusting."""
     inputs = fact.confidence_inputs if isinstance(fact.confidence_inputs, dict) else {}
     authority = inputs.get("authority")
     freshness = inputs.get("freshness")

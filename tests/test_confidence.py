@@ -50,19 +50,37 @@ def test_weakest_link_is_min_not_weighted_mean() -> None:
 
 
 def test_for_fact_reads_confidence_inputs() -> None:
+    # A single-source live fact from a named institutional origin, tagged
+    # source_kind="primary" exactly as every real live adapter tags it (NWS/USGS/
+    # FIRMS/NPS/RIDB), reads "stated": corroboration=1 no longer caps a primary source
+    # the way it caps an aggregated one (CDP-06 retune). The explicit tag in
+    # confidence_inputs wins over for_fact's fail-closed default.
     fact = VerifiedFact(
         value={"x": 1},
         source="NWS",
         fetched_at=datetime.now(timezone.utc),
+        confidence_inputs={"authority": "tier1_gov", "freshness": "live", "source_kind": "primary"},
+    )
+    c = for_fact(fact)
+    assert c.level == "high"
+    assert c.presentation == "stated"
+
+
+def test_for_fact_untagged_source_is_fail_closed_hedged() -> None:
+    # Fail-closed default (rule #1 in spirit): a fact whose confidence_inputs omit
+    # source_kind is treated as unverified/"aggregated", NOT authoritative — even with
+    # maxed authority + freshness it hedges at the corroboration=1 baseline (0.6). This
+    # removes the latent over-trust risk if a future adapter forgets to tag; every real
+    # adapter tags explicitly today, so no real fact is affected.
+    fact = VerifiedFact(
+        value={"x": 1},
+        source="untagged",
+        fetched_at=datetime.now(timezone.utc),
         confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
     )
     c = for_fact(fact)
-    # A single-source live fact from a named institutional origin (no `source_kind`
-    # in confidence_inputs -> for_fact's "primary" default, matching every real live
-    # adapter today except AirNow) reads "stated": corroboration=1 no longer caps a
-    # primary source the way it caps an aggregated one (CDP-06 retune).
-    assert c.level == "high"
-    assert c.presentation == "stated"
+    assert c.score == 0.6
+    assert c.presentation == "hedged"
 
 
 def test_for_fact_aggregated_single_source_stays_hedged() -> None:
