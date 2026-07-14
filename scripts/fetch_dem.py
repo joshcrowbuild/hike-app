@@ -5,8 +5,10 @@ The durability half of the elevation fix: the DEM raster used to live only in a
 transient local worktree and vanished on prune, silently blanking corpus elevation.
 This script reconstructs it anywhere from `regions/dem_manifest.json` — download each
 1/3-arc-second tile, verify its sha256 (or record it on first fetch), then merge +
-clip to the region bbox into `data/dem/{region}.tif`, the path `Settings` looks for by
-convention. After a run, a standard `make ingest` re-applies 3DEP automatically.
+clip to the region bbox (expanded by a small margin — see `_DEM_CLIP_BUFFER_DEG` — so
+trails that cross the ingest boundary keep DEM coverage) into `data/dem/{region}.tif`,
+the path `Settings` looks for by convention. After a run, a standard `make ingest`
+re-applies 3DEP automatically.
 
 Usage:
   python scripts/fetch_dem.py --region shenandoah-gwj            # download + build
@@ -41,6 +43,29 @@ from ingestion.dem import (  # noqa: E402  (after sys.path insert)
     verify_checksum,
 )
 
+# Expand the region bbox outward before selecting tiles and clipping the DEM. Trails
+# that legitimately cross the region's ingest bbox (spurs exiting a park boundary,
+# cross-boundary connectors, or trails that barely dip into the region) run a real,
+# contiguous stretch off the edge of a bbox-tight raster, so those trails have no DEM
+# underneath them → build_profile drops them to a null profile. This is the bbox-edge
+# coverage loss confirmed for the Prince William Forest / Douthat nulls (2026-07-14):
+# the nulls sit at the ingest-bbox edge, not the geographic interior. A ~5.5 km margin
+# (0.05° ≈ 4.4–5.5 km at CONUS latitudes) reclaims the overhang — sized to the worst
+# observed case, Douthat's "Piney Mountain", which runs 5.0 km north of the bbox edge
+# (only its southern tip is inside the region). It stays well within the 1°×1° source
+# tiles (no extra tile for the confirmed regions), and mask(crop=True) simply clips to
+# the merged mosaic's real extent if a margin edge would exceed it.
+_DEM_CLIP_BUFFER_DEG = 0.05
+
+
+def _buffer_bbox(bbox: list[float], buffer_deg: float = _DEM_CLIP_BUFFER_DEG) -> list[float]:
+    """Expand a `[west, south, east, north]` bbox outward by `buffer_deg` on every side,
+    so a trail crossing the region boundary keeps DEM coverage. The manifest still stores
+    the semantic (unbuffered) region bbox; the margin is applied at tile-select + clip
+    time so both stay consistent."""
+    west, south, east, north = bbox
+    return [west - buffer_deg, south - buffer_deg, east + buffer_deg, north + buffer_deg]
+
 
 def _manifest_file() -> Path:
     return _REPO_ROOT / MANIFEST_PATH
@@ -62,7 +87,9 @@ def _cmd_init(region: str) -> int:
     to null — a re-fetch records them). Prints the JSON block for the operator to paste;
     does not rewrite the manifest in place, so the diff stays reviewable."""
     bbox = _region_bbox(region)
-    tiles = tiles_for_bbox(*bbox)
+    # Select tiles for the BUFFERED bbox so a region whose edge sits within the margin
+    # of a 1°×1° tile boundary still pulls the adjacent tile the clip will reach into.
+    tiles = tiles_for_bbox(*_buffer_bbox(bbox))
     block = {
         "resolution": "1/3 arc-second (~10 m)",
         "bbox": bbox,
@@ -146,7 +173,10 @@ def _cmd_fetch(region: str, *, dry_run: bool, write_manifest: bool) -> int:
     tmp = output.with_suffix(".merged.tif")
     with rasterio.open(tmp, "w", **profile) as dst:
         dst.write(mosaic)
-    west, south, east, north = entry["bbox"]
+    # Clip to the BUFFERED bbox, not the tight region bbox: a trail that crosses the
+    # ingest boundary keeps DEM under its full extent instead of running off the raster
+    # edge into a null profile (the PWF/Douthat bbox-edge nulls, 2026-07-14).
+    west, south, east, north = _buffer_bbox(entry["bbox"])
     with rasterio.open(tmp) as src:
         clipped, clip_transform = mask(src, [mapping(box(west, south, east, north))], crop=True)
         clip_profile = src.profile
