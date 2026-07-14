@@ -144,6 +144,11 @@ class _Feed:
 
 class _Runtime:
     cache = None  # cache_size() reads 0 off this; no live probe cache in the test
+    # /search reads these off Runtime to call search_trails — session/probes are never
+    # touched for real because search_trails itself is stubbed in every /search test.
+    session = None
+    probes: dict[Any, Any] = {}
+    probe_max_workers = 1
 
 
 def _canned_feed(query: str, origin: object, runtime: object, **kwargs: object) -> _Feed:
@@ -590,3 +595,87 @@ def test_plan_invalid_json_body_is_4xx_never_500(client: Any) -> None:
     )
     assert resp.status_code != 500
     assert 400 <= resp.status_code < 500
+
+
+# ── /search — trail-name search (Epic 038 / B001 Problem A) ──────────────────────
+#
+# The fixed contract: POST /search {query, k?} -> the EXACT same FeedResponse model
+# /plan returns (reused, not a parallel shape). Hermetic: orchestration.engine.
+# search_trails is stubbed so no graph/probe call ever happens.
+
+
+def test_search_happy_path_returns_feed_response_shape(client: Any, monkeypatch: Any) -> None:
+    from orchestration.curator import GuardrailVerdict
+    from orchestration.engine import PlannedBatch, PlannedTrail
+    from orchestration.scout import Candidate
+
+    def _stub_search_trails(query: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        candidate = Candidate(
+            canonical_id="ct:old-rag-loop",
+            name="Old Rag Loop",
+            trailhead_id="",
+            distance_m=0.0,
+        )
+        return PlannedBatch(
+            trails=[PlannedTrail(candidate, {}, {}, GuardrailVerdict(False))],
+        )
+
+    monkeypatch.setattr("orchestration.engine.search_trails", _stub_search_trails)
+
+    resp = client.post("/search", json={"query": "Old Rag"})
+    assert resp.status_code == 200
+    payload = resp.json()
+
+    # Exactly the FeedResponse contract: query + cards + card_count (+ defaults).
+    assert payload["query"] == "Old Rag"
+    assert payload["card_count"] == 1
+    assert len(payload["cards"]) == 1
+    card = payload["cards"][0]
+    assert card["canonical_id"] == "ct:old-rag-loop"
+    assert card["name"] == "Old Rag Loop"
+    assert payload["set_aside"] == []
+    assert payload["conditions_complete"] is True
+
+
+def test_search_no_match_returns_empty_feed_never_an_error(client: Any, monkeypatch: Any) -> None:
+    from orchestration.engine import PlannedBatch
+
+    def _stub_empty(query: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        return PlannedBatch(trails=[])
+
+    monkeypatch.setattr("orchestration.engine.search_trails", _stub_empty)
+
+    resp = client.post("/search", json={"query": "zzqxw-nonexistent-9999"})
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["cards"] == []
+    assert payload["card_count"] == 0
+
+
+def test_search_has_no_lat_lon_in_its_request_contract(client: Any, monkeypatch: Any) -> None:
+    # The fixed contract (Epic 038): {query, k?} only — no lat/lon, unlike /plan.
+    from orchestration.engine import PlannedBatch
+
+    monkeypatch.setattr(
+        "orchestration.engine.search_trails",
+        lambda query, session, probes, **kwargs: PlannedBatch(trails=[]),
+    )
+    resp = client.post("/search", json={"query": "Old Rag", "lat": 38.5, "lon": -78.4})
+    # Extra fields are simply ignored by pydantic (not an error) — lat/lon play no role.
+    assert resp.status_code == 200
+
+
+def test_search_malformed_body_is_422_never_500(client: Any) -> None:
+    resp = client.post("/search", json={"k": 10})  # missing required "query"
+    assert resp.status_code != 500
+    assert resp.status_code == 422
+
+
+def test_search_query_over_max_length_is_422(client: Any) -> None:
+    resp = client.post("/search", json={"query": "q" * 501})
+    assert resp.status_code == 422
+
+
+def test_search_k_out_of_bounds_is_422(client: Any) -> None:
+    resp = client.post("/search", json={"query": "Old Rag", "k": 21})
+    assert resp.status_code == 422

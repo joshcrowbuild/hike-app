@@ -150,6 +150,61 @@ def candidate_trails_near(
     return cypher, params
 
 
+# Lucene special characters that must be escaped in a raw user string before it's
+# handed to `db.index.fulltext.queryNodes` — otherwise a stray `(`/`"`/`~` etc. is
+# parseable Lucene syntax and user input could throw a query-parse error (or, worse,
+# be crafted to change the query's meaning). Backslash first so the escaping added
+# for the rest doesn't get re-escaped.
+_LUCENE_SPECIAL_RE = re.compile(r'([+\-!(){}\[\]^"~*?:\\/&|])')
+
+
+def _sanitize_fulltext_query(query_text: str) -> str:
+    """Escape Lucene special characters in `query_text`, then append a per-token
+    fuzzy `~` (edit-distance-1 tolerance) so a typo ("Rivana") still matches ("Rivanna")
+    — the fuzzy-match requirement `docs/research/b001-search-geocoder.md` calls for.
+    An empty/whitespace-only query sanitizes to a lone `~`-less empty string — an empty
+    Lucene query string that `db.index.fulltext.queryNodes` rejects at query time, so
+    `orchestration.scout.scout_by_name` short-circuits that case before it ever reaches
+    this builder (never a raw graph dump on a blank search, never a 500)."""
+    escaped = _LUCENE_SPECIAL_RE.sub(r"\\\1", query_text.strip())
+    tokens = escaped.split()
+    if not tokens:
+        return ""
+    return " ".join(f"{tok}~" for tok in tokens)
+
+
+def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[str, Any]]:
+    """Scout candidate generation for trail-name search (Epic 038 / B001 Problem A):
+    fuzzy-scored fulltext match over `CanonicalTrail.name`, best match first. World
+    nodes only -> inherently public, no owner scope (rule #4: an unowned corpus read
+    needs no viewer scope).
+
+    Mirrors `candidate_trails_near`'s return shape (same fields, same order) so it
+    feeds the same `scout._row_to_candidate` — the only difference is there is no
+    origin: `distance_m` is null (nothing to measure distance to) and
+    `trailhead_point` falls back to the trail's own `point` (mirroring
+    `candidate_trails_near_direct`'s point/area handling, since a name match has no
+    accessing Trailhead traversal). Ranking is FULLTEXT relevance (`score DESC`), a
+    NAME-MATCH signal — never re-sorted by distance, and never confused with the
+    confidence axis (rule #2)."""
+    lucene_q = _sanitize_fulltext_query(query_text)
+    cypher = (
+        "CALL db.index.fulltext.queryNodes('trail_name_fts', $q) YIELD node AS t, score\n"
+        "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
+        "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
+        "       t.point AS trailhead_point,\n"
+        "       t.is_loop AS is_loop, t.length_mi AS length_mi, t.way_type AS way_type,\n"
+        "       t.outside_boundary AS outside_boundary,\n"
+        "       null AS trailhead_id,\n"
+        "       null AS distance_m,\n"
+        "       a.area_id AS area_id\n"
+        "ORDER BY score DESC\n"
+        "LIMIT $k"
+    )
+    params: dict[str, Any] = {"q": lucene_q, "k": k}
+    return cypher, params
+
+
 def candidate_trails_near_direct(
     lat: float, lon: float, radius_m: float, k: int = 10
 ) -> tuple[str, dict[str, Any]]:

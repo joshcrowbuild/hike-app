@@ -1,7 +1,7 @@
 # Epic 038 — Trail-name search + geocoder seam (B001)
 
-**Status:** DONE ✅
-**Phase:** E (Phase-E "dreaming from home" search; spec-complete spike deliverable — downstream build not yet green-lit, no product code lands until a build lane picks this up)
+**Status:** IN_PROGRESS (S1 + S3's in-graph retrieval half shipped; S2/S4/S5/S6 not started — see build-lane note below)
+**Phase:** E (Phase-E "dreaming from home" search; a build lane has picked up Problem A's in-graph retrieval — Problem B's geocoder seam and the frontend search box remain unscheduled)
 **Spec refs:** research brief `docs/research/b001-search-geocoder.md` (this epic's SSOT) · `docs/strategy/path-to-complete.md:221` (B001 "search is a finite tool curated *through* the engine, never an infinite-scroll raw list") · `docs/research/comaps-borrow-plan.md:214-217` (E2 — CoMaps `GetNameScores` borrow + verifier corrections) · CLAUDE.md **Rule #1** (source-or-silence), **Rule #2** (confidence = freshness·authority·corroboration; relevance must never fold in), **Rule #4** (access control at the query/data layer) · Open Decision #3 (R7 Aura DB-tier / B002 continental)
 
 ---
@@ -45,6 +45,8 @@ A user can type a **trail name** ("old rag", "rivanna") into the Home search box
 ## Stories
 
 > **Spike-lane note.** This is a **spec-complete draft epic** (the deliverable that makes B001 writable). The stories/ACs below are the buildable spec; the actual product code is a **later Phase-E build lane**, not this PR. This PR delivers `docs/research/b001-search-geocoder.md` + this epic + the index row (docs only).
+
+> **Build-lane update (this PR):** a build lane shipped S1's FULLTEXT retrieval substrate and S3's engine-through wiring for **trail-name search only** (Problem A): `graph/schema.cypher` `trail_name_fts`, `graph/queries.py:candidate_trails_by_name`, `orchestration/scout.py:scout_by_name`, `orchestration/engine.py:search_trails` (+ the behavior-preserving `_plan_from_candidates` extraction), and `POST /search` (`api/schemas.py:SearchRequest`, `api/app.py`). **S2 (the ported CoMaps `search_score.py` scorer) was deliberately NOT built this pass** — ranking uses the FULLTEXT relevance `score DESC` order directly (order-preserving through Scout/Verifier), satisfying Rule #2 (relevance never touches confidence) without yet porting the 6-level match ladder; a later pass can layer S2's scorer in without changing the `/search` contract. S4 (frontend search-as-you-type UI), S5 (geocoder seam / Problem B), and S6 are unstarted.
 
 ### S1 — FULLTEXT retrieval substrate (in-graph, zero new infra)
 
