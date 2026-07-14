@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "ingest_version": "fixture-2026-07",
+    "review_by": "2026-10-13",
+    "note": "GLM red-team round 2 F12 (LOW, passing): NPS alerts endpoint ANSWERED with zero Closure/Danger alerts for Shenandoah NP. The adapter produces a fact with count=0 (a sourced checked-clear). The engine classifies closures as 'no_hazard' — the CDP-02 checked-clear silence state. No CardWarning is generated. This pins the distinction between 'checked, nothing to flag' (no_hazard) and 'not checked' (not_fetched) and 'couldn't verify' (unavailable). Only an explicit source answer may claim clear (rule #1)."
+  },
+  "hard": {
+    "min_cards": 5,
+    "must_be_blocked": [],
+    "allowed_kinds": [
+      "weather",
+      "air",
+      "fire",
+      "closures"
+    ],
+    "facts": {
+      "weather": {
+        "source_prefix": "NWS",
+        "value": {
+          "temperature": 68,
+          "short_forecast": "Partly Sunny",
+          "active_alerts": []
+        }
+      },
+      "closures": {
+        "source_prefix": "NPS",
+        "value": {
+          "count": 0
+        }
+      }
+    },
+    "corpus_corroboration": {},
+    "expected_warnings": [],
+    "expected_unavailable_kinds": [],
+    "region_wide_warnings": [],
+    "condition_states": {
+      "weather": "present",
+      "air": "present",
+      "fire": "no_hazard",
+      "water": "not_fetched",
+      "closures": "no_hazard",
+      "permits": "not_fetched"
+    }
+  }
+}

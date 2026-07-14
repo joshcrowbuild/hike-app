@@ -35,6 +35,33 @@ describe('profileScale / profilePoints', () => {
     expect(scale.x(0)).toBe(10)
     expect(scale.x(1000)).toBe(290)
   })
+
+  it('with no minSpanMeters, the peak fills the frame regardless of its own real relief (the prior, auto-ranging behaviour)', () => {
+    const pts = profilePoints(SAMPLES, BOX)
+    expect(pts[1][1]).toBe(10) // padY — the 100 m relief is stretched to fill the box
+  })
+
+  it('minSpanMeters (H3, ux-review-craft 2026-07) floors the scale so small relief draws small', () => {
+    // Real relief here is 100 m; a 1000 m reference means this profile only
+    // occupies 1/10th of the available height instead of the full frame.
+    const withFloor = profilePoints(SAMPLES, BOX, 1000)
+    const withoutFloor = profilePoints(SAMPLES, BOX)
+    const peakY = (pts: [number, number][]) => pts[1][1]
+    // The peak sits much lower (larger y) in the floored version — it no
+    // longer reaches the top of the frame the way the un-floored one does.
+    expect(peakY(withFloor)).toBeGreaterThan(peakY(withoutFloor))
+    expect(peakY(withoutFloor)).toBe(10) // padY — fills the frame
+    expect(peakY(withFloor)).toBeGreaterThan(10) // floored — does not
+  })
+
+  it('a bigger relief than the floor still fills the frame — the floor only raises small relief, never clips large relief', () => {
+    const bigRelief: ElevationSample[] = [
+      { distanceMeters: 0, elevationMeters: 0 },
+      { distanceMeters: 500, elevationMeters: 2000 },
+    ]
+    const pts = profilePoints(bigRelief, BOX, 100) // floor (100 m) « actual relief (2000 m)
+    expect(pts[1][1]).toBe(10) // padY — still pinned to the top
+  })
 })
 
 describe('fractionToX / xToFraction round-trip', () => {

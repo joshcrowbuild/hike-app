@@ -1,0 +1,142 @@
+{
+  "note": "Pinned golden corpus: five hand-built Shenandoah trips near the Old Rag origin (same as closure-alert-no-warning). Row shapes mirror graph/queries.py candidate_trails_near / trail_source_corroboration.",
+  "trailhead_rows": [
+    {
+      "canonical_id": "osm:old-rag-mountain-loop",
+      "name": "Old Rag Mountain Loop",
+      "trailhead_id": "th:old-rag",
+      "distance_m": 900.0,
+      "is_loop": true,
+      "length_mi": 9.4,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.5716,
+        "longitude": -78.2853
+      },
+      "trailhead_point": {
+        "latitude": 38.5707,
+        "longitude": -78.2861
+      },
+      "area_id": "shenandoah-np"
+    },
+    {
+      "canonical_id": "osm:whiteoak-canyon",
+      "name": "Whiteoak Canyon Trail",
+      "trailhead_id": "th:whiteoak",
+      "distance_m": 7200.0,
+      "is_loop": false,
+      "length_mi": 4.6,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.556,
+        "longitude": -78.354
+      },
+      "trailhead_point": {
+        "latitude": 38.5382,
+        "longitude": -78.3497
+      },
+      "area_id": "shenandoah-np"
+    },
+    {
+      "canonical_id": "osm:cedar-run",
+      "name": "Cedar Run Trail",
+      "trailhead_id": "th:cedar-run",
+      "distance_m": 7900.0,
+      "is_loop": false,
+      "length_mi": 3.5,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.5488,
+        "longitude": -78.3583
+      },
+      "trailhead_point": {
+        "latitude": 38.5371,
+        "longitude": -78.3535
+      },
+      "area_id": "shenandoah-np"
+    },
+    {
+      "canonical_id": "osm:rose-river-loop",
+      "name": "Rose River Loop",
+      "trailhead_id": "th:rose-river",
+      "distance_m": 9800.0,
+      "is_loop": true,
+      "length_mi": 3.9,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.5333,
+        "longitude": -78.4144
+      },
+      "trailhead_point": {
+        "latitude": 38.53,
+        "longitude": -78.409
+      },
+      "area_id": "shenandoah-np"
+    },
+    {
+      "canonical_id": "osm:corbin-hollow",
+      "name": "Corbin Hollow Trail",
+      "trailhead_id": "th:old-rag",
+      "distance_m": 1500.0,
+      "is_loop": false,
+      "length_mi": 2.0,
+      "way_type": "path",
+      "outside_boundary": false,
+      "point": {
+        "latitude": 38.562,
+        "longitude": -78.305
+      },
+      "trailhead_point": {
+        "latitude": 38.5707,
+        "longitude": -78.2861
+      },
+      "area_id": "shenandoah-np"
+    }
+  ],
+  "direct_rows": [],
+  "corroboration": [
+    {
+      "canonical_id": "osm:old-rag-mountain-loop",
+      "sources": [
+        "NPS",
+        "OSM",
+        "USFS"
+      ],
+      "corroboration": 3
+    },
+    {
+      "canonical_id": "osm:whiteoak-canyon",
+      "sources": [
+        "NPS",
+        "OSM"
+      ],
+      "corroboration": 2
+    },
+    {
+      "canonical_id": "osm:cedar-run",
+      "sources": [
+        "OSM"
+      ],
+      "corroboration": 1
+    },
+    {
+      "canonical_id": "osm:rose-river-loop",
+      "sources": [
+        "NPS",
+        "OSM"
+      ],
+      "corroboration": 2
+    },
+    {
+      "canonical_id": "osm:corbin-hollow",
+      "sources": [
+        "OSM"
+      ],
+      "corroboration": 1
+    }
+  ]
+}

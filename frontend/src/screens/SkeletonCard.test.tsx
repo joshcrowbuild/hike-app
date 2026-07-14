@@ -29,6 +29,11 @@ describe('SkeletonCard', () => {
     expect(container.querySelector('.skeleton-glyph')).toBeInTheDocument()
   })
 
+  it('mirrors the 3-fact decision row — distance/ascent/duration (L2, ux-review-craft 2026-07)', () => {
+    const { container } = render(<SkeletonCard />)
+    expect(container.querySelectorAll('.skeleton-line--decision')).toHaveLength(3)
+  })
+
   it('shimmers by default (no reduced-motion preference)', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
     const { container } = render(<SkeletonCard />)
