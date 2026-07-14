@@ -1,6 +1,6 @@
 # GLM Corpus Quality Sweep (2026-07-13)
 
-**Status:** ACTIVE (read-only audit + proposed exclusions.json diff)
+**Status:** RESOLVED (2026-07-13 — F1-F4 applied to `exclusions.json` with narrowing; F5 out of scope, follow-up filed)
 **Reviewer:** GLM (foreign-model corpus quality sweep)
 **Scope:** All 16 regions via public API, 681 unique trails surfaced
 
@@ -168,6 +168,38 @@ If applied, these patterns would hard-drop **19 entries** across 2 regions:
 - 1 York River generic access path
 
 No legitimate trails would be affected (verified by OSM tag inspection).
+
+---
+
+## Resolution (2026-07-13)
+
+Verified independently (repo grep for existing name collisions, `re` behavior checks
+against `ingestion/trail_filter.py`'s `re.I` + `.search()`-substring semantics, and
+web lookups for real-world trail-naming conventions per token) and applied to
+`regions/exclusions.json`, narrowed vs. the raw proposal on two tokens:
+
+| Token | Verdict | Note |
+|-------|---------|------|
+| `\bcomfort station\b` | Applied as proposed | Confirmed: "Comfort Station" only ever names a restroom facility/landmark in the wild (e.g. NPS "Narada Falls Comfort Station"), never a trail. |
+| `\bshowers? path\b` | **Widened** to `\bshowers\b\|\bshower path\b` | The proposed pattern only matches "Showers Path" word order and misses the actual F2 entry `way/327975185` ("Path Loop B **Showers**" — "Showers" trailing, not followed by "path"). Bare plural "showers" is a safe token: real trail names use singular "Shower" attached to a geographic feature ("Shower Creek Falls Trail", Oregon) and never appear as a bare plural. Verified no collision in test fixtures or plausible naming conventions. |
+| `\bunnamed\b` | **Narrowed** to `\bunnamed (trail\|path\|shortcut\|section\|way)\b` | The bare token is too broad: "Unnamed Creek Trail" / "Unnamed Falls Trail" is a real, if unusual, trail-naming convention in the wild (COTREX, MTB Project, Trailforks, TrailLink, AllTrails all list an "Unnamed Creek Trail" in Aurora, CO — the creek itself is locally unnamed, and the trail is named after it). Narrowing to require "unnamed" directly modify trail/path/shortcut/section/way still catches the actual junk entry ("New Unnamed Trail Shortcut") while sparing the geographic-feature convention. |
+| `\bnew (trail\|section)\b` | Applied as proposed | Confirmed low risk: "new" must directly precede the literal word "trail" or "section" — "New River Trail", "New England National Scenic Trail" don't match (different word follows "new"). |
+| `\baccess route\b` | Applied as proposed (kept as a pattern, not narrowed to a literal name) | F4 borders on a one-off (only 1 entry, `way/1380847240`), but "access route" is a generic two-word phrase pattern in the same family as the existing `path to X` / `ramp to X` tokens — not a hardcoded single-trail name, so it's consistent with the config-discipline precedent (PRs #56/#170). "Beach Access Trail" / "ADA Access Trail" name the destination and don't match the generic "route" placeholder. |
+| `\bramp \d+\b` | Applied as proposed | Confirmed: "Ramp N" (numbered, no destination noun) is the exact Cape Hatteras National Seashore ORV/beach-access-ramp convention (Ramp 2, 4, 23, 27, 30, 32, 34, 38, 43, 44, 49, 55, 57, 59 are all real NPS-named access points). No "boat ramp"-style trail name collides — those carry a destination noun after "ramp" ("Boat Ramp Trail"), not a bare number. |
+
+**F5 (duplicate conflation pairs) is explicitly out of scope for this change** — different
+mechanism (`ingestion/conflate/match.py`), not a `trail_filter.py` / `exclusions.json`
+concern. Filed as a follow-up for the conflation pipeline; not investigated further here.
+
+**Applied in:** `regions/exclusions.json` (`name_deny`), `tests/test_trail_filter.py`
+(12 new tests — one caught-junk case + one nearest-legit-name-survives case per
+surviving token, plus the widened-showers and narrowed-unnamed cases).
+
+**Expected purge count:** ~19 entries (10 OBX ramps + 5 OBX comfort-station/showers +
+3 York River placeholder names + 1 York River access route) once the next re-ingest of
+`outer-banks` and `york-river` runs. This is the first live exercise of PR #177's
+filter-drift self-heal: the per-run marker should prune the newly-excluded entries
+automatically, sanity-bounded by the `ADVENTURE_PRUNE_MIN_RATIO` prune-ratio guard.
 
 ---
 
