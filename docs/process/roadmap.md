@@ -101,6 +101,7 @@
 | 039 | Feed first-paint latency | **DONE ✅** | Wave 1 (anonymous fast-path · engine-layer anon plan cache · frontend stale-while-revalidate); returning visitor paints 0.385s |
 | 040 | Two-phase render | **DONE ✅** | graph-only ranked cards <1.5s · `POST /plan/conditions` patch · six-state pending silence (merged overnight train, PR #175) |
 | 041 | Water overlay read surface | **DONE ✅** | Detail answer line + quiet map markers; CDP-02 three-way silence (PR #182) |
+| 042 | Manual trip log (learning-loop fallback) | **BACKLOG** | "I did this" button on saved trails → manual Episode + Outcome flow, watch-free (GLM IA review §6.1; Rule #6) |
 
 **Merged PRs (baseline + docs + waves):** remediation/seam set #5/#6/#7/#9/#10 · UI #14/#17/#22 · overnight batch #18/#19/#20/#21 · R10 secret #25 · roadmap+runbook #26 · **doc overhaul #27/#28/#29/#30** · commons doc-guard #32 · **Maps #38/#39** · **hosting #40/#41** · corpus filter #56 · API tests #57 · plan-reliability #65 · **OSS-borrow wave #112–#155** (022–036, 028) · **latency waves #157/#160/#162/#164/#175** (039/040, 018 silence) · **security remediation #166** · water overlay #182 · UX craft/conditions lanes #174/#179 · plus the roadmap/workflow-lint/dependabot housekeeping PRs.
 
@@ -151,6 +152,12 @@ BEHIND IT — the design-gated Phase-1 remainder
 OTHER OPEN
   Watch-poller host       ── the one still-deferred piece of R7 (Garmin sync; not needed to browse)
   UX craft/conditions     ── review lanes proposed (research/ux-review-*-2026-07.md); await green-light
+  Epic 042 (manual log)   ── BACKLOG; the learning-loop fallback for users without watch integration
+
+PARKED — UX RETHINK (GLM IA review findings, 2026-07)
+  Omnibox / Unified Intent ── promote parse-intent + B001 geocoder to Home header; kill origins.ts enum
+  Feed-level map toggle     ── plot curated cards on a map; requires MapLibre on Home (currently Detail-only)
+  Curator's Note on card    ── promote fitLine from Detail to feed card; Rule #1 guardrails required
 ```
 
 **Owner manual queue (Josh) — RECONCILED 2026-07-12 after the ops day.** Done ✅: warmer decision (OFF) · TTL/workers flips · branch protection (12 checks) · Vercel bundle verified · agency keys ×4 + full adapter list · PlanMetrics read (R5 closed). Remaining:
@@ -164,6 +171,7 @@ OTHER OPEN
 - **Build lane:** the kickable-without-Josh queue is now **empty** — every remaining Phase-B item waits on an owner action or decision. Next builds unlock in this order: ① ToS/consent scaffold (after the policy-positions chat); ② Phase-C auth epic (after Supabase sign-off); ③ UX craft/conditions lanes (after green-light). *(Done since v13: silence rendering ✅ · epic-018 reconcile ✅ · condition-states gate ✅ · OSS wave ✅ · latency waves ✅ · security remediation ✅ · water overlay ✅.)*
 - **PO decisions (Josh, in unlock order):** ① **auth provider sign-off** (Supabase brief on `main` — unlocks the Phase-C pivot); ② **Open-Meteo commercial license** (unblocks Epic 037's downstream build); ③ **readiness (007) design session** (safety-adjacent, Phase D).
 - **Parked, on purpose:** B010 connectivity (`ready`, Phase E) · B001 search build (spike done, Phase E) · B005 route drawing (Phase E) · commons read half (Stage 9, gated on T6/R1) · Epic 009's deferred halves (LLM-judge, Brier hook, N-run tiers — after 006/007 exist to evaluate).
+- **UX rethink queue (from GLM IA review):** ① **Omnibox** — elevate `parse-intent` free-text input to `Home` header + wire B001 geocoder to resolve arbitrary place names (kills the fixed `origins.ts` enum; biggest UX unlock identified). ② **Feed-level map** — toggle on Home to plot curated cards relative to each other and origin. ③ **Curator's Note** — promote `fitLine` to the feed card (Rule #1 guardrails: text must be derivable from verified facts, never LLM-generated prose). ④ **Epic 042** — manual trip log (BACKLOG, Phase C).
 
 ---
 
