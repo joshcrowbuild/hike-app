@@ -54,8 +54,33 @@ def test_candidate_trails_by_name_query_shape() -> None:
     assert "null AS distance_m" in cypher  # nothing to measure distance to
     assert "null AS trailhead_id" in cypher
     assert params["k"] == 5
-    assert params["q"] == "Old~ Rag~"  # sanitized + fuzzy-suffixed
+    # sanitized: AND-required (`+`) tokens, no fuzzy `~` below _FUZZY_MIN_TOKEN_LEN (4)
+    # — "Old" and "Rag" are both 3 chars, so neither fuzzes (see the relevance-floor
+    # unit tests below for the tightened-relevance behavior this enables).
+    assert params["q"] == "+Old +Rag"
     assert "owner_id" not in cypher  # world node — no access scope
+
+
+def test_candidate_trails_by_name_fuzzes_only_longer_tokens() -> None:
+    # MEDIUM UX finding on #219: short tokens ("old", 3 chars) fuzz-matched half the
+    # corpus ("Old Craig Road", "Old Drowning Ford Road", ...). Only tokens >=
+    # _FUZZY_MIN_TOKEN_LEN get the fuzzy `~` suffix; short tokens stay exact-but-AND'd.
+    _cypher, params = queries.candidate_trails_by_name("Rivana", 10)
+    assert params["q"] == "+Rivana~"  # 6 chars -> still fuzzes (typo tolerance intact)
+
+    _cypher, params = queries.candidate_trails_by_name("old rag", 10)
+    assert params["q"] == "+old +rag"  # both 3 chars -> neither fuzzes
+
+
+def test_candidate_trails_by_name_applies_relevance_floor() -> None:
+    # The Cypher must collect all hits, derive the top score, then filter the rest
+    # against it — never a fixed/absolute score cutoff (Lucene scores aren't
+    # comparable across queries/corpora).
+    cypher, params = queries.candidate_trails_by_name("Old Rag", 10)
+    assert "collect({t: t, score: score})" in cypher
+    assert "top_score" in cypher
+    assert "WHERE score >= top_score * $floor_ratio" in cypher
+    assert params["floor_ratio"] == queries._RELEVANCE_FLOOR_RATIO
 
 
 def test_candidate_trails_by_name_escapes_lucene_special_chars() -> None:
