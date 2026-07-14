@@ -105,7 +105,7 @@ describe('Card + Detail read the SAME CardVM (Epic 019 AC-19.1.2 — no VM/DTO c
 
 describe('Detail Duration — live estimate disclosed as such (Epic 022)', () => {
   it('renders the Naismith estimate with an "est." disclosure when no mock duration string is present', async () => {
-    await renderDetail(
+    const { container } = await renderDetail(
       card({
         geo: {
           geometry: null,
@@ -123,7 +123,13 @@ describe('Detail Duration — live estimate disclosed as such (Epic 022)', () =>
         },
       }),
     )
-    expect(screen.getByText(/~25 min · est\./)).toBeInTheDocument()
+    // The "est." disclosure is now its own badge element beside the value
+    // (ux-review 2026-07 Finding 1: a single concatenated "~25 min · est."
+    // string was the widest decision fact and clipped the card's right edge)
+    // — assert the value and the badge as the two nodes they now are, rather
+    // than one combined text match.
+    expect(screen.getByText('~25 min')).toBeInTheDocument()
+    expect(container.querySelector('.decision-badge')?.textContent?.trim()).toBe('est.')
   })
 
   it('renders no Duration fact when neither a mock duration nor a live estimate is present', async () => {

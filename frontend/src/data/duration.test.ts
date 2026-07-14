@@ -14,9 +14,9 @@ describe('formatEstimatedDuration', () => {
     expect(formatEstimatedDuration(120)).toContain('2 hr')
   })
 
-  it('always discloses the figure as an estimate', () => {
-    expect(formatEstimatedDuration(155)).toContain('est')
-    expect(formatEstimatedDuration(26)).toContain('est')
+  it('no longer bakes the "est." disclosure into the string (ux-review 2026-07 Finding 1) — that moves to DecisionItem\'s own badge, so the fact\'s value stays the narrowest it can be', () => {
+    expect(formatEstimatedDuration(155)).not.toContain('est')
+    expect(formatEstimatedDuration(26)).not.toContain('est')
   })
 
   it('starts with an approximation marker', () => {

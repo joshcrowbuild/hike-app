@@ -197,15 +197,41 @@ export function geoAscentFeet(geo: TrailGeo | undefined): number | undefined {
  * for a stand-in. The icon's sr-only label carries the word to assistive tech;
  * the visible word is a sighted-only echo of it (`aria-hidden`), so the fact
  * reads once, not twice.
+ *
+ * `badge` is an optional small disclosure tag AFTER the value (e.g. "est."),
+ * mirroring `DifficultyBadge`'s `.difficulty-est` treatment — its own element,
+ * never concatenated into the value string. That split fixed Finding 1
+ * (ux-review 2026-07): a duration like "~5 hr 5 min · est." baked as one
+ * `nowrap` string was the single widest fact and clipped the card's right edge
+ * at every viewport; a value ("~5 hr 5 min") plus a separate small badge wraps
+ * or shrinks independently instead of forcing the whole row wider than the card.
  */
-export function DecisionItem({ label, value, glyph }: { label: string; value: string; glyph?: LucideIcon }) {
+export function DecisionItem({
+  label,
+  value,
+  glyph,
+  badge,
+}: {
+  label: string
+  value: string
+  glyph?: LucideIcon
+  badge?: string
+}) {
   return (
     <div className="decision-item">
       <span className="decision-label">
         {glyph ? <Icon glyph={glyph} label={label} className="decision-icon" /> : null}
         <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
       </span>
-      <span className="decision-value">{value}</span>
+      <span className="decision-value">
+        {value}
+        {badge ? (
+          <span className="decision-badge" aria-label={`derived ${badge}`}>
+            {' '}
+            {badge}
+          </span>
+        ) : null}
+      </span>
     </div>
   )
 }
@@ -231,7 +257,17 @@ export function DecisionFacts({ card, className }: { card: CardVM; className: st
   const distanceMiles = resolveMiles(card)
   const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
   const durationMinutes = resolveDurationMinutes(card)
+  // Two different duration sources, ONE fact slot (Epic 022): the curated mock
+  // `durationHours` is already a range string ("2–3 hr") and is `sample`-
+  // provenance data disclosed elsewhere (the sample strip) — it wears no
+  // per-fact badge. The live path is a Naismith point estimate off the
+  // profile, so IT alone carries the "est." disclosure (Rule #1/#7) — as its
+  // own small badge (`DecisionItem`'s `badge` prop), never concatenated into
+  // the value string the way `formatEstimatedDuration` used to (ux-review
+  // 2026-07 Finding 1: that inline "· est." made Duration the widest fact and
+  // clipped the card's right edge).
   const duration = e?.durationHours ?? (durationMinutes != null ? formatEstimatedDuration(durationMinutes) : null)
+  const durationBadge = e?.durationHours == null && durationMinutes != null ? 'est.' : undefined
   return (
     <div className={className}>
       {e?.driveMinutes != null ? (
@@ -243,7 +279,9 @@ export function DecisionFacts({ card, className }: { card: CardVM; className: st
       {ascentFeet != null ? (
         <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
       ) : null}
-      {duration != null ? <DecisionItem label="Duration" value={duration} glyph={glyphs.duration} /> : null}
+      {duration != null ? (
+        <DecisionItem label="Duration" value={duration} glyph={glyphs.duration} badge={durationBadge} />
+      ) : null}
     </div>
   )
 }
