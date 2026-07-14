@@ -121,17 +121,19 @@ def test_prune_outcome_deleted_reports_true_count_not_bool(clean_graph):
     # Falsification of the 2026-07-12 bug: the pipeline's summary reported
     # `pruned: 1` no matter how many nodes a run actually deleted (int(bool) instead
     # of the real count — a live re-ingest deleted 36 in one region, 5 in another,
-    # both logged as `pruned: 1`). Seed a re-ingest that drops N=5 trails (N>1, and
-    # deliberately NOT equal to n_cur/n_prev) and pin that `PruneOutcome.deleted`
-    # reports the TRUE deleted count against a real database.
+    # both logged as `pruned: 1`). Seed a PRODUCTION-STYLE re-ingest (version-
+    # independent canonical_ids that MERGE-refresh, via `_seed_prod_trails`) where
+    # 15 of 20 trails refresh under the new version and 5 go stale, then pin that
+    # `PruneOutcome.deleted` reports the TRUE deleted count (5, distinct from
+    # n_cur=15 and from int(bool)==1) against a real database.
     sess = clean_graph.scoped_session("ingest")
     runner = _runner(sess)
     region = "shenandoah-gwj"
 
-    _seed_trails(runner, region, f"{region}-v1", 20)
+    _seed_prod_trails(runner, region, f"{region}-v1", 20)
     pre = count_region_trails(runner, region_id=region)
-    # 15 of 20 refresh under the new version; 5 are stale and eligible for deletion.
-    _seed_trails(runner, region, f"{region}-v2", 15)
+    # 15 of 20 refresh under the new version (same canonical_ids); 5 are stale.
+    _seed_prod_trails(runner, region, f"{region}-v2", 15)
 
     outcome = prune_stale_trails(runner, f"{region}-v2", region_id=region, pre_load_count=pre)
 
