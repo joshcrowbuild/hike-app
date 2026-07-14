@@ -59,6 +59,7 @@
 
 | Doc | Status | Purpose · read when |
 |---|---|---|
+| [gemini-ia-flow-review-2026-07.md](gemini-ia-flow-review-2026-07.md) | `ACTIVE` (findings await lane green-light) | GLM multimodal IA and user-flow review: maps current IA, analyzes friction in core flows, and proposes 3 generative paradigms for location + intent expression. **Read when** redesigning the location picker, search omnibox, or home screen IA. |
 | [design-system-v0.1.md](design-system-v0.1.md) | `ACTIVE` | Design-system contract: DTCG/Style-Dictionary tokens, honesty primitives (confidence/staleness/verify), owned-component stack, §14 done-bar. **Read when** building/refactoring frontend tokens or components. |
 | [home-curation-prototype-spec-v0.3.md](home-curation-prototype-spec-v0.3.md) | `ACTIVE` | Home/Curation UI spec: peer card set, decidable-at-rest cards, calm tuning, cartographic-matte visual system. **Read when** building/reviewing the Home/Curation UX. |
 | [home-curation-prototype-spec-v0.2.md](archive/home-curation-prototype-spec-v0.2.md) | `SUPERSEDED` by v0.3 (archived) | Older Home/Curation draft. **Read** the v0.3 successor instead; kept for design provenance. |
