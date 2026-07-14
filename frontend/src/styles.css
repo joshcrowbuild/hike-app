@@ -48,6 +48,29 @@ button {
   padding: 1.1rem 1rem 3rem;
 }
 
+/* ---- desktop presence (ux-review 2026-07 Finding 2) ----
+   Below this, `.app-shell` stays the mobile-measure column above — the calm,
+   one-thing-at-a-time reading width the whole design is built around. At
+   desktop widths that same column was marooned in an otherwise-empty canvas
+   (the finding's "~430px column in a huge canvas"): unused width, nothing
+   promoted, nothing using the space.
+
+   The fix stays calm-first on purpose (per the finding's own guidance): NOT a
+   dense multi-column dashboard grid — `.card-stack` keeps its single implicit
+   column (styles.css above) at every width, so the feed still reads as one
+   card at a time, never a scanning grid that undercuts the "calm utility"
+   pillar. The single lever pulled is `.app-shell`'s own max-width: a
+   comfortable reading measure (~34rem, close to the ~60-75ch typographic
+   sweet spot for this type scale) instead of the phone-column width, so a
+   laptop viewport gets a well-proportioned centered column with real
+   breathing room either side — not a stretched phone layout, not a grid. */
+@media (min-width: 1024px) {
+  .app-shell {
+    width: min(100%, 34rem);
+    padding-top: 2.4rem;
+  }
+}
+
 /* ---- shared cartographic primitives ---- */
 .label,
 .wordmark,
