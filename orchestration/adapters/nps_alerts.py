@@ -127,7 +127,11 @@ def fetch(
             value={"in_range": False, "radius_miles": RADIUS_MILES},
             source=SOURCE,
             fetched_at=now or datetime.now(timezone.utc),
-            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            confidence_inputs={
+                "authority": "tier1_gov",
+                "freshness": "live",
+                "source_kind": "primary",
+            },
             disclosures=(f"No NPS unit within {RADIUS_MILES:.0f} mi of this point.",),
         )
     park_code = nearest.get("parkCode")
@@ -154,7 +158,11 @@ def fetch(
             value={"park": full_name, "park_code": park_code, "alerts": [], "count": 0},
             source=SOURCE,
             fetched_at=now or datetime.now(timezone.utc),
-            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            confidence_inputs={
+                "authority": "tier1_gov",
+                "freshness": "live",
+                "source_kind": "primary",
+            },
             disclosures=(
                 "Park-level scope — the nearest NPS unit to this point, not trail-specific.",
             ),
@@ -169,7 +177,11 @@ def fetch(
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "live",
+            "source_kind": "primary",
+        },
         disclosures=("Park-level scope — the nearest NPS unit to this point, not trail-specific.",),
     )
 

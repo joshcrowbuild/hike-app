@@ -63,7 +63,11 @@ def fetch(
     # *aggregator* of EPA monitors and returns only a coarse `reporting_area`, so two
     # AQI feeds both pulling AirNow share an origin by definition. Corroboration is
     # honestly 1 ("single aggregated source"); a monitor id here would falsely imply
-    # an independence the feed doesn't expose.
+    # an independence the feed doesn't expose. `source_kind: "aggregated"` (CDP-06
+    # retune) makes that explicit to the confidence axis: unlike NWS/USGS/FIRMS (each
+    # a single but uniquely-designated institutional origin), AirNow's single reading
+    # is a blend with no origin identity — it stays hedged at corroboration=1 rather
+    # than reading "stated" the way an authoritative primary single source can.
 
     return VerifiedFact(
         value={
@@ -74,7 +78,11 @@ def fetch(
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "live",
+            "source_kind": "aggregated",
+        },
         disclosures=("AirNow AQI is preliminary and subject to revision.",),
     )
 

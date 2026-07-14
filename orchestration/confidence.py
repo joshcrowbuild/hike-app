@@ -17,8 +17,11 @@ presentation and guardrail-flagging. Nothing here is persisted (computed on read
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from orchestration.adapters.base import VerifiedFact
+
+SourceKind = Literal["primary", "aggregated"]
 
 # Per-source authority for a datum (Stage 1 §4 tiering; generous defaults).
 AUTHORITY_WEIGHT: dict[str, float] = {
@@ -32,10 +35,17 @@ AUTHORITY_WEIGHT: dict[str, float] = {
     "low": 0.3,
     "derived": 0.7,
 }
+# Cadence-aware freshness (CDP-06 retune): "slow" is the expected cadence of
+# bulk-ingested corpus data (a trail's distance/ascent from OSM/USGS), not a decay
+# clock. A way mapped months ago is still there — it is not "6-hour-old weather" —
+# so slow-but-at-its-expected-cadence data is honestly high-trust (0.85, above the
+# 0.75 "stated" bar), leaving corroboration as the axis that actually gates
+# structural facts to "stated". Genuinely outdated data still reads "stale" (0.3)
+# and is unaffected by this change.
 FRESHNESS_WEIGHT: dict[str, float] = {
     "live": 1.0,
     "near_real_time": 0.9,
-    "slow": 0.7,
+    "slow": 0.85,
     "stale": 0.3,
 }
 _AUTHORITY_DEFAULT = 0.4
@@ -56,29 +66,50 @@ def compute(
     authority: str | None = None,
     freshness: str | None = None,
     corroboration: int = 1,
+    source_kind: SourceKind = "aggregated",
     floor: float = FLOOR,
 ) -> Confidence:
     a = AUTHORITY_WEIGHT.get(authority or "", _AUTHORITY_DEFAULT)
     f = FRESHNESS_WEIGHT.get(freshness or "", _FRESHNESS_DEFAULT)
-    # 1 independent source = baseline; more corroboration helps, with diminishing
-    # returns (1 -> 0.6, 2 -> 0.8, 3+ -> 1.0).
-    c = min(1.0, 0.6 + 0.2 * max(0, corroboration - 1))
+    n = max(1, corroboration)
+    # CDP-06 retune — corroboration discriminates WHAT "one source" means, not just
+    # how many there are. The pre-retune curve conflated two different situations
+    # under the same n=1 baseline (0.6):
+    #   • a single AUTHORITATIVE/PRIMARY origin — the one NWS office+gridpoint for a
+    #     point, the nearest USGS gauge, a FIRMS satellite detection, the nearest NPS
+    #     unit: each names a specific, uniquely-designated institutional source. There
+    #     is no second "independent" NWS forecast for the same gridpoint to demand —
+    #     asking for one is a category error, so hedging it as "single unverified
+    #     source" misrepresents its reliability. These start at 0.85 (clears "stated"
+    #     with strong authority+freshness) and still climb toward 1.0 if a genuinely
+    #     distinct second/third origin does show up.
+    #   • a single AGGREGATED/UNVERIFIED origin — AirNow blends many monitors behind
+    #     one number with no distinct-origin id (self-documented in the adapter); a
+    #     corpus fact backed by only one upstream data provider (not yet SAME_AS-
+    #     matched to a second) is similarly not yet independently checked. These keep
+    #     the original 0.6 baseline, climbing with diminishing returns as real distinct
+    #     origins are added (1 -> 0.6, 2 -> 0.8, 3+ -> 1.0) — corroboration is the
+    #     honest gate to "stated" for this kind, exactly as the pre-retune curve
+    #     intended it to be for everything.
+    # Either way, more corroboration never hurts and 3+ distinct origins saturate at
+    # 1.0 — only the n=1 floor differs by kind.
+    if source_kind == "primary":
+        c = 0.85 if n <= 1 else (0.9 if n == 2 else 1.0)
+    else:
+        c = min(1.0, 0.6 + 0.2 * (n - 1))
     # Weakest-link fusion (CDP-06): a fact is only as trustworthy as its *weakest*
     # axis — freshness, authority, and corroboration must EACH hold up. The former
     # weighted mean (0.4a + 0.3f + 0.3c) let two strong axes paper over a weak third
     # (stale-but-authoritative, single-source-but-fresh) into a "comfortable middle"
     # that overstated trust; taking the MIN refuses that lie.
     #
-    # AGGREGATE CONSEQUENCE (surfaced for review, never hidden): given today's axis
-    # weights + corroboration curve, "stated" (score ≥ 0.75) is now UNREACHABLE for
-    # every user-facing fact the engine emits — live conditions are single-source by
-    # construction (c=0.6 → caps at 0.6 → hedged) and corpus facts are slow-freshness
-    # (f=0.7 → caps at 0.7 → hedged), so the whole feed presents "hedged"/"flagged".
-    # That is the honest floor: nothing here is verified by an independent second
-    # origin. compute() itself still returns "stated" when all three axes clear 0.75
-    # (see test_high_authority_live_corroborated_is_stated) — it is the *wiring* that
-    # never feeds it such inputs. Restoring a reachable "stated" is a curve/weight
-    # re-tune, deliberately OUT OF SCOPE for this fusion-only change (see PR body).
+    # RETUNE OUTCOME (was: "stated" unreachable for every fact; see git history for
+    # that interim state and its rationale). With cadence-aware freshness (slow=0.85)
+    # and the primary/aggregated corroboration split above, "stated" is reachable
+    # again for genuinely strong facts — a single authoritative live reading (NWS/
+    # USGS/FIRMS/NPS) or a cross-provider-corroborated structural corpus fact — while
+    # staying unreachable for a single aggregated/unverified source or actually-stale
+    # data. See tests/test_confidence.py for the pinned archetypes.
     score = round(min(a, f, c), 3)
 
     level = "high" if score >= 0.75 else "medium" if score >= 0.5 else "low"
@@ -86,12 +117,20 @@ def compute(
     return Confidence(score=score, level=level, presentation=presentation, floor_met=score >= floor)
 
 
-def for_fact(fact: VerifiedFact, *, corroboration: int = 1) -> Confidence:
+def for_fact(
+    fact: VerifiedFact, *, corroboration: int = 1, source_kind: SourceKind = "primary"
+) -> Confidence:
+    """`source_kind` defaults to "primary" because every live-adapter caller today
+    (NWS/USGS/FIRMS/NPS/RIDB) names a single designated institutional origin; an
+    adapter that is itself an aggregate of unnamed origins (e.g. AirNow) passes
+    `source_kind="aggregated"` explicitly at the call site."""
     inputs = fact.confidence_inputs if isinstance(fact.confidence_inputs, dict) else {}
     authority = inputs.get("authority")
     freshness = inputs.get("freshness")
+    kind = inputs.get("source_kind")
     return compute(
         authority=authority if isinstance(authority, str) else None,
         freshness=freshness if isinstance(freshness, str) else None,
         corroboration=corroboration,
+        source_kind=kind if kind in ("primary", "aggregated") else source_kind,
     )

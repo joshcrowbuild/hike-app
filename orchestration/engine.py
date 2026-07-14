@@ -493,8 +493,16 @@ def plan_from_origin(
         srcs = sources_by_id.get(candidate.canonical_id, ())
         # The corpus identity is the one fact that carries genuine multi-origin
         # corroboration (CDP-01). authority/freshness reflect the slow, bulk-ingested
-        # corpus tier; the count is the live SAME_AS independence count.
-        corpus_confidence = compute(authority="tier1", freshness="slow", corroboration=corr)
+        # corpus tier; the count is the live SAME_AS independence count. source_kind is
+        # explicitly "aggregated" (not the for_fact default "primary"): a single
+        # upstream provider (OSM alone, not yet SAME_AS-matched to USGS/USFS/NPS) is
+        # genuinely unverified structural data, same as an aggregated live source — it
+        # must earn "stated" via real cross-provider corroboration (corr >= 2), not
+        # get an institutional-singularity pass the way one NWS office does (CDP-06
+        # retune; see orchestration/confidence.py).
+        corpus_confidence = compute(
+            authority="tier1", freshness="slow", corroboration=corr, source_kind="aggregated"
+        )
         planned.append(
             PlannedTrail(
                 candidate,

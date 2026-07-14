@@ -106,7 +106,11 @@ def fetch(
             value={"gauge_available": False, "search_radius_deg": radius_deg},
             source=SOURCE,
             fetched_at=now or datetime.now(timezone.utc),
-            confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+            confidence_inputs={
+                "authority": "tier1_gov",
+                "freshness": "live",
+                "source_kind": "primary",
+            },
             disclosures=("No USGS gauge within the search radius of this point.",),
         )
 
@@ -141,7 +145,14 @@ def fetch(
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+        # source_kind "primary" (CDP-06 retune): `site_id` names the specific,
+        # uniquely-identified gauge this reading came from — a single but
+        # institutionally-designated origin, not an unverified aggregate.
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "live",
+            "source_kind": "primary",
+        },
         disclosures=(disclosure,),
     )
 
