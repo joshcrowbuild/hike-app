@@ -154,6 +154,14 @@ export interface AdjustSheetProps {
   anonymous?: boolean
 }
 
+/**
+ * The label/placeholder here are deliberately distinct from the Home Omnibox's
+ * "Search a trail by name" (ux-review 2026-07 Finding 3, signposting only — no
+ * unified-intent redesign): this box never looks up a trail. It reads as
+ * adding nuance to the feed the sheet is already adjusting — "this feed,
+ * described" rather than "find a trail" — so the two free-text inputs stop
+ * looking like two ways to do the same thing.
+ */
 export function AdjustSheet({ open, state, setState, onClose, onOpenFacet, anonymous }: AdjustSheetProps) {
   const { origins } = useOrigins()
   if (!open) return null
@@ -175,13 +183,13 @@ export function AdjustSheet({ open, state, setState, onClose, onOpenFacet, anony
       </div>
 
       <label className="refine">
-        <span className="refine-label">Refine with a phrase</span>
+        <span className="refine-label">Describe this feed, in your own words</span>
         <input
           className="refine-input"
           type="text"
           value={state.prompt}
           onChange={(event) => setState((current) => ({ ...current, prompt: event.target.value }))}
-          placeholder="cooler · quieter · good with Ruby"
+          placeholder="e.g. cooler · quieter · good with Ruby"
         />
       </label>
     </Sheet>

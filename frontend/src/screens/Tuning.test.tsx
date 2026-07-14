@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PanelSheet } from './Tuning'
+import { AdjustSheet, PanelSheet } from './Tuning'
 import type { TuningState } from '../types'
 
 const BASE: TuningState = {
@@ -169,5 +169,32 @@ describe('origin picker grouping + ordering (craft review C1/M4 — region-group
       // @ts-expect-error test-only cleanup of the jsdom shim
       delete HTMLElement.prototype.scrollTo
     }
+  })
+})
+
+/** A thin stateful harness mirroring `OriginPanel` — `AdjustSheet` is controlled. */
+function Adjust() {
+  const [state, setState] = useState<TuningState>(BASE)
+  return (
+    <AdjustSheet open state={state} setState={setState} onClose={() => {}} onOpenFacet={() => {}} />
+  )
+}
+
+describe('AdjustSheet "refine" input is signposted distinctly from the Home Omnibox (ux-review 2026-07 Finding 3)', () => {
+  it('has its own accessible name, distinct from the Home Omnibox\'s "Search a trail by name"', () => {
+    render(<Adjust />)
+    // A `type="text"` input surfaces as `textbox`, not `searchbox` — already one
+    // structural signal the two inputs are different kinds of control; its
+    // accessible name reads as feed-nuance, never trail lookup.
+    const refine = screen.getByRole('textbox', { name: 'Describe this feed, in your own words' })
+    expect(refine).toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.queryByText('Search a trail by name')).not.toBeInTheDocument()
+  })
+
+  it('placeholder reads as adding nuance to the current feed, not a trail lookup', () => {
+    render(<Adjust />)
+    const refine = screen.getByRole('textbox', { name: 'Describe this feed, in your own words' })
+    expect(refine).toHaveAttribute('placeholder', 'e.g. cooler · quieter · good with Ruby')
   })
 })
