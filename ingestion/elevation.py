@@ -128,6 +128,7 @@ def compute_gain_loss_grade(
     elevations_m: list[float],
     noise_threshold_m: float = DEFAULT_NOISE_THRESHOLD_M,
     grade_window_m: float = DEFAULT_GRADE_WINDOW_M,
+    seam_indices: frozenset[int] = frozenset(),
 ) -> tuple[float, float, float]:
     """Total gain, total loss (both ≥ 0), and max grade (%) from a sampled series.
 
@@ -137,6 +138,12 @@ def compute_gain_loss_grade(
     `grade_window_m` ground window (`_max_grade_pct`) for the same reason — adjacent
     raw samples would let one noisy cell report an alarming false wall.
 
+    `seam_indices` marks indices where a new (disjoint MultiLineString) part begins
+    after a between-parts distance bridge (`build_profile`). The accumulator's
+    reference elevation resets AT a seam index without crediting the jump to gain
+    or loss — the seam is a real-world gap in the trail, not climbed ground, so
+    crediting it would invent a phantom "seam climb" (Rule #1 / HIGH defect fix).
+
     Conservative tail: a trailing monotonic move smaller than the threshold is left
     uncredited, so gain/loss can under-report by up to ~`noise_threshold_m` — a
     deliberate bias toward not inventing climb (source-or-silence)."""
@@ -144,7 +151,12 @@ def compute_gain_loss_grade(
         return 0.0, 0.0, 0.0
     gain = loss = 0.0
     ref = elevations_m[0]
-    for elev in elevations_m[1:]:
+    for i, elev in enumerate(elevations_m[1:], start=1):
+        if i in seam_indices:
+            # Cross the seam without crediting the elevation jump: it reflects the
+            # real gap between two disjoint trail parts, not ground actually walked.
+            ref = elev
+            continue
         delta = elev - ref
         if delta >= noise_threshold_m:
             gain += delta
@@ -168,6 +180,10 @@ def build_profile(
     `None` (source-or-silence) when there's no usable geometry, fewer than two
     covered samples, or DEM coverage below `min_coverage` of the sampled points."""
     densified: list[tuple[float, float, float]] = []
+    # Cumulative distance at which each part-after-the-first begins, post-bridge —
+    # the seam boundary. Used below to stop gain/loss from crediting the jump across
+    # a between-parts gap as if it were climbed ground (Rule #1 / HIGH defect fix).
+    seam_dists: list[float] = []
     cum = 0.0
     last_pt: tuple[float, float] | None = None
     for part in parts:
@@ -177,10 +193,11 @@ def build_profile(
             # Bridge a between-parts gap by distance only — do NOT densely sample the
             # bridge (it isn't real trail). Keeps distances monotonic + honest. Max
             # grade can't be inflated by the bridge because grade is measured over a
-            # ground window (≥ the bridge's own run), not adjacent samples; gain/loss
-            # across the bridge reflect the real elevation delta between the two
-            # covered endpoints (multi-part routes are rare — segments usually join).
+            # ground window (≥ the bridge's own run), not adjacent samples. Gain/loss
+            # across the bridge is excluded via `seam_dists` below — the elevation
+            # delta between two disjoint parts isn't ground actually walked.
             cum += haversine_m(last_pt, part[0])
+            seam_dists.append(cum)
         local = densify(part, resolution_m)
         densified.extend((lon, lat, cum + d) for lon, lat, d in local)
         if local:
@@ -231,7 +248,24 @@ def build_profile(
         )
         return None
 
-    gain, loss, max_grade = compute_gain_loss_grade(distances, elevations, noise_threshold_m)
+    # Map each seam's bridge-landing distance to an index in the FINAL (coverage-
+    # filtered) `distances` array — never the pre-filter densified list, since DEM
+    # holes can drop points (including a part's own endpoint). The first covered
+    # sample at-or-after the seam is the correct reset point: whatever elevation
+    # jump landed there is (at least partly) the cross-gap jump, not climbed ground.
+    seam_indices: set[int] = set()
+    search_from = 0
+    for seam_dist in seam_dists:
+        idx = search_from
+        while idx < len(distances) and distances[idx] < seam_dist:
+            idx += 1
+        if idx < len(distances):
+            seam_indices.add(idx)
+            search_from = idx + 1
+
+    gain, loss, max_grade = compute_gain_loss_grade(
+        distances, elevations, noise_threshold_m, seam_indices=frozenset(seam_indices)
+    )
     return ElevationProfile(
         distances_m=distances,
         elevations_m=elevations,
