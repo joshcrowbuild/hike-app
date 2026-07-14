@@ -31,4 +31,38 @@ describe('ElevationGlyph (S4)', () => {
     const { container } = render(<ElevationGlyph profile={empty} />)
     expect(container.querySelector('svg.glyph')).not.toBeInTheDocument()
   })
+
+  it('scales relief against a shared reference across cards — 13 ft of dune draws visibly flatter than 278 ft of ridge (H3, ux-review-craft 2026-07)', () => {
+    const dune = summarizeProfile(
+      [
+        { distanceMeters: 0, elevationMeters: 10 },
+        { distanceMeters: 500, elevationMeters: 13.96 }, // ~13 ft relief
+      ],
+      'USGS 3DEP (sample)',
+      10,
+    )
+    const ridge = summarizeProfile(
+      [
+        { distanceMeters: 0, elevationMeters: 300 },
+        { distanceMeters: 500, elevationMeters: 384.74 }, // ~278 ft relief
+      ],
+      'USGS 3DEP (sample)',
+      10,
+    )
+    const verticalRange = (container: HTMLElement): number => {
+      const ys = container
+        .querySelector('polyline.glyph-line')!
+        .getAttribute('points')!
+        .trim()
+        .split(/\s+/)
+        .map((pair) => Number(pair.split(',')[1]))
+      return Math.max(...ys) - Math.min(...ys)
+    }
+    const { container: duneContainer } = render(<ElevationGlyph profile={dune} />)
+    const { container: ridgeContainer } = render(<ElevationGlyph profile={ridge} />)
+    // Before H3's fix both profiles auto-ranged to their OWN min/max and so
+    // occupied the identical full-frame vertical span, regardless of relief —
+    // that's the exact bug: this asserts the ridge now draws visibly taller.
+    expect(verticalRange(ridgeContainer)).toBeGreaterThan(verticalRange(duneContainer))
+  })
 })
