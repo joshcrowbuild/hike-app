@@ -21,16 +21,25 @@ from graph.load import (
 )
 
 
-def _make_prune_runner(n_cur: int, n_prev: int) -> tuple[Any, list[tuple[str, dict]]]:
-    """A fake `Runner` for `prune_stale_trails`: answers its two count queries with
-    canned scalars (the `list[dict]` shape — see `_scalar_count`'s docstring) and
-    records every other (write) call it's given, so a test can assert on exactly what
-    would have hit the database."""
+def _make_prune_runner(
+    n_cur: int, n_prev: int, *, deleted: int | None = None
+) -> tuple[Any, list[tuple[str, dict]]]:
+    """A fake `Runner` for `prune_stale_trails`: answers its count queries with canned
+    scalars (the `list[dict]` shape — see `_scalar_count`'s docstring) and records
+    every other (write) call it's given, so a test can assert on exactly what would
+    have hit the database. Pass 1's DETACH DELETE now also returns a scalar (the true
+    deleted-node count — `RETURN count(DISTINCT node) AS n`); it defaults to `n_prev`
+    (every stale-candidate got deleted, the common case in these fixtures) but a test
+    can pass `deleted=` to pin a smaller count (e.g. some candidates were protected)."""
     write_calls: list[tuple[str, dict]] = []
+    deleted_n = n_prev if deleted is None else deleted
 
     def runner(cypher: str, params: dict) -> Any:
         if "RETURN count(cur)" in cypher:
             return [{"n": n_cur}]
+        if "count(DISTINCT node)" in cypher:
+            write_calls.append((cypher, params))
+            return [{"n": deleted_n}]
         if "RETURN count(node)" in cypher:
             return [{"n": n_prev}]
         write_calls.append((cypher, params))
@@ -349,15 +358,18 @@ def test_prune_reports_owned_ref_protected_count():
     def runner(cypher: str, params: dict) -> Any:
         if "RETURN count(cur)" in cypher:
             return [{"n": 100}]
+        if "count(DISTINCT node)" in cypher:  # pass 1's DETACH DELETE, true deleted count
+            return [{"n": 98}]
         if "(node)<-[:ON]-(:Episode)" in cypher:  # the owned-ref protected count query
             return [{"n": 2}]
         if "RETURN count(node)" in cypher:
             return [{"n": 100}]
-        return None  # the two DETACH DELETE passes
+        return None  # pass 2's DETACH DELETE (SourceRecords)
 
     outcome = prune_stale_trails(runner, "r-v2", region_id="r")
     assert outcome.pruned is True
     assert outcome.protected == 2
+    assert outcome.deleted == 98
 
 
 def test_count_region_versions_returns_cur_and_prev():
@@ -679,6 +691,8 @@ def test_prune_run_marker_owned_ref_protected_count():
     def runner(cypher: str, params: dict) -> Any:
         if "RETURN count(cur)" in cypher:
             return [{"n": 100}]
+        if "count(DISTINCT node)" in cypher:  # pass 1's DETACH DELETE, true deleted count
+            return [{"n": 7}]
         if "(node)<-[:ON]-(:Episode)" in cypher:
             return [{"n": 3}]
         if "RETURN count(node)" in cypher:
@@ -690,6 +704,7 @@ def test_prune_run_marker_owned_ref_protected_count():
     )
     assert outcome.pruned is True
     assert outcome.protected == 3
+    assert outcome.deleted == 7
 
 
 def test_count_region_versions_run_mode_keys_on_marker():
