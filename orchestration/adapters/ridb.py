@@ -62,7 +62,14 @@ def fetch(
         value={"facilities": facilities, "count": len(facilities)},
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "slow"},
+        # source_kind "primary" (CDP-06 retune): Recreation.gov RIDB is the single
+        # federal system of record for these facilities — a designated institutional
+        # origin, not an unverified aggregate.
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "slow",
+            "source_kind": "primary",
+        },
         disclosures=(
             "Live permit/campsite availability uses a separate unofficial endpoint; not included.",
         ),

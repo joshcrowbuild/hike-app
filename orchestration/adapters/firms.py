@@ -66,7 +66,14 @@ def fetch(
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "near_real_time"},
+        # source_kind "primary" (CDP-06 retune): each detection names its satellite/
+        # sensor — a single but uniquely-identified institutional origin (NASA), not an
+        # unverified aggregate.
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "near_real_time",
+            "source_kind": "primary",
+        },
         disclosures=("A FIRMS hotspot is a thermal anomaly, not a confirmed fire.",),
     )
 

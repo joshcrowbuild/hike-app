@@ -97,7 +97,15 @@ def fetch(
         },
         source=SOURCE,
         fetched_at=now or datetime.now(timezone.utc),
-        confidence_inputs={"authority": "tier1_gov", "freshness": "live"},
+        # source_kind "primary" (CDP-06 retune): forecast_office + grid_x/grid_y name
+        # the one authoritative NWS gridpoint forecast for this point — a single but
+        # uniquely-designated institutional origin, not an unverified aggregate. See
+        # orchestration/confidence.py for the primary/aggregated corroboration split.
+        confidence_inputs={
+            "authority": "tier1_gov",
+            "freshness": "live",
+            "source_kind": "primary",
+        },
     )
 
 
