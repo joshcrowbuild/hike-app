@@ -807,6 +807,34 @@ def test_log_elevation_coverage_noop_without_3dep(caplog):
     assert not any("3DEP profile" in r.message for r in caplog.records)
 
 
+def test_elevation_coverage_counts_dedupe_by_canonical_id():
+    # Regression for the verify-gate false-trip: an ambiguous same-source merge stamps two
+    # features onto one canonical_id, so `canonical_nodes` holds duplicate ids. The eligible
+    # denominator must count DISTINCT ids (like the covered numerator), else a fully-covered
+    # corpus reads <100% and the gate falsely skips the prune (PWF: 93 nodes → 64 distinct,
+    # all covered, was read as 64/93 = 69%).
+    from ingestion.pipeline import _elevation_coverage_counts
+    from ingestion.sources.base import CanonicalNode, EnrichmentFact
+
+    nodes = [
+        CanonicalNode(canonical_id="ct:a", name="A", geom_wkt="LINESTRING(0 0,1 1)"),
+        CanonicalNode(canonical_id="ct:a", name="A (dup feature)", geom_wkt="LINESTRING(0 0,1 1)"),
+        CanonicalNode(canonical_id="ct:b", name="B", geom_wkt="LINESTRING(2 2,3 3)"),
+        CanonicalNode(canonical_id="ct:c", name="C point-only"),  # no geom → not eligible
+    ]
+    facts = [
+        EnrichmentFact(
+            source="usgs-3dep", attribute="total_gain_m", value=1.0, canonical_id="ct:a"
+        ),
+        EnrichmentFact(
+            source="usgs-3dep", attribute="total_gain_m", value=2.0, canonical_id="ct:b"
+        ),
+    ]
+    eligible, covered = _elevation_coverage_counts(nodes, facts)
+    assert eligible == 2  # ct:a deduped + ct:b; point-only ct:c excluded
+    assert covered == 2  # 100% coverage, NOT 2/3 from the duplicate node
+
+
 # ── consolidate_osm_segments (connectivity-aware — Lead 2) ────────────────────
 
 
