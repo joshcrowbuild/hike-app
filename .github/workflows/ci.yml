@@ -40,6 +40,18 @@ jobs:
       # Fails on a stale epic index, known wrong-memory markers, or broken doc links.
       - run: python scripts/doc_lint.py
 
+  owned-read-lint:
+    name: owned-read-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Rule #4: all owned-label Cypher reads must be scoped to owner_id (no convention).
+      - run: python scripts/lint_owned_reads.py
+
   check:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest
