@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from orchestration.scout import scout
+from orchestration.scout import scout, scout_by_name
 
 
 class _FakeSession:
@@ -146,6 +146,68 @@ def test_scout_dedupe_keeps_distinct_unnamed_candidates() -> None:
     ]
     out = scout(37.54, -77.44, _FakeSession(rows), k=10)  # type: ignore[arg-type]
     assert {c.canonical_id for c in out} == {"a", "b"}
+
+
+def _name_row(cid: str, name: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "canonical_id": cid,
+        "name": name,
+        "trailhead_id": None,
+        "distance_m": None,
+        **extra,
+    }
+
+
+def test_scout_by_name_preserves_fulltext_relevance_order() -> None:
+    # Epic 038 / B001 Problem A: the FULLTEXT score ORDER returned by the query IS
+    # the ranking (rule #2 — name-match relevance, never distance/confidence) — scout_by_name
+    # must not re-sort these rows by distance (there is none to sort by).
+    rows = [_name_row("b", "Old Rag Loop"), _name_row("a", "Old Rag Mountain")]
+    out = scout_by_name("old rag", _FakeSession(rows))  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["b", "a"]  # row order preserved, not re-sorted
+
+
+def test_scout_by_name_dedupes_same_name_segments() -> None:
+    # D11: a same-name split trail still collapses to one card, keeping the richest
+    # (longest) segment — same dedup discipline as the spatial scout() path.
+    rows = [
+        _name_row("canal-a", "Canal Walk", length_mi=0.4),
+        _name_row("canal-b", "Canal Walk", length_mi=1.8),
+        _name_row("other", "Rivanna Trail", length_mi=2.0),
+    ]
+    out = scout_by_name("canal", _FakeSession(rows))  # type: ignore[arg-type]
+    assert [c.canonical_id for c in out] == ["canal-b", "other"]
+    canal = next(c for c in out if c.canonical_id == "canal-b")
+    assert canal.length_mi == 1.8
+
+
+def test_scout_by_name_caps_to_k() -> None:
+    rows = [_name_row(f"t{i}", f"Trail {i}") for i in range(5)]
+    out = scout_by_name("trail", _FakeSession(rows), k=2)  # type: ignore[arg-type]
+    assert len(out) == 2
+    assert [c.canonical_id for c in out] == ["t0", "t1"]  # first-seen order preserved
+
+
+def test_scout_by_name_empty_rows_yields_empty_candidates() -> None:
+    out = scout_by_name("gibberish-xyz", _FakeSession([]))  # type: ignore[arg-type]
+    assert out == []
+
+
+def test_scout_by_name_blank_query_short_circuits_before_reaching_the_session() -> None:
+    # An empty/whitespace-only query sanitizes to an empty Lucene query string, which
+    # Neo4j's fulltext index rejects at query time — this must short-circuit to an
+    # honest empty result BEFORE the session is ever called, never surface as a 500.
+    fake = _FakeSession([{"canonical_id": "should-not-appear", "name": "x"}])
+    assert scout_by_name("", fake) == []  # type: ignore[arg-type]
+    assert scout_by_name("   ", fake) == []  # type: ignore[arg-type]
+    assert fake.calls == []  # never reached Cypher
+
+
+def test_scout_by_name_passes_query_and_k_params() -> None:
+    fake = _FakeSession([])
+    scout_by_name("Old Rag", fake, k=7)  # type: ignore[arg-type]
+    _cypher, params = fake.calls[0]
+    assert params["k"] == 7
 
 
 def test_scout_dedupe_caps_to_k_after_collapsing_duplicates() -> None:

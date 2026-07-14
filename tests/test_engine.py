@@ -30,10 +30,12 @@ from orchestration.engine import (
     Runtime,
     _anon_key,
     _compute_plan,
+    _plan_from_candidates,
     _render_feed,
     plan,
     plan_from_origin,
     rank_plan,
+    search_trails,
 )
 from orchestration.feed_cache import FeedCache
 from orchestration.providers.base import LLMResponse
@@ -388,6 +390,181 @@ def test_plan_from_origin_is_identical_regardless_of_fan_out_concurrency() -> No
         p for p in concurrent.trails if p.candidate.canonical_id == "unverifiable"
     ).verdict.unavailable
     assert note.kind == "weather"
+
+
+# ── Epic 038 / B001: search_trails + the _plan_from_candidates extraction ──────
+
+
+def _name_row(cid: str, name: str, **extra: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "canonical_id": cid,
+        "name": name,
+        "trailhead_id": None,
+        "distance_m": None,
+    }
+    row.update(extra)
+    return row
+
+
+def test_search_trails_empty_on_no_match() -> None:
+    # No name match -> an honest empty PlannedBatch (never an error) — the API layer
+    # renders this as an empty FeedResponse.
+    batch = search_trails(
+        "gibberish-xyz",
+        _FakeSession([]),  # type: ignore[arg-type]
+        {},
+    )
+    assert batch.trails == []
+    assert batch.set_aside == ()
+    assert batch.notices == ()
+
+
+def test_search_trails_blank_query_is_an_empty_feed_never_a_500() -> None:
+    # A blank query sanitizes to an empty Lucene query string, which Neo4j's
+    # fulltext index rejects at query time — scout_by_name short-circuits before
+    # ever reaching the session, so this must degrade to an honest empty result,
+    # never propagate an exception up through search_trails.
+    session = _FakeSession([{"canonical_id": "should-not-appear", "name": "x"}])
+    batch = search_trails("   ", session, {})  # type: ignore[arg-type]
+    assert batch.trails == []
+
+
+def test_search_trails_runs_candidates_through_the_verify_guardrail_tail() -> None:
+    # Name-matched trails must flow through the SAME verify -> guardrail pipeline as
+    # plan_from_origin (rule #1: sourced + timestamped conditions on every card).
+    point = {"latitude": 38.5, "longitude": -78.4}
+    rows = [_name_row("ct:old-rag-loop", "Old Rag Loop", point=point)]
+
+    def weather(lat: float, lon: float) -> Any:
+        return {"active_alerts": []}
+
+    batch = search_trails(
+        "old rag",
+        _FakeSession(rows),  # type: ignore[arg-type]
+        _weather_probes(weather),
+    )
+    assert [p.candidate.canonical_id for p in batch.trails] == ["ct:old-rag-loop"]
+    trail = batch.trails[0]
+    assert ConditionKind.weather in trail.facts  # the live probe actually ran
+    assert trail.corpus_confidence is not None  # corpus corroboration was computed
+
+
+def test_search_trails_preserves_name_match_relevance_order_not_distance() -> None:
+    # Rule #2: name-match relevance decides order — search_trails must never re-sort
+    # by distance (there is none) or by confidence.
+    rows = [
+        _name_row("b", "Old Rag Loop", point={"latitude": 38.5, "longitude": -78.4}),
+        _name_row("a", "Old Rag Mountain", point={"latitude": 40.0, "longitude": -80.0}),
+    ]
+    batch = search_trails("old rag", _FakeSession(rows), {})  # type: ignore[arg-type]
+    assert [p.candidate.canonical_id for p in batch.trails] == ["b", "a"]
+
+
+def test_search_trails_probes_at_first_candidates_point_when_a_candidate_has_none() -> None:
+    # No query origin exists on the name-search path — a point-less candidate's probe
+    # fallback is the FIRST candidate's own point (arbitrary but stable).
+    rows = [
+        _name_row("has-point", "Old Rag Loop", point={"latitude": 38.5, "longitude": -78.4}),
+        _name_row("no-point", "Old Rag Spur"),  # no point field at all
+    ]
+    seen_points: list[tuple[float, float]] = []
+
+    def weather(lat: float, lon: float) -> Any:
+        seen_points.append((lat, lon))
+        return {"active_alerts": []}
+
+    search_trails("old rag", _FakeSession(rows), _weather_probes(weather))  # type: ignore[arg-type]
+    assert (38.5, -78.4) in seen_points  # the point-less candidate probed at the fallback
+
+
+def test_search_trails_fallback_searches_past_a_point_less_first_candidate() -> None:
+    # The FULLTEXT top match itself may lack a point — the fallback must keep looking
+    # rather than defaulting straight to a fabricated location (Null Island).
+    rows = [
+        _name_row("no-point", "Old Rag Spur"),  # top match, but no point at all
+        _name_row("has-point", "Old Rag Loop", point={"latitude": 38.5, "longitude": -78.4}),
+    ]
+    seen_points: list[tuple[float, float]] = []
+
+    def weather(lat: float, lon: float) -> Any:
+        seen_points.append((lat, lon))
+        return {"active_alerts": []}
+
+    search_trails("old rag", _FakeSession(rows), _weather_probes(weather))  # type: ignore[arg-type]
+    assert (38.5, -78.4) in seen_points
+    assert (0.0, 0.0) not in seen_points  # never falls to Null Island while a real point exists
+
+
+def test_search_trails_skips_verification_when_no_candidate_has_a_point() -> None:
+    # The pathological case: nothing in the whole batch has a resolvable point. Rather
+    # than probe a fabricated Null Island location, live verification is skipped
+    # entirely — every point kind honestly classifies not_fetched (Epic 040-style
+    # disclosure), never a silent wrong-location reading (rule #1).
+    rows = [_name_row("no-point-a", "Old Rag Spur"), _name_row("no-point-b", "Old Rag North")]
+    probed: list[tuple[float, float]] = []
+
+    def weather(lat: float, lon: float) -> Any:
+        probed.append((lat, lon))
+        return {"active_alerts": []}
+
+    batch = search_trails("old rag", _FakeSession(rows), _weather_probes(weather))  # type: ignore[arg-type]
+    assert probed == []  # no probe call was ever made
+    assert [p.candidate.canonical_id for p in batch.trails] == ["no-point-a", "no-point-b"]
+    for trail in batch.trails:
+        assert trail.facts == {}
+        assert trail.probed_kinds == frozenset()
+
+
+def test_plan_from_candidates_extraction_matches_plan_from_origin_byte_for_byte() -> None:
+    # The behavior-preserving guarantee for the engine.py refactor (Epic 038): calling
+    # scout() then _plan_from_candidates() directly must produce byte-identical output
+    # to plan_from_origin() on the same inputs — the extraction changed nothing about
+    # plan_from_origin's own behavior (this mirrors
+    # test_plan_from_origin_is_identical_regardless_of_fan_out_concurrency's fixture).
+    rows = [
+        _row("clear", 38.5, -78.4, 100),
+        _row("hazard-warning", 39.0, -79.0, 150),
+        _row("unverifiable", 39.5, -79.5, 200),
+        _row("hazardous-aqi", 40.0, -80.0, 250),
+    ]
+
+    def weather(lat: float, lon: float) -> Any:
+        if lat == 39.0:
+            return {"active_alerts": ["Red Flag Warning"]}
+        if lat == 39.5:
+            return None
+        return {"active_alerts": []}
+
+    def aqi(lat: float, lon: float) -> Any:
+        return {"aqi": 300} if lat == 40.0 else {"aqi": 20}
+
+    probes: dict[ConditionKind, list[LiveAdapter]] = {
+        ConditionKind.weather: [_FixedTimeAdapter("w", ConditionKind.weather, weather)],
+        ConditionKind.air: [_FixedTimeAdapter("a", ConditionKind.air, aqi)],
+    }
+
+    via_plan_from_origin = plan_from_origin(
+        38.5,
+        -78.4,
+        _FakeSession(rows),
+        probes,
+        k=10,
+        probe_max_workers=4,  # type: ignore[arg-type]
+    )
+
+    from orchestration.scout import scout as _scout
+
+    candidates = _scout(38.5, -78.4, _FakeSession(rows), k=10)  # type: ignore[arg-type]
+    via_extraction = _plan_from_candidates(
+        candidates,
+        _FakeSession(rows),  # type: ignore[arg-type]
+        probes,
+        fallback_lat=38.5,
+        fallback_lon=-78.4,
+        probe_max_workers=4,
+    )
+
+    assert via_plan_from_origin == via_extraction
 
 
 class _FakeJudge:

@@ -130,3 +130,40 @@ def scout(
         out.sort(key=lambda c: c.distance_m)
 
     return _dedupe_by_name(out)[:k]
+
+
+def scout_by_name(query_text: str, session: ScopedSession, *, k: int = 10) -> list[Candidate]:
+    """Trail-name search candidate generation (Epic 038 / B001 Problem A): a FULLTEXT
+    fuzzy match over `CanonicalTrail.name`, best match first. Mirrors `scout()`'s
+    absorb/dedupe pattern but is deliberately smaller — there is no spatial top-up (no
+    origin to top up from) and, crucially, no re-sort by distance: the FULLTEXT
+    relevance ORDER returned by `candidate_trails_by_name` IS the ranking (rule #2 —
+    name-match relevance, never confidence, never distance, decides this order), so
+    `_dedupe_by_name` here must preserve row order rather than sorting by
+    `distance_m` (every row's `distance_m` is null on this path anyway).
+
+    An empty/whitespace-only `query_text` sanitizes to an empty Lucene query string,
+    which `db.index.fulltext.queryNodes` rejects at query time — short-circuited here
+    (never reaching Cypher) so a blank search is an honest empty result, never a 500."""
+    if not query_text or not query_text.strip():
+        return []
+    rows = session.run(queries.candidate_trails_by_name(query_text, k))
+    candidates = [c for r in rows if (c := _row_to_candidate(r)) is not None]
+    return _dedupe_by_name_preserving_order(candidates)[:k]
+
+
+def _dedupe_by_name_preserving_order(candidates: list[Candidate]) -> list[Candidate]:
+    """Like `_dedupe_by_name`, but keeps the FIRST-SEEN relative order of the surviving
+    keys instead of re-sorting by distance (there is no distance to sort by on the
+    name-search path — every candidate's `distance_m` is 0.0/null-mapped). Still keeps
+    the richest (longest, then first-seen) segment per distinct name (D11)."""
+    best: dict[str, Candidate] = {}
+    order: list[str] = []
+    for candidate in candidates:
+        key = _norm_name(candidate.name) or f"__unnamed__{candidate.canonical_id}"
+        if key not in best:
+            order.append(key)
+            best[key] = candidate
+        else:
+            best[key] = _richer(best[key], candidate)
+    return [best[key] for key in order]

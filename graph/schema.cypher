@@ -45,6 +45,11 @@ CREATE POINT INDEX canonical_trail_point IF NOT EXISTS FOR (t:CanonicalTrail) ON
 // Name lookups
 CREATE TEXT INDEX trail_name       IF NOT EXISTS FOR (t:CanonicalTrail) ON (t.name);
 CREATE TEXT INDEX area_name        IF NOT EXISTS FOR (a:Area)           ON (a.name);
+// Trail-name search (Epic 038 / B001 Problem A): scored fuzzy matching for the
+// Omnibox's /search — the TEXT index above is exact/CONTAINS only, no relevance
+// score. FULLTEXT is Aura-supported (Lucene under the hood); trivial latency over
+// the corpus's ~2k trails. See graph/queries.py:candidate_trails_by_name.
+CREATE FULLTEXT INDEX trail_name_fts IF NOT EXISTS FOR (t:CanonicalTrail) ON EACH [t.name];
 // Re-sync key for idempotent monthly refresh (source, source_id) + version
 CREATE INDEX sr_source_version     IF NOT EXISTS FOR (r:SourceRecord) ON (r.source, r.ingest_version);
 

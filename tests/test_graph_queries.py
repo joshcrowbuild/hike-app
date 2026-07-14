@@ -42,6 +42,37 @@ def test_candidate_query_returns_trailhead_point_distinct_from_trail_point() -> 
     assert "t.point AS point" in cypher
 
 
+def test_candidate_trails_by_name_query_shape() -> None:
+    # Epic 038 / B001 Problem A: FULLTEXT relevance match, no origin — mirrors
+    # candidate_trails_near's return shape so it feeds the same _row_to_candidate.
+    cypher, params = queries.candidate_trails_by_name("Old Rag", 5)
+    assert "db.index.fulltext.queryNodes('trail_name_fts'" in cypher
+    assert "YIELD node AS t, score" in cypher
+    assert "ORDER BY score DESC" in cypher
+    assert "LIMIT $k" in cypher
+    assert "t.point AS trailhead_point" in cypher  # no origin -> falls back to t.point
+    assert "null AS distance_m" in cypher  # nothing to measure distance to
+    assert "null AS trailhead_id" in cypher
+    assert params["k"] == 5
+    assert params["q"] == "Old~ Rag~"  # sanitized + fuzzy-suffixed
+    assert "owner_id" not in cypher  # world node — no access scope
+
+
+def test_candidate_trails_by_name_escapes_lucene_special_chars() -> None:
+    # A raw user string with Lucene syntax characters must never reach the fulltext
+    # query unescaped (parse-error / injection-shaped input hardening).
+    _cypher, params = queries.candidate_trails_by_name('Old Rag (loop)+ "test"', 10)
+    assert "(" not in params["q"].replace("\\(", "") or "\\(" in params["q"]
+    assert "\\(" in params["q"] and "\\)" in params["q"]
+    assert "\\+" in params["q"]
+    assert '\\"' in params["q"]
+
+
+def test_candidate_trails_by_name_blank_query_sanitizes_to_empty() -> None:
+    _cypher, params = queries.candidate_trails_by_name("   ", 10)
+    assert params["q"] == ""
+
+
 def test_personal_query_is_owner_scoped() -> None:
     # The access-control-at-query-layer invariant (#4): owned reads carry the scope.
     cypher, params = queries.episode_fields_read("ep:old-rag-2025-09")
