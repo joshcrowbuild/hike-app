@@ -511,6 +511,15 @@ button {
   white-space: nowrap;
 }
 
+/* The honest "not available" disclosure (ux-review 2026-07 Finding 6) — a
+   muted dash in place of a real figure, mirroring `.condition-state--no-data`'s
+   quiet italic absence treatment. Calm on purpose: it's a disclosed gap, not
+   an error, so it never reaches for the caution/signal hue. */
+.decision-value--unavailable {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 .condition {
   display: flex;
   align-items: baseline;
@@ -1647,7 +1656,16 @@ button {
   color: var(--text-muted);
 }
 
-/* present — a quiet confirmation of the sourced line above it. */
+/* The folded fact value (ux-review 2026-07 Finding 4/7) — e.g. "Sunny 90°F" —
+   reads as the primary figure, one step up from the muted disposition label
+   that follows it ("· reported"), mirroring how `.condition-value` reads
+   against `.condition-label` elsewhere on the card. */
+.condition-state-value {
+  color: var(--text-primary);
+}
+
+/* present — the row IS the sourced fact now (its value folded in, Finding
+   4/7); no companion prose line sits above it any more. */
 .condition-state--present {
   color: var(--text-secondary);
 }
