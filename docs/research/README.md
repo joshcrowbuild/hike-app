@@ -62,6 +62,7 @@
 
 | Doc | Status | Purpose · read when |
 |---|---|---|
+| [ux-vision-2026-07.md](ux-vision-2026-07.md) | `ACTIVE` | UX vision document: cockpit-grade discipline, divergent design directions, recommended synthesis, and UI concrete redesigns. **Read when** designing the core app experience or UI/UX layers. |
 | [gemini-ia-flow-review-2026-07.md](gemini-ia-flow-review-2026-07.md) | `ACTIVE` (findings await lane green-light) | GLM multimodal IA and user-flow review: maps current IA, analyzes friction in core flows, and proposes 3 generative paradigms for location + intent expression. **Read when** redesigning the location picker, search omnibox, or home screen IA. |
 | [design-system-v0.1.md](design-system-v0.1.md) | `ACTIVE` | Design-system contract: DTCG/Style-Dictionary tokens, honesty primitives (confidence/staleness/verify), owned-component stack, §14 done-bar. **Read when** building/refactoring frontend tokens or components. |
 | [home-curation-prototype-spec-v0.3.md](home-curation-prototype-spec-v0.3.md) | `ACTIVE` | Home/Curation UI spec: peer card set, decidable-at-rest cards, calm tuning, cartographic-matte visual system. **Read when** building/reviewing the Home/Curation UX. |
