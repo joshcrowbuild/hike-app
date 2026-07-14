@@ -107,6 +107,52 @@ button {
   padding: 0.3rem 0;
 }
 
+/* ---- Home Omnibox trail-name search (Epic 038/B001) ----
+   A prominent line above the tuned-frame context sentence — the "Unified
+   Intent Line" GLM IA review's smallest first step. Mirrors AdjustSheet's
+   `.refine`/`.refine-input` treatment (same surface/border/radius tokens) so
+   the two text inputs in the app read as one family, not two competing
+   styles. */
+.search-line {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.search-label-wrap {
+  display: grid;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.search-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  /* Visually minimal but never removed — a real, always-visible label, not a
+     placeholder standing in for one (placeholders vanish on input and fail
+     WCAG 3.3.2 as a sole name source). */
+}
+
+.search-input {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.9rem;
+  color: var(--text-primary);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.search-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* ---- frame / context sentence ---- */
 .frame {
   margin-bottom: 1.25rem;

@@ -496,3 +496,88 @@ export function useTrailWater(id: string | null): { water: TrailWaterVM | null; 
 
   return state
 }
+
+export type SearchStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+
+export interface SearchState {
+  status: SearchStatus
+  feed?: FeedVM
+  error?: FeedError
+  /** The query the current `feed`/`error` answers — lets the surface never
+   *  mismatch a stale result against a query the user has since edited. */
+  query: string
+  /** Run a search for `query`. An imperative trigger (Home calls this on
+   *  submit), unlike `useFeed`'s auto-run-on-mount — search has no frame to
+   *  react to; it only runs when asked. */
+  search: (query: string) => void
+  /** Return to `idle` (Home calls this when the search box is cleared) —
+   *  restores the normal feed without leaving a stale result on screen. */
+  clear: () => void
+}
+
+/**
+ * Home Omnibox trail-name search (Epic 038/B001 build lane, frontend half).
+ * Mirrors `useFeed`'s status envelope (loading/ready/empty/error) so the
+ * surface reuses the same honest-states vocabulary, but is trigger-based, not
+ * key-effect-based: nothing to search until the user submits a query. A blank
+ * query never calls the client (Rule #1: no fabricated "0 results" — it's
+ * simply not a search) and instantly resolves to `idle` so Home can restore
+ * the normal feed.
+ */
+export function useSearch(): SearchState {
+  const { client, scope } = usePlanner()
+  const [state, setState] = useState<{ status: SearchStatus; feed?: FeedVM; error?: FeedError; query: string }>({
+    status: 'idle',
+    query: '',
+  })
+  // Guards a fast-typed second submit from letting an in-flight earlier
+  // search's response land after a newer one already resolved (or after clear()).
+  const requestId = useRef(0)
+
+  const search = (query: string) => {
+    const trimmed = query.trim()
+    const id = ++requestId.current
+    if (!trimmed) {
+      setState({ status: 'idle', query: '' })
+      return
+    }
+    setState({ status: 'loading', query: trimmed })
+    const run = client.search?.bind(client)
+    if (!run) {
+      // No backend seam on this client (an older fixture, or a test double
+      // that predates search) — degrade-and-disclose, never a silent no-op.
+      setState({
+        status: 'error',
+        query: trimmed,
+        error: { kind: 'offline', message: 'Search isn’t available right now.' },
+      })
+      return
+    }
+    run(trimmed, scope)
+      .then((feed) => {
+        if (requestId.current !== id) return
+        if (feed.error) {
+          setState({ status: 'error', feed, error: feed.error, query: trimmed })
+        } else if (feed.cards.length === 0) {
+          setState({ status: 'empty', feed, query: trimmed })
+        } else {
+          setState({ status: 'ready', feed, query: trimmed })
+        }
+      })
+      .catch(() => {
+        if (requestId.current !== id) return
+        setState({
+          status: 'error',
+          query: trimmed,
+          error: { kind: 'offline', message: 'Couldn’t reach the planner. Try again.' },
+        })
+      })
+  }
+
+  const clear = () => {
+    requestId.current++
+    setState({ status: 'idle', query: '' })
+  }
+
+  return { ...state, search, clear }
+}

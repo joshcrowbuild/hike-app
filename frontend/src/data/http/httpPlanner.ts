@@ -22,6 +22,8 @@ import type {
   PlanConditionsResponse,
   PlanRequest,
   ScopeContext,
+  SearchRequest,
+  SearchResponse,
   TrailDetailWaterSlice,
   WireElevationProfile,
   WireTrailWater,
@@ -296,6 +298,35 @@ export class HttpPlannerClient implements PlannerClient {
   }
 
   /**
+   * Trail-name search (Epic 038/B001): POSTs `/search` and maps the response
+   * through the SAME `mapFeed` `/plan` uses — the contract is byte-identical
+   * to `FeedResponse`, so there is exactly one card-mapping truth for both
+   * surfaces (never a second one that could drift). Shares `/plan`'s 60s
+   * cold-start budget since search runs through the same engine/host.
+   */
+  async search(query: string, scope: ScopeContext, k?: number): Promise<FeedVM> {
+    const body: SearchRequest = { query, k: k ?? 10 }
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
+    try {
+      const resp = await fetch(`${this.baseUrl}/search`, {
+        method: 'POST',
+        headers: authHeaders(scope),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      if (!resp.ok) {
+        return emptyFeed({ tuning: fallbackTuning() }, classify(null, resp.status), query)
+      }
+      return mapFeed((await resp.json()) as SearchResponse)
+    } catch (err) {
+      return emptyFeed({ tuning: fallbackTuning() }, classify(err), query)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
    * The shared /plan POST. `twoPhase=false` forces the classic single-pass
    * response — `getCard`'s deep-link refetch uses it so Detail NEVER resolves a
    * card from an unverified phase-1 frame (the D4 snapshot rule, applied to the
@@ -460,9 +491,11 @@ export class HttpPlannerClient implements PlannerClient {
   }
 }
 
-function emptyFeed(input: PlanInput, error: FeedError): FeedVM {
+/** `queryOverride` lets `search()` report the actual query text (there's no
+ *  `input.tuning.prompt` for a name search) without a second empty-feed shape. */
+function emptyFeed(input: PlanInput, error: FeedError, queryOverride?: string): FeedVM {
   return {
-    query: input.tuning.prompt,
+    query: queryOverride ?? input.tuning.prompt,
     cards: [],
     notices: [],
     setAside: [],
