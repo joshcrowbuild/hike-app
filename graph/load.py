@@ -90,13 +90,23 @@ class PruneOutcome:
     """What `prune_stale_trails` decided. `pruned=False` means every node was left
     intact — either guard can fire this; `reason` says which and names the counts.
     `protected` counts stale trails that WERE eligible but were kept because a live
-    personal Episode still references them (owned-ref safety)."""
+    personal Episode still references them (owned-ref safety).
+
+    `pruned` stays a BOOL — "did the delete pass run at all" — for callers that only
+    need that signal (e.g. `if not prune_outcome.pruned: log.warning(...)`). `deleted`
+    is the additive field carrying the TRUE count of CanonicalTrail nodes DETACH
+    DELETEd by pass 1 (0 whenever `pruned` is False, since neither pass ever ran).
+    Before this field existed, callers reached for `int(prune_outcome.pruned)` as a
+    stand-in and got 0-or-1 no matter how many nodes were actually deleted — the
+    2026-07-12 live re-ingest bug (36 deleted in one region, 5 in another, both
+    reported as `pruned: 1`)."""
 
     pruned: bool
     n_cur: int
     n_prev: int
     reason: str | None = None
     protected: int = 0
+    deleted: int = 0
 
 
 # Distinguishes "caller omitted this optional property" from "caller explicitly passed
@@ -763,14 +773,22 @@ def prune_stale_trails(
         )
 
     # Pass 1 — stale trails + their private segments, EXCEPT owned-referenced ones.
-    runner(
-        guard
-        + "MATCH (node:CanonicalTrail)\n"
-        + f"WHERE {region_pred}\n"
-        + f"  AND NOT {_OWNED_REF_PRED}\n"
-        + "OPTIONAL MATCH (node)-[:HAS_SEGMENT]->(s:Segment)\n"
-        + "DETACH DELETE node, s",
-        params,
+    # `RETURN count(DISTINCT node)` after the DETACH DELETE captures the TRUE number
+    # of CanonicalTrail nodes removed (the OPTIONAL MATCH on Segment can multiply rows
+    # per trail, so this must count distinct trail nodes, not rows) — the real fix for
+    # the 2026-07-12 bug where the pipeline summary reported `pruned: 1` regardless of
+    # how many nodes a run actually deleted.
+    deleted = _scalar_count(
+        runner(
+            guard
+            + "MATCH (node:CanonicalTrail)\n"
+            + f"WHERE {region_pred}\n"
+            + f"  AND NOT {_OWNED_REF_PRED}\n"
+            + "OPTIONAL MATCH (node)-[:HAS_SEGMENT]->(s:Segment)\n"
+            + "DETACH DELETE node, s\n"
+            + "RETURN count(DISTINCT node) AS n",
+            params,
+        )
     )
     # Pass 2 — SourceRecords now orphaned by pass 1 (still-referenced ones survive).
     runner(
@@ -781,7 +799,9 @@ def prune_stale_trails(
         + "DETACH DELETE node",
         params,
     )
-    return PruneOutcome(pruned=True, n_cur=n_cur, n_prev=n_prev, protected=protected)
+    return PruneOutcome(
+        pruned=True, n_cur=n_cur, n_prev=n_prev, protected=protected, deleted=deleted
+    )
 
 
 def load_source_record(
