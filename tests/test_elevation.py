@@ -54,6 +54,22 @@ class _HalfCoverage:
         return 100.0 if lon < self.mid else None
 
 
+class _TwoPlateaus:
+    """Two flat plateaus at very different elevations, split at `split_lon` — models a
+    disjoint MultiLineString whose parts sit at different elevations (e.g. Caneel
+    Hill). Each plateau is individually flat (0 real gain/loss); only the seam
+    *bridge* jumps between them, so any credited gain/loss must be a phantom
+    "seam climb", not real climbed ground."""
+
+    def __init__(self, split_lon: float, low_m: float = 100.0, high_m: float = 900.0) -> None:
+        self.split_lon = split_lon
+        self.low_m = low_m
+        self.high_m = high_m
+
+    def sample(self, lon: float, lat: float) -> float | None:
+        return self.low_m if lon < self.split_lon else self.high_m
+
+
 # ── haversine + densify ───────────────────────────────────────────────────────
 
 
@@ -130,6 +146,65 @@ def test_up_then_down_reports_both_gain_and_loss():
     assert profile is not None
     assert 990.0 <= profile.total_gain_m <= 1001.0
     assert 990.0 <= profile.total_loss_m <= 1001.0
+
+
+# ── disjoint multi-part seam: no phantom climb (HIGH defect fix) ─────────────
+
+
+def test_disjoint_multipart_seam_excludes_phantom_gain():
+    # Two flat, disjoint parts (a real between-parts gap, as with a genuine
+    # MultiLineString route) sitting at very different elevations: 100 m then a gap
+    # then 900 m. Each part alone is flat — the ONLY elevation delta anywhere in this
+    # geometry is the 800 m jump across the seam. Before the fix, the accumulator
+    # credited that jump straight to total_gain (a phantom "seam climb"); the fix
+    # must exclude it, leaving gain ~0.
+    part_a = [(_LON0, _LAT), (_LON0 + 0.01, _LAT)]  # flat plateau at 100 m
+    part_b = [(_LON0 + 0.20, _LAT), (_LON0 + 0.21, _LAT)]  # flat plateau at 900 m,
+    # disjoint from part_a by a real ~17 km gap (no shared endpoint)
+    sampler = _TwoPlateaus(split_lon=_LON0 + 0.10, low_m=100.0, high_m=900.0)
+    profile = build_profile([part_a, part_b], sampler, resolution_m=50.0)
+    assert profile is not None
+    # The 800 m seam jump must NOT be credited to gain (or loss).
+    assert profile.total_gain_m < 5.0
+    assert profile.total_loss_m < 5.0
+    # Distance still reflects the real bridged gap (unaffected by this fix).
+    assert profile.distances_m[-1] > 15_000.0
+
+
+def test_disjoint_multipart_seam_does_not_affect_single_part_gain():
+    # A single-part (ordinary LineString) route through the same fake DEM must be
+    # completely unaffected by the seam-exclusion logic: build_profile records no
+    # seam here, so the accumulator behaves exactly as before.
+    sampler = _TwoPlateaus(split_lon=_LON0 + 0.05, low_m=100.0, high_m=900.0)
+    profile = build_profile([[(_LON0, _LAT), (_LON0 + 0.10, _LAT)]], sampler, resolution_m=50.0)
+    assert profile is not None
+    assert 795.0 <= profile.total_gain_m <= 805.0
+    assert profile.total_loss_m == 0.0
+
+
+def test_disjoint_multipart_seam_survives_dropped_part_endpoint():
+    # A part's own endpoint can land in a DEM coverage hole and get dropped by the
+    # filtering loop — the seam index must still be computed against the FINAL
+    # (post-filter) arrays, landing on the next covered sample, not crash or
+    # mis-locate. Model this with a narrow no-data slit right at the seam landing
+    # point of part_b, covered again a little further in.
+    split_lon = _LON0 + 0.10
+    hole_end = split_lon + 0.002  # a short no-data slit just after the seam
+
+    class _PlateausWithSeamHole:
+        def sample(self, lon: float, lat: float) -> float | None:
+            if lon < split_lon:
+                return 100.0
+            if lon < hole_end:
+                return None  # dropped: simulates DEM nodata right at the seam
+            return 900.0
+
+    part_a = [(_LON0, _LAT), (_LON0 + 0.01, _LAT)]
+    part_b = [(_LON0 + 0.20, _LAT), (_LON0 + 0.21, _LAT)]
+    profile = build_profile([part_a, part_b], _PlateausWithSeamHole(), resolution_m=50.0)
+    assert profile is not None
+    assert profile.total_gain_m < 5.0
+    assert profile.total_loss_m < 5.0
 
 
 # ── source-or-silence (Rule #1 / D3) ──────────────────────────────────────────
