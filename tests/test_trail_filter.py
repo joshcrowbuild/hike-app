@@ -205,3 +205,98 @@ def test_drops_two_point_footway_stub():
 def test_drops_unnamed():
     assert not is_trail_worthy(_w(highway="path"), _MANY)
     assert not is_trail_worthy(_w(name="   ", highway="path"), _MANY)
+
+
+# ── GLM corpus-quality-sweep additions (2026-07) ───────────────────────────────
+# docs/research/glm-corpus-quality-sweep-2026-07.md F1-F4. Verified + narrowed
+# against the raw proposal (see regions/exclusions.json `_comment`): the `showers`
+# token widened to catch both word orders the doc's `\bshowers? path\b` missed
+# ("Path Loop B Showers"), and `unnamed` narrowed to only fire on OSM-editor
+# placeholder names, not the real-world "Unnamed Creek Trail" naming convention.
+
+
+def test_drops_campground_comfort_station_path():
+    # F2 (OBX): "Loop G path to Comfort Station" / "Path Loop B Comfort Station" —
+    # campground utility paths to restroom buildings, not recreational trails.
+    assert not is_trail_worthy(
+        _w(name="Loop G path to Comfort Station", highway="footway", surface="wood"), _MANY
+    )
+    assert not is_trail_worthy(_w(name="Path Loop B Comfort Station", highway="footway"), _MANY)
+
+
+def test_keeps_comfort_named_real_trail():
+    assert is_trail_worthy(_w(name="Comfort Ridge Trail", highway="path"), _MANY)
+
+
+def test_drops_campground_showers_path_either_word_order():
+    # F2 (OBX): both observed word orders — "Loop G Showers Path" and "Path Loop B
+    # Showers" (the doc's `\bshowers? path\b` proposal missed the second order).
+    assert not is_trail_worthy(
+        _w(name="Loop G Showers Path", highway="footway", surface="wood"), _MANY
+    )
+    assert not is_trail_worthy(_w(name="Path Loop B Showers", highway="footway"), _MANY)
+
+
+def test_keeps_shower_named_waterfall_trail():
+    # Singular "Shower" attached to a geographic feature is a real, if unusual,
+    # trail-naming convention (e.g. Shower Creek Falls, Oregon) — must survive.
+    # Narrow enough that it never collides with the plural campground-facility word.
+    assert is_trail_worthy(_w(name="Shower Creek Falls Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="Crystal Shower Falls Walk", highway="path"), _MANY)
+
+
+def test_drops_new_placeholder_names():
+    # F3 (York River): "New Trail (in progress)" / "New Section" are OSM editor
+    # placeholder names, not real trail names.
+    assert not is_trail_worthy(_w(name="New Trail (in progress)", highway="path"), _MANY)
+    assert not is_trail_worthy(_w(name="New Section", highway="footway"), _MANY)
+
+
+def test_keeps_new_river_and_new_england_trail():
+    # "New River Trail" / "New England National Scenic Trail" are real, well-known
+    # trails — "new" precedes a proper noun, not the placeholder words "trail"/
+    # "section" directly, so the deny pattern must not fire.
+    assert is_trail_worthy(_w(name="New River Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="New England National Scenic Trail", highway="path"), _MANY)
+
+
+def test_drops_unnamed_placeholder_trail():
+    # F3 (York River): "New Unnamed Trail Shortcut" — an OSM editor placeholder name
+    # ("unnamed" directly modifying trail/path/shortcut/section/way).
+    assert not is_trail_worthy(_w(name="New Unnamed Trail Shortcut", highway="path"), _MANY)
+    assert not is_trail_worthy(_w(name="Unnamed Trail", highway="path"), _MANY)
+
+
+def test_keeps_unnamed_creek_trail_naming_convention():
+    # "Unnamed Creek Trail" is a real, if unusual, trail name used across multiple
+    # US trail databases (a locally-unnamed creek, not an OSM editor placeholder) —
+    # "unnamed" modifies "Creek"/"Falls", not "trail"/"path" directly, so it survives.
+    assert is_trail_worthy(_w(name="Unnamed Creek Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="Unnamed Falls Trail", highway="path"), _MANY)
+
+
+def test_drops_generic_access_route():
+    # F4 (York River): "Access Route" — a generic access path with no recreational
+    # trail tags and no more-specific name.
+    assert not is_trail_worthy(_w(name="Access Route", highway="path"), _MANY)
+
+
+def test_keeps_beach_access_trail():
+    # "Beach Access Trail" / "ADA Access Trail" name the destination, not the
+    # generic "route" placeholder — must survive.
+    assert is_trail_worthy(_w(name="Beach Access Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="ADA Access Trail", highway="path"), _MANY)
+
+
+def test_drops_numbered_beach_access_ramp():
+    # F1 (OBX): bare numbered "Ramp N" — Cape Hatteras National Seashore beach/ORV
+    # access ramps (boardwalk/sand paths from parking to beach), not hiking trails.
+    for name in ("Ramp 1", "Ramp 45", "Ramp 70"):
+        assert not is_trail_worthy(_w(name=name, highway="footway", surface="sand"), _MANY), name
+
+
+def test_keeps_unnumbered_ramp_named_trail():
+    # A "ramp" name without a trailing number is not the OBX beach-access pattern —
+    # must survive (only `ramp \d+` is denied, not bare "ramp").
+    assert is_trail_worthy(_w(name="Boat Ramp Trail", highway="path"), _MANY)
+    assert is_trail_worthy(_w(name="Ramp Overlook Trail", highway="path"), _MANY)

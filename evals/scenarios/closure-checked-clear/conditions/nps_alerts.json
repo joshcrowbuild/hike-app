@@ -1,0 +1,32 @@
+{
+  "adapter": "nps_alerts",
+  "source": "developer.nps.gov",
+  "note": "GLM red-team round 2 F12: the alerts endpoint ANSWERED with zero Closure/Danger alerts for Shenandoah NP. The adapter produces a fact with count=0 — a sourced, verified checked-clear. The engine classifies closures as 'no_hazard' (the CDP-02 checked-clear silence state). No CardWarning is generated. This is distinct from 'not_fetched' (never probed) and from 'unavailable' (probed but failed). Only an explicit source answer may claim clear (rule #1).",
+  "interactions": [
+    {
+      "match": "/parks",
+      "status": 200,
+      "json": {
+        "data": [
+          {
+            "fullName": "Shenandoah National Park",
+            "parkCode": "shen",
+            "latLong": "lat:38.5153, long:-78.4257"
+          },
+          {
+            "fullName": "Acadia National Park",
+            "parkCode": "acad",
+            "latLong": "lat:44.409286, long:-68.247501"
+          }
+        ]
+      }
+    },
+    {
+      "match": "/alerts",
+      "status": 200,
+      "json": {
+        "data": []
+      }
+    }
+  ]
+}
