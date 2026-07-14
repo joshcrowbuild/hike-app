@@ -4,16 +4,14 @@ import type { CardVM } from '../data/vm'
 import {
   cardAccessibleName,
   ConditionSilence,
-  DecisionItem,
+  DecisionFacts,
   DirectionsLink,
-  formatDrive,
   SaveButton,
   Verdict,
   verdictSpokenWarningText,
   WarningBlock,
 } from './cardParts'
 import { ConditionStates } from './ConditionStates'
-import { glyphs } from './glyphs'
 import { ElevationGlyph } from './map/ElevationGlyph'
 
 const NO_KEYS: ReadonlySet<string> = new Set()
@@ -21,8 +19,8 @@ const NO_KEYS: ReadonlySet<string> = new Set()
 /**
  * A lean, scannable recommendation card (Epic 019 · DD1) — one tap opens Detail,
  * no nested interactive elements. The card is a glanceable PEER: verdict, name,
- * a couple of decision facts, the elevation glyph, ONE "Now" condition line, and
- * any verified warning — the commitment view (character, fit, the full condition
+ * its decision facts, the elevation glyph, ONE "Now" condition line, and any
+ * verified warning — the commitment view (character, fit, the full condition
  * list, sources) lives on Detail. It renders the SAME CardVM Detail does (no VM
  * change): the condition value carries its provenance through <Confidence>, so a
  * sampled value is visibly demoted and tagged — never indistinguishable from a
@@ -65,19 +63,12 @@ export function RecommendationCard({
           ) : null}
         </div>
 
-        {/* Two decision facts only (DD1). The glyph below owns ascent, so there
-            is no separate Ascent fact on the lean card — the full fact set (incl.
-            Ascent + Duration) lives on Detail. */}
-        <div className="decision">
-          {e?.distanceMiles != null ? (
-            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
-          ) : card.distanceMi != null ? (
-            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} glyph={glyphs.distance} />
-          ) : null}
-          {e?.driveMinutes != null ? (
-            <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
-          ) : null}
-        </div>
+        {/* Decision facts (Epic 019 S19.1 / H2, ux-review 2026-07): the feed
+            must be comparable at a glance, so ascent + duration ride alongside
+            distance again (Drive, when a personal frame supplies one, rides
+            with them too) — the glyph shows the shape, these facts show the
+            numbers. Same component, same values, as Detail (H4/F7). */}
+        <DecisionFacts card={card} className="decision" />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
 

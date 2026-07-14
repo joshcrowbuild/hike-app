@@ -21,6 +21,10 @@ const KEY_STEP = 0.02
 
 const feet = (m: number): string => `${Math.round(metersToFeet(m)).toLocaleString()} ft`
 const miles = (m: number): string => `${metersToMiles(m).toFixed(1)} mi`
+// One decimal (F6, ux-review-conditions 2026-07): the backend's grade is a raw
+// float off a 10m DEM slope calc — displaying it verbatim reads as fourteen
+// decimals of precision the estimate never had (`max 20.35806406360465%`).
+const grade = (pct: number): string => `${pct.toFixed(1)}%`
 
 export interface ElevationProfileProps {
   profile: ElevationProfileData
@@ -37,7 +41,7 @@ export function ElevationProfile({ profile, cursorFraction, onScrub }: Elevation
 
   const summary = `Climbs ${feet(profile.totalGainMeters)}, descends ${feet(
     profile.totalLossMeters,
-  )}, steepest grade ${profile.maxGradePercent}%.`
+  )}, steepest grade ${grade(profile.maxGradePercent)}.`
 
   const cursorElev = cursorFraction != null ? elevationAtFraction(profile, cursorFraction) : null
   const cursorX = cursorFraction != null ? fractionToX(cursorFraction, BOX) : null
@@ -86,7 +90,7 @@ export function ElevationProfile({ profile, cursorFraction, onScrub }: Elevation
         <span className="elev-stats">
           <span>↑ {feet(profile.totalGainMeters)}</span>
           <span>↓ {feet(profile.totalLossMeters)}</span>
-          <span>max {profile.maxGradePercent}%</span>
+          <span>max {grade(profile.maxGradePercent)}</span>
         </span>
       </figcaption>
 

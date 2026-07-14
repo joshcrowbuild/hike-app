@@ -363,10 +363,18 @@ button {
   vector-effect: non-scaling-stroke;
 }
 
-/* ---- decision row + condition value ---- */
+/* ---- decision row + condition value ----
+   Flex, not a fixed grid column count: `DecisionFacts` (cardParts.tsx) can
+   render anywhere from 1 to 4 facts (Drive + Distance + Ascent + Duration — a
+   signed-in mock/dev session always has all four; the live corpus's
+   Distance/Ascent/Duration alone is 3 — H2, ux-review 2026-07), and a grid
+   sized for a guessed max leaves the short count bunched left with dead
+   trailing columns. `flex: 1 1 0` divides the row evenly across however many
+   facts actually render, every time. A flex item's default `min-width: auto`
+   already floors it at its own content width (the F12 fix — a fact wraps
+   mid-token only if the row has genuinely run out of room, never before). */
 .decision {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   gap: 0.6rem;
   border-top: 1px solid var(--border-faint);
   padding-top: 0.7rem;
@@ -375,7 +383,7 @@ button {
 .decision-item {
   display: grid;
   gap: 0.22rem;
-  min-width: 0;
+  flex: 1 1 0;
 }
 
 .decision-label {
@@ -399,12 +407,15 @@ button {
   color: var(--text-muted);
 }
 
-/* A decision fact's value is a legible figure, not a caption (DD1). */
+/* A decision fact's value is a legible figure, not a caption (DD1). Never
+   wraps mid-token (F12, ux-review-conditions 2026-07 — "~35 min ·" / "est."
+   on its own line): the column above is guarded to fit it in one piece. */
 .decision-value {
   font-family: var(--font-family-mono);
   font-size: var(--type-fact-value-size);
   font-weight: var(--type-fact-value-weight);
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .condition {
@@ -612,9 +623,13 @@ button {
   color: var(--text-primary);
 }
 
+/* `minmax(min-content, 1fr)` (F12, ux-review-conditions 2026-07): a fact's
+   column never shrinks below its own value's width, so the duration fact
+   never wraps mid-token ("~35 min ·" / "est.") the way `minmax(0, 1fr)` let
+   it. See `.decision-value`'s matching `white-space: nowrap`. */
 .detail-facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(min-content, 1fr));
   gap: 0.6rem;
   margin-top: 1rem;
   padding-top: 0.9rem;
@@ -1748,6 +1763,6 @@ button {
 
 @media (max-width: 560px) {
   .detail-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(min-content, 1fr));
   }
 }

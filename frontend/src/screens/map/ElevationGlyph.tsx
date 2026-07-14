@@ -10,8 +10,21 @@ import { profilePolyline } from './svg'
  */
 const GLYPH_BOX = { width: 288, height: 46, padY: 3 }
 
+/**
+ * The relief every card's glyph is scaled against (H3, ux-review-craft
+ * 2026-07): auto-ranging each profile to its OWN min/max — the prior
+ * behaviour — draws 13 ft of dune with the same full-frame drama as 278 ft of
+ * ridge, so the glyph reads as decoration, not data. A shared reference lets
+ * relief stay comparable across every card in the feed: a trail's amplitude is
+ * proportional to `min(1, its own relief / this reference)`, so two cards are
+ * honestly comparable — flatter really does draw flatter. ~1,000 ft (a
+ * substantial day-hike climb) sits above nearly all corpus profiles, so
+ * clipping (a climb maxing out the frame) is the rare case, not the norm.
+ */
+const REFERENCE_RELIEF_METERS = 305
+
 export function ElevationGlyph({ profile }: { profile: ElevationProfile }) {
-  const points = profilePolyline(profile.samples, GLYPH_BOX)
+  const points = profilePolyline(profile.samples, GLYPH_BOX, REFERENCE_RELIEF_METERS)
   if (!points) return null
   return (
     <svg className="glyph" viewBox="0 0 288 46" preserveAspectRatio="none" aria-hidden="true">

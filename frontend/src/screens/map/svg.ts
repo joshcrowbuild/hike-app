@@ -27,9 +27,17 @@ export interface ProfileScale {
   bottom: number
 }
 
-/** Shared distance/elevation → SVG mapping, so the plotted curve and the scrub
- *  cursor use one coordinate system. */
-export function profileScale(samples: ElevationSample[], box: Box): ProfileScale {
+/**
+ * Shared distance/elevation → SVG mapping, so the plotted curve and the scrub
+ * cursor use one coordinate system. `minSpanMeters`, when given, floors the
+ * elevation span the curve is scaled against — a profile whose own relief is
+ * smaller than it draws anchored to the baseline at a proportionally smaller
+ * amplitude instead of being stretched to fill the frame regardless of size
+ * (H3, ux-review-craft 2026-07: 13 ft of dune must draw visibly flatter than
+ * 278 ft of ridge). Omitted (the Detail chart's own per-trail scaling) →
+ * unchanged behaviour, always filling the frame to the profile's own range.
+ */
+export function profileScale(samples: ElevationSample[], box: Box, minSpanMeters = 0): ProfileScale {
   const padX = box.padX ?? 0
   const padY = box.padY ?? 0
   const innerW = box.width - 2 * padX
@@ -38,7 +46,7 @@ export function profileScale(samples: ElevationSample[], box: Box): ProfileScale
   const elevs = samples.map((s) => s.elevationMeters)
   const minE = elevs.length > 0 ? Math.min(...elevs) : 0
   const maxE = elevs.length > 0 ? Math.max(...elevs) : 0
-  const spanE = maxE - minE || 1
+  const spanE = Math.max(maxE - minE, minSpanMeters) || 1
   return {
     x: (d) => round(padX + (d / maxD) * innerW),
     y: (e) => round(padY + (1 - (e - minE) / spanE) * innerH),
@@ -51,14 +59,14 @@ export function profileScale(samples: ElevationSample[], box: Box): ProfileScale
 
 /** Elevation samples → SVG points, distance on x (0..max), elevation on y
  *  (min..max, inverted so up is up). Returns `[]` for an empty profile. */
-export function profilePoints(samples: ElevationSample[], box: Box): [number, number][] {
+export function profilePoints(samples: ElevationSample[], box: Box, minSpanMeters = 0): [number, number][] {
   if (samples.length === 0) return []
-  const scale = profileScale(samples, box)
+  const scale = profileScale(samples, box, minSpanMeters)
   return samples.map((s) => [scale.x(s.distanceMeters), scale.y(s.elevationMeters)])
 }
 
-export function profilePolyline(samples: ElevationSample[], box: Box): string {
-  return profilePoints(samples, box)
+export function profilePolyline(samples: ElevationSample[], box: Box, minSpanMeters = 0): string {
+  return profilePoints(samples, box, minSpanMeters)
     .map(([x, y]) => `${x},${y}`)
     .join(' ')
 }
