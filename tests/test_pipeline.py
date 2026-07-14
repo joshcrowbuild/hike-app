@@ -1783,7 +1783,7 @@ def _wire_fake_graph(
     )
     monkeypatch.setattr("graph.load.load_enrichment_facts", lambda runner, facts: 0)
     prune_mock = MagicMock(
-        return_value=prune_outcome or PruneOutcome(pruned=True, n_cur=990, n_prev=10)
+        return_value=prune_outcome or PruneOutcome(pruned=True, n_cur=990, n_prev=10, deleted=10)
     )
     monkeypatch.setattr("graph.load.prune_stale_trails", prune_mock)
     return prune_mock
@@ -1814,6 +1814,7 @@ def test_hard_facet_breach_skips_prune(monkeypatch, tmp_path):
 
     assert prune_mock.call_count == 0
     assert counts["pruned"] == 0
+    assert counts["prune_ran"] == 0
     assert counts["prune_blocked_facets"] == 1
 
 
@@ -1837,11 +1838,17 @@ def test_first_ever_ingest_does_not_block_prune_on_appeared_buckets(monkeypatch,
     counts = run_pipeline(_REGION, dry_run=False, settings=settings)
 
     assert prune_mock.call_count == 1
-    assert counts["pruned"] == 1
+    assert counts["pruned"] == 10
+    assert counts["prune_ran"] == 1
     assert "prune_blocked_facets" not in counts
 
 
 def test_healthy_reingest_still_prunes(monkeypatch, tmp_path):
+    # Falsification of the 2026-07-12 bug: `counts["pruned"] = int(prune_outcome.pruned)`
+    # printed `pruned: 1` no matter how many nodes a run actually deleted (a real run
+    # deleted 36 in one region, 5 in another; both logged as `pruned: 1`). Pin a prune
+    # that deletes N=36 nodes — distinct from `pruned` (a bool) and from `n_cur`/`n_prev`
+    # — and assert the pipeline summary reports the TRUE count, not 0-or-1.
     settings = _live_region_settings(monkeypatch, tmp_path)
     monkeypatch.setenv("ADVENTURE_INGEST_STATS_DIR", str(tmp_path / "stats"))
     prune_mock = _wire_fake_graph(
@@ -1849,12 +1856,14 @@ def test_healthy_reingest_still_prunes(monkeypatch, tmp_path):
         pre_load_count=1000,
         pre_facets={"source=osm": 1000},
         post_facets={"source=osm": 990},  # tiny, healthy delta -> no breach anywhere
+        prune_outcome=PruneOutcome(pruned=True, n_cur=990, n_prev=36, deleted=36),
     )
 
     counts = run_pipeline(_REGION, dry_run=False, settings=settings)
 
     assert prune_mock.call_count == 1
-    assert counts["pruned"] == 1
+    assert counts["pruned"] == 36  # the TRUE deleted-node count, not int(True) == 1
+    assert counts["prune_ran"] == 1
     assert "prune_blocked_facets" not in counts
 
 
@@ -1880,6 +1889,7 @@ def test_facet_ratio_ignores_healthy_scalar_guards(monkeypatch, tmp_path):
 
     assert prune_mock.call_count == 1
     assert counts["pruned"] == 0
+    assert counts["prune_ran"] == 0
     assert "prune_blocked_facets" not in counts
 
 
@@ -1942,7 +1952,7 @@ def test_ingest_stats_write_failure_does_not_raise_or_change_prune_outcome(monke
 
     counts = run_pipeline(_REGION, dry_run=False, settings=settings)
 
-    assert counts["pruned"] == 1  # unaffected by the write failure
+    assert counts["pruned"] == 10  # unaffected by the write failure
     assert not (blocker / f"{_REGION.region_id}.json").exists()
 
 
