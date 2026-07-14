@@ -25,7 +25,11 @@ export function SkeletonCard() {
           <div className={line('name')} />
           <div className={line('area')} />
         </div>
+        {/* Three bars — distance/ascent/duration is the real card's common
+            shape now (H2/L2, ux-review-craft 2026-07): the skeleton must mirror
+            what actually lands so the swap never reflows (AC-19.3.1). */}
         <div className="decision">
+          <div className={line('decision')} />
           <div className={line('decision')} />
           <div className={line('decision')} />
         </div>

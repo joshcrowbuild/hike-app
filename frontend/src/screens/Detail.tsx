@@ -5,11 +5,9 @@ import type { CardVM, TrailWaterVM } from '../data/vm'
 import { waterHeadline, waterNote } from '../data/water'
 import {
   ConditionSilence,
-  DecisionItem,
+  DecisionFacts,
   DifficultyBadge,
   DirectionsLink,
-  formatDrive,
-  geoAscentFeet,
   SaveButton,
   TrailSummary,
   Verdict,
@@ -17,7 +15,6 @@ import {
   WarningBlock,
 } from './cardParts'
 import { deriveSummary } from '../data/summary'
-import { formatEstimatedDuration } from '../data/duration'
 import { ConditionStates } from './ConditionStates'
 import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
@@ -76,10 +73,6 @@ function DetailBody({ card }: { card: CardVM }) {
   const sampled = e?.provenance && e.provenance !== 'live'
   // The water answer (Epic 041): null = not-fetched silence → no row at all.
   const { water } = useTrailWater(card.id)
-  // Mock enrichment carries its own ascentFeet; a live card has none yet, so it
-  // falls back to the real elevation profile rather than a false "coming soon"
-  // pointer to a figure that never shows up (report #2).
-  const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
   return (
     <section className="detail">
       {sampled ? (
@@ -119,28 +112,7 @@ function DetailBody({ card }: { card: CardVM }) {
           ) : null}
         </div>
 
-        <div className="detail-facts">
-          {e?.driveMinutes != null ? (
-            <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
-          ) : null}
-          {e?.distanceMiles != null ? (
-            <DecisionItem label="Distance" value={`${e.distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
-          ) : card.distanceMi != null ? (
-            <DecisionItem label="Distance" value={`${card.distanceMi.toFixed(1)} mi`} glyph={glyphs.distance} />
-          ) : null}
-          {ascentFeet != null ? (
-            <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
-          ) : null}
-          {e?.durationHours ? (
-            <DecisionItem label="Duration" value={e.durationHours} glyph={glyphs.duration} />
-          ) : card.geo?.elevationProfile?.estimatedDurationMin != null ? (
-            <DecisionItem
-              label="Duration"
-              value={formatEstimatedDuration(card.geo.elevationProfile.estimatedDurationMin)}
-              glyph={glyphs.duration}
-            />
-          ) : null}
-        </div>
+        <DecisionFacts card={card} className="detail-facts" />
 
         <WaterFact water={water} />
 
