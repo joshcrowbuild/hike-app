@@ -56,7 +56,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | DEFINED | C | Epic 043 (S5 write path) |
 
-| [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DEFINED | C | Epic 014 · 011 · auth brief (§47) |
+| [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | IN_PROGRESS | C | Epic 014 · 011 · auth brief (§47) |
 
 | [044](epic-044-history-import.md) | History import (B003) — Garmin/GPX archive → Episodes + `been_on` producer; map-match with free-floating fallback | DEFINED | C | Epic 043 · 031 · ToS/deletion (pulled-forward Phase-B item) |
 
