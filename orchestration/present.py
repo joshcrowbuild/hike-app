@@ -9,6 +9,8 @@ Deep presentation / UX is Stage 10.
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -16,7 +18,16 @@ from typing import Any
 from orchestration.adapters.base import VerifiedFact
 from orchestration.confidence import Confidence
 
+log = logging.getLogger(__name__)
+
 _HEDGE = {"stated": "", "hedged": "Likely: ", "flagged": "Unverified: "}
+
+# A neutral placeholder for a fact shape `_body` cannot honestly render (Epic 045
+# S2, B6): an unhandled `kind` or a non-dict value is a shape violation, not
+# content to pass through raw — `str(value)` on either can leak a Python dict/list
+# repr or the literal word "None" to a user. Logged at the boundary (fail loud,
+# CLAUDE.md); never `None`, never a repr (degrade gracefully at the surface).
+_PLACEHOLDER = "unavailable"
 
 
 @dataclass(frozen=True)
@@ -73,31 +84,129 @@ def provider_short(source: str) -> str:
     return parts[0] if parts else source
 
 
+def pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    """The grammatically correct noun for `count` — never the degenerate literal
+    `(s)` that ships regardless of count (Epic 045 S2, B1/B2/B3). Shared with
+    `curator.py` (same import as `provider_short`) so a card warning's
+    fire-detection count and a condition line's facility/alert count resolve
+    through one pluralization rule, not two."""
+    return singular if count == 1 else (plural or f"{singular}s")
+
+
+def _nonneg_int(raw: Any) -> int:
+    """A count-shaped field as a real non-negative int — 0 for anything else
+    (missing, `None`, bool, negative, or malformed). Mirrors the `park` guard
+    (B3): a key that is *present but null* must not reach an f-string as the
+    literal word "None" either."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0 else 0
+
+
+# Qualifiers that separate a USGS station's recognizable stream/river name from its
+# locational suffix ("HAWKSBILL CREEK NEAR LURAY, VA" — the part after "NEAR" is
+# where, not what). Matched case-insensitively; real station names are ALL CAPS.
+_GAUGE_QUALIFIER = re.compile(r"\b(NEAR|AT|ABOVE|BELOW)\b", re.IGNORECASE)
+
+
+def _gauge_label(raw_name: object) -> str:
+    """The recognizable stream/river name from a USGS station's full label (B7) —
+    "HAWKSBILL CREEK NEAR LURAY, VA" -> "Hawksbill Creek": title-cased and
+    truncated to what a hiker recognizes, never the full ALL-CAPS official string
+    (which wraps two lines at phone width — sweep §5) and never a raw station id.
+    Empty, missing, or non-string input yields "" — the caller falls back to the
+    honest "the nearest gauge", never `None` or a raw repr."""
+    if not isinstance(raw_name, str) or not raw_name.strip():
+        return ""
+    head = raw_name.split(",", 1)[0]
+    qualifier = _GAUGE_QUALIFIER.search(head)
+    if qualifier:
+        head = head[: qualifier.start()]
+    head = head.strip()
+    return head.title() if head else ""
+
+
 def _body(kind: str, value: Any) -> str:
     if not isinstance(value, dict):
-        return str(value)
+        # B6: a non-dict fact value is a shape violation (every adapter returns a
+        # dict), not content to pass through raw — `str(value)` can render a bare
+        # `None`, or a list/tuple repr. Fail loud (logged) + neutral placeholder.
+        log.warning(
+            "present._body: non-dict fact value for kind=%r (type=%s)", kind, type(value).__name__
+        )
+        return _PLACEHOLDER
     if kind == "weather":
         temp = value.get("temperature")
-        unit = value.get("temperature_unit") or ""
-        forecast = value.get("short_forecast") or "forecast"
-        return f"{forecast} {temp}°{unit}" if temp is not None else str(forecast)
+        unit = value.get("temperature_unit") or "F"  # B5: default unit, never a bare "°"
+        forecast = value.get("short_forecast")
+        parts = [forecast] if isinstance(forecast, str) and forecast.strip() else []
+        if temp is not None:
+            parts.append(f"{temp}°{unit}")
+        # B5: never the literal word "forecast" standing in for a missing sky
+        # reading. When there is truly nothing to say, disclose that plainly
+        # rather than fabricate a placeholder that reads as a value.
+        return " ".join(parts) if parts else _PLACEHOLDER
     if kind == "air":
-        return f"AQI {value.get('aqi')} ({value.get('category')})"
+        aqi = value.get("aqi")
+        if aqi is None:
+            # Real AirNow facts always carry aqi (airnow.py guards it at the
+            # source) — guarded here too so a malformed value can never render
+            # the literal "AQI None".
+            return f"AQI {_PLACEHOLDER}"
+        category = value.get("category")
+        # B4: drop the parenthetical entirely when category is falsy —
+        # "AQI 45", never "AQI 45 (None)".
+        return f"AQI {aqi} ({category})" if category else f"AQI {aqi}"
     if kind == "fire":
-        return f"{value.get('hotspot_count', 0)} active-fire detection(s) nearby"
+        count = _nonneg_int(value.get("hotspot_count"))
+        return f"{count} active-fire {pluralize(count, 'detection', 'detections')} nearby"
     if kind == "water":
-        return f"nearest gauge: {value.get('monitoring_location') or value.get('site_id')}"
+        cfs = value.get("latest_discharge_cfs")
+        label = _gauge_label(value.get("monitoring_location"))
+        gauge = f"{label} gauge" if label else "the nearest gauge"
+        if isinstance(cfs, (int, float)):
+            # B7: answer the actual hiker question (how much water is flowing),
+            # never the bare ALL-CAPS station name or numeric id.
+            return f"~{cfs:.0f} cfs at {gauge}"
+        # The reading itself didn't come back (site known or not) — still never
+        # the bare name/id and never `None`. The point-to-gauge distance is a
+        # separate honest hedge USGS's own adapter already discloses
+        # (`fact.disclosures`, relocated onto `ConditionStatus.detail` at
+        # engine.py:745 — Rule #1: relocated, not dropped). `_body` only ever
+        # sees `value`, which carries no numeric distance field of its own, so
+        # re-deriving one here would mean regex-parsing another module's prose
+        # sentence rather than rendering a real value — deliberately not done.
+        return f"flow reading unavailable at {gauge}"
     if kind == "permits":
-        return f"{value.get('count', 0)} nearby facilities"
+        count = _nonneg_int(value.get("count"))
+        # B8: RIDB lists nearby facilities only — nothing in this value dict
+        # answers "do I need a permit" (the adapter's own disclosure: "Live
+        # permit/campsite availability uses a separate unofficial endpoint; not
+        # included"). Counting facilities as if that answered the permit
+        # question is exactly the leak B8 flagged. The structural fix is
+        # engine.py's CDP-02 not_fetched/no_data disposition
+        # (`_condition_summary` / `_is_coverage_gap`), which lives outside this
+        # story's file scope (present.py/curator.py only) — so the honest
+        # option available here is to say plainly what was and wasn't checked,
+        # rather than a ✓-sourced line that implies an answer this data can't
+        # support (Rule #1: disclose, don't imply; binding decision 4).
+        facility_word = pluralize(count, "facility", "facilities")
+        return f"Permit info not fetched — {count} nearby {facility_word}"
     if kind == "closures":
-        park = value.get("park", "nearest park")
-        return f"{value.get('count', 0)} NPS closure/danger alert(s) — {park}"
+        count = _nonneg_int(value.get("count"))
+        # B3: `.get("park", default)` only applies when the key is ABSENT; NPS
+        # sets `"park": full_name` where `full_name` can be present-but-None —
+        # `or` catches that too, never leaking the literal "None".
+        park = value.get("park") or "the nearest park"
+        alert_word = pluralize(count, "alert", "alerts")
+        return f"{count} NPS closure/danger {alert_word} — {park}"
     if kind == "drive_time":
         secs = value.get("drive_seconds")
         km = value.get("distance_km")
         mins = f"~{secs / 60:.0f} min drive" if isinstance(secs, (int, float)) else "drive time"
         return f"{mins} ({km:.0f} km)" if isinstance(km, (int, float)) else mins
-    return str(value)
+    # B6: an unhandled kind with a dict value — `str(value)` here is exactly the
+    # raw `{'foo': 'bar'}` repr leak the finding named. Fail loud + placeholder.
+    log.warning("present._body: unhandled kind=%r", kind)
+    return _PLACEHOLDER
 
 
 # Kinds whose provider is an *aggregator* of upstream monitors (AirNow pools EPA

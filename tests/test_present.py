@@ -167,7 +167,8 @@ def test_body_carries_the_hedge_prefix_for_hedged_and_flagged_confidence() -> No
     hedged = summarize_fact(
         "fire", _fact({"hotspot_count": 2}), Confidence(0.6, "medium", "hedged", True), now=NOW
     )
-    assert hedged.body == "Likely: 2 active-fire detection(s) nearby"
+    # Epic 045 S2 B2: the literal "(s)" never resolved — count=2 pluralizes for real.
+    assert hedged.body == "Likely: 2 active-fire detections nearby"
     flagged = summarize_fact(
         "air",
         _fact({"aqi": 120, "category": "USG"}),
