@@ -29,7 +29,9 @@ live = ["httpx>=0.27"]
 # yardstick. Both lazy-imported by their adapters.
 providers = ["anthropic", "openai"]
 # Stage 4 API layer. slowapi adds per-IP rate limiting at the public edge (Phase B).
-api = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.0", "slowapi>=0.1.9"]
+# PyJWT[crypto] verifies Supabase access tokens against the public JWKS at the edge
+# (Epic 043 managed auth) — the crypto extra pulls `cryptography` for RS256.
+api = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "pydantic>=2.0", "slowapi>=0.1.9", "PyJWT[crypto]>=2.8"]
 # Serve-time surface for the hosted API (Dockerfile / Render — see
 # docs/runbooks/deploy-api-render.md). The lighter set: api + graph + live +
 # providers, plus shapely — the one geo dep the serve path imports (ingestion.route,
@@ -51,6 +53,7 @@ dev = [
   "certifi",          # graph.client imports it at module load (TLS CA bundle)
   "gpxpy>=1.6",       # test_gpx_reader.py calls read_gpx(), which imports gpxpy
   "osmium>=4.0",      # test_osm_pbf_parity.py + tests/fixtures/build_synthetic_pbf.py
+  "PyJWT[crypto]>=2.8",  # managed-auth JWKS verification + RSA test fixtures (Epic 043)
 ]
 all = ["adventure-planner[ingestion,graph,live,providers,api,dev]"]
 

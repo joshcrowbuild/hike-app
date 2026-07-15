@@ -108,12 +108,28 @@ class Settings:
     # Geographic scope (Stage 3: polygon-bounded region).
     region: str = field()
 
-    # Edge auth (Epic 014 S3). Until the Stage-8 auth/identity system exists, a
-    # non-anonymous viewer_id at the API edge must present this shared dev secret.
-    # Absent by default (repr=False) so the only out-of-the-box path is the open
-    # anonymous world; a misconfigured deploy fails closed, never silently trusting
-    # a client-supplied identity (Rule #5 / decision-log §13).
+    # Edge auth (Epic 014 S3 → Epic 043). Managed auth (Supabase) is the real
+    # identity path: a non-anonymous request presents `Authorization: Bearer <JWT>`,
+    # verified at the edge against `supabase_jwks_url` (§S1). The legacy shared dev
+    # secret is retained ONLY as a hard-gated local-dev path (§S3): it is honored
+    # exclusively when `allow_dev_viewer_secret` is explicitly enabled — production
+    # sets neither, so the only out-of-the-box path is the open anonymous world and a
+    # misconfigured deploy fails closed (Rule #5 / decision-log §13/§47).
     dev_viewer_secret: str | None = field(repr=False, default=None)
+    # Public JWKS endpoint for Supabase access-token verification (Epic 043 S1).
+    # Absent → managed auth is not wired: non-anonymous requests fail closed and
+    # anonymous browsing works with zero new env (production keeps working with no
+    # config change). Derived from SUPABASE_URL when the explicit URL is unset.
+    supabase_jwks_url: str | None = None
+    # The Supabase auth issuer (`{SUPABASE_URL}/auth/v1`), verified on each token
+    # when present (defence in depth beyond the signature). None → issuer unchecked.
+    supabase_issuer: str | None = None
+    # Hard gate for the retired dev-secret path (Epic 043 S3): the shared
+    # `X-Dev-Viewer-Secret` is accepted ONLY when this is explicitly enabled
+    # (ADVENTURE_ALLOW_DEV_VIEWER_SECRET=1) — a local-dev escape hatch, never a
+    # production path. Off by default so a leaked secret alone can never forge an
+    # identity against the hosted deploy.
+    allow_dev_viewer_secret: bool = False
 
     # Browser CORS allow-list for the hosted API edge (deploy contract). Comma-separated
     # EXACT origins from ADVENTURE_CORS_ALLOW_ORIGINS (e.g. the Vercel frontend). Empty by
@@ -294,6 +310,16 @@ class Settings:
         # Settings carries.
         region = e.get("ADVENTURE_REGION", "shenandoah-gwj")
 
+        # Managed-auth JWKS URL (Epic 043 S1): an explicit override wins; otherwise
+        # derive it from SUPABASE_URL. Kept in config (not api.auth) so config.py
+        # imports nothing from the api layer — the resolution mirrors
+        # api.auth.jwks_url_from_env by contract. Absent both → None → fail closed.
+        supabase_base = e.get("SUPABASE_URL")
+        supabase_jwks_url = e.get("ADVENTURE_SUPABASE_JWKS_URL") or (
+            supabase_base.rstrip("/") + "/auth/v1/.well-known/jwks.json" if supabase_base else None
+        )
+        supabase_issuer = supabase_base.rstrip("/") + "/auth/v1" if supabase_base else None
+
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),
             neo4j_user=e.get("NEO4J_USER", "neo4j"),
@@ -304,6 +330,12 @@ class Settings:
             role_overrides=role_overrides,
             region=region,
             dev_viewer_secret=e.get("ADVENTURE_DEV_VIEWER_SECRET") or None,
+            supabase_jwks_url=supabase_jwks_url,
+            supabase_issuer=supabase_issuer,
+            # "1"/"true"/"yes"/"on" enable the retired dev-secret escape hatch;
+            # anything else (incl. unset) leaves it OFF (Epic 043 S3 hard gate).
+            allow_dev_viewer_secret=e.get("ADVENTURE_ALLOW_DEV_VIEWER_SECRET", "").strip().lower()
+            in {"1", "true", "yes", "on"},
             cors_allow_origins=cors_allow_origins,
             nws_user_agent=e.get("NWS_USER_AGENT") or None,
             airnow_api_key=e.get("AIRNOW_API_KEY") or None,
