@@ -59,7 +59,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DONE ✅ | C | Epic 014 · 011 · auth brief (§47) |
 
 | [044](epic-044-history-import.md) | History import (B003) — Garmin/GPX archive → Episodes + `been_on` producer; map-match with free-floating fallback | DEFINED | C | Epic 043 · 031 · ToS/deletion (pulled-forward Phase-B item) |
-| [045](epic-045-trail-by-id-card.md) | Deep-link a trail by id — verified card via `GET /trail/{id}/card` (closes "not in your current set") | DEFINED | C | Epic 038 (`_plan_from_candidates`) |
+| [045](epic-045-trail-by-id-card.md) | Deep-link a trail by id — verified card via `GET /trail/{id}/card` (closes "not in your current set") | DONE ✅ | C | Epic 038 (`_plan_from_candidates`) |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
