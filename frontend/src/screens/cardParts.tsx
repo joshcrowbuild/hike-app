@@ -101,7 +101,17 @@ export function WarningBlock({
             {spoken ? null : w.text}
             <span className="card-warning-meta">
               {spoken ? null : ' — '}
-              {w.source} · <Staleness>{w.observedAgo}</Staleness>
+              {w.source}
+              {/* The age segment renders only when present (Epic 046 S4 AC-4.2 /
+                  D6): with `observedAgo` now optional, an unparseable
+                  `observed_at` must not leave a dangling "NWS · " — source
+                  alone still satisfies source-or-silence (Rule #1). */}
+              {w.observedAgo ? (
+                <>
+                  {' · '}
+                  <Staleness>{w.observedAgo}</Staleness>
+                </>
+              ) : null}
             </span>
           </Signal>
         )

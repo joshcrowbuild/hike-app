@@ -1,8 +1,8 @@
 import { Confidence, Icon, Signal, Staleness } from '../components'
-import { unclaimedLines } from '../data/feedConditions'
+import { sharedAmong, unclaimedLines } from '../data/feedConditions'
 import { gpxExportUrl } from '../data/geo'
 import { useCard, useTrailWater } from '../data/PlannerProvider'
-import type { CardVM, TrailWaterVM } from '../data/vm'
+import type { CardVM, LineVM, TrailWaterVM } from '../data/vm'
 import { waterHeadline, waterNote } from '../data/water'
 import {
   ConditionSilence,
@@ -283,23 +283,69 @@ function ConditionLines({ card }: { card: CardVM }) {
 function TrustCue({ card }: { card: CardVM }) {
   const e = card.enrichment
   const liveSources = e?.provenance === 'live' && e.sources && e.sources.length > 0 ? e.sources : null
-  const realLineSources =
+  const liveLines =
     card.conditionLines.length > 0 && card.conditionLines.every((l) => l.provenance === 'live')
-      ? card.conditionLines.map((l) => l.source)
+      ? card.conditionLines
       : null
-  const sources = liveSources ?? realLineSources
   return (
     <div className="trust-cue">
       {e?.freshness ? <Staleness>{e.freshness}</Staleness> : null}
-      {sources ? (
+      {liveSources ? (
         <ul className="source-list">
-          {sources.map((source, i) => (
+          {liveSources.map((source, i) => (
             <li key={`${source}-${i}`}>{source}</li>
           ))}
         </ul>
+      ) : liveLines ? (
+        <SourceList lines={liveLines} />
       ) : (
         <p className="prose">Full source inspection lands when trail detail is wired to live data.</p>
       )}
     </div>
+  )
+}
+
+// The closed vocabulary `present.py::_source_note` welds onto every line's
+// `source` (`"<label> · <descriptor>[ (<origin>)]"`) — a CDP-01 honesty
+// disclosure ("this fact hasn't been cross-checked against a second
+// provider") that reads near-identically on almost every row (A5, Epic 046
+// S1 AC-1.5). `source` itself is an untouched, already-locked wire field
+// (`tests/test_present.py`), so the two known phrases are matched directly
+// rather than adding a parallel structured field just for this de-duplication.
+const SOURCE_DESCRIPTORS = ['single authoritative source', 'single aggregated source'] as const
+
+/** Which of the two known descriptors (if either) a composed `source` label
+ *  carries — `undefined` for a source that doesn't follow the convention (an
+ *  older/synthetic value), which then renders untouched, never guessed at. */
+function sourceDescriptor(source: string): (typeof SOURCE_DESCRIPTORS)[number] | undefined {
+  return SOURCE_DESCRIPTORS.find((d) => source.includes(` · ${d}`))
+}
+
+/**
+ * The Sources section's row list (A5). Stating the majority descriptor ONCE
+ * for the section — rather than on every row — drops nothing: a row whose
+ * descriptor is the MINORITY (an aggregator kind, e.g. AirNow) keeps its full
+ * original text, still fully disclosed inline. `sharedAmong` (binding decision
+ * 2) requires at least two rows to actually share a descriptor before calling
+ * it "shared" — a lone match is just that one row's own note, not a
+ * section-wide pattern.
+ */
+function SourceList({ lines }: { lines: LineVM[] }) {
+  const shared = sharedAmong(lines.map((l) => sourceDescriptor(l.source)))
+  return (
+    <>
+      <ul className="source-list">
+        {lines.map((l, i) => {
+          const d = sourceDescriptor(l.source)
+          const label = d && d === shared ? l.source.replace(` · ${d}`, '') : l.source
+          return <li key={`${l.source}-${i}`}>{label}</li>
+        })}
+      </ul>
+      {shared ? (
+        <p className="prose source-note">
+          Each of these is a {shared} — not yet cross-checked against another provider.
+        </p>
+      ) : null}
+    </>
   )
 }

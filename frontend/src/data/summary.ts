@@ -9,7 +9,6 @@
  * ranking (Rule #2). This mirrors `deriveVerdict`: a pure function over the VM.
  */
 import { deriveRouteShape, isDrawableRoute, mappedLengthMeters, metersToFeet, metersToMiles } from './geo'
-import { deriveVerdict } from './verdict'
 import type { CardVM, Provenance } from './vm'
 
 /** Below this the climb isn't worth stating as a number (rounding noise). */
@@ -21,10 +20,9 @@ const CLIMB_FLOOR_FT = 50
  * A single honest sentence describing a trail's physical character, or `null`
  * when there isn't enough verified data to say anything (the card then shows
  * nothing rather than padding). Built ONLY from: mapped length, route shape
- * (loop/out-and-back from the geometry endpoints), profile climb, whether a
- * summit is marked, and — only when TODAY's conditions verify as clear and live
- * — a "clear today" tail. Conditions are otherwise the Verdict's job, shown
- * right above; a flagged/absent reading never becomes a false all-clear here.
+ * (loop/out-and-back from the geometry endpoints), profile climb, and whether a
+ * summit is marked. Conditions are the Verdict's job, shown right above; a
+ * flagged/absent reading never becomes a false all-clear here.
  */
 export function deriveSummary(card: CardVM): string | null {
   const miles = resolveMiles(card)
@@ -44,7 +42,12 @@ export function deriveSummary(card: CardVM): string | null {
 
   const subject: string[] = []
   if (flat) subject.push('flat')
-  if (miles != null) subject.push(`${formatMiles(miles)}-mile`)
+  if (miles != null) {
+    const formattedMiles = formatMiles(miles)
+    if (formattedMiles !== '0') {
+      subject.push(`${formattedMiles}-mile`)
+    }
+  }
   subject.push(shape ?? 'trail')
   const subjectText = subject.join(' ')
 
@@ -53,21 +56,7 @@ export function deriveSummary(card: CardVM): string | null {
   else if (statedClimb != null) predicate = `, climbing ${statedClimb.toLocaleString()} ft`
   else if (hasSummit) predicate = ' to a summit'
 
-  const tail = clearConditionTail(card)
-
-  return `${indefiniteArticle(subjectText)} ${subjectText}${predicate}${tail}.`
-}
-
-/**
- * A " — clear today" tail, added ONLY when the card's own verdict is a live
- * "good to go" (`deriveVerdict` returns `go` only from a verified, unflagged
- * reading). Any hazard, flagged, or non-live signal → no tail: the trail is
- * never dressed as clear when it isn't (Rule #1), and sample data wears its
- * "sample" tag on the Verdict instead of a fake "today".
- */
-function clearConditionTail(card: CardVM): string {
-  const v = deriveVerdict(card)
-  return v.tone === 'go' && v.provenance === 'live' ? ' — clear today' : ''
+  return `${indefiniteArticle(subjectText)} ${subjectText}${predicate}.`
 }
 
 // ---- Feature 2: the derived difficulty estimate ---------------------------

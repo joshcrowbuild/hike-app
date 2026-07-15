@@ -99,12 +99,10 @@ describe('deriveSummary — an honest one-line character (source-or-silence, R1)
     expect(s).not.toMatch(/12/)
   })
 
-  it('a live “good to go” gets a clear-today tail; a hazard never does', () => {
-    const clearBase = { geo: geo(OPEN, { elevationProfile: profile(90, 10) }) }
-    const clear = card({ ...clearBase, conditionLines: [{ text: 'Sunny 68°F', source: 'NWS', confidence: 'stated', provenance: 'live' }] })
-    expect(deriveSummary(clear)).toMatch(/ — clear today\.$/)
-    const hazard = card({ ...clearBase, warnings: [{ text: 'Heat Warning', source: 'NWS', observedAgo: 'now', kind: 'weather', provenance: 'live' }] })
-    expect(deriveSummary(hazard)).not.toMatch(/clear today/)
+  it('a stormy-reading with a live go verdict does NOT get a clear-today tail (C1)', () => {
+    const stormyBase = { geo: geo(OPEN, { elevationProfile: profile(90, 10) }) }
+    const stormy = card({ ...stormyBase, conditionLines: [{ text: 'Showers And Thunderstorms Likely 77°F', source: 'NWS', confidence: 'stated', provenance: 'live' }] })
+    expect(deriveSummary(stormy)).not.toMatch(/clear today/)
   })
 
   it('sample (non-live) data never claims a clear day', () => {
@@ -123,6 +121,13 @@ describe('deriveSummary — an honest one-line character (source-or-silence, R1)
     // shape-only subject (no length): an open line with no measurable data path.
     const openOnly = card({ geo: geo(OPEN) })
     expect(deriveSummary(openOnly)).toMatch(/^A [\d.]+-mile out-and-back/)
+  })
+
+  it('sub-0.05-mi length rounds to 0 and is suppressed from the subject (C2)', () => {
+    const tiny = card({ enrichment: { provenance: 'live', distanceMiles: 0.03, ascentFeet: 50 } })
+    const s = deriveSummary(tiny)!
+    expect(s).not.toMatch(/0-mile/)
+    expect(s).toMatch(/^A trail/)
   })
 })
 

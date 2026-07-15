@@ -16,8 +16,24 @@ export type Provenance = 'live' | 'mock' | 'sample'
 
 /** A single verified (or, in mock, fabricated) condition line, 1:1 with the API. */
 export interface LineVM {
+  /** Back-compat welded string (value · short source, age) — e.g. the card's
+   *  single "Now" slot (`RecommendationCard`) still reads this whole. A
+   *  structured surface should prefer `body`/`source`/`age` instead (Epic 046
+   *  S1): welding source/age into displayed copy is what made the "just now"
+   *  ×11 defect impossible to relocate or collapse (A3). */
   text: string
+  /**
+   * The hedge + value alone — no source, no age (Epic 046 S1 AC-1.1). Optional:
+   * absent on mock/sample lines and any older cached payload, which fall back
+   * to `text` at the render site rather than showing nothing.
+   */
+  body?: string
   source: string
+  /**
+   * Freshness alone, in plain words ("just now", "10m ago") — never a raw
+   * datetime (Epic 046 S1 AC-1.1/1.4). Optional for the same reason as `body`.
+   */
+  age?: string
   confidence: ConfidenceLevel
   provenance: Provenance
   /**
@@ -39,8 +55,12 @@ export interface LineVM {
 export interface WarningVM {
   text: string
   source: string
-  /** Already-humanised relative age ("2h ago") — raw datetimes are forbidden (§7.2). */
-  observedAgo: string
+  /**
+   * Already-humanised relative age ("2h ago") — raw datetimes are forbidden
+   * (§7.2). Absent when the source timestamp was unparseable (Epic 046 S4
+   * AC-4.2 / D6): an honest "no stamp" beats a visible `time unknown` token.
+   */
+  observedAgo?: string
   /** The condition kind it came from, e.g. "weather" | "air" | "fire". */
   kind: string
   provenance: Provenance

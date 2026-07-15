@@ -119,6 +119,51 @@ export function splitFeedConditions(cards: CardVM[]): FeedConditions {
 }
 
 /**
+ * The value shared by at least two items — collapse-when-agree,
+ * expand-when-diverge (binding decision 2, Epic 046 S1 AC-1.4/1.5): a block,
+ * compact group, or section states this value ONCE instead of once per item;
+ * an item whose value diverges still renders its own (never silently
+ * dropped). A single item, or a fully-divergent set (every value distinct),
+ * yields no shared value — nothing is claimed as "the" answer unless at least
+ * two items actually agree, so that set keeps its honest, unchanged per-item
+ * display. Shared by `ConditionStates` (the freshness stamp/compact-group age,
+ * AC-1.4/A4) and `Detail`'s Sources section (the descriptor note, A5) — one
+ * collapse rule, not three copies of it.
+ */
+export function sharedAmong(values: (string | undefined)[]): string | undefined {
+  const counts = new Map<string, number>()
+  for (const v of values) {
+    if (!v) continue
+    counts.set(v, (counts.get(v) ?? 0) + 1)
+  }
+  let best: string | undefined
+  let bestCount = 0
+  for (const [v, count] of counts) {
+    if (count > bestCount) {
+      best = v
+      bestCount = count
+    }
+  }
+  return bestCount >= 2 ? best : undefined
+}
+
+/**
+ * The recognizable short provider name for a source label — the leading
+ * whitespace-delimited token ("NWS api.weather.gov · single authoritative
+ * source (…)" → "NWS"; "NWS" (already short) → "NWS", unchanged). A TS mirror
+ * of `provider_short` in `orchestration/present.py`/`engine.py` (binding
+ * decision 1, Epic 046 S1 AC-1.2): the fold below must compare a shared
+ * identity both a `LineVM` (which carries the FULL label in `source`) and a
+ * `ConditionStatusVM` (which carries the SHORT name, `engine.py`'s
+ * `provider_short(fact.source)`) can produce, never widen the status side to
+ * the full label (that would re-bloat the condition row).
+ */
+export const providerShort = (source: string): string => {
+  const [first] = source.trim().split(/\s+/)
+  return first || source
+}
+
+/**
  * Detail's per-kind coverage row for a `present`/`stale-degraded` kind carries
  * no human-readable VALUE of its own — only the sourced fact's disposition
  * (state/source/age). The prose in `card.conditionLines` (e.g. "Sunny 90°F")
@@ -132,9 +177,13 @@ export function splitFeedConditions(cards: CardVM[]): FeedConditions {
  * representation. There is no explicit per-line `kind` on the wire (this stays
  * client-side rather than adding one — presentation only, Rule #2), but a
  * `present`/`stale-degraded` row and its line both come from the SAME answered
- * fact, so they share a `source` — matched here by source identity, one line
- * consumed per row (`claimed` exhausts a matched line so a repeated source
- * never fans one line's value to every row that shares it).
+ * fact, so they share a provider identity — matched here by the SHORT provider
+ * name both sides can produce (`providerShort(line.source) === status.source`,
+ * Epic 046 S1 AC-1.2; A1 found this inert on live data because a naive
+ * `line.source === status.source` compares the line's FULL label against the
+ * status's SHORT name, which never matches). One line consumed per row
+ * (`claimed` exhausts a matched line so a repeated source never fans one
+ * line's value to every row that shares it).
  */
 export function foldLineValue(
   status: ConditionStatusVM,
@@ -142,7 +191,7 @@ export function foldLineValue(
   claimed: Set<LineVM>,
 ): LineVM | undefined {
   if (status.state !== 'present' && status.state !== 'stale-degraded') return undefined
-  const match = lines.find((l) => !claimed.has(l) && l.source === status.source)
+  const match = lines.find((l) => !claimed.has(l) && providerShort(l.source) === status.source)
   if (match) claimed.add(match)
   return match
 }

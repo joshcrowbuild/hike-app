@@ -49,9 +49,22 @@ export interface PlanRequest {
   phase?: 'cards'
 }
 
+/**
+ * Mirrors `orchestration.present.FeedLine` (Epic 046 S1 AC-1.1). `text` stays a
+ * back-compat welded string (value · short source, age) for a caller that wants
+ * one glanceable line (e.g. `RecommendationCard`'s single "Now" slot); `body` /
+ * `source` / `age` are the same fact's three parts as separate fields, so a
+ * structured surface (Detail's per-kind coverage row) can state each at its own
+ * true scope instead of repeating source+age welded into every line's copy —
+ * the root cause of the "just now" ×11 defect (`generated-string-integrity-sweep-2026-07` A3).
+ */
 export interface FeedLineResponse {
   text: string
+  /** The hedge + value alone — no source, no age. */
+  body: string
   source: string
+  /** Freshness alone, in plain words ("just now", "10m ago") — never a raw datetime. */
+  age: string
   confidence_level: ConfidenceLevel
   /**
    * Distinct live-source names backing this fact (Epic 026a). Present on every

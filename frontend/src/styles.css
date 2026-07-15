@@ -1200,6 +1200,14 @@ button {
   color: var(--text-muted);
 }
 
+/* The Sources section's shared single-source descriptor (A5, Epic 046 S1
+   AC-1.5) — stated once, so it reads as a footnote under the list, not a
+   sibling fact. */
+.source-note {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
 /* ---- tuning sheet content (the sheet chrome is owned by <Sheet>) ---- */
 .facet-list {
   display: grid;
@@ -1690,9 +1698,18 @@ button {
    meaning survives without colour (§4.3). The unavailable state carries no
    styling of its own here — its body routes through flagged <Confidence>, the
    owned couldn't-verify treatment. */
+/* The block-scope freshness stamp (AC-1.4): rendered once, ahead of the list,
+   when every row's age agrees — a row whose age diverges still wears its own
+   (`.condition-state-meta`), so this is additive, never a replacement. */
+.condition-states-stamp {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .condition-states {
   list-style: none;
-  margin: 0.4rem 0 0;
+  margin: 0.3rem 0 0;
   padding: 0;
   display: grid;
   gap: 0.3rem;

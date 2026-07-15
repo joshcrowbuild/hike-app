@@ -2,10 +2,11 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { Home } from './Home'
+import { contextSentence, Home } from './Home'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { ANON_SCOPE } from '../data/api'
 import { feedKey, resetFeedCacheForTests, writeFeedCache } from '../data/feedCache'
+import type { OriginOption } from '../data/regionsCatalog'
 import { resetSavedTrailsForTests, toggleTrailSaved } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
 import type { FeedVM } from '../data/vm'
@@ -167,6 +168,17 @@ describe('Home held-back disclosure (Epic 018 S5 — nothing silently vanishes)'
     await renderHomeWith(feedWith({}))
     expect(screen.queryByText(/held back/)).not.toBeInTheDocument()
   })
+
+  it('renders just the count, no dangling em-dash, when a held-back trail carries no disclosed reasons (Epic 046 S4 AC-4.3 / D10)', async () => {
+    await renderHomeWith(
+      feedWith({
+        heldBack: [{ id: 'a', name: 'Foggy Hollow', reasons: [] }],
+      }),
+    )
+    const note = screen.getByText(/1 trail held back/)
+    expect(note.textContent).toBe('1 trail held back')
+    expect(note.textContent).not.toMatch(/—/)
+  })
 })
 
 describe('Home disclosure tiering (Epic 025 — safety ≠ housekeeping ≠ build note)', () => {
@@ -311,6 +323,49 @@ describe('Home region label reflects the actually served trails, never the picke
   it('names the active origin in the anonymous context sentence, not just the region', async () => {
     await renderHomeWith(feedWith({}))
     expect(screen.getByText(/from Front Royal/)).toBeInTheDocument()
+  })
+})
+
+describe('Home context sentence — no dangling separator on a missing origin or empty region (Epic 046 S4 AC-4.1 / D8)', () => {
+  const origins: OriginOption[] = [
+    { key: 'frontRoyal', label: 'Front Royal', lat: 38.918, lon: -78.194, regionLabel: 'Shenandoah' },
+  ]
+  const cardAt = (lat: number, lon: number) => ({
+    id: 'a',
+    name: 'a',
+    distanceMi: 2,
+    conditionLines: [],
+    warnings: [],
+    geo: { geometry: null, trailhead: { lat, lon }, quality: 'confident' as const, elevationProfile: null },
+  })
+
+  it('drops the origin clause instead of a dangling "from " when the tuned origin key is no longer in the fetched catalog', () => {
+    // A stale/removed origin key (the case FALLBACK_COORDS exists for) — the
+    // served card's own trailhead still resolves a real region, independent
+    // of the unresolvable origin key.
+    const tuning: TuningState = { ...TUNING, origin: 'goneRegion' }
+    const sentence = contextSentence(tuning, true, [cardAt(38.918, -78.194)], origins)
+    expect(sentence).toBe('Weekend morning · Shenandoah')
+    expect(sentence).not.toMatch(/from\s*$/)
+    expect(sentence).not.toContain('from ·')
+  })
+
+  it('drops the region clause instead of a doubled separator when no region label is available', () => {
+    const blankRegionOrigins: OriginOption[] = [
+      { key: 'frontRoyal', label: 'Front Royal', lat: 38.918, lon: -78.194, regionLabel: '' },
+    ]
+    const tuning: TuningState = { ...TUNING, origin: 'frontRoyal' }
+    const sentence = contextSentence(tuning, true, [], blankRegionOrigins)
+    expect(sentence).toBe('Weekend morning · from Front Royal')
+    expect(sentence).not.toContain('·  ·')
+  })
+
+  it('drops both clauses instead of a doubled separator when neither origin nor region resolves', () => {
+    const tuning: TuningState = { ...TUNING, origin: 'goneRegion' }
+    const sentence = contextSentence(tuning, true, [], origins)
+    expect(sentence).toBe('Weekend morning')
+    expect(sentence).not.toContain('·  ·')
+    expect(sentence).not.toMatch(/from\s*$/)
   })
 })
 

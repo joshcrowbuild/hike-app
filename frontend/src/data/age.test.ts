@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { relativeAge } from './age'
+import { relativeAge, TIME_UNKNOWN } from './age'
 
 const NOW = Date.parse('2026-07-01T22:00:00Z')
 
@@ -15,7 +15,8 @@ describe('relativeAge (§7.2 — relative time, never a raw datetime)', () => {
     expect(relativeAge('2026-06-28T22:00:00Z', NOW)).toBe('3d ago')
   })
 
-  it('degrades an unparseable timestamp to a disclosed unknown, never a fabricated age', () => {
-    expect(relativeAge('not-a-date', NOW)).toBe('time unknown')
+  it('degrades an unparseable timestamp to the disclosed TIME_UNKNOWN token, never a fabricated age', () => {
+    expect(relativeAge('not-a-date', NOW)).toBe(TIME_UNKNOWN)
+    expect(TIME_UNKNOWN).toBe('time unknown')
   })
 })
