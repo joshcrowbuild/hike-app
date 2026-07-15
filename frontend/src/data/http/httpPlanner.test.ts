@@ -100,7 +100,7 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
   const ok = (json: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
 
-  it('carries a live line’s real sources onto the VM, unmodified, and maps the structured body/age fields (Epic 045 S1 AC-1.1)', async () => {
+  it('carries a live line’s real sources onto the VM, unmodified, and maps the structured body/age fields (Epic 046 S1 AC-1.1)', async () => {
     const feed: FeedResponse = {
       query: '',
       card_count: 1,

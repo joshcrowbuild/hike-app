@@ -118,7 +118,7 @@ function humanizedAge(iso: string | null | undefined): string | undefined {
 function mapLines(lines: FeedLineResponse[]): LineVM[] {
   return lines.map((l) => ({
     text: l.text,
-    // Epic 045 S1 AC-1.1: the fact's value and its freshness, structurally
+    // Epic 046 S1 AC-1.1: the fact's value and its freshness, structurally
     // separate from `source` — a structured surface folds these in instead of
     // the welded `text` (never re-baking source/age into displayed copy).
     body: l.body,

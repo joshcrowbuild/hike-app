@@ -131,7 +131,7 @@ def _closure_alerts(fact: VerifiedFact) -> list[tuple[str, str]]:
     (`in_range: False`, no alerts key) or a checked-clear fact (empty list) yields
     nothing; a missing title degrades to a generic pointer rather than dropping
     the alert into silence (a verified hazard never quietly disappears, rule #1).
-    (Epic 045 S2 B3 sibling, re-verified 2026-07: this title guard — and `park`'s
+    (Epic 046 S2 B3 sibling, re-verified 2026-07: this title guard — and `park`'s
     own `isinstance(..., str) and .strip()` guard below — already handle the
     present-but-null shape; no change needed here, only present.py's `_body` had
     the leak, via a bare `dict.get(key, default)`.)"""
@@ -227,7 +227,7 @@ def evaluate_guardrails(
     if fire is not None:
         count = _hotspots(fire)
         if count:
-            # B2 (Epic 045 S2): the literal "(s)" never resolved to a real plural —
+            # B2 (Epic 046 S2): the literal "(s)" never resolved to a real plural —
             # `pluralize` (shared with present.py's own fire body) fixes both twins
             # with one rule.
             detection_word = pluralize(count, "detection", "detections")

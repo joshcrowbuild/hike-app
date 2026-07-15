@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 _HEDGE = {"stated": "", "hedged": "Likely: ", "flagged": "Unverified: "}
 
-# A neutral placeholder for a fact shape `_body` cannot honestly render (Epic 045
+# A neutral placeholder for a fact shape `_body` cannot honestly render (Epic 046
 # S2, B6): an unhandled `kind` or a non-dict value is a shape violation, not
 # content to pass through raw — `str(value)` on either can leak a Python dict/list
 # repr or the literal word "None" to a user. Logged at the boundary (fail loud,
@@ -33,13 +33,13 @@ _PLACEHOLDER = "unavailable"
 @dataclass(frozen=True)
 class FeedLine:
     kind: str
-    # Back-compat / non-Detail rendering (Epic 045 S1 AC-1.1): `body` + the short
+    # Back-compat / non-Detail rendering (Epic 046 S1 AC-1.1): `body` + the short
     # provider name + `age`, welded into one glanceable string — unchanged in
     # content from before this split, so `RecommendationCard`'s single "Now" line
     # and the metrics token estimate (`api/app.py`) keep reading it verbatim. Never
     # a second composition: always `f"{body} · {provider_short}, {age}"` below.
     text: str
-    # The hedge + value alone — no source, no age (Epic 045 S1). This is the fact
+    # The hedge + value alone — no source, no age (Epic 046 S1). This is the fact
     # a per-kind Detail row (or any other structured surface) should render as
     # "the value"; a surface that welds its own source/age onto `body` would
     # regrow the A3 defect this split exists to fix.
@@ -47,7 +47,7 @@ class FeedLine:
     source: str
     # Freshness alone, in plain words ("just now", "10m ago") — the same string
     # `_age()` bakes into `text`, exposed separately so a surface can state it
-    # once at block scope instead of once per fact (Epic 045 S1 AC-1.4).
+    # once at block scope instead of once per fact (Epic 046 S1 AC-1.4).
     age: str
     presentation: str
     # Distinct live-source names backing this fact (Epic 026a). Live conditions are
@@ -86,7 +86,7 @@ def provider_short(source: str) -> str:
 
 def pluralize(count: int, singular: str, plural: str | None = None) -> str:
     """The grammatically correct noun for `count` — never the degenerate literal
-    `(s)` that ships regardless of count (Epic 045 S2, B1/B2/B3). Shared with
+    `(s)` that ships regardless of count (Epic 046 S2, B1/B2/B3). Shared with
     `curator.py` (same import as `provider_short`) so a card warning's
     fire-detection count and a condition line's facility/alert count resolve
     through one pluralization rule, not two."""
@@ -261,7 +261,7 @@ def summarize_fact(
     now = now or datetime.now(timezone.utc)
     hedge = _HEDGE.get(confidence.presentation, "")
     # `body` is the hedge + value only — never a source or an age welded on
-    # (Epic 045 S1 / A3: that weld is exactly why no downstream surface could
+    # (Epic 046 S1 / A3: that weld is exactly why no downstream surface could
     # relocate or collapse either one). `age` is the same freshness `_age()` has
     # always produced, now also exposed on its own.
     body = f"{hedge}{_body(kind, fact.value)}"

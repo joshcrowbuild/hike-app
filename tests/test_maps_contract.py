@@ -74,7 +74,7 @@ EXPECTED: dict[str, set[str]] = {
         "source",
     },
     "WireTrailWater": {"state", "basis", "radius_m", "source", "sources"},
-    # The condition-line wire shape (Epic 045 S1 AC-1.1): `body`/`source`/`age` are
+    # The condition-line wire shape (Epic 046 S1 AC-1.1): `body`/`source`/`age` are
     # the fact's three parts as separate fields; `text` stays a derived/back-compat
     # welded string. Locked here — the same three-way lock as the maps/water
     # contracts above — so the "just now" ×11 defect's root cause (source+age

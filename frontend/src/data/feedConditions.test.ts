@@ -183,7 +183,7 @@ describe('foldLineValue / unclaimedLines (ux-review 2026-07 Finding 4/7 — Deta
     expect(claimed.has(weather)).toBe(true)
   })
 
-  it('folds a FULL line source against a SHORT status source via the shared short-provider identity (Epic 045 S1 AC-1.2 — the regression that would have caught A1)', () => {
+  it('folds a FULL line source against a SHORT status source via the shared short-provider identity (Epic 046 S1 AC-1.2 — the regression that would have caught A1)', () => {
     // A1's live-data defect: engine.py sets the status source to the SHORT name
     // (`provider_short(fact.source)` → "NWS") while present.py sets the line
     // source to the FULL label — a naive `line.source === status.source`
@@ -274,7 +274,7 @@ describe('foldLineValue / unclaimedLines (ux-review 2026-07 Finding 4/7 — Deta
   })
 })
 
-describe('providerShort (Epic 045 S1 AC-1.2 — the shared identity the fold matches on)', () => {
+describe('providerShort (Epic 046 S1 AC-1.2 — the shared identity the fold matches on)', () => {
   it('takes the leading token of a full source label', () => {
     expect(providerShort('NWS api.weather.gov · single authoritative source (NWS LWX 56,65)')).toBe('NWS')
   })

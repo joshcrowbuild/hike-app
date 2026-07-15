@@ -50,7 +50,7 @@ export interface PlanRequest {
 }
 
 /**
- * Mirrors `orchestration.present.FeedLine` (Epic 045 S1 AC-1.1). `text` stays a
+ * Mirrors `orchestration.present.FeedLine` (Epic 046 S1 AC-1.1). `text` stays a
  * back-compat welded string (value · short source, age) for a caller that wants
  * one glanceable line (e.g. `RecommendationCard`'s single "Now" slot); `body` /
  * `source` / `age` are the same fact's three parts as separate fields, so a

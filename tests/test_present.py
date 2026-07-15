@@ -123,7 +123,7 @@ def test_sources_reflects_the_fact_own_provider_not_a_fixed_name() -> None:
     assert line.sources == ("USGS",)  # the recognizable short name, never the raw source
 
 
-# ── Epic 045 S1 AC-1.1: `body`/`source`/`age` as separate FeedLine fields ──
+# ── Epic 046 S1 AC-1.1: `body`/`source`/`age` as separate FeedLine fields ──
 # (the "just now" ×11 fix: A3's root cause was welding source+age into the only
 # string a downstream surface could read; `text` stays a derived back-compat
 # weld of the same three parts, never a second, independent composition).
@@ -167,7 +167,7 @@ def test_body_carries_the_hedge_prefix_for_hedged_and_flagged_confidence() -> No
     hedged = summarize_fact(
         "fire", _fact({"hotspot_count": 2}), Confidence(0.6, "medium", "hedged", True), now=NOW
     )
-    # Epic 045 S2 B2: the literal "(s)" never resolved — count=2 pluralizes for real.
+    # Epic 046 S2 B2: the literal "(s)" never resolved — count=2 pluralizes for real.
     assert hedged.body == "Likely: 2 active-fire detections nearby"
     flagged = summarize_fact(
         "air",

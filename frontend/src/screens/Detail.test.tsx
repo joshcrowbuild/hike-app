@@ -386,7 +386,7 @@ describe('Detail conditions render ONCE — no duplicate prose+table for the sam
   })
 })
 
-describe('Detail conditions fold on the REAL live wire shape — FULL line source vs SHORT status source (Epic 045 S1 AC-1.2/1.3, the A1 live-data regression)', () => {
+describe('Detail conditions fold on the REAL live wire shape — FULL line source vs SHORT status source (Epic 046 S1 AC-1.2/1.3, the A1 live-data regression)', () => {
   it('renders each condition once — no residual list — when lines carry the FULL backend source and statuses carry the SHORT one', async () => {
     const live = card({
       conditionLines: [
@@ -447,7 +447,7 @@ describe('Detail conditions fold on the REAL live wire shape — FULL line sourc
   })
 })
 
-describe('Detail Sources section states its shared single-source descriptor once (A5, Epic 045 S1 AC-1.5)', () => {
+describe('Detail Sources section states its shared single-source descriptor once (A5, Epic 046 S1 AC-1.5)', () => {
   const liveConditions = card({
     conditionLines: [
       {

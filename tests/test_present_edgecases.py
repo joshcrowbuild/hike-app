@@ -47,7 +47,7 @@ def test_now_defaults_to_utc_datetime() -> None:
 
 
 def test_unknown_kind_falls_back_to_a_neutral_placeholder() -> None:
-    # Epic 045 S2 B6: a non-dict fact value is a shape violation, not content to
+    # Epic 046 S2 B6: a non-dict fact value is a shape violation, not content to
     # pass through raw — never leaked verbatim, never rendered as a bare `None`.
     line = summarize_fact("mystery", _fact("plain text"), _high(), now=NOW)
     assert "plain text" not in line.text
@@ -86,7 +86,7 @@ def test_weather_body_with_neither_temp_nor_forecast_is_honest_not_fabricated() 
 
 
 def test_air_body_with_missing_keys_avoids_none_leak() -> None:
-    # Epic 045 S2 B4 (+ the aqi-null guard AC-2.4 asks for): neither a missing
+    # Epic 046 S2 B4 (+ the aqi-null guard AC-2.4 asks for): neither a missing
     # `category` nor a missing `aqi` may render the literal word "None".
     line = summarize_fact("air", _fact({}), _high(), now=NOW)
     assert "None" not in line.text
@@ -189,12 +189,12 @@ def test_source_appears_in_line_text() -> None:
     assert line.source.startswith("SRC ")
 
 
-# ── Epic 045 S2 AC-2.4: the process-net guard (sweep §6) ─────────────────────
+# ── Epic 046 S2 AC-2.4: the process-net guard (sweep §6) ─────────────────────
 # Falsifying by construction: each assertion below targets a literal degenerate
 # token that used to reach the wire (`(s)`, a bare `None`, a dict-repr brace).
 # If any B1/B2/B3/B6 guard in `present.py::_body` or `curator.py`'s warning
 # twins is reverted, the matching case here goes red — this is the guard
-# `make check` wires in (sweep §6 item 3 / Epic 045 AC-6.2).
+# `make check` wires in (sweep §6 item 3 / Epic 046 AC-6.2).
 
 _DEGENERATE_TOKENS = ("(s)", "None", "{", "}")
 

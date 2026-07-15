@@ -120,7 +120,7 @@ export function splitFeedConditions(cards: CardVM[]): FeedConditions {
 
 /**
  * The value shared by at least two items — collapse-when-agree,
- * expand-when-diverge (binding decision 2, Epic 045 S1 AC-1.4/1.5): a block,
+ * expand-when-diverge (binding decision 2, Epic 046 S1 AC-1.4/1.5): a block,
  * compact group, or section states this value ONCE instead of once per item;
  * an item whose value diverges still renders its own (never silently
  * dropped). A single item, or a fully-divergent set (every value distinct),
@@ -152,7 +152,7 @@ export function sharedAmong(values: (string | undefined)[]): string | undefined 
  * whitespace-delimited token ("NWS api.weather.gov · single authoritative
  * source (…)" → "NWS"; "NWS" (already short) → "NWS", unchanged). A TS mirror
  * of `provider_short` in `orchestration/present.py`/`engine.py` (binding
- * decision 1, Epic 045 S1 AC-1.2): the fold below must compare a shared
+ * decision 1, Epic 046 S1 AC-1.2): the fold below must compare a shared
  * identity both a `LineVM` (which carries the FULL label in `source`) and a
  * `ConditionStatusVM` (which carries the SHORT name, `engine.py`'s
  * `provider_short(fact.source)`) can produce, never widen the status side to
@@ -179,7 +179,7 @@ export const providerShort = (source: string): string => {
  * `present`/`stale-degraded` row and its line both come from the SAME answered
  * fact, so they share a provider identity — matched here by the SHORT provider
  * name both sides can produce (`providerShort(line.source) === status.source`,
- * Epic 045 S1 AC-1.2; A1 found this inert on live data because a naive
+ * Epic 046 S1 AC-1.2; A1 found this inert on live data because a naive
  * `line.source === status.source` compares the line's FULL label against the
  * status's SHORT name, which never matches). One line consumed per row
  * (`claimed` exhausts a matched line so a repeated source never fans one

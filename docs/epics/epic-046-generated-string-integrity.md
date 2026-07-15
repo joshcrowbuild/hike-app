@@ -1,6 +1,6 @@
 # Epic 046 — Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty)
 
-**Status:** DEFINED
+**Status:** REVIEW
 **Phase:** 1 (personal-intelligence app; conditions + Detail surface)
 **Spec refs:** `docs/research/generated-string-integrity-sweep-2026-07.md` (the
 sweep this epic executes — findings A1–A5, B1–B8, C1–C2, D1–D4, E1) ·
@@ -180,14 +180,44 @@ and points at the generator inventory (sweep §5) as the walk-list.
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test; the A1 fold-regression
+- [x] All ACs covered by at least one passing test; the A1 fold-regression
       (AC-1.2) and the `_body` guard (AC-2.4) are falsifying (red if the guard
       is reverted).
-- [ ] `make check` green; frontend `npm test` + `npm run test:a11y` green;
+- [x] `make check` green; frontend `npm test` + `npm run test:a11y` green;
       condition-state goldens updated intentionally, not silently.
-- [ ] Rule #1 preserved: every fact still shows source + a freshness stamp
+- [x] Rule #1 preserved: every fact still shows source + a freshness stamp
       (relocated, never dropped) — asserted, not assumed.
-- [ ] Targeted self-review agent run; CRITICALs fixed, MODERATE+ documented.
-- [ ] Epic row added to `docs/epics/README.md`; `scripts/gen_epic_index.py` run;
-      status flipped `DEFINED → IN_PROGRESS → REVIEW → DONE ✅` across execution.
-- [ ] Committed and pushed on `claude/just-now-overuse-87c0q2`.
+- [x] Targeted self-review agent run; CRITICALs fixed, MODERATE+ documented.
+- [x] Epic row added to `docs/epics/README.md`; `scripts/gen_epic_index.py` run;
+      status flipped `DEFINED → IN_PROGRESS → REVIEW` (→ `DONE ✅` on merge).
+- [x] Committed and pushed on `claude/just-now-overuse-87c0q2`.
+
+---
+
+## Review outcome (2026-07-15)
+
+Targeted self-review over `git diff origin/main..HEAD`. **No CRITICALs.** Clean:
+source-or-silence preserved through the S1 wire split (`body`/`source`/`age`
+relocated, never dropped); stamp-collapse correct across all-agree / all-diverge
+/ mixed / single / empty; every `observedAgo`/`checkedAgo` render site guarded;
+the merge with main's managed-auth (Epic 043) is type-clean (the new
+`tsc --noEmit` gate stage is load-bearing here — vitest/esbuild does not
+type-check); the AC-1.2 fold-regression and the S6 repetition snapshot are
+verified non-vacuous (S6 confirmed red-on-revert).
+
+**Follow-ups (documented, not blocking merge):**
+- **MODERATE — permits/water disposition vs glyph.** `_body` now renders honest
+  text (`Permit info not fetched — N nearby facilities`; `flow reading
+  unavailable at {gauge}`), but `engine.py`'s `_is_coverage_gap` /
+  `_is_checked_clear` never special-case permits or a sentinel discharge, so the
+  row keeps the `present` disposition → `✓ … reported`. The text is honest, the
+  glyph contradicts it — the epic's own class at the text/glyph boundary. S2 was
+  scoped to `present.py`/`curator.py`; the real fix is a `permits`/no-reading
+  branch in `engine.py`'s CDP-02 disposition, which touches the six-state goldens
+  and is deferred to its own change.
+- **LOW —** `foldLineValue` matches by short-provider only (safe for today's six
+  distinct providers; a future kind sharing a prefix would mis-route — worth a
+  guard comment); two air-kind test fixtures use `source: 'AirNow'` vs the real
+  `'EPA AirNow'` (still folds; fidelity nit); `sharedAmong` lacks a dedicated
+  single/empty unit test; the S5 `matchMedia` stubs lack an explicit
+  `vi.unstubAllGlobals()` (harmless — last block in the file).

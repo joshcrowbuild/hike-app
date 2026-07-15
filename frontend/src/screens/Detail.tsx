@@ -308,7 +308,7 @@ function TrustCue({ card }: { card: CardVM }) {
 // The closed vocabulary `present.py::_source_note` welds onto every line's
 // `source` (`"<label> · <descriptor>[ (<origin>)]"`) — a CDP-01 honesty
 // disclosure ("this fact hasn't been cross-checked against a second
-// provider") that reads near-identically on almost every row (A5, Epic 045
+// provider") that reads near-identically on almost every row (A5, Epic 046
 // S1 AC-1.5). `source` itself is an untouched, already-locked wire field
 // (`tests/test_present.py`), so the two known phrases are matched directly
 // rather than adding a parallel structured field just for this de-duplication.

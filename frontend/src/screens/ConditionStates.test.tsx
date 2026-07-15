@@ -163,7 +163,7 @@ describe('ConditionStates folds a matching line\'s value into its row (ux-review
   })
 })
 
-describe('ConditionStates block-scope freshness stamp (Epic 045 S1 AC-1.4 — collapse when the batch agrees, expand when a row diverges)', () => {
+describe('ConditionStates block-scope freshness stamp (Epic 046 S1 AC-1.4 — collapse when the batch agrees, expand when a row diverges)', () => {
   it('renders ONE freshness stamp and drops every per-row age when the whole batch shares it', () => {
     const { container } = render(
       <ConditionStates
@@ -257,7 +257,7 @@ describe('ConditionStates block-scope freshness stamp (Epic 045 S1 AC-1.4 — co
 })
 
 describe('ConditionStates (compact card summary)', () => {
-  it('groups kinds by state into one calm row each, stating a shared age once and keeping per-kind source (Epic 045 S1 AC-1.5 / A4)', () => {
+  it('groups kinds by state into one calm row each, stating a shared age once and keeping per-kind source (Epic 046 S1 AC-1.5 / A4)', () => {
     const { container } = render(
       <ConditionStates
         compact

@@ -68,7 +68,7 @@ class SearchRequest(BaseModel):
 
 
 class FeedLineResponse(BaseModel):
-    """Mirrors `orchestration.present.FeedLine` (Epic 045 S1 AC-1.1): `text` stays a
+    """Mirrors `orchestration.present.FeedLine` (Epic 046 S1 AC-1.1): `text` stays a
     back-compat welded string (value · short source, age) for callers that render
     one glanceable line; `body`/`source`/`age` are the same fact's three parts as
     separate fields, so a structured surface (the Detail per-kind coverage row) can

@@ -134,7 +134,7 @@ function CompactStates({ conditions }: { conditions: ConditionStatusVM[] }) {
 /**
  * One grouped compact row, e.g. "✓ Checked — nothing to flag · 20m ago: Fire
  * (FIRMS), Closures (NPS)". A shared age states once for the whole group (A4,
- * Epic 045 S1 AC-1.5) rather than once per kind; a member whose age DIVERGES
+ * Epic 046 S1 AC-1.5) rather than once per kind; a member whose age DIVERGES
  * from the group keeps its own inline, never silently dropped. Source stays
  * on each kind regardless (it differs and carries info); the no-data
  * disclosure detail is Detail-only.
