@@ -337,6 +337,40 @@ class OutcomeResponse(BaseModel):
     overall: int | None
 
 
+# Shape of the client-supplied per-trip key on POST /episode (Epic 043 S5): the same
+# hygiene alphabet as an episode id, but shorter — it becomes the tail of the derived
+# `ep:{viewer}:{client_episode_id}` id, so it must not carry separators or control
+# chars that would let a caller inject an owner segment or blow the id length bound.
+CLIENT_EPISODE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+
+
+class EpisodeCreateBody(BaseModel):
+    """`POST /episode` (Epic 043 S5): a manual planned/completed trip log. Every
+    metric is optional — this is a watch-free manual log (Rule #6), so a bare "I did
+    this on this trail" is a valid Episode. The verified `sub` (not any client field)
+    owns it, so the body carries NO viewer/owner field: identity is the token's alone."""
+
+    # The caller's stable per-trip key; dedupes re-submits (the derived episode id
+    # embeds it, and the MERGE is idempotent).
+    client_episode_id: str = Field(pattern=CLIENT_EPISODE_ID_PATTERN)
+    # The trail it was on (a world CanonicalTrail id), when known — same hygiene bound
+    # as the /trail path param. Optional: a manual log may predate a matched trail.
+    canonical_id: Annotated[str, StringConstraints(pattern=CANONICAL_ID_PATTERN)] | None = None
+    # ISO calendar date (YYYY-MM-DD) the trip happened; drives e.date (the recency
+    # window). Length-bounded; date() parsing is null-safe downstream.
+    start_date: str | None = Field(default=None, max_length=10)
+    distance_m: float | None = Field(default=None, ge=0, le=1_000_000)
+    ascent_m: float | None = Field(default=None, ge=0, le=30_000)
+    descent_m: float | None = Field(default=None, ge=0, le=30_000)
+    moving_min: float | None = Field(default=None, ge=0, le=100_000)
+    duration_min: float | None = Field(default=None, ge=0, le=100_000)
+
+
+class EpisodeCreateResponse(BaseModel):
+    episode_id: str
+    canonical_id: str | None = None
+
+
 class OriginResponse(BaseModel):
     """One named search origin the frontend picker can offer (Phase 2: config-driven
     origins — sourced from `regions/*.geojson` `properties.origins`, never hardcoded
