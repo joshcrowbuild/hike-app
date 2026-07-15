@@ -1266,3 +1266,58 @@ def test_s2_feed_cache_hit_flag_false_for_non_anonymous_and_disabled_cache() -> 
     plan("mellow loop", (38.5, -78.4), runtime2, k=5)
     plan("mellow loop", (38.5, -78.4), runtime2, k=5)
     assert runtime2.feed_cache_hit is False  # disabled cache → never reports a hit
+
+
+def test_plan_trail_by_id_returns_single_verified_trail_when_id_exists() -> None:
+    # Epic 045 S2: plan_trail_by_id returns a single verified trail for a known id.
+    from orchestration.engine import plan_trail_by_id
+
+    point = {"latitude": 38.5, "longitude": -78.4}
+    row = _name_row("ct:osm:way_138445924", "Old Rag Loop", point=point)
+
+    def weather(lat: float, lon: float) -> Any:
+        return {"active_alerts": []}
+
+    batch = plan_trail_by_id(
+        "ct:osm:way_138445924",
+        _FakeSession([row]),  # type: ignore[arg-type]
+        _weather_probes(weather),
+    )
+    assert len(batch.trails) == 1
+    assert batch.trails[0].candidate.canonical_id == "ct:osm:way_138445924"
+    assert batch.trails[0].candidate.name == "Old Rag Loop"
+    # Verify it went through the live-verify tail (like search_trails).
+    assert ConditionKind.weather in batch.trails[0].facts
+
+
+def test_plan_trail_by_id_returns_empty_for_unknown_id() -> None:
+    # Epic 045 S2: plan_trail_by_id returns an honest empty batch for an unknown id.
+    from orchestration.engine import plan_trail_by_id
+
+    batch = plan_trail_by_id(
+        "ct:osm:way_unknown",
+        _FakeSession([]),  # type: ignore[arg-type]
+        {},
+    )
+    assert batch.trails == []
+    assert batch.set_aside == ()
+
+
+def test_plan_trail_by_id_skips_verify_when_no_point() -> None:
+    # Epic 045 S2: like search_trails, if a candidate has no point, probe is skipped
+    # (verify=False) to avoid fabricating a location.
+    from orchestration.engine import plan_trail_by_id
+
+    row = _name_row("no-point-trail", "Nameless Trail")  # no point field
+
+    def weather_fail(lat: float, lon: float) -> Any:
+        raise ValueError("Should not be called")
+
+    batch = plan_trail_by_id(
+        "no-point-trail",
+        _FakeSession([row]),  # type: ignore[arg-type]
+        _weather_probes(weather_fail),  # would fail if called
+    )
+    # The trail should still be in the batch, but with empty facts (verify=False).
+    assert len(batch.trails) == 1
+    assert batch.trails[0].facts == {}  # no live probes ran

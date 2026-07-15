@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from orchestration.scout import scout, scout_by_name
+from orchestration.scout import scout, scout_by_id, scout_by_name
 
 
 class _FakeSession:
@@ -222,3 +222,42 @@ def test_scout_dedupe_caps_to_k_after_collapsing_duplicates() -> None:
     ]
     out = scout(37.54, -77.44, _FakeSession(rows), k=3)  # type: ignore[arg-type]
     assert [c.canonical_id for c in out] == ["canal-b", "c", "d"]
+
+
+def test_scout_by_id_returns_single_candidate_when_id_exists() -> None:
+    # Epic 045 S1: scout_by_id returns a single candidate for an existing id.
+    row = _name_row("ct:osm:way_138445924", "Old Rag Loop", length_mi=2.5)
+    out = scout_by_id("ct:osm:way_138445924", _FakeSession([row]))  # type: ignore[arg-type]
+    assert len(out) == 1
+    assert out[0].canonical_id == "ct:osm:way_138445924"
+    assert out[0].name == "Old Rag Loop"
+
+
+def test_scout_by_id_returns_empty_for_unknown_id() -> None:
+    # Epic 045 S1: scout_by_id returns an honest empty list for an unknown id.
+    out = scout_by_id("ct:osm:way_unknown", _FakeSession([]))  # type: ignore[arg-type]
+    assert out == []
+
+
+def test_scout_by_id_passes_id_param() -> None:
+    # Epic 045 S1: the canonical_id is passed to the query as a param.
+    fake = _FakeSession([])
+    scout_by_id("ct:osm:way_138445924", fake)  # type: ignore[arg-type]
+    _cypher, params = fake.calls[0]
+    assert params["id"] == "ct:osm:way_138445924"
+
+
+def test_scout_by_id_carries_full_projection() -> None:
+    # Epic 045 S1: the by-id candidate has the same projection as by-name and by-origin.
+    row = _name_row("trail-id", "Test Trail", length_mi=3.0, way_type="track", is_loop=True)
+    out = scout_by_id("trail-id", _FakeSession([row]))  # type: ignore[arg-type]
+    assert len(out) == 1
+    assert out[0].name == "Test Trail"
+    assert out[0].length_mi == 3.0
+    assert out[0].way_type == "track"
+    assert out[0].is_loop is True
+    # No origin on the by-id path, so the DB returns null distance/trailhead; the
+    # shared `_row_to_candidate` coerces those to the non-optional Candidate defaults
+    # (distance_m: float, trailhead_id: str) exactly as the by-name path does.
+    assert out[0].distance_m == 0.0
+    assert out[0].trailhead_id == ""

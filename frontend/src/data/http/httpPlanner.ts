@@ -418,20 +418,30 @@ export class HttpPlannerClient implements PlannerClient {
   }
 
   async getCard(id: string, scope: ScopeContext, tuning?: TuningState): Promise<CardVM | null> {
-    // No GET /trail/{id} exists yet (backend ask #1/#5), so `useCard` only calls
-    // this when the id isn't already in the in-memory feed. Re-run the plan with
-    // the CALLER'S current tuning (never a rebuilt default — a reset frame
-    // returns a different, often thinner, set that may not contain the card,
-    // which is what made every non-default-origin trail read as "not found").
-    // A true deep-link to a card outside the set still returns null. Always
-    // the FULL single-pass response (twoPhase=false): a card handed to Detail
-    // must carry verified conditions, never a phase-1 frame's pending silence.
-    const feed = await this.planWith({ tuning: tuning ?? fallbackTuning() }, scope, false)
-    // A transient failure (notably the cold-start timeout this branch now waits
-    // out for up to 60s) must not masquerade as "not found": throw so `useCard`
-    // maps it to a retryable error state, not an authoritative absence (R1).
-    if (feed.error) throw new Error(feed.error.message)
-    return feed.cards.find((c) => c.id === id) ?? null
+    // GET /trail/{id}/card returns a FeedResponse with one verified card (Epic 045 S3),
+    // so we call it directly instead of re-running /plan. A direct id match is
+    // unambiguous and carries sourced+timestamped conditions for any trail, not just
+    // those in the current origin-based top-K. Unknown id → honest-empty FeedResponse
+    // (never 404, never error). Anonymous-capable (a trail's conditions are the same
+    // for everyone). A transient failure (cold start timeout) must throw (not masquerade
+    // as notfound) so useCard maps it to error state (R1).
+    try {
+      const params = new URLSearchParams({ viewer_id: scope.viewerId })
+      const resp = await fetch(`${this.baseUrl}/trail/${encodeURIComponent(id)}/card?${params}`, {
+        headers: authHeaders(scope),
+      })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const feedResp = (await resp.json()) as FeedResponse
+      // Map through the SAME shared mapFeed the feed uses (id ← canonical_id, lines →
+      // conditionLines, geo/elevation) so a deep-linked card is byte-identical to a
+      // feed-tapped one — never the raw wire shape (whose `id` is undefined).
+      const feed = mapFeed(feedResp)
+      return feed.cards.length === 0 ? null : feed.cards[0]
+    } catch (error) {
+      // A transient failure (network, timeout, 5xx) must throw so useCard treats it
+      // as retryable error, not a genuine "not found" (R1).
+      throw error
+    }
   }
 
   async trailWater(id: string, scope: ScopeContext): Promise<TrailWaterVM | null> {
