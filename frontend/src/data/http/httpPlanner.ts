@@ -432,8 +432,11 @@ export class HttpPlannerClient implements PlannerClient {
       })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const feedResp = (await resp.json()) as FeedResponse
-      if (feedResp.cards.length === 0) return null
-      return feedResp.cards[0]
+      // Map through the SAME shared mapFeed the feed uses (id ← canonical_id, lines →
+      // conditionLines, geo/elevation) so a deep-linked card is byte-identical to a
+      // feed-tapped one — never the raw wire shape (whose `id` is undefined).
+      const feed = mapFeed(feedResp)
+      return feed.cards.length === 0 ? null : feed.cards[0]
     } catch (error) {
       // A transient failure (network, timeout, 5xx) must throw so useCard treats it
       // as retryable error, not a genuine "not found" (R1).

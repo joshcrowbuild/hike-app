@@ -704,13 +704,19 @@ describe('HttpPlannerClient getCard stays single-pass (Epic 040 self-review)', (
     vi.unstubAllGlobals()
   })
 
-  it('the deep-link refetch never asks for phase:"cards" — Detail must get verified conditions', async () => {
+  it('resolves via GET /trail/{id}/card (verified conditions), never a phased /plan frame', async () => {
     fetchMock.mockReturnValue(
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
     )
     await client().getCard('ct:a', ANON_SCOPE, TUNING)
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
-    expect(body.phase).toBeUndefined()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    // getCard now hits the by-id card endpoint (which always returns conditions_
+    // complete), not a phased /plan — so Detail can never resolve a phase-1 frame.
+    // A bodyless GET means there is no `phase` to send at all (the old invariant,
+    // now held by construction).
+    expect(url).toContain('/trail/ct%3Aa/card')
+    expect(url).not.toContain('/plan')
+    expect(init?.body).toBeUndefined()
   })
 })
 
