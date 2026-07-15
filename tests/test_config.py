@@ -211,6 +211,58 @@ def test_settings_live_probe_max_workers_default_and_override() -> None:
     assert s.live_probe_max_workers == 4
 
 
+# ── Epic 043 — managed auth config (fail-closed by default) ──
+
+
+def test_settings_supabase_auth_absent_by_default() -> None:
+    s = Settings.from_env({})
+    # No JWKS URL wired → managed auth fails closed; anonymous browsing needs no env.
+    assert s.supabase_jwks_url is None
+    assert s.supabase_issuer is None
+    assert s.allow_dev_viewer_secret is False
+
+
+def test_settings_supabase_jwks_derived_from_supabase_url() -> None:
+    s = Settings.from_env({"SUPABASE_URL": "https://proj.supabase.co/"})
+    assert s.supabase_jwks_url == "https://proj.supabase.co/auth/v1/.well-known/jwks.json"
+    assert s.supabase_issuer == "https://proj.supabase.co/auth/v1"
+
+
+def test_settings_supabase_jwks_explicit_override_wins() -> None:
+    s = Settings.from_env(
+        {
+            "SUPABASE_URL": "https://proj.supabase.co",
+            "ADVENTURE_SUPABASE_JWKS_URL": "https://cdn.example/jwks.json",
+        }
+    )
+    assert s.supabase_jwks_url == "https://cdn.example/jwks.json"
+
+
+def test_settings_issuer_derived_from_jwks_url_when_supabase_url_absent() -> None:
+    # JWKS-URL-only config: the issuer is still named (from the well-known suffix)
+    # so token issuer verification stays on — defence in depth (review M1).
+    s = Settings.from_env(
+        {"ADVENTURE_SUPABASE_JWKS_URL": "https://proj.supabase.co/auth/v1/.well-known/jwks.json"}
+    )
+    assert s.supabase_issuer == "https://proj.supabase.co/auth/v1"
+
+
+def test_settings_issuer_none_for_nonstandard_jwks_url() -> None:
+    # A JWKS URL that isn't the Supabase well-known shape → issuer unverified
+    # rather than guessed wrong (audience+signature+expiry still hold).
+    s = Settings.from_env({"ADVENTURE_SUPABASE_JWKS_URL": "https://cdn.example/keys.json"})
+    assert s.supabase_issuer is None
+
+
+def test_settings_allow_dev_viewer_secret_gate_parsing() -> None:
+    for on in ("1", "true", "TRUE", "yes", "on"):
+        assert Settings.from_env({"ADVENTURE_ALLOW_DEV_VIEWER_SECRET": on}).allow_dev_viewer_secret
+    for off in ("", "0", "false", "no", "off", "nonsense"):
+        assert not Settings.from_env(
+            {"ADVENTURE_ALLOW_DEV_VIEWER_SECRET": off}
+        ).allow_dev_viewer_secret
+
+
 # ── Epic 036 AC-3.2/AC-3.3 — osm_pbf_path: additive, blank survives raw ────────
 
 

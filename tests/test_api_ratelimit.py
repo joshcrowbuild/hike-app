@@ -214,11 +214,17 @@ def test_outcome_write_endpoint_is_rate_limited(client, monkeypatch) -> None:
 
 
 def test_plan_observability_scrubs_viewer_id(client, monkeypatch, caplog) -> None:
-    # A real (non-anonymous) viewer must be authorized; configure the dev secret so the
-    # request reaches the engine, then assert the identity never lands in the logs.
+    # A real (non-anonymous) viewer must be authorized; use the hard-gated dev-secret
+    # path (Epic 043 S3) so the request reaches the engine, then assert the identity
+    # never lands in the logs.
     monkeypatch.setattr(
-        app_mod, "_settings", Settings.from_env({"ADVENTURE_DEV_VIEWER_SECRET": "s3cret"})
+        app_mod,
+        "_settings",
+        Settings.from_env(
+            {"ADVENTURE_DEV_VIEWER_SECRET": "s3cret", "ADVENTURE_ALLOW_DEV_VIEWER_SECRET": "1"}
+        ),
     )
+    monkeypatch.setattr(app_mod, "_jwt_verifier", None)
     secret_viewer = "mem:josh-example"  # must fit VIEWER_ID_PATTERN (AH4)
 
     with caplog.at_level(logging.INFO, logger="api.observability"):

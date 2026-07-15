@@ -526,10 +526,62 @@ def test_plan_defaults_to_anonymous_viewer(client: Any) -> None:
     assert resp.status_code == 200
 
 
-def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        app_mod, "_settings", Settings.from_env({"ADVENTURE_DEV_VIEWER_SECRET": "s3cret"})
+def test_s2_ac1_anonymous_plan_200_zero_credentials(client: Any, monkeypatch: Any) -> None:
+    """Epic 043 S2 DoD regression: anonymous /plan returns 200 with ZERO credentials —
+    no Authorization header, no dev secret, no managed auth wired. Anonymous browsing
+    of the world stays a first-class, un-gated product no matter what auth is added."""
+    monkeypatch.setattr(app_mod, "_settings", Settings.from_env({}))
+    monkeypatch.setattr(app_mod, "_jwt_verifier", None)  # managed auth not configured
+    resp = client.post("/plan", json={**_PLAN_BODY, "viewer_id": "anonymous"})
+    assert resp.status_code == 200
+
+
+def test_s1_plan_with_valid_bearer_token_returns_200(client: Any, monkeypatch: Any) -> None:
+    """Epic 043 S1: a valid Supabase (ES256) token → the token's sub becomes the
+    viewer and the request proceeds to a 200 through the same stubbed engine."""
+    import time as _time
+
+    import jwt as _jwt
+    from cryptography.hazmat.primitives.asymmetric import ec as _ec
+
+    from api.auth import JWTVerifier
+
+    priv = _ec.generate_private_key(_ec.SECP256R1())
+    jwk = _jwt.algorithms.get_default_algorithms()["ES256"].to_jwk(priv.public_key(), as_dict=True)
+    jwk.update({"kid": "k1", "alg": "ES256", "use": "sig"})
+    token = _jwt.encode(
+        {"sub": "sub-uuid", "aud": "authenticated", "exp": int(_time.time()) + 60},
+        priv,
+        algorithm="ES256",
+        headers={"kid": "k1"},
     )
+    monkeypatch.setattr(app_mod, "_settings", Settings.from_env({}))
+    monkeypatch.setattr(
+        app_mod,
+        "_jwt_verifier",
+        JWTVerifier(
+            "https://x/jwks", audience="authenticated", http_get=lambda _u: {"keys": [jwk]}
+        ),
+    )
+    resp = client.post(
+        "/plan",
+        json={**_PLAN_BODY, "viewer_id": "anonymous"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+
+def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any) -> None:
+    # Epic 043 S3: the dev-secret path is now HARD-GATED — honored only when the gate
+    # is explicitly enabled (a local-dev escape hatch, off in production).
+    monkeypatch.setattr(
+        app_mod,
+        "_settings",
+        Settings.from_env(
+            {"ADVENTURE_DEV_VIEWER_SECRET": "s3cret", "ADVENTURE_ALLOW_DEV_VIEWER_SECRET": "1"}
+        ),
+    )
+    monkeypatch.setattr(app_mod, "_jwt_verifier", None)
     # A provided viewer_id is honored only with the configured secret…
     ok = client.post(
         "/plan",

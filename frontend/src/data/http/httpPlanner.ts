@@ -79,14 +79,16 @@ const TWO_PHASE = ((): boolean => {
 })()
 
 /**
- * Scoped requests carry the dev-viewer secret so the backend's fail-closed
- * `_authorize_viewer` admits a non-anonymous viewer. Anonymous browsing needs
- * no secret. The secret lives only in `.env` (Rule #10) — never in the repo.
+ * Managed auth (Epic 043 S3): a non-anonymous scope carries a Supabase access
+ * token, sent as `Authorization: Bearer <token>`. The backend verifies it against
+ * the public JWKS and derives the viewer from its `sub` — the client no longer
+ * injects any shared secret (the H1/dev-secret path is retired). Anonymous
+ * browsing sends no credentials at all.
  */
 function authHeaders(scope: ScopeContext): HeadersInit {
   const base: HeadersInit = { 'content-type': 'application/json' }
-  if (scope.viewerId === 'anonymous') return base
-  return { ...base, 'X-Dev-Viewer-Secret': import.meta.env.VITE_DEV_VIEWER_SECRET ?? '' }
+  if (scope.viewerId === 'anonymous' || !scope.accessToken) return base
+  return { ...base, Authorization: `Bearer ${scope.accessToken}` }
 }
 
 function classify(err: unknown, status?: number): FeedError {

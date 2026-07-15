@@ -483,6 +483,20 @@ def upsert_episode(
     return cypher, params
 
 
+def ensure_person(now: str) -> tuple[str, dict[str, Any]]:
+    """MERGE the viewer's `Person` by their identity key (`member_id = $viewer_id`).
+
+    `Person` is an identity node (keyed on `member_id`, not `owner_id`), so it is
+    unowned and passes `assert_scoped_write` untouched — but it is still born
+    $viewer_id-keyed, so a caller can only ever MERGE their OWN Person. Needed for a
+    first-time managed-auth sign-in (Epic 043 S5): a fresh Supabase `sub` has no
+    Person yet, and `wire_person_did_episode`'s `MATCH` would silently no-op, leaving
+    the Episode unreachable from the household graph. `created_at` is set once on
+    create; a returning member's Person is left untouched."""
+    cypher = "MERGE (p:Person {member_id: $viewer_id})\nON CREATE SET p.created_at = $now"
+    return cypher, {"now": now}
+
+
 def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:
     """Wire the viewer's Person to their Episode. The Episode is matched under
     owner scope (the Person anchor is an identity match, $viewer_id-keyed)."""
