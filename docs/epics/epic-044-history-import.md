@@ -2,7 +2,7 @@
 
 **Status:** DEFINED
 **Phase:** C (Real Intake)
-**Spec refs:** [`../strategy/path-to-complete.md`](../strategy/path-to-complete.md) Phase C (B003 + the map-matching risk + Open Decision #10) · CDP-20 (HMM snap) · CLAUDE.md Rules #6/#7 · Epic 031 (GPX reader, DONE) · decision-log §47
+**Spec refs:** [`../strategy/path-to-complete.md`](../strategy/path-to-complete.md) Phase C (B003 + the map-matching risk + Open Decision #10) · CDP-20 (HMM snap) · CLAUDE.md Rules #6/#7 · Epic 031 (GPX reader, DONE) · decision-log §47 · Epics 025/027 (the corpus quality-gate discipline this import mirrors — S6)
 
 > **Build gate (hard):** ToS/consent + **data export/deletion** must exist before this epic ingests real personal history — the deletion right is a precondition of health-adjacent intake (path-to-complete Phase-C dependencies; pulled forward from Phase B by §47). Epic 043 (auth) must land first.
 
@@ -57,10 +57,24 @@ The owner imports a historical activity archive (Garmin bulk export / GPX files)
 **AC-5.1:** processing is local-first; nothing from the import reaches a cloud model (the C4 egress guard covers the read path)
 **AC-5.2:** residual metadata is stripped on any future emit path (the Strava privacy-zone leak is the cautionary tale); imports never write to the commons fork
 
+### S6 — Import-quality gates + run report (corpus-grade discipline)
+
+*The personal import holds the same ingestion-quality bar as the trail corpus (Epics 025/027's posture), adapted to an additive, personal pipeline: screens and validity gates in the load path, and a per-run report instead of the destructive-ingest guards (prune-ratio etc.) that only make sense for a repeated, pruning ingest.*
+
+**Given** a real archive containing rides, runs, gym sessions, and GPS-glitched tracks alongside hikes
+**When** the import runs
+**Then** only quality-screened foot travel shapes the user's hiking profile, and everything else is counted and disclosed — never silently absorbed, never silently dropped
+
+**AC-6.1 (activity-type screen):** a config-driven allowlist of foot-travel activity types produces Episodes that feed capability beliefs; non-foot activities (ride, swim, gym…) are excluded from Episode creation and **counted per type in the run report**. Default allowlist is conservative (hike/walk); whether trail-running pace should inform hiking capability is an explicit open sub-decision, not a silent default.
+**AC-6.2 (track-validity gates):** beyond Epic 031's tolerance path, physically implausible tracks (sustained speed above a foot-travel ceiling, teleporting fixes, null-island points) are barred from feeding capability beliefs — a glitched track can never set a pace/distance maximum. The trip itself is still preserved (free-floating Episode, geometry kept) with its exclusion reason disclosed: degrade-and-disclose, never discard.
+**AC-6.3 (run report — the ingest-diff analog):** every run emits a persisted report: files parsed / skipped (each with a reason) · activities screened by type · Episodes created · matched vs. free-floating · capability-eligible vs. quality-excluded. Reports are comparable across re-runs (the Epic 027 pattern), so a re-import that suddenly parses far fewer activities is visible, not silent.
+**AC-6.4 (no silent loss — falsification-tested):** the totals reconcile: every activity in the archive appears in exactly one report bucket. A planted unparseable file, a planted bike ride, and a planted teleporting track each surface in the report with the right reason (the same falsification bar the corpus gates are held to).
+
 ---
 
 ## Definition of Done
 - [ ] All ACs tested; the S3 fallback falsification-tested (a garbage track still lands as a free-floating Episode)
+- [ ] S6 gates falsification-tested (planted junk of each class lands in the right report bucket, and none of it touches capability beliefs)
 - [ ] `make check` green
-- [ ] Live verification: the owner's real archive imported; `been_on` count > 0 OR the fallback path disclosed honestly; Epic 006 demonstrably unblocked
+- [ ] Live verification: the owner's real archive imported; the run report's totals reconcile against the archive; `been_on` count > 0 OR the fallback path disclosed honestly; Epic 006 demonstrably unblocked
 - [ ] Targeted review agent run; CRITICALs fixed
