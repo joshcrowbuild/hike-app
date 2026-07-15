@@ -47,10 +47,12 @@ The owner imports a historical activity archive (Garmin bulk export / GPX files)
 **AC-3.2:** a low-confidence match falls back to a **free-floating Episode with geometry** (matched opportunistically later) — the import NEVER produces zero value because matching is hard
 **AC-3.3:** match confidence is disclosed on read ("likely Cascade Pass — low confidence, GPS sparse"); the rigorous Newson-Krumm HMM snap (CDP-20) is the eventual implementation, not a v1 requirement
 
-### S4 — Measured history feeds capability beliefs
+### S4 — Measured history feeds capability beliefs (per-activity channels — decision-log §48)
 
-**AC-4.1:** imported pace/duration flow through the existing Epic 001 pipeline (EWMA, maxima, N=3 promotion) with `provenance:"import"`
+**AC-4.1:** imported pace/duration flow through the existing Epic 001 pipeline (EWMA, maxima, N=3 promotion) with `provenance:"import"`, written to the **activity's own channel** (`pace(hike)`, `pace(run)` are distinct beliefs)
 **AC-4.2:** capability ≠ preference holds — imports update capability; preference beliefs still come only from outcomes/stated input (Rule #7)
+**AC-4.3 (no cross-channel bleed):** hiking predictions (duration estimates, effort screens) read only hike-channel beliefs; run pace/maxima can never set a hiking pace or distance maximum — falsification-tested (a fast imported run must not change a hiking duration estimate)
+**AC-4.4 (hedged endurance floor — the only bridge):** consistent running history may set an aerobic-endurance *floor* at cold-start, carried as an inference with provenance + confidence (Rule #7), disclosed on any surface that uses it, and displaced as real hike evidence accrues
 
 ### S5 — Privacy posture
 
@@ -65,7 +67,7 @@ The owner imports a historical activity archive (Garmin bulk export / GPX files)
 **When** the import runs
 **Then** only quality-screened foot travel shapes the user's hiking profile, and everything else is counted and disclosed — never silently absorbed, never silently dropped
 
-**AC-6.1 (activity-type screen):** a config-driven allowlist of foot-travel activity types produces Episodes that feed capability beliefs; non-foot activities (ride, swim, gym…) are excluded from Episode creation and **counted per type in the run report**. Default allowlist is conservative (hike/walk); whether trail-running pace should inform hiking capability is an explicit open sub-decision, not a silent default.
+**AC-6.1 (activity-type screen — resolved by decision-log §48):** a config-driven allowlist of foot-travel activity types (hike, walk, run incl. trail run) produces Episodes tagged `activity_type`; all foot travel counts fully for `been_on`/novelty/trip memory. Non-foot activities (ride, swim, gym…) are excluded from Episode creation and **counted per type in the run report**. Capability separation is S4's job (per-activity channels), not this screen's.
 **AC-6.2 (track-validity gates):** beyond Epic 031's tolerance path, physically implausible tracks (sustained speed above a foot-travel ceiling, teleporting fixes, null-island points) are barred from feeding capability beliefs — a glitched track can never set a pace/distance maximum. The trip itself is still preserved (free-floating Episode, geometry kept) with its exclusion reason disclosed: degrade-and-disclose, never discard.
 **AC-6.3 (run report — the ingest-diff analog):** every run emits a persisted report: files parsed / skipped (each with a reason) · activities screened by type · Episodes created · matched vs. free-floating · capability-eligible vs. quality-excluded. Reports are comparable across re-runs (the Epic 027 pattern), so a re-import that suddenly parses far fewer activities is visible, not silent.
 **AC-6.4 (no silent loss — falsification-tested):** the totals reconcile: every activity in the archive appears in exactly one report bucket. A planted unparseable file, a planted bike ride, and a planted teleporting track each surface in the report with the right reason (the same falsification bar the corpus gates are held to).
