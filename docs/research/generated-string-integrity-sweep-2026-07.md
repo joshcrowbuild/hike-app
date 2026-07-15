@@ -4,10 +4,10 @@
 11× on the Dickey Ridge Detail screen. Not a screen review — a hunt for the
 class that defect belongs to, across `frontend/src/` and the backend string
 builders (`orchestration/present.py`, `adapters/`, `curator.py`, `engine.py`).
-Findings are grouped into the fix-surface lanes that became Epic 045.*
+Findings are grouped into the fix-surface lanes that became Epic 046.*
 
 **Last verified:** 2026-07-15 · **Owner:** PO (point-in-time sweep) ·
-**Status:** ACTIVE (findings → Epic 045)
+**Status:** ACTIVE (findings → Epic 046)
 
 > Companion to `ux-review-conditions-2026-07.md` (the 2026-07-12 screen review).
 > That review is ~40% shipped; this sweep verifies against **current code**, not
@@ -246,7 +246,7 @@ only at `waterMarkerLabel:100`.
    feeds `count ∈ {0,1,2}` and null sub-fields through every `_body`/warning
    branch and asserts no `(s)`, no `None`, no `str(dict)` reaches the wire.
 
-## 7. Batching → Epic 045
+## 7. Batching → Epic 046
 
 | Story | Lane | Fix surface | Size | Order |
 |---|---|---|---|---|

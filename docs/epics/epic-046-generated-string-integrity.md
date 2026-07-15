@@ -1,4 +1,4 @@
-# Epic 045 — Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty)
+# Epic 046 — Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty)
 
 **Status:** DEFINED
 **Phase:** 1 (personal-intelligence app; conditions + Detail surface)
