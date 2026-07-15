@@ -731,3 +731,61 @@ def test_search_query_over_max_length_is_422(client: Any) -> None:
 def test_search_k_out_of_bounds_is_422(client: Any) -> None:
     resp = client.post("/search", json={"query": "Old Rag", "k": 21})
     assert resp.status_code == 422
+
+
+def test_trail_card_happy_path_returns_feed_response_with_one_card(
+    client: Any, monkeypatch: Any
+) -> None:
+    # Epic 045 S3: GET /trail/{id}/card returns a FeedResponse with one verified card.
+    from orchestration.curator import GuardrailVerdict
+    from orchestration.engine import PlannedBatch, PlannedTrail
+    from orchestration.scout import Candidate
+
+    def _stub_plan_by_id(canonical_id: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        candidate = Candidate(
+            canonical_id="ct:osm:way_138445924",
+            name="Old Rag Loop",
+            trailhead_id="",
+            distance_m=0.0,
+        )
+        return PlannedBatch(
+            trails=[PlannedTrail(candidate, {}, {}, GuardrailVerdict(False))],
+        )
+
+    monkeypatch.setattr("orchestration.engine.plan_trail_by_id", _stub_plan_by_id)
+
+    resp = client.get("/trail/ct:osm:way_138445924/card")
+    assert resp.status_code == 200
+    payload = resp.json()
+
+    # Exactly the FeedResponse contract.
+    assert payload["query"] == ""
+    assert payload["card_count"] == 1
+    assert len(payload["cards"]) == 1
+    card = payload["cards"][0]
+    assert card["canonical_id"] == "ct:osm:way_138445924"
+    assert card["name"] == "Old Rag Loop"
+    assert payload["set_aside"] == []
+    assert payload["conditions_complete"] is True
+
+
+def test_trail_card_unknown_id_returns_empty_feed_never_404(client: Any, monkeypatch: Any) -> None:
+    # Epic 045 S3.4: unknown id returns an honest-empty FeedResponse, never 404.
+    from orchestration.engine import PlannedBatch
+
+    def _stub_empty(canonical_id: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        return PlannedBatch(trails=[])
+
+    monkeypatch.setattr("orchestration.engine.plan_trail_by_id", _stub_empty)
+
+    resp = client.get("/trail/ct:osm:way_unknown_9999/card")
+    assert resp.status_code == 200  # Never 404, never an error
+    payload = resp.json()
+    assert payload["cards"] == []
+    assert payload["card_count"] == 0
+
+
+def test_trail_card_invalid_id_format_is_422(client: Any) -> None:
+    # The canonical_id pattern validation is enforced at the path layer.
+    resp = client.get("/trail/invalid-format/card")
+    assert resp.status_code == 422

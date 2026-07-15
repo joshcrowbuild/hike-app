@@ -250,6 +250,30 @@ def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[st
     return cypher, params
 
 
+def candidate_trail_by_id(canonical_id: str) -> tuple[str, dict[str, Any]]:
+    """Scout candidate generation for trail-by-id card fetch (Epic 045 S1): exact
+    match on `CanonicalTrail.canonical_id`. World nodes only -> inherently public,
+    no owner scope (rule #4: an unowned corpus read needs no viewer scope).
+
+    Returns the same candidate projection as `candidate_trails_by_name` and
+    `candidate_trails_near` so it feeds the same `scout._row_to_candidate` — zero
+    rows for an unknown id (honest-empty, never an error). No ranking needed; a
+    direct id match is unambiguous."""
+    cypher = (
+        "MATCH (t:CanonicalTrail {canonical_id: $id})\n"
+        "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
+        "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
+        "       t.point AS trailhead_point,\n"
+        "       t.is_loop AS is_loop, t.length_mi AS length_mi, t.way_type AS way_type,\n"
+        "       t.outside_boundary AS outside_boundary,\n"
+        "       null AS trailhead_id,\n"
+        "       null AS distance_m,\n"
+        "       a.area_id AS area_id"
+    )
+    params: dict[str, Any] = {"id": canonical_id}
+    return cypher, params
+
+
 def candidate_trails_near_direct(
     lat: float, lon: float, radius_m: float, k: int = 10
 ) -> tuple[str, dict[str, Any]]:

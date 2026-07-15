@@ -923,6 +923,78 @@ def search(
     return response
 
 
+@app.get("/trail/{canonical_id}/card", response_model=FeedResponse)
+@limiter.limit(plan_limit)
+def trail_card(
+    request: Request,  # required by slowapi for per-IP keying
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
+) -> FeedResponse:
+    """Verified trail card by id (Epic 045 / S3): resolve a trail directly by its
+    canonical id, returning a `FeedResponse` with one verified card carrying sourced+
+    timestamped live conditions — same schema as `/plan` and `/search`, so the
+    frontend reuses its existing feed→card mapping unchanged. Unknown id → an honest-
+    empty `FeedResponse` (never a 404, never an error). Anonymous-only; a trail's
+    conditions are viewer-independent. Same rate-limit class as `/plan`/`/search`."""
+    if _settings is None or _graph_client is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    started = time.perf_counter()
+    try:
+        runtime = build_runtime(_settings, _graph_client, "anonymous")
+        from orchestration.engine import plan_trail_by_id
+
+        cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
+        batch = plan_trail_by_id(
+            canonical_id,
+            runtime.session,
+            runtime.probes,
+            cache=runtime.cache,
+            probe_max_workers=runtime.probe_max_workers,
+        )
+        feed = Feed(
+            query="",
+            cards=[feed_card(p) for p in batch.trails],
+            notices=batch.notices,
+            set_aside=batch.set_aside,
+        )
+        session = _graph_client.scoped_session("anonymous")
+        maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
+        response = _feed_response(feed, maps_by_cid, conditions_complete=True)
+        cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "trail_card failed cid=%s error_class=%s",
+            correlation_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
+    try:
+        line_texts = [line.text for card in feed.cards for line in card.lines]
+        est_tokens = estimate_tokens(canonical_id, *line_texts)
+        PlanMetrics(
+            viewer_tag=scrub_viewer("anonymous"),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(feed.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            est_tokens=est_tokens,
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
+            feed_cache_hit=False,
+        ).emit()
+    except Exception:
+        logger.exception("trail_card observability emit failed (response already sent)")
+    return response
+
+
 def _point_latlon(point: Any) -> tuple[float, float] | None:
     """Extract `(lat, lon)` from a graph point — a neo4j WGS84 Point (`.latitude`/
     `.longitude`), a dict, or `None`. Returns `None` when there's no usable point."""

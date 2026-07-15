@@ -64,7 +64,7 @@ from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
-from orchestration.scout import Candidate, scout, scout_by_name
+from orchestration.scout import Candidate, scout, scout_by_id, scout_by_name
 from orchestration.verifier import DEFAULT_MAX_WORKERS, verify_batch
 
 log = logging.getLogger(__name__)
@@ -605,6 +605,62 @@ def search_trails(
             "search_trails: no candidate in a %d-result batch has a resolvable point; "
             "skipping live verification rather than probing a fabricated location",
             len(candidates),
+        )
+        fallback_lat, fallback_lon = 0.0, 0.0
+        verify = False
+    else:
+        fallback_lat, fallback_lon = fallback
+
+    return _plan_from_candidates(
+        candidates,
+        session,
+        probes,
+        fallback_lat=fallback_lat,
+        fallback_lon=fallback_lon,
+        cache=cache,
+        probe_max_workers=probe_max_workers,
+        verify=verify,
+    )
+
+
+def plan_trail_by_id(
+    canonical_id: str,
+    session: ScopedSession,
+    probes: dict[ConditionKind, list[LiveAdapter]],
+    *,
+    cache: TTLCache | None = None,
+    probe_max_workers: int = DEFAULT_MAX_WORKERS,
+    verify: bool = True,
+) -> PlannedBatch:
+    """Trail-by-id card fetch (Epic 045 / S2): `scout_by_id` -> the same verify/
+    guardrail/corroboration tail `search_trails` uses, so a trail fetched by id flows
+    through the identical Scout -> Verifier -> Curator pipeline as `/plan` and `/search`
+    — the card carries sourced+timestamped conditions and confidence (rule #1), never a
+    raw graph dump. Unknown id -> an honest empty `PlannedBatch` (never an error; the
+    API layer's `/trail/{id}/card` renders that as an empty `FeedResponse`).
+
+    Like `search_trails`, there is no query origin, so the fallback for a point-less
+    candidate (never observed in practice) is the candidate's point if it has one, or
+    zero-verify (skip live probes, `verify=False`) if even the single result has no point."""
+    candidates = scout_by_id(canonical_id, session)
+    if not candidates:
+        return PlannedBatch(trails=[])
+
+    # A by-id fetch returns 0 or 1 trail, so there is at most one candidate to extract
+    # a fallback coordinate from.
+    fallback = next(
+        (
+            coord
+            for c in candidates
+            if (coord := (_latlon(c.point) or _latlon(c.trailhead_point))) is not None
+        ),
+        None,
+    )
+    if fallback is None:
+        log.warning(
+            "plan_trail_by_id: candidate %s has no resolvable point; "
+            "skipping live verification rather than probing a fabricated location",
+            canonical_id,
         )
         fallback_lat, fallback_lon = 0.0, 0.0
         verify = False
