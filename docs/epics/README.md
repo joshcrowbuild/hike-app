@@ -56,9 +56,10 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | DEFINED | C | Epic 043 (S5 write path) |
 
-| [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DEFINED | C | Epic 014 · 011 · auth brief (§47) |
+| [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DONE ✅ | C | Epic 014 · 011 · auth brief (§47) |
 
 | [044](epic-044-history-import.md) | History import (B003) — Garmin/GPX archive → Episodes + `been_on` producer; map-match with free-floating fallback | DEFINED | C | Epic 043 · 031 · ToS/deletion (pulled-forward Phase-B item) |
+| [045](epic-045-trail-by-id-card.md) | Deep-link a trail by id — verified card via `GET /trail/{id}/card` (closes "not in your current set") | DEFINED | C | Epic 038 (`_plan_from_candidates`) |
 
 | [045](epic-045-generated-string-integrity.md) | Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty) | DEFINED | 1 | Epic 018 · 040 · 041 |
 

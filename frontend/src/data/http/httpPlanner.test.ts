@@ -4,7 +4,7 @@ import { ANON_SCOPE, type ScopeContext, type FeedResponse, type OutcomeResponse 
 import type { PlanInput } from '../source'
 import type { Coords, TuningState } from '../../types'
 
-const JOSH: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+const JOSH: ScopeContext = { viewerId: 'josh-sub', grantedIds: [], accessToken: 'jwt-token-abc' }
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -37,12 +37,10 @@ function headersOf(call: unknown): Record<string, string> {
   return init.headers as Record<string, string>
 }
 
-describe('HttpPlannerClient auth headers', () => {
-  const SECRET = 'dev-secret-value'
+describe('HttpPlannerClient auth headers (Epic 043 managed auth)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    vi.stubEnv('VITE_DEV_VIEWER_SECRET', SECRET)
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -55,38 +53,39 @@ describe('HttpPlannerClient auth headers', () => {
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
   }
 
-  it('sends the dev-viewer secret on /plan for a non-anonymous viewer', async () => {
+  it('sends the Supabase Bearer token on /plan for a signed-in viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
     await client().plan(PLAN_INPUT, JOSH)
-    expect(headersOf(fetchMock.mock.calls[0])['X-Dev-Viewer-Secret']).toBe(SECRET)
+    expect(headersOf(fetchMock.mock.calls[0]).Authorization).toBe('Bearer jwt-token-abc')
   })
 
-  it('omits the secret on /plan for an anonymous viewer', async () => {
+  it('never sends the retired dev-viewer secret', async () => {
+    // The whole VITE_DEV_VIEWER_SECRET path is gone — a signed-in call must carry
+    // only the Bearer token, never the old shared secret (S3.2 regression).
+    vi.stubEnv('VITE_DEV_VIEWER_SECRET', 'stale-secret')
+    fetchMock.mockReturnValue(ok(FEED))
+    await client().plan(PLAN_INPUT, JOSH)
+    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+  })
+
+  it('sends no credentials on /plan for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
     await client().plan(PLAN_INPUT, ANON_SCOPE)
-    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+    const headers = headersOf(fetchMock.mock.calls[0])
+    expect(headers).not.toHaveProperty('Authorization')
+    expect(headers).not.toHaveProperty('X-Dev-Viewer-Secret')
   })
 
-  it('sends the dev-viewer secret on /outcome for a non-anonymous viewer', async () => {
+  it('sends the Bearer token on /outcome for a signed-in viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await client().recordOutcome(
-      'e1',
-      { overall: 2, skipped: false },
-      [],
-      JOSH,
-    )
-    expect(headersOf(fetchMock.mock.calls[0])['X-Dev-Viewer-Secret']).toBe(SECRET)
+    await client().recordOutcome('e1', { overall: 2, skipped: false }, [], JOSH)
+    expect(headersOf(fetchMock.mock.calls[0]).Authorization).toBe('Bearer jwt-token-abc')
   })
 
-  it('omits the secret on /outcome for an anonymous viewer', async () => {
+  it('sends no Authorization on /outcome for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await client().recordOutcome(
-      'e1',
-      { overall: 2, skipped: false },
-      [],
-      ANON_SCOPE,
-    )
-    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+    await client().recordOutcome('e1', { overall: 2, skipped: false }, [], ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('Authorization')
   })
 })
 
@@ -447,7 +446,7 @@ describe('HttpPlannerClient per-kind condition states (Epic 018 S4f / CDP-02)', 
   })
 })
 
-describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current set" fix)', () => {
+describe('HttpPlannerClient getCard by id (Epic 045 — verified card for any trail)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
   beforeEach(() => {
     fetchMock = vi.fn()
@@ -458,23 +457,64 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
   const ok = (json: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
 
-  function coordsOf(call: unknown): { lat: number; lon: number } {
-    const init = (call as [string, RequestInit])[1]
-    const body = JSON.parse(init.body as string) as { lat: number; lon: number }
-    return { lat: body.lat, lon: body.lon }
+  function urlOf(call: unknown): string {
+    return (call as [string, RequestInit])[0]
   }
 
-  it('refetches with the CALLER-SUPPLIED tuning, not a rebuilt default — a non-default origin still resolves', async () => {
-    const nagsHead: TuningState = { ...TUNING, origin: 'nagsHead' }
+  it('GETs /trail/{id}/card and maps the returned card (Epic 045 S4)', async () => {
     const feed: FeedResponse = {
       query: '',
       card_count: 1,
       notices: [],
       cards: [
         {
-          canonical_id: 'jockeys-ridge',
-          name: "Jockey's Ridge",
-          distance_mi: 1,
+          canonical_id: 'ct:osm:way_138445924',
+          name: 'Old Rag Loop',
+          distance_mi: 3.7,
+          lines: [{ text: 'Clear skies', source: 'NWS', confidence_level: 'stated', sources: ['NWS'] }],
+          warnings: [],
+          unavailable: [],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const card = await client().getCard('ct:osm:way_138445924', ANON_SCOPE, TUNING)
+
+    // Calls /trail/{id}/card, not /plan
+    expect(urlOf(fetchMock.mock.calls[0])).toContain('/trail/ct%3Aosm%3Away_138445924/card')
+    // Maps the card correctly through the shared mapFeed logic
+    expect(card?.id).toBe('ct:osm:way_138445924')
+    expect(card?.name).toBe('Old Rag Loop')
+    expect(card?.conditionLines[0]).toMatchObject({
+      text: 'Clear skies',
+      provenance: 'live',
+      sources: ['NWS'],
+    })
+  })
+
+  it('returns null for a genuine absence (unknown id)', async () => {
+    fetchMock.mockReturnValue(ok({ query: '', card_count: 0, notices: [], cards: [] }))
+    const card = await client().getCard('ct:osm:way_unknown', ANON_SCOPE, TUNING)
+    expect(card).toBeNull()
+  })
+
+  it('throws — never a false "not found" — when the request itself fails (R1: stays retryable)', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 503 } as Response))
+    await expect(
+      client().getCard('ct:osm:way_138445924', ANON_SCOPE, TUNING),
+    ).rejects.toThrow()
+  })
+
+  it('respects tuning for frame context (e.g. origin for drive time)', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'ct:osm:way_123',
+          name: 'Test Trail',
+          distance_mi: null,
           lines: [],
           warnings: [],
           unavailable: [],
@@ -482,31 +522,13 @@ describe('HttpPlannerClient getCard fallback refetch (OBX "not in your current s
       ],
     }
     fetchMock.mockReturnValue(ok(feed))
-    const card = await client().getCard('jockeys-ridge', ANON_SCOPE, nagsHead)
+    const tuning: TuningState = { ...TUNING, origin: 'nagsHead' }
+    await client().getCard('ct:osm:way_123', ANON_SCOPE, tuning)
 
-    expect(card?.id).toBe('jockeys-ridge')
-    // Nags Head's coordinates, not Front Royal's default — proves the fallback
-    // never rebuilds a fresh default tuning when a caller tuning is supplied.
-    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 35.957, lon: -75.624 })
-  })
-
-  it('falls back to the Front Royal default only when no tuning at all is supplied (true cold link)', async () => {
-    fetchMock.mockReturnValue(ok(FEED))
-    await client().getCard('some-id', ANON_SCOPE)
-    expect(coordsOf(fetchMock.mock.calls[0])).toEqual({ lat: 38.918, lon: -78.194 })
-  })
-
-  it('returns null for a genuine absence (id not in the refetched set)', async () => {
-    fetchMock.mockReturnValue(ok(FEED))
-    const card = await client().getCard('no-such-trail', ANON_SCOPE, TUNING)
-    expect(card).toBeNull()
-  })
-
-  it('throws — never a false "not found" — when the refetch itself fails (R1: stays retryable)', async () => {
-    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 503 } as Response))
-    await expect(
-      client().getCard('some-id', ANON_SCOPE, TUNING),
-    ).rejects.toThrow()
+    // The call is to /trail/{id}/card, which is frame-agnostic (no lat/lon sent).
+    // But the response mapping preserves enrichment (drive minutes come from elsewhere).
+    const url = urlOf(fetchMock.mock.calls[0])
+    expect(url).toContain('/trail/ct%3Aosm%3Away_123/card')
   })
 })
 
@@ -692,13 +714,19 @@ describe('HttpPlannerClient getCard stays single-pass (Epic 040 self-review)', (
     vi.unstubAllGlobals()
   })
 
-  it('the deep-link refetch never asks for phase:"cards" — Detail must get verified conditions', async () => {
+  it('resolves via GET /trail/{id}/card (verified conditions), never a phased /plan frame', async () => {
     fetchMock.mockReturnValue(
       Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
     )
     await client().getCard('ct:a', ANON_SCOPE, TUNING)
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
-    expect(body.phase).toBeUndefined()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    // getCard now hits the by-id card endpoint (which always returns conditions_
+    // complete), not a phased /plan — so Detail can never resolve a phase-1 frame.
+    // A bodyless GET means there is no `phase` to send at all (the old invariant,
+    // now held by construction).
+    expect(url).toContain('/trail/ct%3Aa/card')
+    expect(url).not.toContain('/plan')
+    expect(init?.body).toBeUndefined()
   })
 })
 
@@ -764,13 +792,11 @@ describe('HttpPlannerClient search (Epic 038/B001 build lane — the Home Omnibo
     expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ query: 'rivanna', k: 5 })
   })
 
-  it('sends the dev-viewer secret for a non-anonymous viewer, same as /plan', async () => {
-    vi.stubEnv('VITE_DEV_VIEWER_SECRET', 'dev-secret-value')
+  it('sends the Bearer token for a signed-in viewer, same as /plan', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await client().search('old rag', { viewerId: 'josh', grantedIds: [] })
+    await client().search('old rag', { viewerId: 'josh-sub', grantedIds: [], accessToken: 'jwt-xyz' })
     const init = (fetchMock.mock.calls[0] as [string, RequestInit])[1]
-    expect((init.headers as Record<string, string>)['X-Dev-Viewer-Secret']).toBe('dev-secret-value')
-    vi.unstubAllEnvs()
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-xyz')
   })
 
   it('returns an honest empty FeedVM (no cards) rather than an error when the backend returns zero matches', async () => {

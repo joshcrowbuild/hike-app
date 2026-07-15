@@ -21,6 +21,13 @@ export type ConfidenceLevel = 'stated' | 'hedged' | 'flagged'
 export interface ScopeContext {
   viewerId: string
   grantedIds: string[]
+  /**
+   * The Supabase access token for a signed-in viewer (Epic 043). The HTTP planner
+   * sends it as `Authorization: Bearer <token>` on non-anonymous calls; the backend
+   * verifies it and derives the authoritative viewer_id from its `sub`. Absent for
+   * an anonymous scope — anonymous browsing carries no credentials.
+   */
+  accessToken?: string
 }
 
 export const ANON_SCOPE: ScopeContext = { viewerId: 'anonymous', grantedIds: [] }

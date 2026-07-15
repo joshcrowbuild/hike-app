@@ -137,6 +137,18 @@ def test_owner_scope_clause() -> None:
     assert clause == "(x.owner_id = $viewer_id OR x.owner_id IN $granted_ids)"
 
 
+def test_ensure_person_merges_on_member_id_and_passes_write_guard() -> None:
+    """Epic 043 S5: `ensure_person` MERGEs the Person by its identity key
+    (member_id = $viewer_id), born viewer-keyed. Person is unowned (not in
+    OWNED_LABELS), so it passes the owned-write guard untouched — a caller can only
+    ever create their OWN Person."""
+    cypher, params = queries.ensure_person("2026-07-14T00:00:00+00:00")
+    assert "MERGE (p:Person {member_id: $viewer_id})" in cypher
+    assert "ON CREATE SET p.created_at = $now" in cypher
+    assert params == {"now": "2026-07-14T00:00:00+00:00"}
+    queries.assert_scoped_write(cypher)  # must not raise (unowned identity node)
+
+
 # ── S3 — the write builders (the single author of owned-node write Cypher) ────
 #
 # Each entry: (label, (cypher, params)). The list IS the coverage surface the

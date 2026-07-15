@@ -531,10 +531,62 @@ def test_plan_defaults_to_anonymous_viewer(client: Any) -> None:
     assert resp.status_code == 200
 
 
-def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        app_mod, "_settings", Settings.from_env({"ADVENTURE_DEV_VIEWER_SECRET": "s3cret"})
+def test_s2_ac1_anonymous_plan_200_zero_credentials(client: Any, monkeypatch: Any) -> None:
+    """Epic 043 S2 DoD regression: anonymous /plan returns 200 with ZERO credentials —
+    no Authorization header, no dev secret, no managed auth wired. Anonymous browsing
+    of the world stays a first-class, un-gated product no matter what auth is added."""
+    monkeypatch.setattr(app_mod, "_settings", Settings.from_env({}))
+    monkeypatch.setattr(app_mod, "_jwt_verifier", None)  # managed auth not configured
+    resp = client.post("/plan", json={**_PLAN_BODY, "viewer_id": "anonymous"})
+    assert resp.status_code == 200
+
+
+def test_s1_plan_with_valid_bearer_token_returns_200(client: Any, monkeypatch: Any) -> None:
+    """Epic 043 S1: a valid Supabase (ES256) token → the token's sub becomes the
+    viewer and the request proceeds to a 200 through the same stubbed engine."""
+    import time as _time
+
+    import jwt as _jwt
+    from cryptography.hazmat.primitives.asymmetric import ec as _ec
+
+    from api.auth import JWTVerifier
+
+    priv = _ec.generate_private_key(_ec.SECP256R1())
+    jwk = _jwt.algorithms.get_default_algorithms()["ES256"].to_jwk(priv.public_key(), as_dict=True)
+    jwk.update({"kid": "k1", "alg": "ES256", "use": "sig"})
+    token = _jwt.encode(
+        {"sub": "sub-uuid", "aud": "authenticated", "exp": int(_time.time()) + 60},
+        priv,
+        algorithm="ES256",
+        headers={"kid": "k1"},
     )
+    monkeypatch.setattr(app_mod, "_settings", Settings.from_env({}))
+    monkeypatch.setattr(
+        app_mod,
+        "_jwt_verifier",
+        JWTVerifier(
+            "https://x/jwks", audience="authenticated", http_get=lambda _u: {"keys": [jwk]}
+        ),
+    )
+    resp = client.post(
+        "/plan",
+        json={**_PLAN_BODY, "viewer_id": "anonymous"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+
+def test_plan_authenticated_viewer_with_dev_secret(client: Any, monkeypatch: Any) -> None:
+    # Epic 043 S3: the dev-secret path is now HARD-GATED — honored only when the gate
+    # is explicitly enabled (a local-dev escape hatch, off in production).
+    monkeypatch.setattr(
+        app_mod,
+        "_settings",
+        Settings.from_env(
+            {"ADVENTURE_DEV_VIEWER_SECRET": "s3cret", "ADVENTURE_ALLOW_DEV_VIEWER_SECRET": "1"}
+        ),
+    )
+    monkeypatch.setattr(app_mod, "_jwt_verifier", None)
     # A provided viewer_id is honored only with the configured secret…
     ok = client.post(
         "/plan",
@@ -683,4 +735,65 @@ def test_search_query_over_max_length_is_422(client: Any) -> None:
 
 def test_search_k_out_of_bounds_is_422(client: Any) -> None:
     resp = client.post("/search", json={"query": "Old Rag", "k": 21})
+    assert resp.status_code == 422
+
+
+def test_trail_card_happy_path_returns_feed_response_with_one_card(
+    client: Any, monkeypatch: Any
+) -> None:
+    # Epic 045 S3: GET /trail/{id}/card returns a FeedResponse with one verified card.
+    from orchestration.curator import GuardrailVerdict
+    from orchestration.engine import PlannedBatch, PlannedTrail
+    from orchestration.scout import Candidate
+
+    def _stub_plan_by_id(canonical_id: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        candidate = Candidate(
+            canonical_id="ct:osm:way_138445924",
+            name="Old Rag Loop",
+            trailhead_id="",
+            distance_m=0.0,
+        )
+        return PlannedBatch(
+            trails=[PlannedTrail(candidate, {}, {}, GuardrailVerdict(False))],
+        )
+
+    monkeypatch.setattr("orchestration.engine.plan_trail_by_id", _stub_plan_by_id)
+
+    resp = client.get("/trail/ct:osm:way_138445924/card")
+    assert resp.status_code == 200
+    payload = resp.json()
+
+    # Exactly the FeedResponse contract.
+    assert payload["query"] == ""
+    assert payload["card_count"] == 1
+    assert len(payload["cards"]) == 1
+    card = payload["cards"][0]
+    assert card["canonical_id"] == "ct:osm:way_138445924"
+    assert card["name"] == "Old Rag Loop"
+    assert payload["set_aside"] == []
+    assert payload["conditions_complete"] is True
+
+
+def test_trail_card_unknown_id_returns_empty_feed_never_404(client: Any, monkeypatch: Any) -> None:
+    # Epic 045 S3.4: unknown id returns an honest-empty FeedResponse, never 404.
+    from orchestration.engine import PlannedBatch
+
+    def _stub_empty(canonical_id: str, session: Any, probes: Any, **kwargs: Any) -> Any:
+        return PlannedBatch(trails=[])
+
+    monkeypatch.setattr("orchestration.engine.plan_trail_by_id", _stub_empty)
+
+    resp = client.get("/trail/ct:osm:way_unknown_9999/card")
+    assert resp.status_code == 200  # Never 404, never an error
+    payload = resp.json()
+    assert payload["cards"] == []
+    assert payload["card_count"] == 0
+
+
+def test_trail_card_overlong_id_is_422(client: Any) -> None:
+    # CANONICAL_ID_PATTERN bounds the id to 1-200 chars at the path layer, so a
+    # pattern-violating id is rejected with 422 before the handler runs (no session
+    # needed). A valid-but-unknown id is NOT a format error — that path returns an
+    # honest-empty FeedResponse (see test_trail_card_unknown_id_returns_empty_feed).
+    resp = client.get("/trail/" + "a" * 201 + "/card")
     assert resp.status_code == 422

@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 
+from api.auth import AuthError, JWTVerifier
 from api.feed_warmer import FeedWarmer
 from api.gpx import build_gpx
 from api.observability import (
@@ -53,6 +54,8 @@ from api.schemas import (
     ConditionUnavailableResponse,
     ElevationProfile,
     ElevationSample,
+    EpisodeCreateBody,
+    EpisodeCreateResponse,
     FeedCardResponse,
     FeedLineResponse,
     FeedResponse,
@@ -116,6 +119,10 @@ class SchemaFormatError(RuntimeError):
 _settings: Settings | None = None
 _graph_client: GraphClient | None = None
 _feed_warmer: FeedWarmer | None = None
+# Managed-auth JWT verifier (Epic 043 S1), built at startup from Settings. Stays
+# None when no JWKS URL is configured — the fail-closed anonymous-only default, so
+# production keeps working with zero new env.
+_jwt_verifier: JWTVerifier | None = None
 
 
 class _WarmupState:
@@ -230,13 +237,14 @@ def _start_warmup(settings: Settings, graph_client: GraphClient) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
-    global _settings, _graph_client, _feed_warmer
+    global _settings, _graph_client, _feed_warmer, _jwt_verifier
     # Coherent process logging (Phase B): without this, the API process has no
     # logging config at all and INFO lines (the /plan cost metrics, warm-up
     # completion) never reach the deploy's log stream — only WARNING+ escapes
     # via Python's last-resort handler. Level: ADVENTURE_LOG_LEVEL, default INFO.
     setup_logging()
     _settings = Settings.from_env()
+    _jwt_verifier = _build_verifier(_settings)
     _graph_client = GraphClient(_settings.neo4j_uri, _settings.neo4j_user, _settings.neo4j_password)
     _start_warmup(_settings, _graph_client)
     # Default-frame feed warmer (Epic 039 B5): parks behind the warm-up readiness
@@ -295,28 +303,80 @@ def _install_cors(application: FastAPI, settings: Settings) -> None:
 _install_cors(app, Settings.from_env())
 
 
-def _authorize_viewer(viewer_id: str, dev_secret: str | None) -> None:
-    """Edge auth guard (Epic 014 S3 / Rule #5): a viewer_id is honored only from an
-    authenticated caller. Until the Stage-8 auth system exists, the open anonymous
-    world is the only unauthenticated path; any other identity must present the
-    configured shared dev secret (X-Dev-Viewer-Secret).
+def _build_verifier(settings: Settings) -> JWTVerifier | None:
+    """Build the managed-auth JWT verifier from settings, or None when no JWKS URL
+    is configured (the fail-closed anonymous-only default — Epic 043 S1)."""
+    if not settings.supabase_jwks_url:
+        return None
+    return JWTVerifier(settings.supabase_jwks_url, issuer=settings.supabase_issuer)
 
-    Fails **closed**: if the dev secret is absent from config, every non-anonymous
-    request is rejected regardless of any header (a misconfigured deploy must not
-    silently accept a forged identity). Raises HTTP 403 on rejection.
-    """
-    if viewer_id == "anonymous":
-        return
-    configured = _settings.dev_viewer_secret if _settings else None
+
+def _bearer_token(authorization: str | None) -> str | None:
+    """Extract the raw token from an `Authorization: Bearer <token>` header, or
+    None when absent/malformed. Scheme match is case-insensitive per RFC 7235."""
+    if not authorization:
+        return None
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+        return None
+    return parts[1].strip()
+
+
+def _dev_secret_ok(dev_secret: str | None) -> bool:
+    """Constant-time check of the retired dev-secret path (Epic 043 S3 hard gate):
+    only honored when `allow_dev_viewer_secret` is explicitly enabled AND a secret
+    is configured AND the header matches. Off in production, so a leaked secret
+    alone can never forge an identity against the hosted deploy."""
+    if _settings is None or not _settings.allow_dev_viewer_secret:
+        return False
+    configured = _settings.dev_viewer_secret
+    if not configured or not dev_secret:
+        return False
     # Compare as bytes: secrets.compare_digest raises TypeError on non-ASCII str, so a
-    # non-ASCII header would otherwise 500 instead of a clean 403 (still fail-closed,
-    # but bytes keeps it a deliberate 403 and stays constant-time).
-    if (
-        not configured
-        or not dev_secret
-        or not secrets.compare_digest(dev_secret.encode("utf-8"), configured.encode("utf-8"))
-    ):
-        raise HTTPException(status_code=403, detail="viewer_id requires authentication")
+    # non-ASCII header would otherwise 500 instead of a clean reject (constant-time).
+    return secrets.compare_digest(dev_secret.encode("utf-8"), configured.encode("utf-8"))
+
+
+def _resolve_viewer(
+    request_viewer_id: str, authorization: str | None, dev_secret: str | None
+) -> str:
+    """Resolve the AUTHORITATIVE viewer_id for a request (Epic 043 S1 / Rule #4/#5).
+
+    The identity a scoped query trusts comes from a verified token, never a
+    client-supplied `viewer_id`:
+
+      1. A valid `Authorization: Bearer <JWT>` → the token's `sub` is the
+         viewer_id, overriding whatever `request_viewer_id` claimed (a signed-in
+         caller can only ever act as themselves). AC-1.1.
+      2. No token and `request_viewer_id == "anonymous"` → anonymous (the open
+         world; no credentials needed). AC-2.1/AC-2.2.
+      3. A non-anonymous `request_viewer_id` with no valid token → the retired
+         dev-secret path IF hard-gated on (local dev only); otherwise 403.
+
+    Fails **closed**: a present-but-invalid Bearer token (bad signature, expired,
+    unknown key, no `sub`) is a 403, never a silent downgrade to anonymous — a
+    forged token must not browse as the open world either. AC-1.2/AC-1.3.
+    """
+    token = _bearer_token(authorization)
+    if token is not None:
+        if _jwt_verifier is None:
+            # A token was presented but managed auth isn't wired — fail closed
+            # rather than ignore it and fall through to a weaker path.
+            raise HTTPException(status_code=403, detail="managed auth is not configured")
+        try:
+            return _jwt_verifier.verify(token)
+        except AuthError as exc:
+            # Never log the token or its contents (Rule #5/#10): only that it failed.
+            logger.info("bearer token rejected: %s", exc)
+            raise HTTPException(status_code=403, detail="invalid or expired token") from exc
+
+    if request_viewer_id == "anonymous":
+        return "anonymous"
+
+    if _dev_secret_ok(dev_secret):
+        return request_viewer_id
+
+    raise HTTPException(status_code=403, detail="viewer_id requires authentication")
 
 
 def _condition_fields(card: FeedCard) -> dict[str, Any]:
@@ -604,17 +664,20 @@ def regions(request: Request) -> RegionsResponse:
 def plan(
     request: Request,  # required by slowapi for per-IP keying (also gives us the edge)
     body: PlanRequest,
+    authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> FeedResponse:
     if _settings is None or _graph_client is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(body.viewer_id, x_dev_viewer_secret)
+    # The verified identity, not the client-claimed body.viewer_id (Epic 043 S1):
+    # a signed-in caller's token `sub` is authoritative; anonymous stays open.
+    viewer_id = _resolve_viewer(body.viewer_id, authorization, x_dev_viewer_secret)
     # Observability (Phase B): time the fan-out and snapshot the live-probe cache so we can
     # see latency + how much third-party quota the call spent. Never logs viewer_id in the
     # clear (Rule #5).
     started = time.perf_counter()
     try:
-        runtime = build_runtime(_settings, _graph_client, body.viewer_id)
+        runtime = build_runtime(_settings, _graph_client, viewer_id)
 
         cache_before = cache_size(runtime.cache)
         stats_before = probe_stats_snapshot(runtime.cache)
@@ -631,7 +694,7 @@ def plan(
                 (body.lat, body.lon),
                 runtime,
                 k=body.k,
-                viewer_id=body.viewer_id,
+                viewer_id=viewer_id,
             )
         else:
             from orchestration.engine import plan as engine_plan
@@ -642,7 +705,7 @@ def plan(
                 (body.lat, body.lon),
                 runtime,
                 k=body.k,
-                viewer_id=body.viewer_id,  # AC-5: forward viewer for context assembly
+                viewer_id=viewer_id,  # AC-5: forward viewer for context assembly
             )
         # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
         # request-local on Runtime (set by plan()), never a before/after delta on
@@ -651,7 +714,7 @@ def plan(
         feed_cache_hit = getattr(runtime, "feed_cache_hit", False)
         # Attach per-card maps/terrain fields (Epic 016 S1 / Epic 017 S4). World data
         # → a plain scoped read; degrades to map-free cards on any failure (Rule #1).
-        session = _graph_client.scoped_session(body.viewer_id)
+        session = _graph_client.scoped_session(viewer_id)
         maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
         response = _feed_response(feed, maps_by_cid, conditions_complete=conditions_complete)
         cache_after = cache_size(runtime.cache)
@@ -671,7 +734,7 @@ def plan(
             correlation_id,
             type(exc).__name__,
             body.query,
-            scrub_viewer(body.viewer_id),
+            scrub_viewer(viewer_id),
         )
         raise HTTPException(
             status_code=500,
@@ -691,7 +754,7 @@ def plan(
             line_texts = [line.text for card in feed.cards for line in card.lines]
             est_tokens = estimate_tokens(body.query, *line_texts)
         PlanMetrics(
-            viewer_tag=scrub_viewer(body.viewer_id),
+            viewer_tag=scrub_viewer(viewer_id),
             latency_ms=(time.perf_counter() - started) * 1000,
             card_count=len(feed.cards),
             cache_entries_before=cache_before,
@@ -711,6 +774,7 @@ def plan(
 def plan_conditions(
     request: Request,  # required by slowapi for per-IP keying
     body: PlanConditionsRequest,
+    authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> PlanConditionsResponse:
     """The Epic 040 phase-2 patch call: the verified live overlay for exactly the
@@ -721,10 +785,10 @@ def plan_conditions(
     call never ranks: zero LLM spend by construction."""
     if _settings is None or _graph_client is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(body.viewer_id, x_dev_viewer_secret)
+    viewer_id = _resolve_viewer(body.viewer_id, authorization, x_dev_viewer_secret)
     started = time.perf_counter()
     try:
-        runtime = build_runtime(_settings, _graph_client, body.viewer_id)
+        runtime = build_runtime(_settings, _graph_client, viewer_id)
         from orchestration.two_phase import plan_conditions as engine_plan_conditions
 
         cache_before = cache_size(runtime.cache)
@@ -735,7 +799,7 @@ def plan_conditions(
             runtime,
             body.canonical_ids,
             k=body.k,
-            viewer_id=body.viewer_id,
+            viewer_id=viewer_id,
         )
         response = PlanConditionsResponse(
             patches=[
@@ -756,7 +820,7 @@ def plan_conditions(
             correlation_id,
             type(exc).__name__,
             body.query,
-            scrub_viewer(body.viewer_id),
+            scrub_viewer(viewer_id),
         )
         raise HTTPException(
             status_code=500,
@@ -858,6 +922,78 @@ def search(
         ).emit()
     except Exception:
         logger.exception("search observability emit failed (response already sent)")
+    return response
+
+
+@app.get("/trail/{canonical_id}/card", response_model=FeedResponse)
+@limiter.limit(plan_limit)
+def trail_card(
+    request: Request,  # required by slowapi for per-IP keying
+    canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
+) -> FeedResponse:
+    """Verified trail card by id (Epic 045 / S3): resolve a trail directly by its
+    canonical id, returning a `FeedResponse` with one verified card carrying sourced+
+    timestamped live conditions — same schema as `/plan` and `/search`, so the
+    frontend reuses its existing feed→card mapping unchanged. Unknown id → an honest-
+    empty `FeedResponse` (never a 404, never an error). Anonymous-only; a trail's
+    conditions are viewer-independent. Same rate-limit class as `/plan`/`/search`."""
+    if _settings is None or _graph_client is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    started = time.perf_counter()
+    try:
+        runtime = build_runtime(_settings, _graph_client, "anonymous")
+        from orchestration.engine import plan_trail_by_id
+
+        cache_before = cache_size(runtime.cache)
+        stats_before = probe_stats_snapshot(runtime.cache)
+        batch = plan_trail_by_id(
+            canonical_id,
+            runtime.session,
+            runtime.probes,
+            cache=runtime.cache,
+            probe_max_workers=runtime.probe_max_workers,
+        )
+        feed = Feed(
+            query="",
+            cards=[feed_card(p) for p in batch.trails],
+            notices=batch.notices,
+            set_aside=batch.set_aside,
+        )
+        session = _graph_client.scoped_session("anonymous")
+        maps_by_cid = _fetch_maps_by_canonical(session, [c.canonical_id for c in feed.cards])
+        response = _feed_response(feed, maps_by_cid, conditions_complete=True)
+        cache_after = cache_size(runtime.cache)
+        stats_after = probe_stats_snapshot(runtime.cache)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "trail_card failed cid=%s error_class=%s",
+            correlation_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
+    try:
+        line_texts = [line.text for card in feed.cards for line in card.lines]
+        est_tokens = estimate_tokens(canonical_id, *line_texts)
+        PlanMetrics(
+            viewer_tag=scrub_viewer("anonymous"),
+            latency_ms=(time.perf_counter() - started) * 1000,
+            card_count=len(feed.cards),
+            cache_entries_before=cache_before,
+            cache_entries_after=cache_after,
+            est_tokens=est_tokens,
+            probe_stats_before=stats_before,
+            probe_stats_after=stats_after,
+            feed_cache_hit=False,
+        ).emit()
+    except Exception:
+        logger.exception("trail_card observability emit failed (response already sent)")
     return response
 
 
@@ -1207,6 +1343,7 @@ def trail_detail(
     request: Request,  # required by slowapi for per-IP keying
     canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
     viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
+    authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> TripDetailResponse:
     """Trip/detail: the assembled route geometry + trailhead + elevation profile for
@@ -1215,7 +1352,7 @@ def trail_detail(
     unknown; honest `null`s when geometry/elevation are absent (Rule #1)."""
     if _graph_client is None or _settings is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    viewer_id = _resolve_viewer(viewer_id, authorization, x_dev_viewer_secret)
     try:
         session = _graph_client.scoped_session(viewer_id)
         rows = session.run(trail_detail_query(canonical_id))
@@ -1261,6 +1398,7 @@ def trail_export_gpx(
     request: Request,  # required by slowapi for per-IP keying
     canonical_id: str = Path(pattern=CANONICAL_ID_PATTERN),
     viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
+    authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> Response:
     """GPX 1.1 download of a trail's WORLD/corpus route (Epic 028 / CoMaps §D4).
@@ -1277,7 +1415,7 @@ def trail_export_gpx(
     """
     if _graph_client is None or _settings is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    viewer_id = _resolve_viewer(viewer_id, authorization, x_dev_viewer_secret)
     try:
         session = _graph_client.scoped_session(viewer_id)
         rows = session.run(trail_detail_query(canonical_id))
@@ -1307,6 +1445,67 @@ def trail_export_gpx(
         media_type="application/gpx+xml",
         headers={"Content-Disposition": f'attachment; filename="{safe_slug}.gpx"'},
     )
+
+
+@app.post("/episode", response_model=EpisodeCreateResponse)
+@limiter.limit(outcome_limit)
+def create_episode(
+    request: Request,  # required by slowapi for per-IP keying
+    body: EpisodeCreateBody,
+    authorization: str | None = Header(default=None),
+    x_dev_viewer_secret: str | None = Header(default=None),
+) -> EpisodeCreateResponse:
+    """Create a manual planned/completed trip Episode (Epic 043 S5).
+
+    The first authenticated WRITE: the verified `sub` owns the Episode, wired
+    through the Epic-011 scoped-write seam (`queries.upsert_episode`, no new write
+    path — AC-5.1). Requires a signed-in identity: an anonymous or forged/expired
+    token is a 403 (AC-5.2), since a manual log is a personal-overlay write with no
+    anonymous meaning. This is the write path Epic 042's manual log rides on (AC-5.3).
+    """
+    if _graph_client is None or _settings is None:
+        raise HTTPException(status_code=503, detail="Service not ready")
+    # A creation write has no anonymous meaning: resolve the identity, then refuse
+    # anonymous explicitly (a valid token yields a real sub; anything else already
+    # 403s inside _resolve_viewer). AC-5.2.
+    viewer_id = _resolve_viewer("anonymous", authorization, x_dev_viewer_secret)
+    if viewer_id == "anonymous":
+        raise HTTPException(status_code=403, detail="sign-in required to log a trip")
+    try:
+        from orchestration.episode_create import ManualEpisodeRequest, create_manual_episode
+
+        req = ManualEpisodeRequest(
+            client_episode_id=body.client_episode_id,
+            canonical_id=body.canonical_id,
+            start_date=body.start_date,
+            distance_m=body.distance_m,
+            ascent_m=body.ascent_m,
+            descent_m=body.descent_m,
+            moving_min=body.moving_min,
+            duration_min=body.duration_min,
+        )
+        scoped = _graph_client.scoped_session(viewer_id)
+        result = create_manual_episode(viewer_id, req, scoped)
+        return EpisodeCreateResponse(
+            episode_id=result.episode_id,
+            canonical_id=result.canonical_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Never log the viewer in the clear (Rule #5): a correlation id only.
+        correlation_id = secrets.token_hex(4)
+        logger.exception(
+            "episode create failed cid=%s error_class=%s viewer=%s",
+            correlation_id,
+            type(exc).__name__,
+            scrub_viewer(viewer_id),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Internal error",
+            headers={"X-Correlation-Id": correlation_id},
+        ) from exc
 
 
 def _drain_queue_bg(queue, graph_client) -> None:
@@ -1342,8 +1541,10 @@ def record_outcome(
     # Episode ids share viewer_id's alphabet (they embed the owner id) — validate the
     # path param before it reaches a scoped query or a log line (2026-07-12 review).
     episode_id: str = Path(pattern=EPISODE_ID_PATTERN),
-    # Phase 1: query param; Stage 8 replaces with auth header.
+    # A signed-in caller's token `sub` is authoritative (Epic 043 S1); the query
+    # param stays only for the anonymous default and the hard-gated dev path.
     viewer_id: str = Query(default="anonymous", pattern=VIEWER_ID_PATTERN),
+    authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
 ) -> OutcomeResponse:
     """Record a post-hike outcome (rating + optional reflection).
@@ -1353,7 +1554,7 @@ def record_outcome(
     """
     if _graph_client is None or _settings is None:
         raise HTTPException(status_code=503, detail="Service not ready")
-    _authorize_viewer(viewer_id, x_dev_viewer_secret)
+    viewer_id = _resolve_viewer(viewer_id, authorization, x_dev_viewer_secret)
     try:
         from orchestration.belief_update import BeliefUpdateQueue
         from orchestration.outcome import OutcomeRequest, write_outcome

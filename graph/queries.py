@@ -250,6 +250,30 @@ def candidate_trails_by_name(query_text: str, k: int = 10) -> tuple[str, dict[st
     return cypher, params
 
 
+def candidate_trail_by_id(canonical_id: str) -> tuple[str, dict[str, Any]]:
+    """Scout candidate generation for trail-by-id card fetch (Epic 045 S1): exact
+    match on `CanonicalTrail.canonical_id`. World nodes only -> inherently public,
+    no owner scope (rule #4: an unowned corpus read needs no viewer scope).
+
+    Returns the same candidate projection as `candidate_trails_by_name` and
+    `candidate_trails_near` so it feeds the same `scout._row_to_candidate` — zero
+    rows for an unknown id (honest-empty, never an error). No ranking needed; a
+    direct id match is unambiguous."""
+    cypher = (
+        "MATCH (t:CanonicalTrail {canonical_id: $id})\n"
+        "OPTIONAL MATCH (a:Area)-[:CONTAINS]->(t)\n"
+        "RETURN t.canonical_id AS canonical_id, t.name AS name, t.point AS point,\n"
+        "       t.point AS trailhead_point,\n"
+        "       t.is_loop AS is_loop, t.length_mi AS length_mi, t.way_type AS way_type,\n"
+        "       t.outside_boundary AS outside_boundary,\n"
+        "       null AS trailhead_id,\n"
+        "       null AS distance_m,\n"
+        "       a.area_id AS area_id"
+    )
+    params: dict[str, Any] = {"id": canonical_id}
+    return cypher, params
+
+
 def candidate_trails_near_direct(
     lat: float, lon: float, radius_m: float, k: int = 10
 ) -> tuple[str, dict[str, Any]]:
@@ -481,6 +505,20 @@ def upsert_episode(
         "now": now,
     }
     return cypher, params
+
+
+def ensure_person(now: str) -> tuple[str, dict[str, Any]]:
+    """MERGE the viewer's `Person` by their identity key (`member_id = $viewer_id`).
+
+    `Person` is an identity node (keyed on `member_id`, not `owner_id`), so it is
+    unowned and passes `assert_scoped_write` untouched — but it is still born
+    $viewer_id-keyed, so a caller can only ever MERGE their OWN Person. Needed for a
+    first-time managed-auth sign-in (Epic 043 S5): a fresh Supabase `sub` has no
+    Person yet, and `wire_person_did_episode`'s `MATCH` would silently no-op, leaving
+    the Episode unreachable from the household graph. `created_at` is set once on
+    create; a returning member's Person is left untouched."""
+    cypher = "MERGE (p:Person {member_id: $viewer_id})\nON CREATE SET p.created_at = $now"
+    return cypher, {"now": now}
 
 
 def wire_person_did_episode(episode_id: str) -> tuple[str, dict[str, Any]]:

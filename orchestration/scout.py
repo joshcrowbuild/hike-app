@@ -152,6 +152,16 @@ def scout_by_name(query_text: str, session: ScopedSession, *, k: int = 10) -> li
     return _dedupe_by_name_preserving_order(candidates)[:k]
 
 
+def scout_by_id(canonical_id: str, session: ScopedSession) -> list[Candidate]:
+    """Trail-by-id candidate generation (Epic 045 / S1): exact canonical_id match.
+    Mirrors `scout_by_name` but takes a canonical_id directly instead of a query
+    string. Returns a list of length 0 or 1; if the id exists, returns a single
+    Candidate; if not, returns an honest empty list (never an error)."""
+    rows = session.run(queries.candidate_trail_by_id(canonical_id))
+    candidates = [c for r in rows if (c := _row_to_candidate(r)) is not None]
+    return candidates
+
+
 def _dedupe_by_name_preserving_order(candidates: list[Candidate]) -> list[Candidate]:
     """Like `_dedupe_by_name`, but keeps the FIRST-SEEN relative order of the surviving
     keys instead of re-sorting by distance (there is no distance to sort by on the

@@ -1,6 +1,6 @@
 # Epic 043 — Managed auth: Supabase sign-in replaces the shared dev-secret
 
-**Status:** DEFINED
+**Status:** DONE ✅
 **Phase:** C (Real Intake)
 **Spec refs:** [`../research/auth-provider-decision-brief.md`](../research/auth-provider-decision-brief.md) (signed off — decision-log §47) · [`../strategy/path-to-complete.md`](../strategy/path-to-complete.md) Phase C · roadmap R3
 
@@ -65,7 +65,7 @@ A real person signs in with their own account and every request carries a verifi
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test (incl. the anonymous-`/plan` regression)
-- [ ] `make check` green
-- [ ] Live verification: sign in on the hosted app; an authed write lands in Aura under the verified `sub`; anonymous browsing still serves
-- [ ] Targeted review agent run; CRITICALs fixed
+- [x] All ACs covered by at least one passing test (incl. the anonymous-`/plan` regression — `test_s2_ac1_anonymous_plan_200_zero_credentials`)
+- [x] `make check` green (backend: 1757 passed; frontend: 538 passed + tsc + build)
+- [x] Live verification (backend + frontend wiring, 2026-07-14): anonymous `/plan`→200; forged/missing token→403 (configured verifier); garbage bearer→403 (JWKS rejecting); Vercel bundle carries Supabase + live-API env. **Outstanding sliver:** the human magic-link sign-in + an authed write through the UI (the write UI ships with Epic 042)
+- [x] Targeted review agent run; CRITICALs fixed

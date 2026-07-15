@@ -1317,6 +1317,67 @@ button {
   color: var(--text-secondary);
 }
 
+/* ---- sign-in affordance (Epic 043 S4) — quiet, never a gate ---- */
+.signin-control {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+.signin-who {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+.topbar > .text-action,
+.topbar > .signin-control,
+.topbar > .signin-form {
+  /* Push the affordance to the trailing edge of the top bar, past the wordmark
+     and the browsing chip, without disturbing their existing layout. */
+  margin-left: auto;
+}
+.signin-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.signin-label-wrap {
+  display: inline-flex;
+  flex-direction: column;
+}
+/* Visually-hidden label (screen-reader only) — mirrors .search-label's intent
+   without repeating its exact declarations, kept inline for a compact top bar. */
+.signin-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.signin-input {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-subtle, var(--text-secondary));
+  border-radius: 0.35rem;
+  background: var(--surface, transparent);
+  color: var(--text-primary);
+  min-width: 12rem;
+}
+.signin-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.signin-note {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+.signin-note-error {
+  color: var(--text-primary);
+}
+
 /* Every primary navigation button gets the same neutral keyboard-focus ring as
    .text-action / .face / the RAC primitives (design-system §4.3). */
 .context:focus-visible,
