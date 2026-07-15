@@ -16,4 +16,11 @@ describe('Staleness', () => {
     const stale = screen.getByText('2 days ago').className
     expect(stale).not.toEqual(fresh)
   })
+
+  it('renders nothing for a missing or blank age, never an empty tag standing in for a stamp (Epic 046 S4 AC-4.2)', () => {
+    const { container: undef } = render(<Staleness>{undefined}</Staleness>)
+    expect(undef).toBeEmptyDOMElement()
+    const { container: blank } = render(<Staleness>{''}</Staleness>)
+    expect(blank).toBeEmptyDOMElement()
+  })
 })

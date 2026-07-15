@@ -220,6 +220,23 @@ describe('ConditionStates block-scope freshness stamp (Epic 045 S1 AC-1.4 — co
     expect(container.querySelector('.condition-state--no-hazard')?.textContent).toContain('20m ago')
   })
 
+  it('never renders a shared "time unknown" stamp when multiple rows lack an age (Epic 046 S4 AC-4.2 — meshes with the S1 stamp-agreement set)', () => {
+    // The httpPlanner mapping degrades an unparseable `checked_at` to
+    // `undefined` (D6), never the literal 'time unknown' — so two rows that
+    // both failed to parse their timestamp must never agree on a fabricated
+    // shared stamp, and the token itself must never appear anywhere.
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS' },
+          { kind: 'air', state: 'present', source: 'EPA' },
+        ]}
+      />,
+    )
+    expect(container.querySelector('.condition-states-stamp')).not.toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/time unknown/)
+  })
+
   it('never folds a stale-degraded row\'s unconditional age into the block stamp', () => {
     const { container } = render(
       <ConditionStates

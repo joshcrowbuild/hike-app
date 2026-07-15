@@ -55,8 +55,12 @@ export interface LineVM {
 export interface WarningVM {
   text: string
   source: string
-  /** Already-humanised relative age ("2h ago") — raw datetimes are forbidden (§7.2). */
-  observedAgo: string
+  /**
+   * Already-humanised relative age ("2h ago") — raw datetimes are forbidden
+   * (§7.2). Absent when the source timestamp was unparseable (Epic 046 S4
+   * AC-4.2 / D6): an honest "no stamp" beats a visible `time unknown` token.
+   */
+  observedAgo?: string
   /** The condition kind it came from, e.g. "weather" | "air" | "fire". */
   kind: string
   provenance: Provenance

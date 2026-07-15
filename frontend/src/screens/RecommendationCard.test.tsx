@@ -163,6 +163,21 @@ describe('RecommendationCard verified hazard warnings (2026-07-01: show, never h
     const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
     expect(container.querySelector('.card-warnings')).not.toBeInTheDocument()
   })
+
+  it('drops the age segment — no dangling "· " — when a warning has no parseable observed_at (Epic 046 S4 AC-4.2 / D6)', () => {
+    // The httpPlanner mapping degrades an unparseable `observed_at` to
+    // undefined (D6); the block must then show source alone, never "NWS · "
+    // with a trailing separator and an empty stamp.
+    const { container } = render(
+      <RecommendationCard card={card({ warnings: [{ ...warning, observedAgo: undefined }] })} onOpen={vi.fn()} />,
+    )
+    const meta = container.querySelector('.card-warning-meta')
+    expect(meta).toBeInTheDocument()
+    expect(meta?.textContent).toContain('NWS')
+    // Source-or-silence holds (source shown) with no orphaned separator.
+    expect(meta?.textContent).not.toContain('·')
+    expect(meta?.textContent?.trimEnd()).toBe(meta?.textContent)
+  })
 })
 
 describe('RecommendationCard accessible name carries the warning state (report #4/#7)', () => {

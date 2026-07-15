@@ -73,12 +73,24 @@ describe('waterHeadline — the answer, named to its basis', () => {
     const out = waterHeadline(vm({ state: 'none-nearby', sources: [] }))
     expect(out).toBe('No mapped water within ~650 ft of the route — carry what you need.')
   })
+
+  it('treats an empty sources array as none-nearby even when state says "sources" (Epic 046 S4 AC-4.3 / D4) — never a leading-space fragment', () => {
+    const out = waterHeadline(vm({ state: 'sources', sources: [] }))
+    expect(out).toBe('No mapped water within ~650 ft of the route — carry what you need.')
+    expect(out.startsWith(' ')).toBe(false)
+  })
 })
 
 describe('waterNote — provenance hedge, no fabricated stamp, no potability claim', () => {
   it('always hedges that corpus water is not verified live', () => {
     expect(waterNote(vm())).toContain('not verified live')
     expect(waterNote(vm({ state: 'none-nearby', sources: [] }))).toContain('not verified live')
+  })
+
+  it('agrees with the headline\'s none-nearby reading for a "sources" state with an empty array (Epic 046 S4 AC-4.3 / D4)', () => {
+    const out = waterNote(vm({ state: 'sources', sources: [] }))
+    expect(out).toBe(waterNote(vm({ state: 'none-nearby', sources: [] })))
+    expect(out).toContain('not verified live')
   })
   it('adds the seasonal hedge when a spring is present', () => {
     expect(waterNote(vm())).toContain('springs may be seasonal')

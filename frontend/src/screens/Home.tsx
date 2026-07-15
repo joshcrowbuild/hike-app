@@ -43,7 +43,7 @@ const EMPTY_CARDS: CardVM[] = []
  *  than leaving the region tag below to speak for it alone (report #3). The
  *  region itself is derived from the SERVED cards, never the picker's
  *  assumption — see `resolveRegionLabel`. */
-function contextSentence(
+export function contextSentence(
   tuning: TuningState,
   anonymous: boolean,
   cards: CardVM[],
@@ -53,8 +53,13 @@ function contextSentence(
   const origin = tuning.originCoords
     ? 'your location'
     : (origins.find((o) => o.key === tuning.origin)?.label ?? '')
-  if (anonymous) return `${whenLabels[tuning.when]} · ${region} · from ${origin}`
-  return `${whenLabels[tuning.when]} · from ${origin} · ${partyLabels[tuning.party]}`
+  // Built from an array + filter(Boolean).join (Epic 046 S4 AC-4.1 / D8, the
+  // RecommendationCard.tsx pattern): an origin key no longer in the fetched
+  // catalog, or a region the served cards can't resolve, is a real '' — never
+  // a dangling "from " or a doubled " · " when one segment drops out.
+  const originClause = origin ? `from ${origin}` : ''
+  if (anonymous) return [whenLabels[tuning.when], region, originClause].filter(Boolean).join(' · ')
+  return [whenLabels[tuning.when], originClause, partyLabels[tuning.party]].filter(Boolean).join(' · ')
 }
 
 export interface HomeProps {
@@ -558,9 +563,13 @@ function SparseNote({
 function HeldBackNote({ items }: { items: HeldBackVM[] }) {
   const causes = [...new Set(items.flatMap((t) => t.reasons.map((r) => r.text)))]
   const count = items.length === 1 ? '1 trail held back' : `${items.length} trails held back`
+  // Built from an array + filter(Boolean).join (Epic 046 S4 AC-4.3 / D10): a
+  // held-back trail with no disclosed reasons must never render a dangling
+  // "— " — the causes clause only appears when there's something to append.
+  const causesClause = causes.length > 0 ? `— ${causes.join(' · ')}` : ''
   return (
     <p className="frame-note held-back-note" role="note">
-      {count} — {causes.join(' · ')}
+      {[count, causesClause].filter(Boolean).join(' ')}
     </p>
   )
 }
