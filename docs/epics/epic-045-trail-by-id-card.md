@@ -1,6 +1,6 @@
 # Epic 045 — Deep-link a trail by id: a verified card for any trail
 
-**Status:** DEFINED
+**Status:** DONE ✅
 **Phase:** C (Real Intake) / cross-cutting UX correctness
 **Spec refs:** dogfood 2026-07-14 (signed-in deep-link `/#/trail/ct:osm:way_138445924` → "This trail isn't in your current set") · CLAUDE.md Rule #1 (source-or-silence) · Epic 038 (`_plan_from_candidates` shared tail) · Epic 040 (condition states)
 
