@@ -60,6 +60,8 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [044](epic-044-history-import.md) | History import (B003) — Garmin/GPX archive → Episodes + `been_on` producer; map-match with free-floating fallback | DEFINED | C | Epic 043 · 031 · ToS/deletion (pulled-forward Phase-B item) |
 
+| [043](epic-043-generated-string-integrity.md) | Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty) | DEFINED | 1 | Epic 018 · 040 · 041 |
+
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
 > **Thread T3 (commons fork):** tracked by **Epic 010** (closes the gap-audit "no tracker for T3" process miss). The de-identified `:CommonsObservation` forked write — marked ✅ in the decision log, then found unbuilt (gap-audit C1), **now built by Epic 010** — is the write half of the commons, accreting born-severed observations from day one; the read half (aggregation, k-anonymity) stays dormant until Stage 9.
