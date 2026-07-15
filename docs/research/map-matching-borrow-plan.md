@@ -2,7 +2,21 @@
 
 **Synthesis of the map-matching borrow-or-build research spike (Epic 044 S3 / Open Decision #10)**
 
-**Status:** `ACTIVE` (recommendation for PO review)
+**Status:** `RESOLVED` — Open Decision #10 adopted 2026-07-14 with corrections (decision-log §50). PO ran an independent verification; the borrow choice and MVP-first sequencing held, with three corrections folded in below (marked **[PO-CORRECTED]**).
+
+---
+
+## 0. PO verification corrections (2026-07-14)
+
+An independent PO pass verified the load-bearing claims against source and the live schema. Results:
+
+- **Verified:** Leuven is Apache-2.0 + HMM-with-non-emitting-states; the topology premise is real (grep confirms no `:Junction`/`CONNECTS_TO`/`been_on` in `graph/schema.cypher` — the rigorous HMM genuinely needs a connectivity layer we haven't built).
+- **[PO-CORRECTED] FMM license:** the table below says MIT; FMM is in fact **Apache-2.0** (verified at github.com/cyang-kth/fmm). Both permissive, so the veto/borrow calculus is unchanged — but the cell was wrong.
+- **[PO-CORRECTED] Problem framing:** this is **trajectory-to-polyline similarity**, not classic road-network map-matching. Road map-matching (the HMM's purpose) reconstructs which of *many connected edges* a vehicle drove over a dense graph; our task is matching a track to *one of ~2,600 named trail polylines*. The buffer approach is therefore **the right primary method for the common single-trail case**, not a lesser stopgap.
+- **[PO-CORRECTED] Confidence model:** §4's "all buffer matches capped at low confidence" is wrong for the single-named-trail case. A **directed Hausdorff / Fréchet** similarity gives a principled, topology-free confidence *gradient* — a track covering 98% of a trail's line within tolerance, same direction, is legitimately **high** confidence with no HMM. Reserve "low confidence, hedged" for partial/ambiguous coverage; reserve the Leuven HMM for the genuinely hard case (a single track spanning multiple connected trails), where topology earns its cost. Capping everything at hedged needlessly weakens the `been_on` signal the novelty filter (§48) consumes.
+- **Maintenance note:** Leuven's last release is 1.1.4 (Dec 2022); FMM's last commit ~2020. Treat Leuven as a **vendored port** (Apache-2.0 permits it) and confirm it runs clean on Python 3.11 before adopting it as a live dependency.
+
+The sections below are the original spike output; read them through the corrections above.
 
 ---
 
