@@ -27,7 +27,7 @@
  * row's own honest state — never a second prose sentence repeating it.
  */
 import { Confidence, Staleness } from '../components'
-import { foldLineValue } from '../data/feedConditions'
+import { foldLineValue, sharedAmong } from '../data/feedConditions'
 import type { ConditionStateVM, ConditionStatusVM, LineVM } from '../data/vm'
 import { glyphs } from './glyphs'
 
@@ -92,15 +92,28 @@ export function ConditionStates({
   if (conditions.length === 0) return null
   if (compact) return <CompactStates conditions={conditions} />
   const claimed = new Set<LineVM>()
+  // Block-scope freshness (AC-1.4): `stale-degraded` rows never participate —
+  // they always carry their own unconditional age + "may have changed" hedge,
+  // a distinct disclosure that must never be folded into a generic stamp.
+  const blockAge = sharedAmong(
+    conditions.filter((s) => s.state !== 'stale-degraded').map((s) => s.checkedAgo),
+  )
   return (
-    <ul className="condition-states">
-      {conditions.map((s) => (
-        <li key={s.kind} className={`condition-state condition-state--${s.state}`}>
-          <span className="condition-state-kind">{kindLabel(s.kind)}</span>
-          <StateBody status={s} value={foldLineValue(s, lines, claimed)} />
-        </li>
-      ))}
-    </ul>
+    <>
+      {blockAge ? (
+        <p className="condition-states-stamp">
+          <Staleness>Checked {blockAge}</Staleness>
+        </p>
+      ) : null}
+      <ul className="condition-states">
+        {conditions.map((s) => (
+          <li key={s.kind} className={`condition-state condition-state--${s.state}`}>
+            <span className="condition-state-kind">{kindLabel(s.kind)}</span>
+            <StateBody status={s} value={foldLineValue(s, lines, claimed)} blockAge={blockAge} />
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 
@@ -119,14 +132,19 @@ function CompactStates({ conditions }: { conditions: ConditionStatusVM[] }) {
 }
 
 /**
- * One grouped compact row, e.g. "✓ Checked — nothing to flag: Fire (FIRMS ·
- * 20m ago), Closures (NPS · 1h ago)". Source + age stay on each kind (sourced
- * silence keeps its source); the no-data disclosure detail is Detail-only.
+ * One grouped compact row, e.g. "✓ Checked — nothing to flag · 20m ago: Fire
+ * (FIRMS), Closures (NPS)". A shared age states once for the whole group (A4,
+ * Epic 045 S1 AC-1.5) rather than once per kind; a member whose age DIVERGES
+ * from the group keeps its own inline, never silently dropped. Source stays
+ * on each kind regardless (it differs and carries info); the no-data
+ * disclosure detail is Detail-only.
  */
 function CompactGroup({ state, members }: { state: ConditionStateVM; members: ConditionStatusVM[] }) {
   const copy = STATE_COPY[state]
+  const groupAge = sharedAmong(members.map((s) => s.checkedAgo))
   const kinds = members.map((s) => {
-    const meta = [s.source, s.checkedAgo].filter(Boolean).join(' · ')
+    const age = s.checkedAgo && s.checkedAgo !== groupAge ? s.checkedAgo : undefined
+    const meta = [s.source, age].filter(Boolean).join(' · ')
     return meta ? `${kindLabel(s.kind)} (${meta})` : kindLabel(s.kind)
   })
   if (state === 'unavailable') {
@@ -145,7 +163,15 @@ function CompactGroup({ state, members }: { state: ConditionStateVM; members: Co
         {copy.glyph ?? <HistoryGlyph />}
       </span>
       <span className="condition-state-text">
-        {compactLabel(state)}: {kinds.join(', ')}
+        {compactLabel(state)}
+        {groupAge ? (
+          <>
+            {' · '}
+            <Staleness>{groupAge}</Staleness>
+          </>
+        ) : null}
+        {': '}
+        {kinds.join(', ')}
       </span>
     </p>
   )
@@ -162,12 +188,29 @@ const compactLabel = (state: ConditionStateVM): string =>
 
 /**
  * One kind's full-row body (Detail's coverage list). `value` is the folded
- * line for a `present`/`stale-degraded` row (Finding 4/7) — its text renders
- * ahead of the disposition label ("Sunny 90°F · reported"), so the row states
- * the actual fact once, framed by its own honest state (never the line's own
- * separately-hedged framing, which the merge retires along with the line).
+ * line for a `present`/`stale-degraded` row (Finding 4/7) — its VALUE (`body`:
+ * hedge + value, no source/age) renders ahead of the disposition label
+ * ("Sunny 90°F · reported"), so the row states the actual fact once, framed
+ * by its own honest state (never the line's own separately-hedged framing,
+ * which the merge retires along with the line). Reading `value.text` here
+ * instead of `value.body` would re-weld the line's own source+age onto the
+ * row, which ALSO renders `status.source`/`status.checkedAgo` in `meta` below
+ * — the A3 in-row double this split exists to prevent (falls back to `.text`
+ * only for an older/mock line that never got the `body` field, never for a
+ * roundtrip through the live wire).
  */
-function StateBody({ status, value }: { status: ConditionStatusVM; value?: LineVM }) {
+function StateBody({
+  status,
+  value,
+  blockAge,
+}: {
+  status: ConditionStatusVM
+  value?: LineVM
+  /** The block-scope freshness stamp (if any, AC-1.4) — a row's own age is
+   *  suppressed here exactly when it agrees with this value; a diverging row
+   *  still renders its own, so nothing is silently dropped. */
+  blockAge?: string
+}) {
   const copy = STATE_COPY[status.state]
   if (status.state === 'unavailable') {
     // The design system's owned couldn't-verify treatment: flagged <Confidence>
@@ -181,14 +224,23 @@ function StateBody({ status, value }: { status: ConditionStatusVM; value?: LineV
       </span>
     )
   }
+  // `stale-degraded` never reads its age here — it always carries its own
+  // unconditional age + "may have changed" hedge below, untouched by the
+  // block-scope collapse. Every other answered state suppresses its OWN age
+  // only when it agrees with `blockAge` (the block already states it once);
+  // a diverging age (or no shared block age at all) still renders per-row.
+  const rowAge =
+    status.checkedAgo && status.state !== 'stale-degraded' && status.checkedAgo !== blockAge
+      ? status.checkedAgo
+      : undefined
   const meta = status.source ? (
     <span className="condition-state-meta">
       {' · '}
       {status.source}
-      {status.checkedAgo && status.state !== 'stale-degraded' ? (
+      {rowAge ? (
         <>
           {' · '}
-          <Staleness>{status.checkedAgo}</Staleness>
+          <Staleness>{rowAge}</Staleness>
         </>
       ) : null}
     </span>
@@ -200,7 +252,7 @@ function StateBody({ status, value }: { status: ConditionStatusVM; value?: LineV
         {copy.glyph ?? <HistoryGlyph />}
       </span>
       <span className="condition-state-text">
-        {value ? <span className="condition-state-value">{value.text} · </span> : null}
+        {value ? <span className="condition-state-value">{value.body ?? value.text} · </span> : null}
         {copy.label}
         {status.state === 'stale-degraded' ? (
           // The hedge is unconditional — a stale row without an age must still

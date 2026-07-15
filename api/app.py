@@ -327,7 +327,9 @@ def _condition_fields(card: FeedCard) -> dict[str, Any]:
         "lines": [
             FeedLineResponse(
                 text=line.text,
+                body=line.body,
                 source=line.source,
+                age=line.age,
                 confidence_level=line.presentation,  # "stated" | "hedged" | "flagged"
                 sources=list(line.sources),
             )

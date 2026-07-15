@@ -68,8 +68,19 @@ class SearchRequest(BaseModel):
 
 
 class FeedLineResponse(BaseModel):
+    """Mirrors `orchestration.present.FeedLine` (Epic 045 S1 AC-1.1): `text` stays a
+    back-compat welded string (value · short source, age) for callers that render
+    one glanceable line; `body`/`source`/`age` are the same fact's three parts as
+    separate fields, so a structured surface (the Detail per-kind coverage row) can
+    state each at its own true scope instead of repeating source+age welded into
+    every line's copy (the "just now" ×11 defect)."""
+
     text: str
+    # The hedge + value alone — no source, no age (see `FeedLine.body`).
+    body: str
     source: str
+    # Freshness alone, in plain words ("just now", "10m ago") — see `FeedLine.age`.
+    age: str
     confidence_level: str  # "stated" | "hedged" | "flagged"  (presentation vocabulary)
     # Distinct live-source names backing this fact (Epic 026a). Populated only for a
     # line built from a live probe (every line the engine emits qualifies — the feed

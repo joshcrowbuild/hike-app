@@ -102,7 +102,12 @@ function classify(err: unknown, status?: number): FeedError {
 function mapLines(lines: FeedLineResponse[]): LineVM[] {
   return lines.map((l) => ({
     text: l.text,
+    // Epic 045 S1 AC-1.1: the fact's value and its freshness, structurally
+    // separate from `source` — a structured surface folds these in instead of
+    // the welded `text` (never re-baking source/age into displayed copy).
+    body: l.body,
     source: l.source,
+    age: l.age,
     confidence: l.confidence_level,
     provenance: 'live',
     // Real per-fact corroboration (Epic 026a) — every wire line is live, so this

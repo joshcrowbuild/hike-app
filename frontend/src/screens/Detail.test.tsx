@@ -385,3 +385,117 @@ describe('Detail conditions render ONCE — no duplicate prose+table for the sam
     expect(screen.getByText('Sunny 90°F')).toBeInTheDocument()
   })
 })
+
+describe('Detail conditions fold on the REAL live wire shape — FULL line source vs SHORT status source (Epic 045 S1 AC-1.2/1.3, the A1 live-data regression)', () => {
+  it('renders each condition once — no residual list — when lines carry the FULL backend source and statuses carry the SHORT one', async () => {
+    const live = card({
+      conditionLines: [
+        {
+          text: 'Sunny 90°F · NWS, just now',
+          body: 'Sunny 90°F',
+          source: 'NWS api.weather.gov · single authoritative source (NWS LWX 56,65)',
+          age: 'just now',
+          confidence: 'stated',
+          provenance: 'live',
+        },
+        {
+          text: 'AQI 45 (Good) · AirNow, just now',
+          body: 'AQI 45 (Good)',
+          source: 'AirNow · single aggregated source',
+          age: 'just now',
+          confidence: 'stated',
+          provenance: 'live',
+        },
+      ],
+      conditions: [
+        { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+        { kind: 'air', state: 'present', source: 'AirNow', checkedAgo: 'just now' },
+      ],
+    })
+    const { container } = await renderDetail(live)
+    // A1's fold-is-inert defect: on the real wire shape (FULL line source, SHORT
+    // status source), the naive equality check never matched, so BOTH facts
+    // used to fall through to the residual prose list — asserting it stays gone.
+    expect(container.querySelector('.condition-lines--residual')).not.toBeInTheDocument()
+    expect(container.querySelector('.condition-lines')).not.toBeInTheDocument()
+    expect(container.textContent?.match(/Sunny 90°F/g)).toHaveLength(1)
+    expect(container.textContent?.match(/AQI 45 \(Good\)/g)).toHaveLength(1)
+  })
+
+  it('never re-welds the line\'s own source+age into the folded value (the A3 in-row double ConditionStates.tsx:203 would resurface)', async () => {
+    const live = card({
+      conditionLines: [
+        {
+          text: 'Sunny 90°F · NWS, just now',
+          body: 'Sunny 90°F',
+          source: 'NWS api.weather.gov · single authoritative source (NWS LWX 56,65)',
+          age: 'just now',
+          confidence: 'stated',
+          provenance: 'live',
+        },
+      ],
+      conditions: [{ kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' }],
+    })
+    const { container } = await renderDetail(live)
+    // The folded value is `body` alone — never `text` (which welds "· NWS, just
+    // now" onto the value).
+    expect(container.querySelector('.condition-state-value')?.textContent).toBe('Sunny 90°F · ')
+    // Source + age still state exactly once EACH inside the row's own meta —
+    // not a second time baked into the value too (the in-row double A3 caused).
+    const meta = container.querySelector('.condition-state--present .condition-state-meta')
+    expect(meta?.textContent).toBe(' · NWS · just now')
+  })
+})
+
+describe('Detail Sources section states its shared single-source descriptor once (A5, Epic 045 S1 AC-1.5)', () => {
+  const liveConditions = card({
+    conditionLines: [
+      {
+        text: 'Sunny 90°F · NWS, just now',
+        body: 'Sunny 90°F',
+        source: 'NWS api.weather.gov · single authoritative source (NWS LWX 56,65)',
+        age: 'just now',
+        confidence: 'stated',
+        provenance: 'live',
+      },
+      {
+        text: 'AQI 45 (Good) · AirNow, just now',
+        body: 'AQI 45 (Good)',
+        source: 'AirNow · single aggregated source',
+        age: 'just now',
+        confidence: 'stated',
+        provenance: 'live',
+      },
+      {
+        text: '0 active-fire detection(s) nearby · FIRMS, just now',
+        body: '0 active-fire detection(s) nearby',
+        source: 'FIRMS · single authoritative source (FIRMS Aqua/N)',
+        age: 'just now',
+        confidence: 'stated',
+        provenance: 'live',
+      },
+    ],
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+      { kind: 'air', state: 'present', source: 'AirNow', checkedAgo: 'just now' },
+      { kind: 'fire', state: 'present', source: 'FIRMS', checkedAgo: 'just now' },
+    ],
+  })
+
+  it('states the majority descriptor ONCE instead of on every source row', async () => {
+    const { container } = await renderDetail(liveConditions)
+    // Two of three rows share "single authoritative source" — stated once as a
+    // section-level note, not repeated on both of their rows.
+    expect(container.textContent?.match(/single authoritative source/g)).toHaveLength(1)
+    const items = [...container.querySelectorAll('.source-list li')].map((li) => li.textContent)
+    expect(items).toContain('NWS api.weather.gov (NWS LWX 56,65)')
+    expect(items).toContain('FIRMS (FIRMS Aqua/N)')
+    expect(container.querySelector('.source-note')?.textContent).toContain('single authoritative source')
+  })
+
+  it('keeps the minority (aggregated) row\'s own descriptor fully disclosed inline', async () => {
+    const { container } = await renderDetail(liveConditions)
+    const items = [...container.querySelectorAll('.source-list li')].map((li) => li.textContent)
+    expect(items).toContain('AirNow · single aggregated source')
+  })
+})

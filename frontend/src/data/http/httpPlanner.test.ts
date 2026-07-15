@@ -101,7 +101,7 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
   const ok = (json: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
 
-  it('carries a live line’s real sources onto the VM, unmodified', async () => {
+  it('carries a live line’s real sources onto the VM, unmodified, and maps the structured body/age fields (Epic 045 S1 AC-1.1)', async () => {
     const feed: FeedResponse = {
       query: '',
       card_count: 1,
@@ -112,7 +112,14 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
           name: 'Stony Man Loop',
           distance_mi: 3.7,
           lines: [
-            { text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS api.weather.gov', confidence_level: 'stated', sources: ['NWS'] },
+            {
+              text: 'Sunny 70°F · NWS, 10m ago',
+              body: 'Sunny 70°F',
+              source: 'NWS api.weather.gov',
+              age: '10m ago',
+              confidence_level: 'stated',
+              sources: ['NWS'],
+            },
           ],
           warnings: [],
           unavailable: [],
@@ -124,6 +131,9 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
     const line = result.cards[0].conditionLines[0]
     expect(line.provenance).toBe('live')
     expect(line.sources).toEqual(['NWS'])
+    expect(line.body).toBe('Sunny 70°F')
+    expect(line.age).toBe('10m ago')
+    expect(line.text).toBe('Sunny 70°F · NWS, 10m ago')
   })
 })
 
@@ -720,7 +730,16 @@ describe('HttpPlannerClient search (Epic 038/B001 build lane — the Home Omnibo
           canonical_id: 'old-rag',
           name: 'Old Rag Loop',
           distance_mi: 3.7,
-          lines: [{ text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS', confidence_level: 'stated', sources: ['NWS'] }],
+          lines: [
+            {
+              text: 'Sunny 70°F · NWS, 10m ago',
+              body: 'Sunny 70°F',
+              source: 'NWS',
+              age: '10m ago',
+              confidence_level: 'stated',
+              sources: ['NWS'],
+            },
+          ],
           warnings: [],
           unavailable: [],
         },

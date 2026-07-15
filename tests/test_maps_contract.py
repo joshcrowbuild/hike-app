@@ -24,6 +24,7 @@ from api.schemas import (
     ElevationProfile,
     ElevationSample,
     FeedCardResponse,
+    FeedLineResponse,
     GeoJsonGeometry,
     GeoPoint,
     TrailWaterResponse,
@@ -73,6 +74,12 @@ EXPECTED: dict[str, set[str]] = {
         "source",
     },
     "WireTrailWater": {"state", "basis", "radius_m", "source", "sources"},
+    # The condition-line wire shape (Epic 045 S1 AC-1.1): `body`/`source`/`age` are
+    # the fact's three parts as separate fields; `text` stays a derived/back-compat
+    # welded string. Locked here — the same three-way lock as the maps/water
+    # contracts above — so the "just now" ×11 defect's root cause (source+age
+    # welded into copy with no structured escape hatch) can't silently regrow.
+    "FeedLineResponse": {"text", "body", "source", "age", "confidence_level", "sources"},
 }
 
 # Which Pydantic model implements each wire type.
@@ -84,6 +91,7 @@ _MODEL_FOR = {
     "FeedCardResponse": FeedCardResponse,
     "WireWaterSource": WaterSourceResponse,
     "WireTrailWater": TrailWaterResponse,
+    "FeedLineResponse": FeedLineResponse,
 }
 
 
@@ -132,6 +140,7 @@ def test_frontend_api_ts_matches_when_wire_types_present():
         "FeedCardResponse",
         "WireWaterSource",
         "WireTrailWater",
+        "FeedLineResponse",
     ):
         found = _ts_interface_fields(text, wire_name)
         assert found is not None, f"{wire_name} missing from api.ts"
