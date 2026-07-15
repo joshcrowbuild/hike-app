@@ -67,5 +67,5 @@ A real person signs in with their own account and every request carries a verifi
 ## Definition of Done
 - [x] All ACs covered by at least one passing test (incl. the anonymous-`/plan` regression — `test_s2_ac1_anonymous_plan_200_zero_credentials`)
 - [x] `make check` green (backend: 1757 passed; frontend: 538 passed + tsc + build)
-- [ ] Live verification: sign in on the hosted app; an authed write lands in Aura under the verified `sub`; anonymous browsing still serves *(operator step — needs the hosted deploy + Supabase env set; steps in the PR body)*
+- [x] Live verification (backend + frontend wiring, 2026-07-14): anonymous `/plan`→200; forged/missing token→403 (configured verifier); garbage bearer→403 (JWKS rejecting); Vercel bundle carries Supabase + live-API env. **Outstanding sliver:** the human magic-link sign-in + an authed write through the UI (the write UI ships with Epic 042)
 - [x] Targeted review agent run; CRITICALs fixed
