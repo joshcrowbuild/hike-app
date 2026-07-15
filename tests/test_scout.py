@@ -256,5 +256,8 @@ def test_scout_by_id_carries_full_projection() -> None:
     assert out[0].length_mi == 3.0
     assert out[0].way_type == "track"
     assert out[0].is_loop is True
-    assert out[0].distance_m is None  # by-id has no distance
-    assert out[0].trailhead_id is None  # by-id has no trailhead
+    # No origin on the by-id path, so the DB returns null distance/trailhead; the
+    # shared `_row_to_candidate` coerces those to the non-optional Candidate defaults
+    # (distance_m: float, trailhead_id: str) exactly as the by-name path does.
+    assert out[0].distance_m == 0.0
+    assert out[0].trailhead_id == ""

@@ -785,7 +785,10 @@ def test_trail_card_unknown_id_returns_empty_feed_never_404(client: Any, monkeyp
     assert payload["card_count"] == 0
 
 
-def test_trail_card_invalid_id_format_is_422(client: Any) -> None:
-    # The canonical_id pattern validation is enforced at the path layer.
-    resp = client.get("/trail/invalid-format/card")
+def test_trail_card_overlong_id_is_422(client: Any) -> None:
+    # CANONICAL_ID_PATTERN bounds the id to 1-200 chars at the path layer, so a
+    # pattern-violating id is rejected with 422 before the handler runs (no session
+    # needed). A valid-but-unknown id is NOT a format error — that path returns an
+    # honest-empty FeedResponse (see test_trail_card_unknown_id_returns_empty_feed).
+    resp = client.get("/trail/" + "a" * 201 + "/card")
     assert resp.status_code == 422
