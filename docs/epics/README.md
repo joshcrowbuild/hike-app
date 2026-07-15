@@ -54,7 +54,11 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [041](epic-041-water-overlay-read-surface.md) | Water overlay read surface (Detail answer line + quiet map markers; CDP-02 three-way silence; no feed change) | DONE ✅ | 1 | Epic 035 · 016 |
 
-| [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | BACKLOG | C | — |
+| [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | DEFINED | C | Epic 043 (S5 write path) |
+
+| [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DEFINED | C | Epic 014 · 011 · auth brief (§47) |
+
+| [044](epic-044-history-import.md) | History import (B003) — Garmin/GPX archive → Episodes + `been_on` producer; map-match with free-floating fallback | DEFINED | C | Epic 043 · 031 · ToS/deletion (pulled-forward Phase-B item) |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
