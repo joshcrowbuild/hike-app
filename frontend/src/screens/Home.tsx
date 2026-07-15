@@ -16,6 +16,7 @@ import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
 import { ContextRibbon } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
+import { SignInControl } from './SignInControl'
 import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
 
 /** A short, staggered per-card delay so real cards settle in one after another
@@ -122,6 +123,9 @@ export function Home({
             Browsing
           </span>
         ) : null}
+        {/* The calm sign-in affordance (Epic 043 S4): offered here, never a gate
+            on the feed below. Renders nothing when sign-in isn't configured. */}
+        <SignInControl />
       </header>
 
       <SearchLine
