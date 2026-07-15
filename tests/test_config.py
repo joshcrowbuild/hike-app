@@ -238,6 +238,22 @@ def test_settings_supabase_jwks_explicit_override_wins() -> None:
     assert s.supabase_jwks_url == "https://cdn.example/jwks.json"
 
 
+def test_settings_issuer_derived_from_jwks_url_when_supabase_url_absent() -> None:
+    # JWKS-URL-only config: the issuer is still named (from the well-known suffix)
+    # so token issuer verification stays on — defence in depth (review M1).
+    s = Settings.from_env(
+        {"ADVENTURE_SUPABASE_JWKS_URL": "https://proj.supabase.co/auth/v1/.well-known/jwks.json"}
+    )
+    assert s.supabase_issuer == "https://proj.supabase.co/auth/v1"
+
+
+def test_settings_issuer_none_for_nonstandard_jwks_url() -> None:
+    # A JWKS URL that isn't the Supabase well-known shape → issuer unverified
+    # rather than guessed wrong (audience+signature+expiry still hold).
+    s = Settings.from_env({"ADVENTURE_SUPABASE_JWKS_URL": "https://cdn.example/keys.json"})
+    assert s.supabase_issuer is None
+
+
 def test_settings_allow_dev_viewer_secret_gate_parsing() -> None:
     for on in ("1", "true", "TRUE", "yes", "on"):
         assert Settings.from_env({"ADVENTURE_ALLOW_DEV_VIEWER_SECRET": on}).allow_dev_viewer_secret

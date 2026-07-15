@@ -318,7 +318,17 @@ class Settings:
         supabase_jwks_url = e.get("ADVENTURE_SUPABASE_JWKS_URL") or (
             supabase_base.rstrip("/") + "/auth/v1/.well-known/jwks.json" if supabase_base else None
         )
-        supabase_issuer = supabase_base.rstrip("/") + "/auth/v1" if supabase_base else None
+        # Verify the token issuer whenever we can name it (defence in depth). Prefer
+        # SUPABASE_URL's auth base; when only the JWKS URL is set (SUPABASE_URL
+        # absent), derive the issuer by stripping the well-known suffix — so the
+        # issuer is still checked in the JWKS-URL-only config, not left unverified.
+        _WELL_KNOWN = "/.well-known/jwks.json"
+        if supabase_base:
+            supabase_issuer = supabase_base.rstrip("/") + "/auth/v1"
+        elif supabase_jwks_url and supabase_jwks_url.endswith(_WELL_KNOWN):
+            supabase_issuer = supabase_jwks_url[: -len(_WELL_KNOWN)]
+        else:
+            supabase_issuer = None
 
         return Settings(
             neo4j_uri=e.get("NEO4J_URI", "bolt://localhost:7687"),

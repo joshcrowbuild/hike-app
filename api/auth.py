@@ -45,9 +45,9 @@ _DEFAULT_AUDIENCE = "authenticated"
 # forged token signed with a public key value pass (the classic JWT confusion).
 _ALLOWED_ALGORITHMS = ["ES256", "RS256"]
 
-# How long a fetched JWKS is trusted before the next unknown-kid miss may refetch.
-# The cache is keyed by kid, so a known key is served forever without a network
-# call; this only bounds how stale the *set* of keys may get between rotations.
+# Timeout (seconds) for the JWKS HTTP fetch. The cache is keyed by kid — a known
+# key is served forever with no network call, and a fetch happens only on an
+# unknown-kid miss (rotation), so this bounds each rare refetch, not a hot path.
 _JWKS_HTTP_TIMEOUT_S = 5.0
 
 
