@@ -2,35 +2,41 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 
 import App from './App'
+import { AuthProvider, useAuth } from './data/auth/AuthProvider'
 import { Gallery } from './Gallery'
 import { PlannerProvider } from './data/PlannerProvider'
-import { resolveScope } from './data/resolveScope'
 import { BootShell } from './screens/BootShell'
 import './design/tokens.css'
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)
 
-// The viewer scope is a real product axis (Rule #4): `?anon` browses the world
-// with an empty scope (the n=0 floor, R7); otherwise the single-user overlay —
-// but only when a dev secret was baked into this build (H1: prod ships none,
-// so prod is always anonymous). Stage 8 replaces this with real auth + grants
-// — the same ScopeContext shape.
-const scope = resolveScope(params, import.meta.env.VITE_DEV_VIEWER_SECRET)
-
 // `?gallery` is the trunk's component-gallery dev surface; it is provider-free.
 const isGallery = params.has('gallery')
+
+/**
+ * The viewer scope is now a real product axis driven by managed auth (Epic 043):
+ * anonymous until a Supabase session lands, then the signed-in overlay keyed by the
+ * verified `sub` — the SAME ScopeContext shape. Anonymous browsing is never gated
+ * on the session check (AuthProvider mounts anonymous and upgrades in place).
+ */
+function AuthedApp() {
+  const { scope } = useAuth()
+  return (
+    <PlannerProvider scope={scope} fallback={<BootShell />}>
+      <App />
+    </PlannerProvider>
+  )
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isGallery ? (
       <Gallery />
     ) : (
-      // BootShell is the designed cold-start first paint (craft review H1):
-      // staged loading copy + skeleton chrome while /regions wakes the API.
-      <PlannerProvider scope={scope} fallback={<BootShell />}>
-        <App />
-      </PlannerProvider>
+      <AuthProvider>
+        <AuthedApp />
+      </AuthProvider>
     )}
   </React.StrictMode>,
 )

@@ -4,7 +4,7 @@ import { ANON_SCOPE, type ScopeContext, type FeedResponse, type OutcomeResponse 
 import type { PlanInput } from '../source'
 import type { Coords, TuningState } from '../../types'
 
-const JOSH: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+const JOSH: ScopeContext = { viewerId: 'josh-sub', grantedIds: [], accessToken: 'jwt-token-abc' }
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -37,12 +37,10 @@ function headersOf(call: unknown): Record<string, string> {
   return init.headers as Record<string, string>
 }
 
-describe('HttpPlannerClient auth headers', () => {
-  const SECRET = 'dev-secret-value'
+describe('HttpPlannerClient auth headers (Epic 043 managed auth)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    vi.stubEnv('VITE_DEV_VIEWER_SECRET', SECRET)
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -55,38 +53,39 @@ describe('HttpPlannerClient auth headers', () => {
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
   }
 
-  it('sends the dev-viewer secret on /plan for a non-anonymous viewer', async () => {
+  it('sends the Supabase Bearer token on /plan for a signed-in viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
     await client().plan(PLAN_INPUT, JOSH)
-    expect(headersOf(fetchMock.mock.calls[0])['X-Dev-Viewer-Secret']).toBe(SECRET)
+    expect(headersOf(fetchMock.mock.calls[0]).Authorization).toBe('Bearer jwt-token-abc')
   })
 
-  it('omits the secret on /plan for an anonymous viewer', async () => {
+  it('never sends the retired dev-viewer secret', async () => {
+    // The whole VITE_DEV_VIEWER_SECRET path is gone — a signed-in call must carry
+    // only the Bearer token, never the old shared secret (S3.2 regression).
+    vi.stubEnv('VITE_DEV_VIEWER_SECRET', 'stale-secret')
+    fetchMock.mockReturnValue(ok(FEED))
+    await client().plan(PLAN_INPUT, JOSH)
+    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+  })
+
+  it('sends no credentials on /plan for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(FEED))
     await client().plan(PLAN_INPUT, ANON_SCOPE)
-    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+    const headers = headersOf(fetchMock.mock.calls[0])
+    expect(headers).not.toHaveProperty('Authorization')
+    expect(headers).not.toHaveProperty('X-Dev-Viewer-Secret')
   })
 
-  it('sends the dev-viewer secret on /outcome for a non-anonymous viewer', async () => {
+  it('sends the Bearer token on /outcome for a signed-in viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await client().recordOutcome(
-      'e1',
-      { overall: 2, skipped: false },
-      [],
-      JOSH,
-    )
-    expect(headersOf(fetchMock.mock.calls[0])['X-Dev-Viewer-Secret']).toBe(SECRET)
+    await client().recordOutcome('e1', { overall: 2, skipped: false }, [], JOSH)
+    expect(headersOf(fetchMock.mock.calls[0]).Authorization).toBe('Bearer jwt-token-abc')
   })
 
-  it('omits the secret on /outcome for an anonymous viewer', async () => {
+  it('sends no Authorization on /outcome for an anonymous viewer', async () => {
     fetchMock.mockReturnValue(ok(OUTCOME))
-    await client().recordOutcome(
-      'e1',
-      { overall: 2, skipped: false },
-      [],
-      ANON_SCOPE,
-    )
-    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('X-Dev-Viewer-Secret')
+    await client().recordOutcome('e1', { overall: 2, skipped: false }, [], ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('Authorization')
   })
 })
 
@@ -745,13 +744,11 @@ describe('HttpPlannerClient search (Epic 038/B001 build lane — the Home Omnibo
     expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ query: 'rivanna', k: 5 })
   })
 
-  it('sends the dev-viewer secret for a non-anonymous viewer, same as /plan', async () => {
-    vi.stubEnv('VITE_DEV_VIEWER_SECRET', 'dev-secret-value')
+  it('sends the Bearer token for a signed-in viewer, same as /plan', async () => {
     fetchMock.mockReturnValue(ok(FEED))
-    await client().search('old rag', { viewerId: 'josh', grantedIds: [] })
+    await client().search('old rag', { viewerId: 'josh-sub', grantedIds: [], accessToken: 'jwt-xyz' })
     const init = (fetchMock.mock.calls[0] as [string, RequestInit])[1]
-    expect((init.headers as Record<string, string>)['X-Dev-Viewer-Secret']).toBe('dev-secret-value')
-    vi.unstubAllEnvs()
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-xyz')
   })
 
   it('returns an honest empty FeedVM (no cards) rather than an error when the backend returns zero matches', async () => {
