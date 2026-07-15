@@ -392,3 +392,10 @@ Fine-tuning open UI-gen models + verifiable design-system reward (frontier produ
 - **Capability beliefs are per-activity channels** (`pace(hike)` ≠ `pace(run)`); hiking predictions read only the hiking channel. Run pace never informs a hiking pace/duration estimate — duration is safety-adjacent, and optimism there is the poison class.
 - **The only cross-domain bridge is a hedged aerobic-endurance floor** at cold-start: carried as an inference with provenance + confidence (Rule #7), disclosed wherever used, displaced as real hike evidence accrues.
 - Deferred, named: a future "trail run mode" reading the run channel directly; run grade-response calibrating personal ETA curves.
+
+## 49. Data-rights & policy positions (ToS/privacy scaffold inputs) ✅ *(2026-07-14 — decided by Josh; unlocks the pulled-forward scaffold that gates Epic 044)*
+- **Deletion:** immediate hard delete (private overlay + episodes) + commons revocation via writer-hash; backups age out ≤30 days.
+- **Biometrics:** v1 import stores **no heart-rate/biometric streams** — pace/GPS/duration only. Rationale: no built or planned consumer reads historical HR; the archive stays on disk and import is idempotent, so deferral costs one re-run. Revisit only with a named consumer + its own consent line. (Epic 044 AC-5.3.)
+- **Sign-ups:** closed — owner + household invites only pre-Phase-F ("private beta" posture).
+- **Commons:** opt-in, default OFF (confirms Epic 010's consent substrate).
+- **Asserted defaults, unvetoed:** no analytics/tracking beyond scrubbed operational logs · no ads, no selling data · subprocessors named (Vercel, Render, Neo4j Aura, Supabase, Anthropic) · "the private overlay never reaches a cloud model" stated as a policy promise (already test-enforced) · advisory-verdict safety disclaimer (decisions and risk are the user's) · account holders 18+ · self-serve machine-readable export (JSON + GPX).
