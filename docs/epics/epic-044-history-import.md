@@ -37,15 +37,17 @@ The owner imports a historical activity archive (Garmin bulk export / GPX files)
 **AC-2.1:** each Episode carries `source:"import"`, `date` from the track, and measured fields only where the file actually has them — absent fields stay null (degrade-and-disclose, never zeros)
 **AC-2.2:** all writes go through the scoped-write seam under the verified viewer
 
-### S3 — Map-matching with a never-blocks fallback (Open Decision #10)
+### S3 — Map-matching with a never-blocks fallback (Open Decision #10 — RESOLVED §50)
+
+*Resolution (decision-log §50): v1 is a **trajectory-to-polyline similarity** matcher (buffer-overlap + directed-Hausdorff/Fréchet, topology-free) emitting a real confidence gradient; Leuven HMM (Apache-2.0, vendor-ported) is deferred to the topology gate for the multi-trail hard case. This is a curve-similarity problem, not road-network map-matching.*
 
 **Given** a track that must bind to a corpus trail to produce a `been_on` edge
 **When** matching runs
 **Then** a confident match writes the belief, and an unconfident one still preserves the trip
 
 **AC-3.1:** a confident match writes `been_on` carrying provenance + confidence + timestamp — recorded as an *inference*, never a stated fact (Rule #7)
-**AC-3.2:** a low-confidence match falls back to a **free-floating Episode with geometry** (matched opportunistically later) — the import NEVER produces zero value because matching is hard
-**AC-3.3:** match confidence is disclosed on read ("likely Cascade Pass — low confidence, GPS sparse"); the rigorous Newson-Krumm HMM snap (CDP-20) is the eventual implementation, not a v1 requirement
+**AC-3.2:** a below-threshold or ambiguous match falls back to a **free-floating Episode with geometry** (matched opportunistically later) — the import NEVER produces zero value because matching is hard
+**AC-3.3 (real confidence gradient, not a hedged cap):** confidence is derived from the similarity metric (coverage fraction + directed-Hausdorff/Fréchet within tolerance, direction-aware) — a near-complete high-coverage match is honestly high-confidence, a partial/ambiguous one is hedged ("likely Cascade Pass — low confidence, GPS sparse"). Do **not** cap all similarity matches at low confidence (that would starve §48's `been_on` signal). The rigorous Leuven/Newson-Krumm HMM (CDP-20) is deferred to the topology gate and reserved for tracks spanning multiple connected trails, not a v1 requirement
 
 ### S4 — Measured history feeds capability beliefs (per-activity channels — decision-log §48)
 
