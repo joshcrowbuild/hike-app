@@ -120,13 +120,21 @@ class JWTVerifier:
     def _key_for_kid(self, kid: str) -> Any:
         """Return the signing key for `kid`, refetching the JWKS **exactly once**
         on a miss (key rotation — AC-1.3). Still unknown after one refetch → raise
-        (fail closed). Serves a cached key with no network call on a hit."""
+        (fail closed). Serves a cached key with no network call on a hit.
+
+        A JWKS fetch that itself fails (network down, non-200, bad JSON) is turned
+        into an `AuthError` so the edge fails **closed** with a 403 rather than
+        surfacing a raw 500 — a token can never be admitted when the key set can't
+        be verified against."""
         with self._lock:
             key = self._keys.get(kid)
             if key is not None:
                 return key
             # Unknown kid: one refetch (rotation), then fail closed if still absent.
-            self._refresh_keys()
+            try:
+                self._refresh_keys()
+            except Exception as exc:
+                raise AuthError("JWKS fetch failed; cannot verify token") from exc
             key = self._keys.get(kid)
             if key is None:
                 raise AuthError("no JWKS key matches the token's kid")

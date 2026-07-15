@@ -213,6 +213,19 @@ def test_s1_ac3_unknown_kid_still_unknown_after_refetch_fails_closed(ec_key: _Ke
     assert calls[0] == 1  # one refetch, then closed (cache was empty → the miss fetch)
 
 
+def test_s1_ac3_jwks_fetch_failure_fails_closed_as_autherror(ec_key: _KeyPair) -> None:
+    """A JWKS endpoint that raises (network down / non-200 / bad JSON) must fail
+    CLOSED as an AuthError — the edge then returns a controlled 403, never a raw
+    500, and a token is never admitted when the key set can't be fetched."""
+
+    def boom(_url: str) -> dict[str, Any]:
+        raise RuntimeError("network down")
+
+    verifier = JWTVerifier(_JWKS_URL, audience=_AUD, http_get=boom)
+    with pytest.raises(AuthError):
+        verifier.verify(ec_key.sign())
+
+
 def test_s1_ac3_token_without_kid_rejected(ec_key: _KeyPair) -> None:
     verifier, _ = _verifier_over(ec_key)
     # Sign with an empty kid header — no key can be selected → fail closed.
