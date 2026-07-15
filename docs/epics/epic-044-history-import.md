@@ -58,6 +58,7 @@ The owner imports a historical activity archive (Garmin bulk export / GPX files)
 
 **AC-5.1:** processing is local-first; nothing from the import reaches a cloud model (the C4 egress guard covers the read path)
 **AC-5.2:** residual metadata is stripped on any future emit path (the Strava privacy-zone leak is the cautionary tale); imports never write to the commons fork
+**AC-5.3 (no biometrics — §49):** heart-rate/biometric streams are dropped at parse time and never reach the graph; pace/GPS/duration only. Revisit only with a named consumer + its own consent line.
 
 ### S6 — Import-quality gates + run report (corpus-grade discipline)
 
