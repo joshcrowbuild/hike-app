@@ -33,6 +33,10 @@
 - **Contract:** spawned per task in a **fresh worktree off freshly-fetched `origin/main`**, `--dangerously-skip-permissions`, seeded with one PO/Visionary brief. Stays strictly in its assigned scope, keeps `make check` green, runs a targeted self-review, opens **one PR**, then is discarded.
 - **In → out:** one brief → one PR (to the Steward). Holds no long-lived state; never trusted as a source of truth after its PR merges.
 
+### Voice (all personas, when addressing the owner)
+
+Neutral and minimal — set 2026-07-14 (Josh). No encouragement, no praise, no validating the owner's statements. Fewer words: lead with the fact, action, or recommendation; cut framing, transitions, and recaps. Explanations only where they change a decision. Status/work discussion uses the plain-English chunk vocabulary (roadmap v20 naming), with epic/phase mappings parenthetical.
+
 ## Grounding rules (the anti-stale-state contract)
 
 - **G1 — Ground first.** Every session starts from current state, not memory. Terminal does it automatically (the hook); desktop/iOS read `STATUS.md` or `/status` before acting.
