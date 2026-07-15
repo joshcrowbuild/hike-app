@@ -1,6 +1,6 @@
 # Epic 043 — Managed auth: Supabase sign-in replaces the shared dev-secret
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** C (Real Intake)
 **Spec refs:** [`../research/auth-provider-decision-brief.md`](../research/auth-provider-decision-brief.md) (signed off — decision-log §47) · [`../strategy/path-to-complete.md`](../strategy/path-to-complete.md) Phase C · roadmap R3
 
