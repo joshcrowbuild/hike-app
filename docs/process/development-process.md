@@ -41,6 +41,10 @@ After coding an epic, spawn a **targeted self-review agent** with a narrow promp
 - Only the files changed in this epic
 - Specific rules to check (e.g., "verify source-or-silence holds", "check owner_id on all new nodes")
 - Maximum 5-minute agent, not a 10-minute cloud review
+- A literal-grep microcopy pass never sees a COMPUTED string (an age stamp, a
+  pluralized count, a hedge phrase assembled at render time) — checking those
+  needs a rendered-DOM pass over the generator inventory instead
+  (`generated-string-integrity-sweep-2026-07.md` §5)
 
 Reserve `/code-review ultra` — it is expensive, slow, and prone to crashing — for:
 - Major architectural changes spanning many files

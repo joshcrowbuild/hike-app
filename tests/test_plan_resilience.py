@@ -52,6 +52,11 @@ class _Line:
     source: str
     presentation: str = "stated"
     sources: list[str] = field(default_factory=list)
+    # Epic 046 S1: `FeedLineResponse`/`_condition_fields` now read `body`/`age`
+    # too; defaulted so this file's existing call sites are unaffected — these
+    # tests assert wire SHAPE, not `body`/`age` content.
+    body: str = ""
+    age: str = ""
 
 
 @dataclass

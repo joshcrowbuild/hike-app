@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CardVM, ConditionStatusVM, LineVM } from './vm'
-import { conditionStateKey, foldLineValue, lineKey, splitFeedConditions, unclaimedLines } from './feedConditions'
+import {
+  conditionStateKey,
+  foldLineValue,
+  lineKey,
+  providerShort,
+  splitFeedConditions,
+  unclaimedLines,
+} from './feedConditions'
 
 const line = (over: Partial<LineVM> = {}): LineVM => ({
   text: 'Mostly Cloudy 61°F · NWS, just now',
@@ -176,6 +183,21 @@ describe('foldLineValue / unclaimedLines (ux-review 2026-07 Finding 4/7 — Deta
     expect(claimed.has(weather)).toBe(true)
   })
 
+  it('folds a FULL line source against a SHORT status source via the shared short-provider identity (Epic 046 S1 AC-1.2 — the regression that would have caught A1)', () => {
+    // A1's live-data defect: engine.py sets the status source to the SHORT name
+    // (`provider_short(fact.source)` → "NWS") while present.py sets the line
+    // source to the FULL label — a naive `line.source === status.source`
+    // compare NEVER matches on live data, so this MUST still fold.
+    const weather = line({
+      text: 'Sunny 90°F · NWS, just now',
+      source: 'NWS api.weather.gov · single authoritative source (NWS LWX 56,65)',
+    })
+    const claimed = new Set<LineVM>()
+    const match = foldLineValue(status({ kind: 'weather', state: 'present', source: 'NWS' }), [weather], claimed)
+    expect(match).toBe(weather)
+    expect(claimed.has(weather)).toBe(true)
+  })
+
   it('folds a stale-degraded row the same way as present', () => {
     const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
     const match = foldLineValue(
@@ -231,5 +253,37 @@ describe('foldLineValue / unclaimedLines (ux-review 2026-07 Finding 4/7 — Deta
     const weather = line({ text: 'Sunny 90°F', source: 'NWS' })
     const conditions = [status({ kind: 'weather', state: 'present', source: 'NWS' })]
     expect(unclaimedLines(conditions, [weather])).toEqual([])
+  })
+
+  it('unclaimedLines returns [] for a normal live payload — the fold covers every kind (AC-1.3)', () => {
+    // A realistic live shape: FULL line sources against SHORT status sources,
+    // one kind each — no residual list should ever surface for this shape.
+    const weather = line({
+      text: 'Sunny 90°F · NWS, just now',
+      source: 'NWS api.weather.gov · single authoritative source (NWS LWX 56,65)',
+    })
+    const air = line({
+      text: 'AQI 45 (Good) · AirNow, just now',
+      source: 'AirNow · single aggregated source',
+    })
+    const conditions = [
+      status({ kind: 'weather', state: 'present', source: 'NWS' }),
+      status({ kind: 'air', state: 'present', source: 'AirNow' }),
+    ]
+    expect(unclaimedLines(conditions, [weather, air])).toEqual([])
+  })
+})
+
+describe('providerShort (Epic 046 S1 AC-1.2 — the shared identity the fold matches on)', () => {
+  it('takes the leading token of a full source label', () => {
+    expect(providerShort('NWS api.weather.gov · single authoritative source (NWS LWX 56,65)')).toBe('NWS')
+  })
+
+  it('is a no-op on an already-short source', () => {
+    expect(providerShort('NWS')).toBe('NWS')
+  })
+
+  it('falls back to the input for an empty string', () => {
+    expect(providerShort('')).toBe('')
   })
 })

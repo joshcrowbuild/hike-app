@@ -8,6 +8,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 import { isDrawableRoute, trailheadDirectionsUrl } from '../../data/geo'
+import { isCoarsePointer } from '../../data/motion'
 import type { GeoPosition, TrailGeo, TrailWaterVM } from '../../data/vm'
 import { ElevationProfile } from './ElevationProfile'
 import { layerByKey, OSM_ATTRIBUTION, type MapLayerKey } from './layers'
@@ -136,8 +137,9 @@ export function TerrainMap({
 
       {/* The GL map's cooperative-gestures guard (scroll alone pans the page,
           not the map) only shows its own hint AFTER a failed scroll attempt —
-          too late for a user who gives up first. Say it upfront instead. */}
-      {interactive && !unmapped ? (
+          too late for a user who gives up first. Say it upfront instead.
+          Gate on fine pointer (AC-5.1 / E1) — hidden on touch, shown on desktop. */}
+      {interactive && !unmapped && !isCoarsePointer() ? (
         <p className="map-note">Use ⌘ + scroll (Ctrl + scroll on Windows) to zoom the map.</p>
       ) : null}
 

@@ -67,11 +67,24 @@ export function summarizeWaterCounts(sources: WaterSourceVM[]): string {
 const basisWord = (basis: TrailWaterVM['basis']): string =>
   basis === 'route' ? 'the route' : 'the start'
 
+/**
+ * The effective state, folding an empty `sources` array into `none-nearby`
+ * (Epic 046 S4 AC-4.3 / D4): an answered `'sources'` VM with zero sources is
+ * the same fact as an explicit `none-nearby` and must render identically —
+ * never a composed-but-empty headline (`summarizeWaterCounts` returns `''`
+ * for an empty array, which otherwise leaves a leading-space fragment).
+ * Checked once, before either string is composed, so the headline and the
+ * note can never disagree about whether the answer is "none" or "some".
+ */
+function effectiveState(vm: TrailWaterVM): TrailWaterVM['state'] {
+  return vm.sources.length === 0 ? 'none-nearby' : vm.state
+}
+
 /** The one answer line for the Detail facts area. No "Water" prefix — the row
  *  label (glyph + the word, DecisionItem-style) carries that exactly once. */
 export function waterHeadline(vm: TrailWaterVM): string {
   const dist = formatWaterDistance(vm.radiusM)
-  if (vm.state === 'none-nearby') {
+  if (effectiveState(vm) === 'none-nearby') {
     return `No mapped water within ${dist} of ${basisWord(vm.basis)} — carry what you need.`
   }
   return `${summarizeWaterCounts(vm.sources)} within ${dist} of ${basisWord(vm.basis)}`
@@ -81,7 +94,7 @@ export function waterHeadline(vm: TrailWaterVM): string {
 export function waterNote(vm: TrailWaterVM): string {
   const from = vm.source || 'OpenStreetMap'
   const attribution = from === 'OSM' ? 'OpenStreetMap' : from
-  if (vm.state === 'none-nearby') {
+  if (effectiveState(vm) === 'none-nearby') {
     return `Checked against ${attribution}'s water mapping for this area — not verified live.`
   }
   const hasSpring = vm.sources.some((w) => w.type === 'spring')

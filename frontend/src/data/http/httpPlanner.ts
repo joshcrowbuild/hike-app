@@ -6,7 +6,7 @@
  * so the card degrades to its honest-thin rendering. Flipping `VITE_USE_MOCK`
  * off selects this; no screen changes.
  */
-import { relativeAge } from '../age'
+import { relativeAge, TIME_UNKNOWN } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
 import type {
@@ -99,12 +99,31 @@ function classify(err: unknown, status?: number): FeedError {
   return { kind: 'offline', message: 'Couldn’t reach the planner. Showing nothing live right now.' }
 }
 
+/**
+ * A caller that renders a stamp (rather than logging the raw fact) treats an
+ * unparseable timestamp as no stamp at all (Epic 046 S4 AC-4.2 / D6): the
+ * disclosed `TIME_UNKNOWN` token `relativeAge` returns for a bad ISO string
+ * must never surface as visible copy, and must never enter a shared
+ * block-stamp agreement (S1's `sharedAmong`) as if two independent failures
+ * were one real agreement.
+ */
+function humanizedAge(iso: string | null | undefined): string | undefined {
+  if (!iso) return undefined
+  const age = relativeAge(iso)
+  return age === TIME_UNKNOWN ? undefined : age
+}
+
 /** Wire lines → VM, shared by the full feed card and the phase-2 patch (Epic 040
  *  AC-2.1's client half: one mapping truth, never two). */
 function mapLines(lines: FeedLineResponse[]): LineVM[] {
   return lines.map((l) => ({
     text: l.text,
+    // Epic 046 S1 AC-1.1: the fact's value and its freshness, structurally
+    // separate from `source` — a structured surface folds these in instead of
+    // the welded `text` (never re-baking source/age into displayed copy).
+    body: l.body,
     source: l.source,
+    age: l.age,
     confidence: l.confidence_level,
     provenance: 'live',
     // Real per-fact corroboration (Epic 026a) — every wire line is live, so this
@@ -118,7 +137,7 @@ function mapWarnings(warnings: CardWarningResponse[]): WarningVM[] {
   return warnings.map((w) => ({
     text: w.text,
     source: w.source,
-    observedAgo: relativeAge(w.observed_at),
+    observedAgo: humanizedAge(w.observed_at),
     kind: w.kind,
     provenance: 'live',
   }))
@@ -209,7 +228,7 @@ function mapConditions(wire: ConditionStatusResponse[] | undefined): ConditionSt
       kind: s.kind,
       state,
       source: answered ? s.source || undefined : undefined,
-      checkedAgo: answered && s.checked_at ? relativeAge(s.checked_at) : undefined,
+      checkedAgo: answered ? humanizedAge(s.checked_at) : undefined,
       detail: s.detail || undefined,
     })
   }

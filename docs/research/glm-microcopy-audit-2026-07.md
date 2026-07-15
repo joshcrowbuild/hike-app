@@ -3,6 +3,11 @@
 **Date:** 2026-07
 **Agent:** GLM
 **Scope:** `frontend/src` literals against `docs/vision.md` guidelines.
+**Out of scope (method note, added Epic 046 S6 AC-6.3, 2026-07-15):** COMPUTED
+(runtime-generated) strings — a value assembled at render time (`relativeAge()`'s
+"just now", `present.py::_body`'s pluralized/hedged output, etc.) has no literal
+for a grep to find. `generated-string-integrity-sweep-2026-07.md` §5 is the
+generator-inventory walk-list a future pass over this class should use instead.
 
 ## Audit Inventory
 

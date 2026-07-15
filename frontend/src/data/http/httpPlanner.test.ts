@@ -100,7 +100,7 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
   const ok = (json: unknown) =>
     Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
 
-  it('carries a live line’s real sources onto the VM, unmodified', async () => {
+  it('carries a live line’s real sources onto the VM, unmodified, and maps the structured body/age fields (Epic 046 S1 AC-1.1)', async () => {
     const feed: FeedResponse = {
       query: '',
       card_count: 1,
@@ -111,7 +111,14 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
           name: 'Stony Man Loop',
           distance_mi: 3.7,
           lines: [
-            { text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS api.weather.gov', confidence_level: 'stated', sources: ['NWS'] },
+            {
+              text: 'Sunny 70°F · NWS, 10m ago',
+              body: 'Sunny 70°F',
+              source: 'NWS api.weather.gov',
+              age: '10m ago',
+              confidence_level: 'stated',
+              sources: ['NWS'],
+            },
           ],
           warnings: [],
           unavailable: [],
@@ -123,6 +130,9 @@ describe('HttpPlannerClient per-fact sources (Epic 026a — honest corroboration
     const line = result.cards[0].conditionLines[0]
     expect(line.provenance).toBe('live')
     expect(line.sources).toEqual(['NWS'])
+    expect(line.body).toBe('Sunny 70°F')
+    expect(line.age).toBe('10m ago')
+    expect(line.text).toBe('Sunny 70°F · NWS, 10m ago')
   })
 })
 
@@ -434,6 +444,61 @@ describe('HttpPlannerClient per-kind condition states (Epic 018 S4f / CDP-02)', 
       { kind: 'permits', state: 'not-fetched', source: undefined, checkedAgo: undefined, detail: undefined },
     ])
   })
+
+  it('maps an unparseable checked_at to no stamp, never the literal "time unknown" (Epic 046 S4 AC-4.2 / D6)', async () => {
+    fetchMock.mockReturnValue(
+      ok(
+        cardWith([
+          { kind: 'weather', state: 'present', source: 'NWS', checked_at: 'not-a-date', detail: '' },
+        ]),
+      ),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].conditions).toEqual([
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: undefined, detail: undefined },
+    ])
+  })
+})
+
+describe('HttpPlannerClient hazard warning age (Epic 046 S4 AC-4.2 / D6)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  it('maps an unparseable observed_at to no stamp, never the literal "time unknown"', async () => {
+    const feed: FeedResponse = {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'compton-peak',
+          name: 'Compton Peak',
+          distance_mi: 2.1,
+          lines: [],
+          warnings: [
+            {
+              text: 'weather alert: Extreme Heat Warning',
+              source: 'NWS api.weather.gov',
+              observed_at: 'not-a-date',
+              kind: 'weather',
+            },
+          ],
+          unavailable: [],
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(ok(feed))
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.cards[0].warnings[0].observedAgo).toBeUndefined()
+    expect(result.cards[0].warnings[0].text).toBe('weather alert: Extreme Heat Warning')
+  })
 })
 
 describe('HttpPlannerClient getCard by id (Epic 045 — verified card for any trail)', () => {
@@ -461,7 +526,9 @@ describe('HttpPlannerClient getCard by id (Epic 045 — verified card for any tr
           canonical_id: 'ct:osm:way_138445924',
           name: 'Old Rag Loop',
           distance_mi: 3.7,
-          lines: [{ text: 'Clear skies', source: 'NWS', confidence_level: 'stated', sources: ['NWS'] }],
+          lines: [
+            { text: 'Clear skies', body: 'Clear skies', source: 'NWS', age: 'just now', confidence_level: 'stated', sources: ['NWS'] },
+          ],
           warnings: [],
           unavailable: [],
         },
@@ -650,7 +717,9 @@ describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
         patches: [
           {
             canonical_id: 'ct:a',
-            lines: [{ text: 'Clear skies', source: 'nws', confidence_level: 'stated', sources: ['NWS'] }],
+            lines: [
+              { text: 'Clear skies', body: 'Clear skies', source: 'nws', age: 'just now', confidence_level: 'stated', sources: ['NWS'] },
+            ],
             warnings: [
               { text: 'weather alert: Heat', source: 'NWS', observed_at: new Date().toISOString(), kind: 'weather' },
             ],
@@ -748,7 +817,16 @@ describe('HttpPlannerClient search (Epic 038/B001 build lane — the Home Omnibo
           canonical_id: 'old-rag',
           name: 'Old Rag Loop',
           distance_mi: 3.7,
-          lines: [{ text: 'Sunny 70°F · NWS, 10m ago', source: 'NWS', confidence_level: 'stated', sources: ['NWS'] }],
+          lines: [
+            {
+              text: 'Sunny 70°F · NWS, 10m ago',
+              body: 'Sunny 70°F',
+              source: 'NWS',
+              age: '10m ago',
+              confidence_level: 'stated',
+              sources: ['NWS'],
+            },
+          ],
           warnings: [],
           unavailable: [],
         },

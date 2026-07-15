@@ -1,10 +1,11 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { summarizeProfile } from '../../data/geo'
 import type { RouteGeometry, TrailGeo } from '../../data/vm'
 import { TerrainMap } from './TerrainMap'
+import * as webgl from './webgl'
 
 // jsdom has no WebGL → TerrainMap always renders the static fallback here, so
 // the honest states, attribution, controls, and scrub sync are all verifiable
@@ -181,5 +182,29 @@ describe('TerrainMap — elevation scrub sync (S5b)', () => {
     expect(Number(slider.getAttribute('aria-valuenow'))).toBeGreaterThan(0)
     // The scrub dropped a synced marker on the route.
     expect(container.querySelector('.map-static-cursor')).toBeInTheDocument()
+  })
+})
+
+describe('TerrainMap — zoom hint pointer gate (S5 / E1)', () => {
+  beforeEach(() => {
+    vi.spyOn(webgl, 'supportsWebGL').mockReturnValue(true)
+  })
+
+  it('hides the ⌘+scroll hint on coarse pointer (touch) devices (AC-5.1)', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
+    render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
+    expect(screen.queryByText(/Use ⌘ \+ scroll/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the ⌘+scroll hint on fine pointer (mouse/trackpad) devices (AC-5.1)', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
+    render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
+    expect(screen.getByText(/Use ⌘ \+ scroll/i)).toBeInTheDocument()
+  })
+
+  it('shows the hint by default when matchMedia is unavailable (defensive default)', () => {
+    vi.stubGlobal('matchMedia', undefined)
+    render(<TerrainMap geo={mapped} trailName="Stony Man Loop" />)
+    expect(screen.getByText(/Use ⌘ \+ scroll/i)).toBeInTheDocument()
   })
 })

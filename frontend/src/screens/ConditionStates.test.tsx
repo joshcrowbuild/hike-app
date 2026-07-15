@@ -163,14 +163,107 @@ describe('ConditionStates folds a matching line\'s value into its row (ux-review
   })
 })
 
+describe('ConditionStates block-scope freshness stamp (Epic 046 S1 AC-1.4 — collapse when the batch agrees, expand when a row diverges)', () => {
+  it('renders ONE freshness stamp and drops every per-row age when the whole batch shares it', () => {
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+          { kind: 'air', state: 'present', source: 'EPA', checkedAgo: 'just now' },
+          { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: 'just now' },
+        ]}
+      />,
+    )
+    expect(container.querySelector('.condition-states-stamp')?.textContent).toBe('Checked just now')
+    // Source stays on every row (it differs and carries info) — only the
+    // now-redundant per-row age is gone.
+    const metas = [...container.querySelectorAll('.condition-state-meta')]
+    expect(metas.length).toBe(3)
+    for (const meta of metas) expect(meta.textContent).not.toMatch(/just now/)
+    expect(metas.map((m) => m.textContent)).toEqual([' · NWS', ' · EPA', ' · NASA FIRMS'])
+  })
+
+  it('keeps a diverging row\'s own age while the rest of the block collapses to the shared stamp', () => {
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+          { kind: 'air', state: 'present', source: 'EPA', checkedAgo: 'just now' },
+          {
+            kind: 'water',
+            state: 'no-data',
+            source: 'USGS',
+            checkedAgo: '2h ago',
+            detail: 'no gauge within 30 mi',
+          },
+        ]}
+      />,
+    )
+    expect(container.querySelector('.condition-states-stamp')?.textContent).toBe('Checked just now')
+    const waterRow = container.querySelector('.condition-state--no-data')
+    expect(waterRow?.textContent).toContain('2h ago')
+    const weatherRow = container.querySelector('.condition-state--present')
+    expect(weatherRow?.textContent).not.toMatch(/just now/)
+  })
+
+  it('renders no stamp and leaves every row\'s own age in place when nothing agrees', () => {
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: '12m ago' },
+          { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+        ]}
+      />,
+    )
+    expect(container.querySelector('.condition-states-stamp')).not.toBeInTheDocument()
+    expect(container.querySelector('.condition-state--present')?.textContent).toContain('12m ago')
+    expect(container.querySelector('.condition-state--no-hazard')?.textContent).toContain('20m ago')
+  })
+
+  it('never renders a shared "time unknown" stamp when multiple rows lack an age (Epic 046 S4 AC-4.2 — meshes with the S1 stamp-agreement set)', () => {
+    // The httpPlanner mapping degrades an unparseable `checked_at` to
+    // `undefined` (D6), never the literal 'time unknown' — so two rows that
+    // both failed to parse their timestamp must never agree on a fabricated
+    // shared stamp, and the token itself must never appear anywhere.
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS' },
+          { kind: 'air', state: 'present', source: 'EPA' },
+        ]}
+      />,
+    )
+    expect(container.querySelector('.condition-states-stamp')).not.toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/time unknown/)
+  })
+
+  it('never folds a stale-degraded row\'s unconditional age into the block stamp', () => {
+    const { container } = render(
+      <ConditionStates
+        conditions={[
+          { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+          { kind: 'air', state: 'present', source: 'EPA', checkedAgo: 'just now' },
+          { kind: 'water', state: 'stale-degraded', source: 'USGS', checkedAgo: 'just now' },
+        ]}
+      />,
+    )
+    // weather/air share "just now" (2 rows) → collapses; the stale-degraded row
+    // is excluded from that agreement and keeps wearing its own hedge regardless.
+    expect(container.querySelector('.condition-states-stamp')?.textContent).toBe('Checked just now')
+    const staleRow = container.querySelector('.condition-state--stale-degraded')
+    expect(staleRow?.textContent).toContain('just now')
+    expect(staleRow?.textContent).toContain('may have changed')
+  })
+})
+
 describe('ConditionStates (compact card summary)', () => {
-  it('groups kinds by state into one calm row each, keeping per-kind source + age', () => {
+  it('groups kinds by state into one calm row each, stating a shared age once and keeping per-kind source (Epic 046 S1 AC-1.5 / A4)', () => {
     const { container } = render(
       <ConditionStates
         compact
         conditions={[
           { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
-          { kind: 'closures', state: 'no-hazard', source: 'NPS', checkedAgo: '1h ago' },
+          { kind: 'closures', state: 'no-hazard', source: 'NPS', checkedAgo: '20m ago' },
           { kind: 'air', state: 'not-fetched' },
           { kind: 'permits', state: 'not-fetched' },
         ]}
@@ -179,9 +272,28 @@ describe('ConditionStates (compact card summary)', () => {
     const groups = container.querySelectorAll('.condition-state-group')
     expect(groups).toHaveLength(2)
     const clear = container.querySelector('.condition-state-group.condition-state--no-hazard')
-    expect(clear?.textContent).toContain('Checked — nothing to flag: Fire (NASA FIRMS · 20m ago), Closures (NPS · 1h ago)')
+    // The shared age states once for the group — never per kind (A4's finding:
+    // "Fire (NASA · just now), Closures (NPS · just now)" repeated the age).
+    expect(clear?.textContent).toContain('Checked — nothing to flag · 20m ago: Fire (NASA FIRMS), Closures (NPS)')
     const unchecked = container.querySelector('.condition-state-group.condition-state--not-fetched')
     expect(unchecked?.textContent).toContain('Not checked here: Air quality, Permits')
+  })
+
+  it('keeps a diverging member\'s own age while the rest of the group collapses to the shared one', () => {
+    const { container } = render(
+      <ConditionStates
+        compact
+        conditions={[
+          { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '20m ago' },
+          { kind: 'closures', state: 'no-hazard', source: 'NPS', checkedAgo: '20m ago' },
+          { kind: 'water', state: 'no-hazard', source: 'USGS', checkedAgo: '2h ago' },
+        ]}
+      />,
+    )
+    const clear = container.querySelector('.condition-state-group.condition-state--no-hazard')
+    expect(clear?.textContent).toContain(
+      'Checked — nothing to flag · 20m ago: Fire (NASA FIRMS), Closures (NPS), Streamflow (USGS · 2h ago)',
+    )
   })
 
   it('routes a compact outage row through the flagged couldn’t-verify treatment', () => {
