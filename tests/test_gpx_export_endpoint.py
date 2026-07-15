@@ -5,7 +5,7 @@ the fixtures below reuse that file's row shapes. Asserts: 200 + GPX content-type
 Content-Disposition for a known trail; the D4.3 altitude gate (present/absent);
 404 for an unknown trail; 422 for a known trail with no exportable geometry; the
 Rule #5 guard (only the world-only `trail_detail` Cypher is issued, no personal
-fields); and `_authorize_viewer`'s anonymous/dev-secret posture.
+fields); and `_resolve_viewer`'s anonymous posture (world data → anonymous-friendly).
 """
 
 from __future__ import annotations
