@@ -1,6 +1,6 @@
 # Epic 042 — Manual Trip Log (Learning-Loop Fallback)
 
-**Status:** BACKLOG  
+**Status:** DEFINED  
 **Phase:** C (Real Intake)  
 **Spec refs:** GLM IA review (gemini-ia-flow-review-2026-07.md §6.1) · vision.md §3 (private outcome-learned intelligence) · CLAUDE.md Rule #6 (watch data is enrichment, never dependency)
 
