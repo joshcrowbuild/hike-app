@@ -1,6 +1,6 @@
 # Epic 046 — Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty)
 
-**Status:** REVIEW
+**Status:** DONE ✅
 **Phase:** 1 (personal-intelligence app; conditions + Detail surface)
 **Spec refs:** `docs/research/generated-string-integrity-sweep-2026-07.md` (the
 sweep this epic executes — findings A1–A5, B1–B8, C1–C2, D1–D4, E1) ·
