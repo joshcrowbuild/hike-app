@@ -11,7 +11,6 @@ import {
   DirectionsLink,
   SaveButton,
   TrailSummary,
-  Verdict,
   verdictSpokenWarningText,
   WarningBlock,
 } from './cardParts'
@@ -92,8 +91,6 @@ function DetailBody({ card }: { card: CardVM }) {
         {/* The poetic place cue lives on the commitment view now, not the lean
             feed card (Epic 019). */}
         {e?.placeCue ? <p className="detail-place">{e.placeCue}</p> : null}
-
-        <Verdict card={card} className="verdict--detail" />
 
         <WarningBlock warnings={card.warnings} spokenText={verdictSpokenWarningText(card)} />
 
