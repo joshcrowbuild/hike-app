@@ -1,6 +1,6 @@
 # Epic 047 — Design system v0.2 foundations (WP-0: tokens + frozen contracts)
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅
 **Phase:** 1 (look-and-feel layer; blocks WP-1..7)
 **Spec refs:** `docs/design-system/spec-v0.2.md` Part IV.1 (the two frozen
 contracts), Part IV.3 (WP sequencing), Appendix A (drift reconciliation),

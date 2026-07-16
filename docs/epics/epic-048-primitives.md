@@ -1,6 +1,6 @@
 # Epic 048 — Primitives (WP-1: Text, Button, Icon glyphs, MetricRow)
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅
 **Phase:** 1 (look-and-feel layer; depends on WP-0, blocks WP-2..4)
 **Spec refs:** `docs/design-system/spec-v0.2.md` Part II.A (the primitive
 table), I.3 (the type-role scale), I.5 (iconography), IV.3 (WP sequencing)

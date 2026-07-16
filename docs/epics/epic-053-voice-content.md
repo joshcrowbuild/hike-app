@@ -1,6 +1,6 @@
 # Epic 053 — Voice & content system (WP-6)
 
-**Status:** IN_PROGRESS (WP-6 delivery in progress)
+**Status:** DONE ✅
 
 **Scope:** Banned-builder-noun glossary + lint · state-message templates · microcopy  
 **Owner:** WP-6 (Haiku agent)  
