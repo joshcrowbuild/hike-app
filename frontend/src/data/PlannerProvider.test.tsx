@@ -6,6 +6,7 @@ import { PlannerProvider, useCard, useFeed, useSearch } from './PlannerProvider'
 import { ANON_SCOPE } from './api'
 import type { ScopeContext } from './api'
 import { feedKey, readFeedCache, resetFeedCacheForTests, writeFeedCache } from './feedCache'
+import { COLDSTART_MS, REASSURE_MS } from './loadingStages'
 import type { PlanInput, PlannerClient } from './source'
 import type { CardVM, FeedVM } from './vm'
 import type { TuningState } from '../types'
@@ -65,7 +66,7 @@ describe('useFeed loading-stage progress (D4 — never a frozen line)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('steps loadingStage from initial → reassure → coldstart at the 10s and 25s marks', () => {
+  it('steps loadingStage from initial → reassure → coldstart at the REASSURE_MS/COLDSTART_MS marks', () => {
     const { client } = deferredClient()
     const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
 
@@ -73,7 +74,7 @@ describe('useFeed loading-stage progress (D4 — never a frozen line)', () => {
     expect(result.current.loadingStage).toBe('initial')
 
     act(() => {
-      vi.advanceTimersByTime(9_999)
+      vi.advanceTimersByTime(REASSURE_MS - 1)
     })
     expect(result.current.loadingStage).toBe('initial')
 
@@ -83,7 +84,7 @@ describe('useFeed loading-stage progress (D4 — never a frozen line)', () => {
     expect(result.current.loadingStage).toBe('reassure')
 
     act(() => {
-      vi.advanceTimersByTime(14_999)
+      vi.advanceTimersByTime(COLDSTART_MS - REASSURE_MS - 1)
     })
     expect(result.current.loadingStage).toBe('reassure')
 
@@ -265,9 +266,9 @@ describe('useCard resolves the tapped card from the in-memory feed (OBX "not in 
   })
 })
 
-describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
+describe('Epic 039 S3 / Epic 052 WP-5 — stale-while-revalidate (any viewer)', () => {
   function seedCache(input: PlanInput, feed: FeedVM, scope: ScopeContext = ANON_SCOPE) {
-    writeFeedCache(feedKey(input, scope), feed)
+    writeFeedCache(feedKey(input, scope), feed, scope.viewerId)
   }
 
   it('AC-3.1: a matching stale cache paints on the FIRST committed render — ready/stale/revalidating, never loading', () => {
@@ -346,11 +347,13 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
     expect(result.current.stale).toBe(false)
     expect(result.current.revalidating).toBe(false)
     expect(result.current.feed?.cards[0].id).toBe('old-rag')
-    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())?.feed.cards[0].id).toBe('old-rag')
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)?.feed.cards[0].id).toBe(
+      'old-rag',
+    )
   })
 
-  it('AC-3.5b: a non-anonymous viewer neither reads nor writes the cache', async () => {
-    // Seed under the anonymous key so a leak into josh's read would show up as a hit.
+  it('AC-3.5b (Epic 052 WP-5): a signed-in viewer DOES get a stale paint + write-through, in its OWN namespaced slot', async () => {
+    // Seed under the anonymous key — a leak into josh's read would show up as a hit.
     seedCache(PLAN_INPUT, feedWithCard('compton-peak'))
     const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
     const { client, resolve, pending } = deferredClient()
@@ -363,7 +366,8 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
     }
     const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperFor(josh, client) })
 
-    // No stale paint for a non-anonymous viewer — starts loading, same as today.
+    // No cross-viewer leak: josh's slot is empty, so josh still starts loading
+    // (never repaints from anonymous's cached feed).
     expect(result.current.status).toBe('loading')
     expect(result.current.stale).toBe(false)
 
@@ -374,7 +378,12 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
       await Promise.resolve()
     })
 
-    expect(readFeedCache(feedKey(PLAN_INPUT, josh), Date.now())).toBeNull()
+    // The resolve write-throughs to josh's OWN slot now (WP-5 lifts the old
+    // anonymous-only gate) — the anonymous slot is untouched.
+    expect(readFeedCache(feedKey(PLAN_INPUT, josh), Date.now(), 'josh')?.feed.cards[0].id).toBe('old-rag')
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), 'anonymous')?.feed.cards[0].id).toBe(
+      'compton-peak',
+    )
   })
 
   it('AC-3.6: an empty or errored resolve is never persisted', async () => {
@@ -386,7 +395,7 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
       await Promise.resolve()
     })
     expect(r1.current.status).toBe('empty')
-    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
 
     const erroredFeed: FeedVM = { ...feedWithCard('y'), error: { kind: 'partial', message: 'partial' } }
     const client2 = { plan: vi.fn().mockResolvedValue(erroredFeed) } as unknown as PlannerClient
@@ -396,7 +405,7 @@ describe('Epic 039 S3 — anonymous stale-while-revalidate', () => {
       await Promise.resolve()
     })
     expect(r2.current.status).toBe('error')
-    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('AC-3.7: a revalidation rejection keeps the stale feed usable; a cold rejection (no seed) still errors', async () => {
@@ -586,14 +595,14 @@ describe('Epic 040 S3 — two-phase flow (cards first, conditions patched behind
 
     // Phase 1 is on screen but the write-gate held: nothing cached yet.
     expect(result.current.revalidating).toBe(true)
-    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
 
     await act(async () => {
       resolvePatch(PATCH)
       await patchPending
     })
 
-    const hit = readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now())
+    const hit = readFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)
     expect(hit).not.toBeNull()
     expect(hit?.feed.conditionsPending).toBeUndefined()
     expect(hit?.feed.cards[0].conditions?.[0].state).toBe('present')

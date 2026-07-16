@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ANON_SCOPE } from './api'
+import type { ScopeContext } from './api'
 import type { PlanInput } from './source'
 import type { CardVM, FeedVM, WarningVM } from './vm'
 import type { TuningState } from '../types'
 
-const STORAGE_KEY = 'adventure-planner:anon-feed-cache'
+const STORAGE_KEY = 'adventure-planner:feed-cache:anonymous'
+const JOSH_STORAGE_KEY = 'adventure-planner:feed-cache:josh'
 
 const TUNING: TuningState = {
   origin: 'frontRoyal',
@@ -57,40 +59,104 @@ describe('feedKey (single source of truth, shared with useFeed effect dep)', () 
   })
 })
 
-describe('readFeedCache / writeFeedCache (round trip, single slot, reset)', () => {
+describe('readFeedCache / writeFeedCache (round trip, one slot per viewer, reset)', () => {
   it('returns null on an empty store', async () => {
     const { readFeedCache, feedKey } = await import('./feedCache')
-    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('round-trips a written feed under a matching key', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
     const feed = feedWith()
-    writeFeedCache(key, feed)
-    const hit = readFeedCache(key, Date.now())
+    writeFeedCache(key, feed, ANON_SCOPE.viewerId)
+    const hit = readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)
     expect(hit).not.toBeNull()
     expect(hit?.feed).toEqual(feed)
     expect(typeof hit?.savedAt).toBe('number')
   })
 
-  it('a new write overwrites the single slot rather than accumulating entries', async () => {
+  it("a new write overwrites that viewer's slot rather than accumulating entries", async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key1 = feedKey(INPUT, ANON_SCOPE)
     const key2 = feedKey({ tuning: { ...TUNING, party: 'friends' } }, ANON_SCOPE)
-    writeFeedCache(key1, feedWith({ query: 'first' }))
-    writeFeedCache(key2, feedWith({ query: 'second' }))
+    writeFeedCache(key1, feedWith({ query: 'first' }), ANON_SCOPE.viewerId)
+    writeFeedCache(key2, feedWith({ query: 'second' }), ANON_SCOPE.viewerId)
     // The first key's entry is gone — the new key's write overwrote the slot.
-    expect(readFeedCache(key1, Date.now())).toBeNull()
-    expect(readFeedCache(key2, Date.now())?.feed.query).toBe('second')
+    expect(readFeedCache(key1, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
+    expect(readFeedCache(key2, Date.now(), ANON_SCOPE.viewerId)?.feed.query).toBe('second')
   })
 
   it('resetFeedCacheForTests clears the stored entry', async () => {
     const { readFeedCache, writeFeedCache, feedKey, resetFeedCacheForTests } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
-    writeFeedCache(key, feedWith())
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
     resetFeedCacheForTests()
-    expect(readFeedCache(key, Date.now())).toBeNull()
+    expect(readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
+  })
+})
+
+describe('Epic 052 WP-5 — signed-in viewers are namespaced, not excluded', () => {
+  it('a signed-in viewer round-trips through its OWN slot, physically separate from anonymous', async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+    const joshKey = feedKey(INPUT, josh)
+    writeFeedCache(joshKey, feedWith({ query: 'josh-feed' }), 'josh')
+
+    expect(readFeedCache(joshKey, Date.now(), 'josh')?.feed.query).toBe('josh-feed')
+    // The raw storage lands under the namespaced viewer key, not the old
+    // single global slot.
+    expect(localStorage.getItem(JOSH_STORAGE_KEY)).not.toBeNull()
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it("one viewer's write never leaks into another viewer's read, even seeded under a colliding key", async () => {
+    const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
+    const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+    // feedKey already differs by viewer (`v: scope.viewerId`), but assert the
+    // storage-level isolation directly too — belt and suspenders against a
+    // future feedKey change that stops encoding viewerId.
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith({ query: 'anon-feed' }), 'anonymous')
+    writeFeedCache(feedKey(INPUT, josh), feedWith({ query: 'josh-feed' }), 'josh')
+
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), 'anonymous')?.feed.query).toBe('anon-feed')
+    expect(readFeedCache(feedKey(INPUT, josh), Date.now(), 'josh')?.feed.query).toBe('josh-feed')
+    // Reading josh's key against anonymous's slot (or vice versa) is a miss.
+    expect(readFeedCache(feedKey(INPUT, josh), Date.now(), 'anonymous')).toBeNull()
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), 'josh')).toBeNull()
+  })
+
+  it('resetFeedCacheForTests sweeps every namespaced viewer slot, not just one', async () => {
+    const { readFeedCache, writeFeedCache, feedKey, resetFeedCacheForTests } = await import('./feedCache')
+    const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), 'anonymous')
+    writeFeedCache(feedKey(INPUT, josh), feedWith(), 'josh')
+
+    resetFeedCacheForTests()
+
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), 'anonymous')).toBeNull()
+    expect(readFeedCache(feedKey(INPUT, josh), Date.now(), 'josh')).toBeNull()
+  })
+})
+
+describe('evictFeedCache (Rule #5 — sign-out must not leave a readable feed behind)', () => {
+  it("clears the named viewer's slot only, leaving other viewers' slots intact", async () => {
+    const { readFeedCache, writeFeedCache, feedKey, evictFeedCache } = await import('./feedCache')
+    const josh: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), 'anonymous')
+    writeFeedCache(feedKey(INPUT, josh), feedWith(), 'josh')
+
+    evictFeedCache('josh')
+
+    expect(readFeedCache(feedKey(INPUT, josh), Date.now(), 'josh')).toBeNull()
+    expect(localStorage.getItem(JOSH_STORAGE_KEY)).toBeNull()
+    // The anonymous slot survives — eviction is scoped to the one viewer.
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), 'anonymous')?.feed).toBeDefined()
+  })
+
+  it('evicting a slot that was never written is a no-op, never throws', async () => {
+    const { evictFeedCache } = await import('./feedCache')
+    expect(() => evictFeedCache('never-signed-in')).not.toThrow()
   })
 })
 
@@ -98,32 +164,32 @@ describe('AC-3.4 age cap / kill switch', () => {
   it('drops an entry older than MAX_STALE_MS (default 6h)', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
-    writeFeedCache(key, feedWith())
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
     // Rewrite savedAt directly — writeFeedCache always stamps "now", so this
     // simulates a visit that happened at a known past instant.
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) as string)
     const savedAt = 1_000_000
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...raw, savedAt }))
-    expect(readFeedCache(key, savedAt + 21_600_000)).not.toBeNull()
-    expect(readFeedCache(key, savedAt + 21_600_000 + 1)).toBeNull()
+    expect(readFeedCache(key, savedAt + 21_600_000, ANON_SCOPE.viewerId)).not.toBeNull()
+    expect(readFeedCache(key, savedAt + 21_600_000 + 1, ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('VITE_ANON_FEED_STALE_MAX_MS=0 disables both read and write', async () => {
     vi.stubEnv('VITE_ANON_FEED_STALE_MAX_MS', '0')
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
-    writeFeedCache(key, feedWith())
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
-    expect(readFeedCache(key, Date.now())).toBeNull()
+    expect(readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('an unset env value defaults to a 6h cap', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
     const now = Date.now()
-    writeFeedCache(key, feedWith())
-    expect(readFeedCache(key, now + 21_600_000 - 1)).not.toBeNull()
-    expect(readFeedCache(key, now + 21_600_000 + 60_000)).toBeNull()
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
+    expect(readFeedCache(key, now + 21_600_000 - 1, ANON_SCOPE.viewerId)).not.toBeNull()
+    expect(readFeedCache(key, now + 21_600_000 + 60_000, ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('a blank env value counts as unset (6h cap), not the 0 kill switch', async () => {
@@ -131,9 +197,9 @@ describe('AC-3.4 age cap / kill switch', () => {
     vi.stubEnv('VITE_ANON_FEED_STALE_MAX_MS', '  ')
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
-    writeFeedCache(key, feedWith())
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
-    expect(readFeedCache(key, Date.now())).not.toBeNull()
+    expect(readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)).not.toBeNull()
   })
 })
 
@@ -141,44 +207,44 @@ describe('AC-3.5 invalidation / degrade matrix (conservative drop-on-any-doubt)'
   it('drops on a SCHEMA_VERSION mismatch', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const key = feedKey(INPUT, ANON_SCOPE)
-    writeFeedCache(key, feedWith())
+    writeFeedCache(key, feedWith(), ANON_SCOPE.viewerId)
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) as string)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...raw, v: 999 }))
-    expect(readFeedCache(key, Date.now())).toBeNull()
+    expect(readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('drops on a changed tuning (party)', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
-    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), ANON_SCOPE.viewerId)
     const changedKey = feedKey({ tuning: { ...TUNING, party: 'friends' } }, ANON_SCOPE)
-    expect(readFeedCache(changedKey, Date.now())).toBeNull()
+    expect(readFeedCache(changedKey, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('drops on a changed originCoords (a moved "near me" fix)', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
     const here: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 38.9, lon: -78.2 } } }
-    writeFeedCache(feedKey(here, ANON_SCOPE), feedWith())
+    writeFeedCache(feedKey(here, ANON_SCOPE), feedWith(), ANON_SCOPE.viewerId)
     const there: PlanInput = { tuning: { ...TUNING, originCoords: { lat: 35.9, lon: -75.6 } } }
-    expect(readFeedCache(feedKey(there, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(there, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('drops on a changed k', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
-    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
-    expect(readFeedCache(feedKey({ ...INPUT, k: 5 }, ANON_SCOPE), Date.now())).toBeNull()
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), ANON_SCOPE.viewerId)
+    expect(readFeedCache(feedKey({ ...INPUT, k: 5 }, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
-  it('drops on a changed viewer/grants', async () => {
+  it('drops on a changed grants (same viewer slot, different key)', async () => {
     const { readFeedCache, writeFeedCache, feedKey } = await import('./feedCache')
-    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())
+    writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), ANON_SCOPE.viewerId)
     const differentScope = { viewerId: 'anonymous', grantedIds: ['ruby'] }
-    expect(readFeedCache(feedKey(INPUT, differentScope), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(INPUT, differentScope), Date.now(), 'anonymous')).toBeNull()
   })
 
   it('degrades to a miss on a corrupt non-JSON value', async () => {
     localStorage.setItem(STORAGE_KEY, 'not valid json')
     const { readFeedCache, feedKey } = await import('./feedCache')
-    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now())).toBeNull()
+    expect(readFeedCache(feedKey(INPUT, ANON_SCOPE), Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('degrades to a miss on a shape-invalid value (feed.cards not an array)', async () => {
@@ -188,7 +254,7 @@ describe('AC-3.5 invalidation / degrade matrix (conservative drop-on-any-doubt)'
       STORAGE_KEY,
       JSON.stringify({ v: 1, key, savedAt: Date.now(), feed: { cards: 'nope' } }),
     )
-    expect(readFeedCache(key, Date.now())).toBeNull()
+    expect(readFeedCache(key, Date.now(), ANON_SCOPE.viewerId)).toBeNull()
   })
 
   it('a quota-throwing setItem is swallowed by writeFeedCache, never thrown', async () => {
@@ -196,7 +262,7 @@ describe('AC-3.5 invalidation / degrade matrix (conservative drop-on-any-doubt)'
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('QuotaExceededError')
     })
-    expect(() => writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith())).not.toThrow()
+    expect(() => writeFeedCache(feedKey(INPUT, ANON_SCOPE), feedWith(), ANON_SCOPE.viewerId)).not.toThrow()
     spy.mockRestore()
   })
 })

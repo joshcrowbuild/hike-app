@@ -11,6 +11,7 @@ Run dev server: uvicorn api.app:app --reload --port 8000
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Path, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
@@ -586,6 +588,42 @@ def _graph_freshness() -> tuple[str | None, str | None]:
         return None, None
 
 
+# ── HTTP conditional caching (Epic 052 WP-5 / design-system-v0.2 Part III.3) ──
+#
+# GET /regions and the POST /plan SHELL phase (phase:"cards") are the only two
+# surfaces that get an ETag: /regions is public/stable config, and the shell
+# phase is the graph-derived, viewer-scoped structural response the client
+# revalidates in the background. The ephemeral POST /plan/conditions overlay
+# (Rule #3 — fast/live data, fetched JIT) and the classic complete /plan
+# response (already carries live conditions, never a stable "shell") stay
+# deliberately uncached — adding a validator there would risk a stale hazard
+# read as fresh on a 304.
+
+
+def _etag_for(payload: Any) -> str:
+    """A strong validator over the JSON-serializable payload — sorted keys +
+    compact separators so semantically-identical payloads always hash the
+    same regardless of dict insertion order. Quoted per RFC 7232 (`ETag` /
+    `If-None-Match` both carry the quotes)."""
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return f'"{hashlib.sha256(body).hexdigest()}"'
+
+
+def _conditional_json(request: Request, payload: Any, *, cache_control: str) -> Response:
+    """Attach `ETag` + `Cache-Control` to a JSON-serializable payload and honor
+    `If-None-Match`: a match short-circuits to an empty 304 (the "cheap
+    revalidate" — no body on the wire), any other case serves the full 200.
+    Bypasses `response_model` by returning a `Response`/`JSONResponse`
+    directly (the same override FastAPI applies to the GPX export below) —
+    the two callers already built payload through their normal response
+    model, so nothing here duplicates validation."""
+    etag = _etag_for(payload)
+    headers = {"ETag": etag, "Cache-Control": cache_control}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(content=payload, headers=headers)
+
+
 @app.get("/health", response_model=HealthResponse)
 @limiter.limit(health_limit)
 def health(request: Request) -> HealthResponse:
@@ -639,12 +677,18 @@ def status(request: Request) -> StatusResponse:
 
 @app.get("/regions", response_model=RegionsResponse)
 @limiter.limit(health_limit)
-def regions(request: Request) -> RegionsResponse:
+def regions(request: Request) -> Response:
     """Every region's picker-facing config (Phase 2: config-driven origins) — a plain
     read of `regions/*.geojson`, independent of the graph and of which region this
     process was last started with (`ADVENTURE_REGION`). Adding a region's origins is
-    now a config edit (regions/*.geojson) rather than a frontend deploy."""
-    return RegionsResponse(
+    now a config edit (regions/*.geojson) rather than a frontend deploy.
+
+    ETag + Cache-Control (Epic 052 WP-5): public/non-viewer-specific and changes
+    only on deploy, so `regionsCatalog.ts`'s plain `fetch()` gets real HTTP-native
+    caching for free — a warm browser disk cache serves the next reload with NO
+    round trip at all inside `max-age`, and a conditional revalidate past that is a
+    cheap 304 rather than a full body."""
+    payload = RegionsResponse(
         regions=[
             RegionResponse(
                 region_id=r.region_id,
@@ -657,6 +701,11 @@ def regions(request: Request) -> RegionsResponse:
             for r in list_regions()
         ]
     )
+    return _conditional_json(
+        request,
+        jsonable_encoder(payload),
+        cache_control="public, max-age=60, must-revalidate",
+    )
 
 
 @app.post("/plan", response_model=FeedResponse)
@@ -666,12 +715,18 @@ def plan(
     body: PlanRequest,
     authorization: str | None = Header(default=None),
     x_dev_viewer_secret: str | None = Header(default=None),
-) -> FeedResponse:
+) -> FeedResponse | Response:
     if _settings is None or _graph_client is None:
         raise HTTPException(status_code=503, detail="Service not ready")
     # The verified identity, not the client-claimed body.viewer_id (Epic 043 S1):
     # a signed-in caller's token `sub` is authoritative; anonymous stays open.
     viewer_id = _resolve_viewer(body.viewer_id, authorization, x_dev_viewer_secret)
+    # Epic 052 WP-5 (spec III.3): ONLY the two-phase SHELL response (the
+    # graph-derived phase-1 cards, no live conditions) is a genuine "shell" a
+    # background revalidate can conditionally re-fetch — the classic
+    # single-pass response already carries live conditions and must never
+    # wear a validator that could let a stale hazard read back as fresh.
+    is_shell_phase = body.phase == "cards" and _settings.two_phase_enabled
     # Observability (Phase B): time the fan-out and snapshot the live-probe cache so we can
     # see latency + how much third-party quota the call spent. Never logs viewer_id in the
     # clear (Rule #5).
@@ -766,6 +821,14 @@ def plan(
         ).emit()
     except Exception:
         logger.exception("plan observability emit failed (response already sent)")
+    if is_shell_phase:
+        # `private` (viewer-scoped, never a shared cache) + `no-cache` (always
+        # revalidate — this is a "cheap 304", not a blind time-based cache).
+        return _conditional_json(
+            request,
+            jsonable_encoder(response),
+            cache_control="private, no-cache",
+        )
     return response
 
 

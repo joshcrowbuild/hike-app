@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HttpPlannerClient } from './httpPlanner'
+import { HttpPlannerClient, resetPlanShellCacheForTests } from './httpPlanner'
 import { ANON_SCOPE, type ScopeContext, type FeedResponse, type OutcomeResponse } from '../api'
 import type { PlanInput } from '../source'
 import type { Coords, TuningState } from '../../types'
+
+// The /plan SHELL ETag cache (Epic 052 WP-5) is module-level, in-memory state
+// shared across every test in this file (and every `HttpPlannerClient`
+// instance) — reset it before each test so one test's cached shell can never
+// serve a stale mock response to a later test with the same request shape.
+beforeEach(() => resetPlanShellCacheForTests())
 
 const JOSH: ScopeContext = { viewerId: 'josh-sub', grantedIds: [], accessToken: 'jwt-token-abc' }
 
@@ -633,7 +639,9 @@ describe('HttpPlannerClient /plan cold-start timeout', () => {
   })
 
   // A fetch that never resolves on its own, only when its abort signal fires —
-  // models the Render free-tier cold start the client has to wait out.
+  // models a genuinely slow request the 60s safety-net budget has to wait out
+  // (a just-deployed instance restarting, or a real upstream outage), not a
+  // routine free-tier wake — Render is a paid Starter with no idle spin-down.
   function hangingFetch(): AbortSignal {
     let signal!: AbortSignal
     fetchMock.mockImplementation((_url: string, init: RequestInit) => {
@@ -759,6 +767,111 @@ describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
   it('planConditions rejects on a non-OK response — the caller owns the calm retry, never a fake-clear', async () => {
     fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 500 } as Response))
     await expect(client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a'])).rejects.toThrow('500')
+  })
+})
+
+describe('HttpPlannerClient /plan shell ETag cache (Epic 052 WP-5 — cheap background revalidate)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function okWithEtag(json: unknown, etag: string) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ etag }),
+      json: () => Promise.resolve(json),
+    } as Response)
+  }
+  function notModified(etag: string) {
+    return Promise.resolve({
+      ok: false,
+      status: 304,
+      headers: new Headers({ etag }),
+      // Proves the client never calls .json() on a 304 — there's no body.
+      json: () => Promise.reject(new Error('must not parse a 304 body')),
+    } as unknown as Response)
+  }
+  function headersOf(call: unknown): Record<string, string> {
+    return (call as [string, RequestInit])[1].headers as Record<string, string>
+  }
+
+  it('sends no If-None-Match on the first request for a given frame', async () => {
+    fetchMock.mockReturnValue(okWithEtag(FEED, '"v1"'))
+    await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[0])).not.toHaveProperty('If-None-Match')
+  })
+
+  it('sends If-None-Match with the previous ETag on a repeat request for the SAME frame', async () => {
+    fetchMock.mockReturnValue(okWithEtag(FEED, '"v1"'))
+    const c = client()
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[1])['If-None-Match']).toBe('"v1"')
+  })
+
+  it('a DIFFERENT frame (retuned party) never sends the other frame\'s ETag', async () => {
+    fetchMock.mockReturnValue(okWithEtag(FEED, '"v1"'))
+    const c = client()
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    const retuned: PlanInput = { tuning: { ...TUNING, party: 'friends' } }
+    await c.plan(retuned, ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[1])).not.toHaveProperty('If-None-Match')
+  })
+
+  it('a 304 reuses the previously cached shell body — never parses an empty one', async () => {
+    const cardFeed: FeedResponse = {
+      ...FEED,
+      cards: [{ canonical_id: 'ct:a', name: 'A', distance_mi: 1, lines: [], warnings: [], unavailable: [] }],
+    }
+    fetchMock.mockReturnValueOnce(okWithEtag(cardFeed, '"v1"'))
+    fetchMock.mockReturnValueOnce(notModified('"v1"'))
+    const c = client()
+    const first = await c.plan(PLAN_INPUT, ANON_SCOPE)
+    const second = await c.plan(PLAN_INPUT, ANON_SCOPE)
+    expect(second.cards[0]?.id).toBe('ct:a')
+    expect(second).toEqual(first)
+  })
+
+  it('a fresh 200 with a NEW ETag replaces the cached one (the shell genuinely changed)', async () => {
+    const feedV2: FeedResponse = {
+      ...FEED,
+      cards: [{ canonical_id: 'ct:b', name: 'B', distance_mi: 2, lines: [], warnings: [], unavailable: [] }],
+    }
+    fetchMock.mockReturnValueOnce(okWithEtag(FEED, '"v1"'))
+    fetchMock.mockReturnValueOnce(okWithEtag(feedV2, '"v2"'))
+    const third = notModified('"v2"')
+    fetchMock.mockReturnValueOnce(third)
+    const c = client()
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    const second = await c.plan(PLAN_INPUT, ANON_SCOPE)
+    expect(second.cards[0]?.id).toBe('ct:b')
+    // The THIRD call must send the NEW etag (v2), not the stale v1.
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[2])['If-None-Match']).toBe('"v2"')
+  })
+
+  it('a response with no ETag header (kill switch / older backend) is simply never cached', async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
+    )
+    const c = client()
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    await c.plan(PLAN_INPUT, ANON_SCOPE)
+    expect(headersOf(fetchMock.mock.calls[1])).not.toHaveProperty('If-None-Match')
+  })
+
+  it('a minimal test double with no headers object at all degrades safely (no throw, no cache)', async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(FEED) } as Response),
+    )
+    await expect(client().plan(PLAN_INPUT, ANON_SCOPE)).resolves.toBeDefined()
   })
 })
 
