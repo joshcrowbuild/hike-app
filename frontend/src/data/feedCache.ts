@@ -1,7 +1,8 @@
 /**
- * Client-side stale-while-revalidate cache for the anonymous Home feed (Epic
- * 039 S3). Mirrors `savedTrails.ts`'s storage/degrade posture: a single
- * namespaced `localStorage` slot, corrupt/foreign values degrade to a miss
+ * Client-side stale-while-revalidate cache for the Home feed (Epic 039 S3;
+ * extended to signed-in viewers by Epic 052 WP-5 / design-system-v0.2 Part
+ * III.2). Mirrors `savedTrails.ts`'s storage/degrade posture: a namespaced
+ * `localStorage` slot PER VIEWER, corrupt/foreign values degrade to a miss
  * rather than throwing. A cache of a DERIVED feed — same Rule-#3/#6 posture
  * as `savedTrails.ts` and the probe TTLCache: never a graph write/node.
  *
@@ -9,13 +10,31 @@
  * envelope stores the TRUE fresh feed (warnings included) — neutralisation
  * happens only on read, via `toStalePaint`, so the cap and the honesty
  * presentation stay separate concerns from the write path.
+ *
+ * Privacy (Rule #5, private-by-default): a signed-in viewer's feed is
+ * personal, so each viewer gets its OWN physically separate `localStorage`
+ * slot (`storageKeyFor`) rather than sharing one global slot — two viewers on
+ * the same device can never evict or read each other's cached feed. The
+ * caller (`AuthProvider`'s `signOut`) evicts the signed-out viewer's slot via
+ * `evictFeedCache`; nothing here ever persists a GRANTED viewer's raw
+ * substrate — only the resolved caller's own derived `FeedVM` ever reaches
+ * `writeFeedCache`, and it lands in that caller's own slot alone.
  */
 import { relativeAge } from './age'
 import type { ScopeContext } from './api'
 import type { PlanInput } from './source'
 import type { FeedVM } from './vm'
 
-const STORAGE_KEY = 'adventure-planner:anon-feed-cache'
+const STORAGE_PREFIX = 'adventure-planner:feed-cache:'
+
+/** Every viewer's slot is physically separate (Rule #5) — `viewerId` is
+ *  already constrained to `[A-Za-z0-9_:-]{1,64}` server-side
+ *  (`VIEWER_ID_PATTERN`), so it's safe to interpolate directly with no
+ *  delimiter collision against the fixed prefix. */
+function storageKeyFor(viewerId: string): string {
+  return `${STORAGE_PREFIX}${viewerId}`
+}
+
 /** Bump on ANY FeedVM shape change — there is no build-hash to detect drift
  *  another way, so a stale reader must self-identify via this number. */
 const SCHEMA_VERSION = 2 // v2: CardVM grew per-kind `conditions` (Epic 018 S4f)
@@ -72,15 +91,23 @@ function isEnvelope(value: unknown): value is FeedCacheEnvelope {
  * sanity) — any failure degrades silently to a cache miss (the normal
  * skeleton load), never a thrown error or a stale/incompatible paint.
  *
- * The anonymous-only gate lives at the CALLER (`useFeed`), not here — this is
- * a pure key match so it stays trivially testable on its own.
+ * Reads ANY viewer's slot (Epic 052 WP-5 — signed-in viewers used to be
+ * excluded by an anonymous-only gate at the caller; that gate is gone, and
+ * `viewerId` alone now selects which physically separate slot is read, so a
+ * viewer can never read another viewer's cached feed even on a `key` clash).
+ * `viewerId` defaults to `'anonymous'` — the slot every pre-WP-5 caller
+ * implicitly meant — so an un-migrated call site behaves exactly as before.
  */
-export function readFeedCache(key: string, nowMs: number): { feed: FeedVM; savedAt: number } | null {
+export function readFeedCache(
+  key: string,
+  nowMs: number,
+  viewerId: string = 'anonymous',
+): { feed: FeedVM; savedAt: number } | null {
   if (typeof localStorage === 'undefined') return null
   if (MAX_STALE_MS <= 0) return null
   let raw: string | null
   try {
-    raw = localStorage.getItem(STORAGE_KEY)
+    raw = localStorage.getItem(storageKeyFor(viewerId))
   } catch {
     return null
   }
@@ -100,21 +127,45 @@ export function readFeedCache(key: string, nowMs: number): { feed: FeedVM; saved
 }
 
 /**
- * Persists the TRUE fresh feed (warnings, notices, everything). The caller
- * (`useFeed`) invokes this only for an anonymous viewer, and only on a
- * successful, non-empty, non-error resolve — a stale "nothing holds" or a
- * stale error is never useful to repaint, so neither is ever written.
+ * Persists the TRUE fresh feed (warnings, notices, everything) into THIS
+ * viewer's own slot. The caller (`useFeed`) invokes this for any viewer
+ * (Epic 052 WP-5 — previously anonymous-only), and only on a successful,
+ * non-empty, non-error, phase-2-complete resolve — a stale "nothing holds" or
+ * a stale error is never useful to repaint, so neither is ever written.
+ *
+ * Privacy (Rule #5): the feed is already the viewer's own DERIVED
+ * recommendation (never a granted party's raw substrate — the API never
+ * returns that), and it lands only in `viewerId`'s own slot, on `viewerId`'s
+ * own device — never a shared or cross-viewer location. Defaults to
+ * `'anonymous'` for the same un-migrated-caller reason as `readFeedCache`.
  */
-export function writeFeedCache(key: string, feed: FeedVM): void {
+export function writeFeedCache(key: string, feed: FeedVM, viewerId: string = 'anonymous'): void {
   if (typeof localStorage === 'undefined') return
   if (MAX_STALE_MS <= 0) return
   const envelope: FeedCacheEnvelope = { v: SCHEMA_VERSION, key, savedAt: Date.now(), feed }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope))
+    localStorage.setItem(storageKeyFor(viewerId), JSON.stringify(envelope))
   } catch {
     // Quota/serialization failure — the cache is a perceived-perf enrichment,
     // never a dependency (Rule #6); a failed write just means the next visit
     // gets the ordinary skeleton load instead of a stale paint.
+  }
+}
+
+/**
+ * Evicts one viewer's cached feed — called on sign-out (`AuthProvider`) so a
+ * signed-out viewer's derived feed never lingers, readable, in `localStorage`
+ * for whoever uses the device/browser next (Rule #5: private-by-default).
+ * Never throws: a quota/storage failure here just means the stale slot
+ * outlives the session, degrading to the normal cold-start ladder next visit
+ * rather than blocking sign-out.
+ */
+export function evictFeedCache(viewerId: string): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.removeItem(storageKeyFor(viewerId))
+  } catch {
+    // Best-effort — see docstring.
   }
 }
 
@@ -164,9 +215,17 @@ export function staleAgeLabel(savedAt: number, nowMs: number = Date.now()): stri
 
 /**
  * Test-only reset, mirrors `resetSavedTrailsForTests` (savedTrails.ts). App
- * code never calls this.
+ * code never calls this. Clears EVERY viewer's slot (there's no registry of
+ * which viewers a test touched), so it sweeps every `localStorage` key under
+ * `STORAGE_PREFIX` rather than just one — the namespaced-by-viewer analogue
+ * of the old single-slot `removeItem`.
  */
 export function resetFeedCacheForTests(): void {
   if (typeof localStorage === 'undefined') return
-  localStorage.removeItem(STORAGE_KEY)
+  const toRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && k.startsWith(STORAGE_PREFIX)) toRemove.push(k)
+  }
+  for (const k of toRemove) localStorage.removeItem(k)
 }

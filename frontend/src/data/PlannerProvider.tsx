@@ -75,9 +75,13 @@ export function PlannerProvider({ scope, client, fallback, children }: PlannerPr
     [client, scope, coordsMap],
   )
 
-  // The cold-start gate (craft review H1): on a Render free-tier wake this
-  // blocks for up to a minute, so what renders here must be designed — the
-  // live mount passes the BootShell (staged copy + skeleton chrome).
+  // The boot gate (craft review H1): what renders here must be designed even
+  // though it's rarely slow now — the live mount passes the BootShell (staged
+  // copy + skeleton chrome) rather than a bare string. Render is a paid
+  // Starter (no idle spin-down, Epic 052 WP-5 / D4), so this gate is usually
+  // near-instant; it still exists for the rare genuinely-slow case (a
+  // just-deployed instance, a real network hiccup), where `loadingStages.ts`'s
+  // re-tuned ladder still applies.
   if (!client && !useMockDefault && originsLoading) {
     return (
       <>
@@ -209,11 +213,11 @@ interface FeedInternalState {
 
 /** Shared by the lazy mount seed and the retune re-hydrate effect so both
  *  behave identically (one helper — see the binding builder note on
- *  `feedKey`). Anonymous-only (Rule #5): a signed-in viewer's feed never
- *  enters `localStorage`, so this returns null before ever touching it. */
+ *  `feedKey`). Any viewer (Epic 052 WP-5 — signed-in viewers used to be
+ *  excluded here): `readFeedCache` reads `scope.viewerId`'s own namespaced
+ *  slot, so a hit can never repaint under a DIFFERENT viewer's cached feed. */
 function hydrateStale(input: PlanInput, scope: ScopeContext): { feed: FeedVM; staleAsOf: string } | null {
-  if (scope.viewerId !== 'anonymous') return null
-  const hit = readFeedCache(feedKey(input, scope), Date.now())
+  const hit = readFeedCache(feedKey(input, scope), Date.now(), scope.viewerId)
   if (!hit || hit.feed.cards.length === 0) return null
   const staleAsOf = staleAgeLabel(hit.savedAt, Date.now())
   return { feed: toStalePaint(hit.feed, staleAsOf), staleAsOf }
@@ -236,8 +240,8 @@ export function useFeed(input: PlanInput): FeedState {
   // Lazy initializer, not an effect-only seed (FLASH IS REAL): an effect runs
   // AFTER the first commit, so seeding only there would still paint one
   // skeleton frame first. This runs once, synchronously, before that first
-  // commit — so an anonymous viewer with a fresh cache entry never sees the
-  // skeleton at all (AC-3.1).
+  // commit — so ANY viewer (Epic 052 WP-5) with a fresh cache entry never
+  // sees the skeleton at all (AC-3.1).
   const [state, setState] = useState<FeedInternalState>(() => {
     const seed = hydrateStale(input, scope)
     return seed
@@ -318,7 +322,10 @@ export function useFeed(input: PlanInput): FeedState {
                   // last visit", and Detail must never resolve a card from a
                   // half-composed feed.
                   feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed: composed }
-                  if (scope.viewerId === 'anonymous' && composed.cards.length > 0) writeFeedCache(key, composed)
+                  // Epic 052 WP-5: any viewer write-throughs now, not just
+                  // anonymous — `writeFeedCache` lands it in `scope.viewerId`'s
+                  // own namespaced slot (Rule #5), never a shared one.
+                  if (composed.cards.length > 0) writeFeedCache(key, composed, scope.viewerId)
                   if (composed.cards.length === 0)
                     setState({ status: 'empty', feed: composed, stale: false, revalidating: false })
                   else setState({ status: 'ready', feed: composed, stale: false, revalidating: false })
@@ -346,7 +353,8 @@ export function useFeed(input: PlanInput): FeedState {
             // resolve, never from the stale seed, so a stripped-condition card
             // can never be handed to Detail as authoritative.
             feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
-            if (scope.viewerId === 'anonymous' && feed.cards.length > 0) writeFeedCache(key, feed)
+            // Epic 052 WP-5: any viewer write-throughs (own namespaced slot).
+            if (feed.cards.length > 0) writeFeedCache(key, feed, scope.viewerId)
             if (feed.cards.length === 0) setState({ status: 'empty', feed, stale: false, revalidating: false })
             else setState({ status: 'ready', feed, stale: false, revalidating: false })
           }

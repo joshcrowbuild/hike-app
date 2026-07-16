@@ -96,3 +96,32 @@ def test_regions_over_limit_returns_clean_429(client: Any, monkeypatch: Any) -> 
 
     assert limited.status_code == 429
     assert "retry-after" in {k.lower() for k in limited.headers}
+
+
+# ── Epic 052 WP-5 — ETag + Cache-Control (design-system-v0.2 Part III.3) ─────
+
+
+def test_regions_carries_etag_and_public_cache_control(client: Any) -> None:
+    resp = client.get("/regions")
+    assert resp.status_code == 200
+    assert resp.headers["etag"].startswith('"') and resp.headers["etag"].endswith('"')
+    assert "public" in resp.headers["cache-control"]
+    assert "must-revalidate" in resp.headers["cache-control"]
+
+
+def test_regions_conditional_get_with_matching_etag_returns_cheap_304(client: Any) -> None:
+    first = client.get("/regions")
+    etag = first.headers["etag"]
+
+    second = client.get("/regions", headers={"if-none-match": etag})
+
+    assert second.status_code == 304
+    assert second.headers["etag"] == etag
+    # A 304 carries no body — the whole point of "cheap" revalidation.
+    assert second.content == b""
+
+
+def test_regions_conditional_get_with_stale_etag_serves_the_full_body(client: Any) -> None:
+    resp = client.get("/regions", headers={"if-none-match": '"not-the-real-etag"'})
+    assert resp.status_code == 200
+    assert resp.json()["regions"]  # the real catalog, not an empty 304 body

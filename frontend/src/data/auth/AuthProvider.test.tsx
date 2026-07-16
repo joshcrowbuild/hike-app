@@ -1,6 +1,8 @@
 import { render, screen, waitFor, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { readFeedCache, resetFeedCacheForTests, writeFeedCache } from '../feedCache'
+
 // A controllable fake Supabase auth, injected via the client module mock so the
 // provider runs its real session logic with no live network.
 type AuthCallback = (event: string, session: unknown) => void
@@ -62,7 +64,10 @@ beforeEach(() => {
   signInWithOtp.mockClear()
   signOut.mockClear()
 })
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  resetFeedCacheForTests()
+})
 
 describe('AuthProvider (Epic 043 S4)', () => {
   it('starts anonymous when there is no persisted session', async () => {
@@ -115,6 +120,80 @@ describe('AuthProvider (Epic 043 S4)', () => {
       await ctx!.signOut()
     })
     await waitFor(() => expect(screen.getByTestId('viewer').textContent).toBe('anonymous'))
+  })
+
+  it('evicts the signed-out viewer\'s cached feed (Rule #5 — Epic 052 WP-5)', async () => {
+    currentSession = { access_token: 'jwt-abc', user: { id: 'sub-x' } }
+    // Seed sub-x's own namespaced slot directly (the same shape useFeed's
+    // write-through would leave behind).
+    writeFeedCache(
+      'some-plan-key',
+      {
+        query: '',
+        cards: [{ id: 'a', name: 'A', distanceMi: 1, conditionLines: [], warnings: [] }],
+        notices: [],
+        setAside: [],
+        heldBack: [],
+        readiness: { on: false, state: 'off' },
+        dataSource: 'live',
+      },
+      'sub-x',
+    )
+    expect(readFeedCache('some-plan-key', Date.now(), 'sub-x')).not.toBeNull()
+
+    let ctx: ReturnType<typeof useAuth> | null = null
+    function Capture() {
+      ctx = useAuth()
+      return null
+    }
+    render(
+      <AuthProvider>
+        <Capture />
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('signed-in'))
+    await act(async () => {
+      await ctx!.signOut()
+    })
+
+    expect(readFeedCache('some-plan-key', Date.now(), 'sub-x')).toBeNull()
+  })
+
+  it("evicts the viewer's cache even when the remote sign-out call rejects (local guarantee doesn't depend on the network)", async () => {
+    currentSession = { access_token: 'jwt-abc', user: { id: 'sub-y' } }
+    writeFeedCache(
+      'other-plan-key',
+      {
+        query: '',
+        cards: [{ id: 'b', name: 'B', distanceMi: 1, conditionLines: [], warnings: [] }],
+        notices: [],
+        setAside: [],
+        heldBack: [],
+        readiness: { on: false, state: 'off' },
+        dataSource: 'live',
+      },
+      'sub-y',
+    )
+    signOut.mockRejectedValueOnce(new Error('network down'))
+
+    let ctx: ReturnType<typeof useAuth> | null = null
+    function Capture() {
+      ctx = useAuth()
+      return null
+    }
+    render(
+      <AuthProvider>
+        <Capture />
+        <Probe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('signed-in'))
+    await act(async () => {
+      await expect(ctx!.signOut()).rejects.toThrow('network down')
+    })
+
+    expect(readFeedCache('other-plan-key', Date.now(), 'sub-y')).toBeNull()
   })
 
   it('stays anonymous-only and offers no sign-in when Supabase is not configured', async () => {

@@ -18,6 +18,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Session } from '@supabase/supabase-js'
 
 import { ANON_SCOPE, type ScopeContext } from '../api'
+import { evictFeedCache } from '../feedCache'
 import { authConfigured, getSupabase } from './supabaseClient'
 
 export type AuthStatus = 'loading' | 'anonymous' | 'signed-in'
@@ -101,7 +102,18 @@ function LiveAuthProvider({ children }: { children: ReactNode }) {
         if (error) throw error
       },
       signOut: async () => {
-        if (supabase) await supabase.auth.signOut()
+        // Epic 052 WP-5 / spec III.2: evict THIS viewer's cached feed on
+        // sign-out (Rule #5 — a signed-out viewer's derived feed must never
+        // linger, readable, for whoever uses the device next). Captured
+        // before the network call and evicted in `finally` so a failed/slow
+        // remote sign-out can never leave the local cache behind — the local
+        // guarantee doesn't depend on the network succeeding.
+        const viewerId = session?.user?.id
+        try {
+          if (supabase) await supabase.auth.signOut()
+        } finally {
+          if (viewerId) evictFeedCache(viewerId)
+        }
       },
     }
   }, [session, resolved, canSignIn, supabase])

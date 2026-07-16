@@ -52,12 +52,15 @@ import type { Coords, TuningState } from '../../types'
 // the real fetched catalog, so this only ever fires for a genuinely unknown key.
 const FALLBACK_COORDS: Coords = { lat: 38.918, lon: -78.194 }
 
-// The Render free-tier API cold-starts in 30–60s after idling out. A 10s budget
-// lost that race — the browser aborted /plan while a long-timeout curl succeeded
-// (the "first tap fails on mobile" bug). 60s clears the worst-case cold start; a
-// warm-ping cron (.github/workflows/warm-ping.yml) keeps this path rare. Only
-// /plan (and getCard, which reruns plan) carries this budget — recordOutcome has
-// no timeout — so a single constant suffices.
+// A 10s budget once lost the race against a Render free-tier cold start (the
+// "first tap fails on mobile" bug) — the browser aborted /plan while a
+// long-timeout curl succeeded. Render is now a paid Starter with no idle
+// spin-down (Epic 052 WP-5 / D4), so a genuine multi-second wait is rare, but
+// 60s stays as the safety-net budget for the cases that remain (a
+// just-deployed instance mid-restart, or a real multi-provider outage) rather
+// than a routine wake this abort now has to race. Only /plan (and getCard,
+// which reruns plan) carries this budget — recordOutcome has no timeout — so
+// a single constant suffices.
 const PLAN_TIMEOUT_MS = 60_000
 
 // The water read (Epic 041) is a small per-trail GET on an already-warm host
@@ -89,6 +92,31 @@ function authHeaders(scope: ScopeContext): HeadersInit {
   const base: HeadersInit = { 'content-type': 'application/json' }
   if (scope.viewerId === 'anonymous' || !scope.accessToken) return base
   return { ...base, Authorization: `Bearer ${scope.accessToken}` }
+}
+
+/**
+ * In-memory ETag cache for the /plan SHELL phase only (Epic 052 WP-5 /
+ * design-system-v0.2 Part III.3). A POST response never enters the browser's
+ * own HTTP cache (only GET does), so the server's `ETag`/`Cache-Control`
+ * headers on `phase:"cards"` responses would otherwise be inert — this is
+ * what actually turns "background revalidate" into a cheap 304: a repeat
+ * request for the SAME exact body (same query/coords/k/viewer — i.e. the
+ * same key `useFeed`'s SWR effect re-fires under) sends the last-known ETag,
+ * and a 304 skips re-parsing/re-rendering a byte-identical body.
+ *
+ * Deliberately IN-MEMORY, never persisted: it resets on every full page
+ * reload — Fix 1 (`feedCache.ts`'s namespaced `localStorage` paint cache)
+ * already owns the reload-to-first-paint budget, so this only needs to help
+ * WITHIN a session (a retune re-requesting a frame just seen, a periodic
+ * revalidate). Keeping it out of `localStorage` also means there's nothing
+ * here for `AuthProvider`'s sign-out to evict (Rule #5) — it can't outlive
+ * the tab, let alone the session.
+ */
+const planShellCache = new Map<string, { etag: string; body: FeedResponse }>()
+
+/** Test-only reset — app code never calls this (mirrors `resetFeedCacheForTests`). */
+export function resetPlanShellCacheForTests(): void {
+  planShellCache.clear()
 }
 
 function classify(err: unknown, status?: number): FeedError {
@@ -349,9 +377,12 @@ export class HttpPlannerClient implements PlannerClient {
 
   /**
    * The shared /plan POST. `twoPhase=false` forces the classic single-pass
-   * response — `getCard`'s deep-link refetch uses it so Detail NEVER resolves a
-   * card from an unverified phase-1 frame (the D4 snapshot rule, applied to the
-   * refetch path too).
+   * response (the D4 snapshot rule: never resolve a card from an unverified
+   * phase-1 frame — `getCard` now uses its own dedicated endpoint instead,
+   * Epic 045 S3, but the flag stays load-bearing for the build-time
+   * `VITE_TWO_PHASE=0` kill switch). Only a `twoPhase=true` call participates
+   * in the shell ETag cache below (Epic 052 WP-5) — the classic response
+   * already carries live conditions, never a stable "shell."
    */
   private async planWith(input: PlanInput, scope: ScopeContext, twoPhase: boolean): Promise<FeedVM> {
     // A live "Near me" fix overrides the named origin's fixed coordinates so
@@ -370,19 +401,51 @@ export class HttpPlannerClient implements PlannerClient {
       // classic flow with no client branching beyond `conditionsPending`.
       ...(twoPhase ? { phase: 'cards' as const } : {}),
     }
+    // Epic 052 WP-5: the shell cache only applies to the two-phase request —
+    // `body` (and so its stringified form) already carries the exact
+    // query/coords/k/viewer that makes two requests "the same frame"; the
+    // classic single-pass call (`twoPhase=false`, e.g. `getCard`'s refetch)
+    // never participates — it already carries live conditions, never a
+    // cacheable "shell" (mirrors the server's `is_shell_phase` gate).
+    const shellCacheKey = twoPhase ? JSON.stringify(body) : null
+    const cachedShell = shellCacheKey ? planShellCache.get(shellCacheKey) : undefined
+    const headers: HeadersInit = cachedShell
+      ? { ...authHeaders(scope), 'If-None-Match': cachedShell.etag }
+      : authHeaders(scope)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
     try {
       const resp = await fetch(`${this.baseUrl}/plan`, {
         method: 'POST',
-        headers: authHeaders(scope),
+        headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       })
+      if (resp.status === 304) {
+        // The cheap revalidate: the server confirmed the shell is byte-identical
+        // to what we already have, so reuse it rather than re-parsing an empty
+        // body. `cachedShell` is guaranteed set here — only a request that sent
+        // `If-None-Match` (i.e. had a cache hit) can get a 304 back.
+        if (cachedShell) return mapFeed(cachedShell.body)
+        return emptyFeed(input, classify(null, resp.status))
+      }
       if (!resp.ok) {
         return emptyFeed(input, classify(null, resp.status))
       }
-      return mapFeed((await resp.json()) as FeedResponse)
+      const json = (await resp.json()) as FeedResponse
+      if (shellCacheKey) {
+        // Optional-chained: a real `fetch` Response always has a working
+        // `Headers.get`, but a minimal test double (`{ ok, status, json }`)
+        // may not — this cache is a perceived-perf enrichment, never a
+        // dependency, so the absence just means "don't cache this round,"
+        // never a thrown error.
+        const etag = typeof resp.headers?.get === 'function' ? resp.headers.get('etag') : null
+        // No ETag means the kill switch/an older backend served the classic
+        // complete response under a `phase:"cards"` request (D6/D7) — never
+        // cache that (it already carries live conditions, not a stable shell).
+        if (etag) planShellCache.set(shellCacheKey, { etag, body: json })
+      }
+      return mapFeed(json)
     } catch (err) {
       return emptyFeed(input, classify(err))
     } finally {

@@ -269,6 +269,67 @@ def test_plan_rejects_unknown_phase(client: Any) -> None:
     assert resp.status_code == 422
 
 
+# ── Epic 052 WP-5 — ETag + Cache-Control on the /plan SHELL phase only ──────
+# (design-system-v0.2 Part III.3): the phase:"cards" response gets a validator
+# so the client's background revalidate can be a cheap 304; the classic
+# complete response and /plan/conditions (live, ephemeral — Rule #3) never do.
+
+
+def test_plan_phase_cards_carries_etag_and_private_cache_control(client: Any) -> None:
+    resp = client.post("/plan", json={**_PLAN_BODY, "phase": "cards"})
+    assert resp.status_code == 200
+    assert resp.headers["etag"].startswith('"') and resp.headers["etag"].endswith('"')
+    assert "private" in resp.headers["cache-control"]
+    assert "no-cache" in resp.headers["cache-control"]
+
+
+def test_plan_phase_cards_conditional_post_with_matching_etag_returns_cheap_304(
+    client: Any,
+) -> None:
+    first = client.post("/plan", json={**_PLAN_BODY, "phase": "cards"})
+    etag = first.headers["etag"]
+
+    second = client.post(
+        "/plan", json={**_PLAN_BODY, "phase": "cards"}, headers={"if-none-match": etag}
+    )
+
+    assert second.status_code == 304
+    assert second.headers["etag"] == etag
+    assert second.content == b""
+
+
+def test_plan_phase_cards_conditional_post_with_stale_etag_serves_full_body(client: Any) -> None:
+    resp = client.post(
+        "/plan",
+        json={**_PLAN_BODY, "phase": "cards"},
+        headers={"if-none-match": '"not-the-real-etag"'},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["cards"]
+
+
+def test_plan_classic_response_carries_no_caching_headers(client: Any) -> None:
+    # The classic/complete response already carries live conditions — never a
+    # stable "shell" a client should conditionally re-fetch.
+    resp = client.post("/plan", json=_PLAN_BODY)
+    assert resp.status_code == 200
+    assert "etag" not in {k.lower() for k in resp.headers}
+    assert "cache-control" not in {k.lower() for k in resp.headers}
+
+
+def test_plan_phase_cards_kill_switch_serves_no_caching_headers(
+    client: Any, monkeypatch: Any
+) -> None:
+    # D6: with the kill switch off, phase:"cards" degrades to the classic path —
+    # it must not carry the shell's caching headers either.
+    monkeypatch.setattr(
+        app_mod, "_settings", Settings.from_env({"ADVENTURE_TWO_PHASE_ENABLED": "0"})
+    )
+    resp = client.post("/plan", json={**_PLAN_BODY, "phase": "cards"})
+    assert resp.status_code == 200
+    assert "etag" not in {k.lower() for k in resp.headers}
+
+
 # ── POST /plan/conditions ─────────────────────────────────────────────────────
 
 
@@ -290,6 +351,16 @@ def test_conditions_patch_shape(client: Any) -> None:
     assert payload["set_aside"][0]["reasons"][0]["source"] == "AirNow"
     # An id the engine couldn't resolve is disclosed, never fabricated.
     assert payload["unknown"] == ["ct:ghost"]
+
+
+def test_conditions_patch_carries_no_caching_headers(client: Any) -> None:
+    # Rule #3 / spec III.3: the conditions overlay is fast/ephemeral, fetched
+    # JIT — it must never carry a validator that could tempt a client into
+    # reusing a stale hazard read.
+    resp = client.post("/plan/conditions", json=_CONDITIONS_BODY)
+    assert resp.status_code == 200
+    assert "etag" not in {k.lower() for k in resp.headers}
+    assert "cache-control" not in {k.lower() for k in resp.headers}
 
 
 def test_conditions_request_bounds(client: Any) -> None:
