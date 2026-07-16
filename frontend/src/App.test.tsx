@@ -47,8 +47,8 @@ describe('App tuning persistence (craft review M4 — no amnesia on reload)', ()
     renderApp()
     await screen.findByText(/from Front Royal/)
 
-    await user.click(screen.getByRole('button', { name: /adjust/i }))
-    const adjust = await screen.findByRole('dialog', { name: 'Adjust' })
+    await user.click(screen.getByRole('button', { name: /edit/i }))
+    const adjust = await screen.findByRole('dialog')
     await user.click(within(adjust).getByRole('button', { name: /^from/i }))
 
     const originSheet = await screen.findByRole('dialog', { name: 'Starting point' })

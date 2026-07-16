@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { ContextRibbon } from './FeedConditions'
+import { ContextSentence } from './FeedConditions'
 
 /**
  * The Context Ribbon (ux-vision-2026-07 §9 item 1): the unified Home header —
@@ -11,8 +11,8 @@ import { ContextRibbon } from './FeedConditions'
  * rendering is axe-audited here too.
  */
 const meta = {
-  title: 'Honesty Primitives/ContextRibbon',
-  component: ContextRibbon,
+  title: 'Honesty Primitives/ContextSentence',
+  component: ContextSentence,
   tags: ['autodocs'],
   args: {
     contextText: 'Weekend morning · Shenandoah · from Front Royal',
@@ -34,7 +34,7 @@ const meta = {
       sharedStateKeys: new Set<string>(),
     },
   },
-} satisfies Meta<typeof ContextRibbon>
+} satisfies Meta<typeof ContextSentence>
 
 export default meta
 type Story = StoryObj<typeof meta>

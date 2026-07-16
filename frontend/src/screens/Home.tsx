@@ -14,7 +14,7 @@ import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
-import { ContextRibbon } from './FeedConditions'
+import { ContextSentence } from './FeedConditions'
 import { RecommendationCard } from './RecommendationCard'
 import { SignInControl } from './SignInControl'
 import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
@@ -158,7 +158,7 @@ export function Home({
               Still tappable in full (opens Tuning); the shared conditions are
               exactly what `splitFeedConditions` hoisted below (F3/F9a) — the
               cards keep their own per-trail deltas via the same hoist keys. */}
-          <ContextRibbon
+          <ContextSentence
             contextText={contextSentence(tuning, anonymous, cards, origins)}
             onOpenTuning={onOpenTuning}
             conditions={feedConditions}

@@ -30,7 +30,7 @@ const suites = [
   // surface hoisted to feed scope, now unified with the tappable frame
   // sentence — a named region landmark whose silence states must stay
   // distinct to assistive tech exactly as they are on a card.
-  ['ContextRibbon', composeStories(FeedConditionsStories)],
+  ['ContextSentence', composeStories(FeedConditionsStories)],
 ] as const
 
 async function runAxe(container: HTMLElement) {

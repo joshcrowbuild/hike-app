@@ -1,18 +1,22 @@
-import { Confidence, Staleness } from '../components'
+import { Staleness, Text, Button, MetricRow } from '../components'
 import { conditionStateKey, lineKey } from '../data/feedConditions'
-import type { CardVM } from '../data/vm'
+import type { CardVM, LineVM } from '../data/vm'
+import type { MetricItem } from '../components/MetricRow/MetricRow'
 import {
   cardAccessibleName,
   ConditionSilence,
-  DecisionFacts,
   DirectionsLink,
   SaveButton,
   Verdict,
   verdictSpokenWarningText,
   WarningBlock,
 } from './cardParts'
-import { ConditionStates } from './ConditionStates'
+import { summarizeConditions, ConditionStatusLine } from './ConditionStatus'
 import { ElevationGlyph } from './map/ElevationGlyph'
+import { glyphs } from './glyphs'
+import { resolveMiles, resolveDurationMinutes } from '../data/summary'
+import { formatEstimatedDuration } from '../data/duration'
+import { geoAscentFeet } from './cardParts'
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 
@@ -42,54 +46,65 @@ export function RecommendationCard({
 }: {
   card: CardVM
   onOpen: () => void
-  /** Warning texts the feed banner already states (F1). */
   hoistedWarningTexts?: ReadonlySet<string>
-  /** `lineKey`s the conditions ribbon already states (F3). */
   hoistedLineKeys?: ReadonlySet<string>
-  /** `conditionStateKey`s the conditions ribbon already states (F3). */
   hoistedStateKeys?: ReadonlySet<string>
 }) {
   const e = card.enrichment
   const ownWarnings = card.warnings.filter((w) => !hoistedWarningTexts.has(w.text))
+
+  const distanceMiles = resolveMiles(card)
+  const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
+  const durationMinutes = resolveDurationMinutes(card)
+  const duration = e?.durationHours ?? (durationMinutes != null ? formatEstimatedDuration(durationMinutes) : null)
+
+  const metrics: MetricItem[] = []
+  if (distanceMiles != null) {
+    metrics.push({ kind: 'distance', label: 'Distance', value: `${distanceMiles.toFixed(1)} mi`, glyph: glyphs.distance })
+  }
+  if (ascentFeet != null) {
+    metrics.push({ kind: 'ascent', label: 'Ascent', value: `${ascentFeet.toLocaleString()} ft`, glyph: glyphs.ascent })
+  } else if (distanceMiles != null) {
+    metrics.push({ kind: 'ascent', label: 'Ascent', value: null, glyph: glyphs.ascent })
+  }
+  if (duration != null) {
+    metrics.push({ kind: 'duration', label: 'Duration', value: duration, glyph: glyphs.duration })
+  } else if (distanceMiles != null) {
+    metrics.push({ kind: 'duration', label: 'Duration', value: null, glyph: glyphs.duration })
+  }
+
+  // Filter out hoisted lines
+  const unhoistedLines = card.conditionLines.filter((l) => !hoistedLineKeys.has(lineKey(l)))
+  const unhoistedConditions = card.conditions?.filter((s) => !hoistedStateKeys.has(conditionStateKey(s))) || []
+  
+  // Combine warnings into conditions for summarization
+  // A warning is effectively a blocked or headsUp condition.
+  // Actually, we can just use the summarizer for conditions and warnings.
+  const summary = summarizeConditions(unhoistedConditions, unhoistedLines, 'card')
+
   return (
     <article className="card">
       <button className="card-tap" type="button" onClick={onOpen} aria-label={cardAccessibleName(card.name, card.warnings)}>
-        <Verdict card={card} className="verdict--card" />
-
         <div className="card-id">
-          <h3 className="card-name">{card.name}</h3>
+          <Text role="title" as="h3" className="card-name">{card.name}</Text>
           {e?.area || e?.routeShape ? (
-            <p className="card-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</p>
+            <Text role="bodySm" as="p" className="card-area">{[e?.area, e?.routeShape].filter(Boolean).join(' · ')}</Text>
           ) : null}
         </div>
 
-        {/* Decision facts (Epic 019 S19.1 / H2, ux-review 2026-07): the feed
-            must be comparable at a glance, so ascent + duration ride alongside
-            distance again (Drive, when a personal frame supplies one, rides
-            with them too) — the glyph shows the shape, these facts show the
-            numbers. Same component, same values, as Detail (H4/F7). */}
-        <DecisionFacts card={card} className="decision" />
+        <MetricRow items={metrics} className="decision" />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
 
-        <ConditionBlock card={card} hoistedLineKeys={hoistedLineKeys} hoistedStateKeys={hoistedStateKeys} />
-
-        {/* A verified trail-specific hazard STAYS on the card — only the one
-            sentence the verdict above already speaks is collapsed to source +
-            age (AC-19.1.3). A banner-hoisted region-wide warning is
-            source-stamped once at feed level instead of ten times here; the
-            verdict above still carries it (F1). */}
-        <WarningBlock warnings={ownWarnings} spokenText={verdictSpokenWarningText(card)} />
+        {summary && summary.tier !== 'clear' ? (
+          <ConditionStatusLine tier={summary.tier} copy={summary.conclusion} />
+        ) : null}
 
         <div className="card-foot">
           {e?.freshness ? <Staleness>{e.freshness}</Staleness> : <span />}
-          <span className="open-detail">Open detail</span>
         </div>
       </button>
 
-      {/* Outside the tap button on purpose: the card's whole-tap target never
-          nests another interactive element, so Save/Directions live as sibling
-          controls in their own row. */}
       <div className="card-actions">
         <SaveButton id={card.id} name={card.name} />
         {card.geo ? <DirectionsLink trailhead={card.geo.trailhead} name={card.name} /> : null}
@@ -98,72 +113,3 @@ export function RecommendationCard({
   )
 }
 
-/**
- * The single "Now" condition slot (DD1 line 6). It shows exactly ONE value —
- * the merged condition when enrichment supplies one, else the first live/thin
- * condition line the feed ribbon hasn't already stated (F3) — always through
- * <Confidence>, so honesty is structural. The FULL multi-line list and its
- * residual-silence note live on Detail; here the empty case degrades to a
- * single legible silence state (CDP-02), never a blank and never a false-clear.
- */
-function ConditionBlock({
-  card,
-  hoistedLineKeys,
-  hoistedStateKeys,
-}: {
-  card: CardVM
-  hoistedLineKeys: ReadonlySet<string>
-  hoistedStateKeys: ReadonlySet<string>
-}) {
-  const e = card.enrichment
-  // The card's own Now reading: the first line the ribbon doesn't already
-  // state — a region-identical reading yields the slot to a real per-trail
-  // delta (a gauge, a microclimate difference) instead of repeating the ribbon.
-  const primary = card.conditionLines.find((l) => !hoistedLineKeys.has(lineKey(l)))
-  // The per-kind coverage summary (Epic 018 S4f): the kinds that DON'T render
-  // as lines — checked-clear, coverage gaps, outages, not-checked — shown as
-  // grouped compact rows beneath the Now slot, so the shown line never implies
-  // the set is exhaustive (AC-4f.2) and an answered-clear card never reads as
-  // couldn't-verify (the retired lines.length===0 mislabel). Dispositions the
-  // ribbon already states once are not repeated here (F3/F9a).
-  const silentStates = card.conditions?.filter(
-    (s) => s.state !== 'present' && s.state !== 'stale-degraded' && !hoistedStateKeys.has(conditionStateKey(s)),
-  )
-  const summary = silentStates && silentStates.length > 0 ? <ConditionStates conditions={silentStates} compact /> : null
-  if (e?.conditionValue) {
-    return (
-      <div className="condition">
-        <span className="condition-label">Now</span>
-        <span className="condition-value">
-          <Confidence level={card.conditionLines[0]?.confidence ?? 'stated'} provenance={e.provenance}>
-            {e.conditionValue}
-          </Confidence>
-        </span>
-      </div>
-    )
-  }
-  if (primary) {
-    return (
-      <>
-        <div className="condition">
-          <span className="condition-label">Now</span>
-          <span className="condition-value">
-            <Confidence level={primary.confidence} provenance={primary.provenance}>
-              {primary.text}
-            </Confidence>
-          </span>
-        </div>
-        {summary}
-      </>
-    )
-  }
-  if (summary) return summary
-  // Everything this card knows is already stated once at feed level: stay
-  // silent about what the ribbon said (F3) — rendering the not-fetched
-  // fallback here would falsely mark a CHECKED card as never checked.
-  if (card.conditionLines.length > 0 || (card.conditions?.length ?? 0) > 0) return null
-  // No signal at all: with the per-kind payload absent the legacy blanket
-  // silence is the honest default — never a blank, never a false-clear
-  // (CDP-02), and never `checked-clear` without a source.
-  return <ConditionSilence silence={card.conditionSilence ?? { state: 'not-fetched' }} />
-}
