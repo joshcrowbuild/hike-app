@@ -113,7 +113,6 @@ export const headerButton = style({
   flex: 'none',
   fontFamily: vars.font.family.mono,
   fontSize: vars.size.label,
-  textTransform: 'uppercase',
   letterSpacing: '0.08em',
   color: vars.text.primary,
   paddingBlock: vars.space[1],

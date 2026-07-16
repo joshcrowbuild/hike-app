@@ -104,9 +104,10 @@ button {
 .refine-label,
 .origin-group-label,
 .housekeeping-summary {
-  font-family: var(--font-family-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  /* v0.2 de-wireframe: sentence-case sans, not mono-uppercase-tracked eyebrows.
+     Per-class font-size/color still set below; this shared hook just drops the
+     all-caps "annotation" treatment the mocks retired. */
+  letter-spacing: 0.01em;
 }
 
 /* ---- top bar ---- */
@@ -424,7 +425,6 @@ button {
   margin-inline-start: 0.4rem;
   font-family: var(--font-family-mono);
   font-size: 0.62rem;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
   border: 1px solid var(--border-hairline);
@@ -527,7 +527,6 @@ button {
   font-family: var(--font-family-mono);
   font-size: 0.62rem;
   font-weight: var(--font-weight-medium);
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
   white-space: nowrap;
@@ -595,7 +594,6 @@ button {
 .difficulty-est {
   font-family: var(--font-family-mono);
   font-size: 0.62rem;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
@@ -609,7 +607,6 @@ button {
   margin-inline-start: 0.28rem;
   font-family: var(--font-family-mono);
   font-size: 0.6rem;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
 }
@@ -663,7 +660,6 @@ button {
   align-items: center;
   gap: 0.35rem;
   font-family: var(--font-family-mono);
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.68rem;
   color: var(--text-primary);
@@ -1018,7 +1014,6 @@ button {
   align-items: center;
   justify-content: center;
   font-family: var(--font-family-mono);
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.62rem;
   color: var(--text-primary);
@@ -1081,7 +1076,6 @@ button {
 
 .elev-summary-label {
   font-family: var(--font-family-mono);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.62rem;
   color: var(--text-muted);
@@ -1309,10 +1303,8 @@ button {
 
 /* ---- viewer mode + disclosures (data-source seam) ---- */
 .topbar-mode {
-  font-family: var(--font-family-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.62rem;
+  letter-spacing: 0.01em;
+  font-size: 0.72rem;
   /* secondary (not muted) so the mode chip clears WCAG AA on the canvas. */
   color: var(--text-secondary);
 }
@@ -1543,7 +1535,6 @@ button {
   position: relative;
   font-family: var(--font-family-mono);
   font-size: 0.7rem;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-primary);
   padding: 0.3rem 0;
@@ -1728,10 +1719,9 @@ button {
 .condition-state-kind {
   flex: none;
   min-width: 6.5em;
-  font-family: var(--font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: capitalize;
   color: var(--text-muted);
 }
 
@@ -1855,7 +1845,6 @@ button {
 
 .pending-nod-cue {
   font-family: var(--font-family-mono);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.64rem;
   color: var(--text-muted);
@@ -1903,7 +1892,6 @@ button {
 .measured-label {
   margin: 0;
   font-family: var(--font-family-mono);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.62rem;
   color: var(--text-muted);

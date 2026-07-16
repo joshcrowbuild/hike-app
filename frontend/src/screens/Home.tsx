@@ -370,7 +370,7 @@ function SearchLine({
   return (
     <form className="search-line" role="search" onSubmit={handleSubmit}>
       <label className="search-label-wrap">
-        <span className="search-label">Search a trail by name</span>
+        <span className="search-label">Search trails, or browse below</span>
         <input
           className="search-input"
           type="search"
