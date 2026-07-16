@@ -14,6 +14,8 @@
   --color-neutral-alpha-08: rgba(22, 25, 29, 0.08);
   --color-terracotta-600: #9a4424;
   --color-terracotta-alpha-10: rgba(154, 68, 36, 0.1);
+  --color-amber-600: #846515; /** NEW (design-system-v0.2 D1) — the heads-up signal tier hue. Spec candidate was #8a6a16 (4.55:1 on surface.canvas — passing AA but tight). WP-0 verified and darkened for headroom: measured 4.91:1 on surface.canvas (#f4f3ef) and 5.22:1 on surface.raised (#fbfaf7), same hue/saturation ray as the candidate so it stays a warm amber, not brown. No dark-theme token set exists yet in this repo (no prefers-color-scheme / data-theme support anywhere in tokens/ or src/design/) — a lighter dark-theme amber variant is deferred as a WP-0 follow-up until a dark palette exists to extend. */
+  --color-amber-alpha-10: rgba(132, 101, 21, 0.1);
   --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
@@ -22,6 +24,13 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-11: 48px;
+  --space-12: 64px;
+  --line-height-tight: 1.2;
+  --line-height-snug: 1.3;
+  --line-height-normal: 1.45;
+  --line-height-relaxed: 1.5;
   --size-data-micro: 0.625rem;
   --size-label: 0.6875rem;
   --size-fact-label: 0.7rem;
@@ -43,13 +52,23 @@
   --stroke-path: 2px;
   --duration-fast: 120ms;
   --duration-base: 160ms;
+  --duration-slow: 240ms; /** NEW (design-system-v0.2 I.6) — disclosure-only motion (expand/collapse), not used for the fast/base crossfade+pulse pair. */
   --easing-standard: cubic-bezier(0.2, 0, 0, 1);
-  --font-family-sans: system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-family-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; /** design-system-v0.2 D3 — IBM Plex Sans, self-hosted (see frontend/src/fonts.css). System stack is the fallback so first paint never blocks on the webfont. */
+  --font-family-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace; /** design-system-v0.2 D3 — IBM Plex Mono, self-hosted (see frontend/src/fonts.css). Used for type.metric only (D2 — mono for metrics, not prose). */
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --elevation-overlay: 0 -2px 24px rgba(22, 25, 29, 0.16);
+  --type-display-size: 1.75rem;
+  --type-title-size: 1.25rem;
+  --type-lead-size: 1.125rem;
+  --type-body-size: 1rem;
+  --type-body-sm-size: 0.875rem;
+  --type-metric-size: 1rem;
+  --type-metric-label-size: 0.75rem;
+  --type-caption-size: 0.75rem;
+  --type-overline-size: 0.6875rem;
   --surface-canvas: var(--color-neutral-50);
   --surface-raised: var(--color-neutral-25);
   --surface-press: var(--color-neutral-100);
@@ -61,6 +80,10 @@
   --overlay-scrim: var(--color-neutral-alpha-40);
   --signal-caution-fg: var(--color-terracotta-600);
   --signal-caution-bg: var(--color-terracotta-alpha-10);
+  --signal-heads-up-fg: var(--color-amber-600);
+  --signal-heads-up-bg: var(--color-amber-alpha-10);
+  --signal-blocked-fg: var(--color-terracotta-600);
+  --signal-blocked-bg: var(--color-terracotta-alpha-10);
   --focus-ring: var(--color-neutral-900);
   --type-name-size: var(--size-name);
   --type-name-weight: var(--font-weight-semibold);
@@ -74,4 +97,24 @@
   --type-condition-weight: var(--font-weight-regular);
   --type-supporting-size: var(--size-supporting);
   --type-supporting-weight: var(--font-weight-regular);
+  --type-display-line-height: var(--line-height-tight);
+  --type-display-weight: var(--font-weight-semibold);
+  --type-title-line-height: var(--line-height-snug);
+  --type-title-weight: var(--font-weight-semibold);
+  --type-lead-line-height: var(--line-height-normal);
+  --type-lead-weight: var(--font-weight-regular);
+  --type-body-line-height: var(--line-height-relaxed);
+  --type-body-weight: var(--font-weight-regular);
+  --type-body-sm-line-height: var(--line-height-normal);
+  --type-body-sm-weight: var(--font-weight-regular);
+  --type-metric-line-height: var(--line-height-snug);
+  --type-metric-weight: var(--font-weight-medium);
+  --type-metric-family: var(--font-family-mono);
+  --type-metric-label-line-height: var(--line-height-snug);
+  --type-metric-label-weight: var(--font-weight-medium);
+  --type-caption-line-height: var(--line-height-snug);
+  --type-caption-weight: var(--font-weight-regular);
+  --type-overline-line-height: var(--line-height-snug);
+  --type-overline-weight: var(--font-weight-medium);
+  --signal-unknown-fg: var(--text-muted);
 }

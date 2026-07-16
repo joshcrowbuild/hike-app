@@ -18,6 +18,16 @@
       "alpha": {
         "10": { "$value": "rgba(154, 68, 36, 0.10)", "$type": "color" }
       }
+    },
+    "amber": {
+      "600": {
+        "$value": "#846515",
+        "$type": "color",
+        "$description": "NEW (design-system-v0.2 D1) — the heads-up signal tier hue. Spec candidate was #8a6a16 (4.55:1 on surface.canvas — passing AA but tight). WP-0 verified and darkened for headroom: measured 4.91:1 on surface.canvas (#f4f3ef) and 5.22:1 on surface.raised (#fbfaf7), same hue/saturation ray as the candidate so it stays a warm amber, not brown. No dark-theme token set exists yet in this repo (no prefers-color-scheme / data-theme support anywhere in tokens/ or src/design/) — a lighter dark-theme amber variant is deferred as a WP-0 follow-up until a dark palette exists to extend."
+      },
+      "alpha": {
+        "10": { "$value": "rgba(132, 101, 21, 0.10)", "$type": "color" }
+      }
     }
   },
   "space": {
@@ -28,7 +38,16 @@
     "4": { "$value": "16px", "$type": "dimension" },
     "5": { "$value": "20px", "$type": "dimension" },
     "6": { "$value": "24px", "$type": "dimension" },
-    "8": { "$value": "32px", "$type": "dimension" }
+    "8": { "$value": "32px", "$type": "dimension" },
+    "10": { "$value": "40px", "$type": "dimension" },
+    "11": { "$value": "48px", "$type": "dimension" },
+    "12": { "$value": "64px", "$type": "dimension" }
+  },
+  "lineHeight": {
+    "tight": { "$value": "1.2", "$type": "number" },
+    "snug": { "$value": "1.3", "$type": "number" },
+    "normal": { "$value": "1.45", "$type": "number" },
+    "relaxed": { "$value": "1.5", "$type": "number" }
   },
   "size": {
     "data-micro": { "$value": "0.625rem", "$type": "dimension" },
@@ -57,7 +76,8 @@
   },
   "duration": {
     "fast": { "$value": "120ms", "$type": "duration" },
-    "base": { "$value": "160ms", "$type": "duration" }
+    "base": { "$value": "160ms", "$type": "duration" },
+    "slow": { "$value": "240ms", "$type": "duration", "$description": "NEW (design-system-v0.2 I.6) — disclosure-only motion (expand/collapse), not used for the fast/base crossfade+pulse pair." }
   },
   "easing": {
     "standard": { "$value": "cubic-bezier(0.2, 0, 0, 1)", "$type": "cubicBezier" }
@@ -65,12 +85,14 @@
   "font": {
     "family": {
       "sans": {
-        "$value": "system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif",
-        "$type": "fontFamily"
+        "$value": "'IBM Plex Sans', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif",
+        "$type": "fontFamily",
+        "$description": "design-system-v0.2 D3 — IBM Plex Sans, self-hosted (see frontend/src/fonts.css). System stack is the fallback so first paint never blocks on the webfont."
       },
       "mono": {
-        "$value": "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
-        "$type": "fontFamily"
+        "$value": "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
+        "$type": "fontFamily",
+        "$description": "design-system-v0.2 D3 — IBM Plex Mono, self-hosted (see frontend/src/fonts.css). Used for type.metric only (D2 — mono for metrics, not prose)."
       }
     },
     "weight": {
