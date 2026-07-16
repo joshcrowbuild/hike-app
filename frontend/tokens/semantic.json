@@ -21,6 +21,21 @@
   },
   "signal": {
     "caution": {
+      "$description": "DEPRECATED (design-system-v0.2 D1/Appendix A) — the single-hue severity tier is replaced by the 4-tier signal.unknown/headsUp/blocked system below. Left defined (not deleted): existing call sites (Signal.css.ts, Confidence.css.ts, VisionPrototype.tsx, Gallery.tsx) still bind this token. WP-2/WP-3 re-sort each usage into headsUp | blocked by actionability and migrate the call sites; WP-0 does not touch components.",
+      "fg": { "$value": "{color.terracotta.600}", "$type": "color" },
+      "bg": { "$value": "{color.terracotta.alpha.10}", "$type": "color" }
+    },
+    "unknown": {
+      "$description": "NEW (design-system-v0.2 D1) — a source is down / not fetched. Neutral gray, calm; never red (Law 7).",
+      "fg": { "$value": "{text.muted}", "$type": "color" }
+    },
+    "headsUp": {
+      "$description": "NEW (design-system-v0.2 D1) — actionable but not blocking (heat, permit, high flow).",
+      "fg": { "$value": "{color.amber.600}", "$type": "color" },
+      "bg": { "$value": "{color.amber.alpha.10}", "$type": "color" }
+    },
+    "blocked": {
+      "$description": "NEW (design-system-v0.2 D1) — a genuine barrier (closure). The only firm color; reserved strictly for real barriers, never a missing reading (Law 6/7).",
       "fg": { "$value": "{color.terracotta.600}", "$type": "color" },
       "bg": { "$value": "{color.terracotta.alpha.10}", "$type": "color" }
     }
@@ -29,6 +44,7 @@
     "ring": { "$value": "{color.neutral.900}", "$type": "color" }
   },
   "type": {
+    "$description": "v0.1 Epic-019 roles (name/verdict/fact-value/fact-label/condition/supporting) are kept below, unchanged, for existing components. The v0.2 role scale (design-system-v0.2.md I.3) is the new canonical set — display/title/lead/body/body-sm/metric/metric-label/caption/overline, each with size+lineHeight+weight(+family for metric). Appendix A maps old -> new (Supersedes column); WP-1/WP-7 migrate components onto the v0.2 roles and retire the v0.1 ones.",
     "name": {
       "size": { "$value": "{size.name}", "$type": "dimension" },
       "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
@@ -52,6 +68,61 @@
     "supporting": {
       "size": { "$value": "{size.supporting}", "$type": "dimension" },
       "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "display": {
+      "$description": "NEW (v0.2) — Detail hero name. Supersedes the detail-name clamp.",
+      "size": { "$value": "1.75rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.tight}", "$type": "number" },
+      "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
+    },
+    "title": {
+      "$description": "NEW (v0.2) — Card name. Supersedes type.name.",
+      "size": { "$value": "1.25rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.snug}", "$type": "number" },
+      "weight": { "$value": "{font.weight.semibold}", "$type": "fontWeight" }
+    },
+    "lead": {
+      "$description": "NEW (v0.2) — context sentence, verdict prose. Supersedes size.place-lead / type.verdict.",
+      "size": { "$value": "1.125rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.normal}", "$type": "number" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "body": {
+      "$description": "NEW (v0.2) — prose (water, character). Supersedes size.emphasis / body.",
+      "size": { "$value": "1rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.relaxed}", "$type": "number" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "body-sm": {
+      "$description": "NEW (v0.2) — secondary + degraded copy. Supersedes size.condition / meta.",
+      "size": { "$value": "0.875rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.normal}", "$type": "number" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "metric": {
+      "$description": "NEW (v0.2, D2) — distance/ascent/duration/coords. Mono + tabular-nums so numeric columns align. Supersedes type.fact-value.",
+      "size": { "$value": "1rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.snug}", "$type": "number" },
+      "weight": { "$value": "{font.weight.medium}", "$type": "fontWeight" },
+      "family": { "$value": "{font.family.mono}", "$type": "fontFamily" }
+    },
+    "metric-label": {
+      "$description": "NEW (v0.2) — \"Distance / Ascent / Duration\". Supersedes type.fact-label.",
+      "size": { "$value": "0.75rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.snug}", "$type": "number" },
+      "weight": { "$value": "{font.weight.medium}", "$type": "fontWeight" }
+    },
+    "caption": {
+      "$description": "NEW (v0.2) — provenance, source, timestamp. Supersedes size.meta / supporting.",
+      "size": { "$value": "0.75rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.snug}", "$type": "number" },
+      "weight": { "$value": "{font.weight.regular}", "$type": "fontWeight" }
+    },
+    "overline": {
+      "$description": "NEW (v0.2) — the one rare kicker. UPPERCASE (rendered by the Text primitive, not a token). Supersedes size.label.",
+      "size": { "$value": "0.6875rem", "$type": "dimension" },
+      "lineHeight": { "$value": "{lineHeight.snug}", "$type": "number" },
+      "weight": { "$value": "{font.weight.medium}", "$type": "fontWeight" }
     }
   }
 }

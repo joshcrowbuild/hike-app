@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Adventure Planner — Curation Prototype</title>
+    <!--
+      design-system-v0.2 D3/I.3: preload the two most-used IBM Plex faces
+      (Sans 400 = body/lead/caption prose; Sans 600 = display/title headings)
+      so the self-hosted webfont is in flight before CSSOM/webfont-loading
+      would otherwise discover it. Mono 500 (type.metric only, a smaller
+      share of on-screen text) is self-hosted with font-display: swap but
+      not preloaded, so it never competes for bandwidth with the two faces
+      that paint the most text. Hrefs match the exact `src()` in
+      src/design/fonts.css byte-for-byte (see that file's header for why).
+    -->
+    <link
+      rel="preload"
+      href="/fonts/ibm-plex-sans-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/ibm-plex-sans-latin-600-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
   </head>
   <body>
     <div id="root"></div>

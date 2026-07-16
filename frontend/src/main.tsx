@@ -7,6 +7,7 @@ import { Gallery } from './Gallery'
 import { PlannerProvider } from './data/PlannerProvider'
 import { BootShell } from './screens/BootShell'
 import './design/tokens.css'
+import './design/fonts.css'
 import './styles.css'
 
 const params = new URLSearchParams(window.location.search)

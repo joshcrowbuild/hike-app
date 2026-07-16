@@ -1,5 +1,11 @@
 # Design System Contract — v0.1
 
+> **Superseded by `docs/design-system/spec-v0.2.md`.** v0.2 is a
+> reconcile-and-finish release, not a greenfield rewrite — the token
+> pipeline, honesty primitives, and component list this doc describes still
+> ship. Read v0.2 first; its Appendix A maps every drift point back to this
+> file section-by-section.
+
 **Status:** Draft contract. **Stack ratified (2026-06): Adobe-grade** — DTCG + Style Dictionary token spine, React Aria behavior, vanilla-extract styling, owned components, Storybook. **Phases 1–4 of §9.2 are now built** (token spine · typed theme + `Signal` · React Aria `Sheet`/`Toggle`/`OptionButton` · Storybook); §9 defines the build sequence and §9.2 the per-phase status.
 **Scope:** Operationalizes `decision-log.md §20` (token-first; one source → Tailwind/web + SwiftUI/native; shadcn/ui + Radix on web; confidence/staleness/verify as first-class UI states).
 **Provenance:** Extracted from the validated `Home / Curation` v0.3 prototype, not invented ahead of it. Where this doc cites a value, it is the value the prototype already shipped in `frontend/src/styles.css`.
