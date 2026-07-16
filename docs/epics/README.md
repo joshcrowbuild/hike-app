@@ -63,7 +63,11 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [046](epic-046-generated-string-integrity.md) | Generated-string integrity (repetition collapse · degenerate-output guards · Character-line honesty) | DONE ✅ | 1 | Epic 018 · 040 · 041 |
 
-| [047](epic-047-design-system-v0.2-foundations.md) | Design system v0.2 foundations (WP-0) — token deltas, amber contrast, IBM Plex self-host, frozen Contracts A (`theme.css.ts`) + B (`contracts.ts`) | IN_PROGRESS | 1 | — |
+| [047](epic-047-design-system-v0.2-foundations.md) | Design system v0.2 foundations (WP-0) — token deltas, amber contrast, IBM Plex self-host, frozen Contracts A (`theme.css.ts`) + B (`contracts.ts`) | DONE ✅ | 1 | — |
+
+| [048](epic-048-primitives.md) | Design system v0.2 primitives (WP-1) — Text · Button · MetricRow · glyph + tier-glyph wiring | DONE ✅ | 1 | Epic 047 |
+
+| [053](epic-053-voice-content.md) | Voice & content system (WP-6) — state-message templates + banned-noun glossary lint (baseline allowlist) | DONE ✅ | 1 | Epic 047 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >
