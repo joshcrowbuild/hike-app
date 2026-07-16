@@ -12,7 +12,11 @@ import * as styles from './ConditionStatus.css'
 export const toTier: ConditionTierMapper = (status: ConditionStatusVM): ConditionTier => {
   if (status.state === 'no-hazard') return 'clear'
   if (status.state === 'present') {
-    // Actionability split: closure/permit-hard-stop -> blocked; heat/flow/advisory -> headsUp
+    // Actionability split: closure/permit-hard-stop -> blocked; heat/flow/advisory -> headsUp.
+    // NOTE (open): `present` conflates a benign reading (73°F) with a hazard
+    // (heat advisory) because ConditionStatusVM carries no severity — this is
+    // what oversells the detail "N things to know". Fixing it honestly needs a
+    // severity signal from the engine; not hackable in the frontend alone.
     if (status.kind === 'closures' || status.kind === 'permits') {
       return 'blocked'
     }

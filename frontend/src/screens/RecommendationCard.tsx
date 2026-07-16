@@ -77,9 +77,10 @@ export function RecommendationCard({
   const unhoistedLines = card.conditionLines.filter((l) => !hoistedLineKeys.has(lineKey(l)))
   const unhoistedConditions = card.conditions?.filter((s) => !hoistedStateKeys.has(conditionStateKey(s))) || []
   
-  // Combine warnings into conditions for summarization
-  // A warning is effectively a blocked or headsUp condition.
-  // Actually, we can just use the summarizer for conditions and warnings.
+  // Conditions (the six-state coverage) summarise into at most a quiet line; the
+  // real, source-stamped hazards are `card.warnings`, rendered as their own
+  // WarningBlock below (this was computed as `ownWarnings` but never rendered —
+  // the card was silently dropping hazard warnings).
   const summary = summarizeConditions(unhoistedConditions, unhoistedLines, 'card')
 
   return (
@@ -99,6 +100,10 @@ export function RecommendationCard({
         {summary && summary.tier !== 'clear' ? (
           <ConditionStatusLine tier={summary.tier} copy={summary.conclusion} />
         ) : null}
+
+        {/* No spokenText: the redesigned card has no Verdict to "speak" the
+            primary warning, so suppressing it here would drop it entirely. */}
+        <WarningBlock warnings={ownWarnings} />
 
         <div className="card-foot">
           {e?.freshness ? <Staleness>{e.freshness}</Staleness> : <span />}
