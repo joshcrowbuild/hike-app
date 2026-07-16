@@ -1,6 +1,6 @@
 # Epic 052 — Signed-in feed cache + HTTP caching (WP-5: the reload perf fix)
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅
 **Phase:** 1 (look-and-feel layer's perf lane; independent of WP-0's token work)
 **Spec refs:** `docs/design-system/spec-v0.2.md` Part III (the performance
 layer — the corrected root cause), Part IV.3 (WP-5 scope + sequencing)
