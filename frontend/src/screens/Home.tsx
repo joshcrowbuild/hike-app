@@ -122,7 +122,7 @@ export function Home({
   return (
     <div className="app-shell">
       <header className="topbar">
-        <span className="wordmark">Curation</span>
+        <span className="wordmark">Adventure Planner</span>
         {anonymous ? (
           <span className="topbar-mode" role="status" aria-label="Browsing anonymously — not signed in">
             Browsing
@@ -263,8 +263,8 @@ export function Home({
                         ? '1 saved'
                         : `${shown.length} saved`
                       : feed.cards.length === 1
-                        ? '1 option'
-                        : `${feed.cards.length} options`}{' '}
+                        ? '1 trail'
+                        : `${feed.cards.length} trails`}{' '}
                     · {resolveRegionLabel(cards, tuning, origins)}
                   </p>
                 ) : null}

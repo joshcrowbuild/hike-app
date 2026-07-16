@@ -66,33 +66,34 @@ export function summarizeConditions(
   const hasHeadsUp = mapped.filter((m) => m.tier === 'headsUp')
   const hasUnknown = mapped.filter((m) => m.tier === 'unknown')
 
-  const severe = hasBlocked.length > 0 ? hasBlocked :
-                 hasHeadsUp.length > 0 ? hasHeadsUp :
-                 hasUnknown.length > 0 ? hasUnknown : []
+  const actionable = hasBlocked.length + hasHeadsUp.length
 
-  if (severe.length === 0) {
-    return { tier: 'clear', conclusion: 'Conditions look clear.' }
-  }
-
-  const mostSevereTier = severe[0].tier
-
-  if (mode === 'detail' && (hasBlocked.length + hasHeadsUp.length + hasUnknown.length) > 1) {
-    const total = hasBlocked.length + hasHeadsUp.length + hasUnknown.length
-    const numberWords = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six']
-    const word = numberWords[total] || total.toString()
-    return { tier: mostSevereTier, conclusion: `${word} things to know` }
-  }
-
-  const first = severe[0].status
-  if (mostSevereTier === 'unknown') {
-    return {
-      tier: 'unknown',
-      conclusion: unknown(conditionKindLabels[first.kind] || first.kind),
+  // Nothing to act on: clear, or — honestly — unverified. An all-unknown trail
+  // must NEVER read "closed" or "N things to know"; it reads as what it is: not
+  // yet checked (Rule #1, source-or-silence). This is the fix for the false
+  // "This trail is closed right now." the old EvidencePanel stub could emit.
+  if (actionable === 0) {
+    if (hasUnknown.length === 0) return { tier: 'clear', conclusion: 'Conditions look clear.' }
+    if (hasUnknown.length === 1) {
+      const k = hasUnknown[0].status.kind
+      return { tier: 'unknown', conclusion: unknown(conditionKindLabels[k] || k) }
     }
+    return { tier: 'unknown', conclusion: 'Conditions couldn’t be verified right now.' }
   }
 
-  // Get detail string from the primary line
-  const detailStr = lines.length > 0 ? (lines[0].body ?? lines[0].text) : 'Action required'
+  const mostSevereTier: ConditionTier = hasBlocked.length > 0 ? 'blocked' : 'headsUp'
+
+  // Detail with several things to actually act on — count ONLY the actionable
+  // ones (an unknown is not a "thing to know", it's a thing we couldn't check).
+  if (mode === 'detail' && actionable > 1) {
+    const numberWords = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven']
+    const word = numberWords[actionable] ?? String(actionable)
+    return { tier: mostSevereTier, conclusion: `${word} things to know before you go.` }
+  }
+
+  const primary = (hasBlocked.length > 0 ? hasBlocked : hasHeadsUp)[0].status
+  const detailStr =
+    lines.length > 0 ? (lines[0].body ?? lines[0].text) : conditionKindLabels[primary.kind] || primary.kind
 
   return {
     tier: mostSevereTier,
