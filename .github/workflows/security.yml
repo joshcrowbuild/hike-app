@@ -23,37 +23,74 @@ permissions:
 # time. Regenerate the lockfile after a dependency change with:
 #   uv pip compile pyproject.toml --all-extras -o requirements.txt --python-version 3.11
 jobs:
+  # Path detector (mirrors ci.yml). bandit/pip-audit are required checks, so they
+  # always RUN and report, but skip their Python scan STEPS on frontend-only PRs.
+  # secret-scan always runs (full-history leak scan; cheap, security-critical).
+  changes:
+    name: changes (security)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+            files=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
+          else
+            files=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || true)
+          fi
+          be=false
+          if printf '%s\n' "$files" | grep -qE '^(api|orchestration|ingestion|graph|evals|regions|scripts|tests)/|\.py$|^pyproject\.toml$|^requirements\.txt$|^conftest\.py$'; then be=true; fi
+          if printf '%s\n' "$files" | grep -qE '^\.github/'; then be=true; fi
+          if [ -z "$files" ]; then be=true; fi
+          echo "backend=$be" >> "$GITHUB_OUTPUT"
+          echo "resolved -> backend=$be"
+
   bandit:
     name: bandit
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip bandit
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install --upgrade pip bandit
       # Same package set as `make typecheck`, plus scripts/. Tests are
       # excluded: bandit's assert/hardcoded-password rules are noise there.
       # Blocking at medium+ severity; the remaining LOW findings (asserts,
       # subprocess-with-fixed-argv in scripts/) are accepted as noise.
-      - run: bandit -r api graph ingestion orchestration evals scripts --severity-level medium
+      - if: needs.changes.outputs.backend == 'true'
+        run: bandit -r api graph ingestion orchestration evals scripts --severity-level medium
 
   pip-audit:
     name: pip-audit
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip pip-audit
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install --upgrade pip pip-audit
       # Audit the committed lockfile: it resolves ALL extras, so serve-time and
       # ingestion dependencies are both covered without installing the heavy
       # geo stack. --no-deps because the file is already a complete transitive
       # closure — nothing needs re-resolving.
-      - run: pip-audit -r requirements.txt --no-deps
+      - if: needs.changes.outputs.backend == 'true'
+        run: pip-audit -r requirements.txt --no-deps
 
   secret-scan:
     name: secret-scan

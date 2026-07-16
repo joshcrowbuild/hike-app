@@ -14,6 +14,43 @@ permissions:
   contents: read
 
 jobs:
+  # Path detector for the monorepo. Every heavy job below is a REQUIRED check, so
+  # none of them may be skipped at the job level (a skipped required check blocks
+  # the PR forever). Instead each job always RUNS and reports, but gates its
+  # expensive install/build/test STEPS on these outputs — near-zero work when its
+  # side of the tree didn't change. Fail-safe: a workflow/build-infra change, an
+  # unresolvable diff, or an empty diff runs BOTH legs, so a real change can never
+  # slip through untested (no false green).
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      frontend: ${{ steps.f.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: f
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+            files=$(git diff --name-only "$base"...HEAD 2>/dev/null || true)
+          else
+            files=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || true)
+          fi
+          echo "changed files:"; printf '%s\n' "$files"
+          be=false; fe=false
+          if printf '%s\n' "$files" | grep -qE '^(api|orchestration|ingestion|graph|evals|regions|scripts|tests)/|\.py$|^pyproject\.toml$|^Makefile$|^requirements\.txt$|^conftest\.py$'; then be=true; fi
+          if printf '%s\n' "$files" | grep -qE '^frontend/'; then fe=true; fi
+          if printf '%s\n' "$files" | grep -qE '^\.github/'; then be=true; fe=true; fi
+          if [ -z "$files" ]; then be=true; fe=true; fi
+          echo "backend=$be" >> "$GITHUB_OUTPUT"
+          echo "frontend=$fe" >> "$GITHUB_OUTPUT"
+          echo "resolved -> backend=$be frontend=$fe"
+
   workflow-lint:
     name: workflow-lint
     runs-on: ubuntu-latest
@@ -42,18 +79,22 @@ jobs:
 
   owned-read-lint:
     name: owned-read-lint
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
       # Rule #4: all owned-label Cypher reads must be scoped to owner_id (no convention).
-      - run: python scripts/lint_owned_reads.py
+      - if: needs.changes.outputs.backend == 'true'
+        run: python scripts/lint_owned_reads.py
 
   check:
     name: ${{ matrix.target }}
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -63,13 +104,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
-      - run: make ${{ matrix.target }}
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install --upgrade pip
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install -e ".[dev]"
+      - if: needs.changes.outputs.backend == 'true'
+        run: make ${{ matrix.target }}
 
   eval-replay:
     # The source-or-silence regression gate (Epic 009, golden-trip + cassette half):
@@ -77,21 +122,27 @@ jobs:
     # (no network, no Neo4j, no API key) — and reds the build if any truthfulness
     # invariant's pass rate drops below 1.0.
     name: eval-replay (source-or-silence)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
-      - run: make eval-replay
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install --upgrade pip
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install -e ".[dev]"
+      - if: needs.changes.outputs.backend == 'true'
+        run: make eval-replay
 
   frontend:
     name: frontend (vitest)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -100,19 +151,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
+        if: needs.changes.outputs.frontend == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm ci
       # Design tokens are generated (Style Dictionary) — the vanilla-extract
       # styles import them, so tests can't collect without this step.
-      - run: npm run tokens
-      - run: npm run test:coverage
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm run tokens
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm run test:coverage
       - name: Upload coverage report
         # always(): a red test run is exactly when the partial coverage report is
         # most useful; if-no-files-found keeps a pre-coverage crash from double-failing.
-        if: always()
+        if: always() && needs.changes.outputs.frontend == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
@@ -126,6 +181,7 @@ jobs:
     # BLOCKING — the surface was axe-clean at introduction, and the harness
     # was falsification-checked (a planted alt-less <img> trips it).
     name: a11y (axe, safety stories)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -134,17 +190,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
+        if: needs.changes.outputs.frontend == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm ci
       # Generated design tokens — the vanilla-extract styles import them.
-      - run: npm run tokens
-      - run: npm run test:a11y
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm run tokens
+      - if: needs.changes.outputs.frontend == 'true'
+        run: npm run test:a11y
 
   integration:
     name: integration (neo4j)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -166,14 +227,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
+        if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: python -m pip install --upgrade pip
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install --upgrade pip
       # graph extra pulls the neo4j driver — the default `test` leg deliberately does not.
-      - run: python -m pip install -e ".[dev,graph]"
+      - if: needs.changes.outputs.backend == 'true'
+        run: python -m pip install -e ".[dev,graph]"
       - name: Wait for Neo4j bolt
+        if: needs.changes.outputs.backend == 'true'
         run: |
           python - <<'PY'
           import time
@@ -195,4 +260,5 @@ jobs:
               raise SystemExit("neo4j did not become ready")
           PY
       - name: Run owner-isolation integration tests
+        if: needs.changes.outputs.backend == 'true'
         run: pytest -m neo4j
