@@ -39,7 +39,6 @@ export const sampleTag = style({
   marginInlineStart: vars.space[2],
   fontFamily: vars.font.family.mono,
   fontSize: vars.size.label,
-  textTransform: 'uppercase',
   letterSpacing: '0.08em',
   color: vars.text.muted,
   border: `${vars.stroke.hairline} solid ${vars.border.hairline}`,
