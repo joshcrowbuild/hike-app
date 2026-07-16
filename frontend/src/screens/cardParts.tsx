@@ -2,8 +2,8 @@
  *  is typed against the view-model, not the legacy Trail. */
 import type { LucideIcon } from 'lucide-react'
 import { ToggleButton } from 'react-aria-components'
-
-import { Icon, Signal, Staleness } from '../components'
+import { Icon, Signal, Staleness, Text, Button, MetricRow } from '../components'
+import type { MetricItem } from '../components/MetricRow/MetricRow'
 import { glyphs } from './glyphs'
 import { formatEstimatedDuration } from '../data/duration'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
@@ -199,136 +199,47 @@ export function geoAscentFeet(geo: TrailGeo | undefined): number | undefined {
   return gain != null ? Math.round(metersToFeet(gain)) : undefined
 }
 
-/**
- * One decision fact — icon + LABEL WORD + value (Epic 021 · AC-21.2.1). The
- * glyph is a small LEADING ACCENT beside the word, never a replacement: the word
- * always stays, so a fact is never label-less. `glyph` is optional so a caller
- * that has no assigned DD2 glyph degrades to the word alone rather than reaching
- * for a stand-in. The icon's sr-only label carries the word to assistive tech;
- * the visible word is a sighted-only echo of it (`aria-hidden`), so the fact
- * reads once, not twice.
- *
- * `badge` is an optional small disclosure tag AFTER the value (e.g. "est."),
- * mirroring `DifficultyBadge`'s `.difficulty-est` treatment — its own element,
- * never concatenated into the value string. That split fixed Finding 1
- * (ux-review 2026-07): a duration like "~5 hr 5 min · est." baked as one
- * `nowrap` string was the single widest fact and clipped the card's right edge
- * at every viewport; a value ("~5 hr 5 min") plus a separate small badge wraps
- * or shrinks independently instead of forcing the whole row wider than the card.
- *
- * `unavailable` (ux-review 2026-07 Finding 6) renders a muted "—" in place of a
- * real value, italicised like `.condition-state--no-data` — the honest
- * source-or-silence disclosure for a fact this trail genuinely has no figure
- * for (a null elevation profile), rather than omitting the item outright. An
- * omitted item is indistinguishable from a rendering glitch when its siblings
- * (Distance) still show; a disclosed gap reads as an honest, calm absence.
- */
-export function DecisionItem({
-  label,
-  value,
-  glyph,
-  badge,
-  unavailable,
-}: {
-  label: string
-  value: string
-  glyph?: LucideIcon
-  badge?: string
-  /** When true, `value` is ignored and a muted "not available" disclosure renders instead. */
-  unavailable?: boolean
-}) {
-  return (
-    <div className="decision-item">
-      <span className="decision-label">
-        {glyph ? <Icon glyph={glyph} label={label} className="decision-icon" /> : null}
-        <span aria-hidden={glyph ? 'true' : undefined}>{label}</span>
-      </span>
-      {unavailable ? (
-        <span className="decision-value decision-value--unavailable">
-          <span className="sr-only">{label} not available</span>
-          <span aria-hidden="true">—</span>
-        </span>
-      ) : (
-        <span className="decision-value">
-          {value}
-          {badge ? (
-            <span className="decision-badge" aria-label={`derived ${badge}`}>
-              {' '}
-              {badge}
-            </span>
-          ) : null}
-        </span>
-      )}
-    </div>
-  )
-}
-
 export const formatDrive = (minutes: number): string => `${minutes} min`
 export const formatTrail = (miles: number, ascentFeet: number): string =>
   `${miles.toFixed(1)} mi · ${ascentFeet.toLocaleString()} ft`
 
-/**
- * The decision-fact row — Drive → Distance → Ascent → Duration — rendered
- * IDENTICALLY by the card and Detail (H2/H4/F7, ux-review 2026-07). A single
- * shared component is the fix, not just a shared value: Distance and Duration
- * both resolve through `../data/summary`'s one geometry SSOT (`resolveMiles` /
- * `resolveDurationMinutes`), so the two facts can never describe two different
- * hikes — never a round-trip distance beside a one-way duration, and never a
- * 13 mph "hike" (the pace sanity check lives in `resolveDurationMinutes`).
- * Restoring Ascent + Duration on the card (H2) makes the feed comparable at a
- * glance again, per Epic 019's own "2–3 decision facts" spine — the glyph
- * shows the shape, these facts show the numbers.
- *
- * A null elevation profile (no `totalGainMeters` → no Ascent, no Naismith
- * Duration) used to make Ascent/Duration vanish silently, leaving a lone
- * "1.5 mi" that reads like a broken card (ux-review 2026-07 Finding 6). Once
- * Distance is known — there IS a real trail to show facts for — the missing
- * pair now renders as an honest `unavailable` disclosure ("—") instead of
- * omitting the items: the row stays structurally complete (three/four slots,
- * every time) and the gap is legible, not a glitch. A card with NO resolvable
- * facts at all (no geo, nothing) still renders nothing, same as before —
- * there's no trail-shaped row to disclose a gap in.
- */
-export function DecisionFacts({ card, className }: { card: CardVM; className: string }) {
+export function DecisionFacts({ card, className }: { card: CardVM; className?: string }) {
   const e = card.enrichment
   const distanceMiles = resolveMiles(card)
   const ascentFeet = e?.ascentFeet ?? geoAscentFeet(card.geo)
   const durationMinutes = resolveDurationMinutes(card)
-  // Two different duration sources, ONE fact slot (Epic 022): the curated mock
-  // `durationHours` is already a range string ("2–3 hr") and is `sample`-
-  // provenance data disclosed elsewhere (the sample strip) — it wears no
-  // per-fact badge. The live path is a Naismith point estimate off the
-  // profile, so IT alone carries the "est." disclosure (Rule #1/#7) — as its
-  // own small badge (`DecisionItem`'s `badge` prop), never concatenated into
-  // the value string the way `formatEstimatedDuration` used to (ux-review
-  // 2026-07 Finding 1: that inline "· est." made Duration the widest fact and
-  // clipped the card's right edge).
   const duration = e?.durationHours ?? (durationMinutes != null ? formatEstimatedDuration(durationMinutes) : null)
-  const durationBadge = e?.durationHours == null && durationMinutes != null ? 'est.' : undefined
-  // The disclosure gate (Finding 6): only once Distance anchors the row as a
-  // real trail's facts do the missing pair disclose "unavailable" rather than
-  // just not existing — a fact-less card (no geo at all) still renders nothing.
+  
   const discloseGap = distanceMiles != null
-  return (
-    <div className={className}>
-      {e?.driveMinutes != null ? (
-        <DecisionItem label="Drive" value={formatDrive(e.driveMinutes)} glyph={glyphs.drive} />
-      ) : null}
-      {distanceMiles != null ? (
-        <DecisionItem label="Distance" value={`${distanceMiles.toFixed(1)} mi`} glyph={glyphs.distance} />
-      ) : null}
-      {ascentFeet != null ? (
-        <DecisionItem label="Ascent" value={`${ascentFeet.toLocaleString()} ft`} glyph={glyphs.ascent} />
-      ) : discloseGap ? (
-        <DecisionItem label="Ascent" value="" glyph={glyphs.ascent} unavailable />
-      ) : null}
-      {duration != null ? (
-        <DecisionItem label="Duration" value={duration} glyph={glyphs.duration} badge={durationBadge} />
-      ) : discloseGap ? (
-        <DecisionItem label="Duration" value="" glyph={glyphs.duration} unavailable />
-      ) : null}
-    </div>
-  )
+  const metrics: MetricItem[] = []
+
+  if (distanceMiles != null) {
+    metrics.push({ kind: 'distance', label: 'Distance', value: `${distanceMiles.toFixed(1)} mi`, glyph: glyphs.distance })
+  }
+  
+  if (ascentFeet != null) {
+    metrics.push({ kind: 'ascent', label: 'Ascent', value: `${ascentFeet.toLocaleString()} ft`, glyph: glyphs.ascent })
+  } else if (discloseGap) {
+    metrics.push({ kind: 'ascent', label: 'Ascent', value: null, glyph: glyphs.ascent })
+  }
+  
+  if (duration != null) {
+    metrics.push({
+      kind: 'duration',
+      label: 'Duration',
+      value: duration,
+      glyph: glyphs.duration
+    })
+  } else if (discloseGap) {
+    metrics.push({
+      kind: 'duration',
+      label: 'Duration',
+      value: null,
+      glyph: glyphs.duration
+    })
+  }
+
+  return <MetricRow items={metrics} className={className} />
 }
 
 /**
@@ -341,16 +252,14 @@ export function DecisionFacts({ card, className }: { card: CardVM; className: st
  */
 export function DirectionsLink({ trailhead, name, className }: { trailhead: GeoPosition; name: string; className?: string }) {
   return (
-    <a
-      className={className ? `action-chip ${className}` : 'action-chip'}
-      href={trailheadDirectionsUrl(trailhead)}
-      target="_blank"
-      rel="noreferrer"
+    <Button
+      variant="secondary"
+      className={className}
+      onPress={() => window.open(trailheadDirectionsUrl(trailhead), '_blank', 'noopener,noreferrer')}
       aria-label={`Directions to the ${name} trailhead (opens Google Maps in a new tab)`}
     >
-      <Icon glyph={glyphs.directions} label="Directions" className="action-chip-icon" />
       Directions
-    </a>
+    </Button>
   )
 }
 
@@ -364,15 +273,15 @@ export function DirectionsLink({ trailhead, name, className }: { trailhead: GeoP
 export function SaveButton({ id, name, className }: { id: string; name: string; className?: string }) {
   const saved = useIsTrailSaved(id)
   return (
-    <ToggleButton
-      className={className ? `action-chip ${className}` : 'action-chip'}
-      isSelected={saved}
-      onChange={() => toggleTrailSaved(id)}
+    <Button
+      variant={saved ? 'secondary' : 'primary'}
+      className={className}
+      aria-pressed={saved}
+      onPress={() => toggleTrailSaved(id)}
       aria-label={saved ? `Remove ${name} from saved trails` : `Save ${name}`}
     >
-      <Icon glyph={saved ? glyphs.saved : glyphs.save} label={saved ? 'Saved' : 'Save'} className="action-chip-icon" />
       {saved ? 'Saved' : 'Save'}
-    </ToggleButton>
+    </Button>
   )
 }
 

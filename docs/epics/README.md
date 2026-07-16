@@ -67,6 +67,10 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [048](epic-048-primitives.md) | Design system v0.2 primitives (WP-1) — Text · Button · MetricRow · glyph + tier-glyph wiring | DONE ✅ | 1 | Epic 047 |
 
+| [049](epic-049-conditionstatus-trailcard.md) | ConditionStatus engine + TrailCard restyle (WP-2) — name-leads, silence-when-clean, 4-tier status line | DONE ✅ | 1 | Epic 047 · 048 |
+
+| [050](epic-050-detail-evidence.md) | Detail + EvidencePanel + ContextSentence + MapControls (WP-3) — conclusion-first, progressive-disclosure evidence | DONE ✅ | 1 | Epic 048 · 049 |
+
 | [053](epic-053-voice-content.md) | Voice & content system (WP-6) — state-message templates + banned-noun glossary lint (baseline allowlist) | DONE ✅ | 1 | Epic 047 |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.

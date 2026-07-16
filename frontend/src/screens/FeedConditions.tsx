@@ -27,11 +27,11 @@
  * conditions, without leaving the landmark — never two adjacent regions a
  * screen-reader user has to stitch together themselves.
  */
-import { Confidence } from '../components'
+import { Confidence, Text } from '../components'
 import { lineKey, type FeedConditions } from '../data/feedConditions'
 import { ConditionStates } from './ConditionStates'
 
-export function ContextRibbon({
+export function ContextSentence({
   contextText,
   onOpenTuning,
   conditions,
@@ -44,28 +44,29 @@ export function ContextRibbon({
   const { sharedLines, sharedStates } = conditions
   const hasConditions = sharedLines.length > 0 || sharedStates.length > 0
   return (
-    <section className="context-ribbon" aria-label="This frame">
-      <button className="context-ribbon-head" type="button" onClick={onOpenTuning}>
-        <span className="context-ribbon-text">{contextText}</span>
-        <span className="context-adjust">Adjust</span>
-      </button>
+    <section className="context-sentence" aria-label="This frame">
+      <div className="context-sentence-head">
+        <Text role="lead" as="span" className="context-sentence-text">{contextText}</Text>
+        <button className="context-edit-action" type="button" onClick={onOpenTuning}>
+          Edit
+        </button>
+      </div>
 
       {hasConditions ? (
         <div className="feed-conditions-body">
-          <p className="kicker feed-conditions-scope">In this area</p>
           {sharedLines.length > 0 ? (
-            <ul className="condition-lines feed-conditions-lines">
+            <div className="feed-conditions-line">
               {/* Rows are keyed on the same full-fact identity the split dedupes
                   on (`lineKey`), so two lines differing only in confidence or
                   provenance can never collide. */}
               {sharedLines.map((line) => (
-                <li key={lineKey(line)} className="condition-line">
+                <div key={lineKey(line)} className="condition-line">
                   <Confidence level={line.confidence} provenance={line.provenance}>
                     {line.text}
                   </Confidence>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : null}
           {sharedStates.length > 0 ? <ConditionStates conditions={sharedStates} compact /> : null}
         </div>

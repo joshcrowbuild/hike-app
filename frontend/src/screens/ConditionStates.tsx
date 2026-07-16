@@ -29,6 +29,7 @@
 import { Confidence, Staleness } from '../components'
 import { foldLineValue, sharedAmong } from '../data/feedConditions'
 import type { ConditionStateVM, ConditionStatusVM, LineVM } from '../data/vm'
+import { toTier } from './ConditionStatus'
 import { glyphs } from './glyphs'
 
 /** Human labels for the wire condition kinds. An unknown kind falls back to the
@@ -107,7 +108,7 @@ export function ConditionStates({
       ) : null}
       <ul className="condition-states">
         {conditions.map((s) => (
-          <li key={s.kind} className={`condition-state condition-state--${s.state}`}>
+          <li key={s.kind} className={`condition-state condition-state--${s.state} condition-tier--${toTier(s)}`}>
             <span className="condition-state-kind">{kindLabel(s.kind)}</span>
             <StateBody status={s} value={foldLineValue(s, lines, claimed)} blockAge={blockAge} />
           </li>
@@ -149,7 +150,7 @@ function CompactGroup({ state, members }: { state: ConditionStateVM; members: Co
   })
   if (state === 'unavailable') {
     return (
-      <p className="condition-state-group condition-state--unavailable">
+      <p className={`condition-state-group condition-state--unavailable condition-tier--${toTier(members[0])}`}>
         <Confidence level="flagged" provenance="live">
           Couldn’t verify: {kinds.join(', ')}
         </Confidence>
@@ -157,7 +158,7 @@ function CompactGroup({ state, members }: { state: ConditionStateVM; members: Co
     )
   }
   return (
-    <p className={`condition-state-group condition-state--${state}`}>
+    <p className={`condition-state-group condition-state--${state} condition-tier--${toTier(members[0])}`}>
       <span className="sr-only">{copy.announce}: </span>
       <span className="condition-state-glyph" aria-hidden="true">
         {copy.glyph ?? <HistoryGlyph />}

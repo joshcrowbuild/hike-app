@@ -6,7 +6,9 @@
  * the controls work and are testable whether the GL map or the static fallback
  * is mounted.
  */
-import { Button, ToggleButton } from 'react-aria-components'
+import { ToggleButton } from 'react-aria-components'
+import { Button, Icon } from '../../components'
+import { glyphs } from '../glyphs'
 
 import { LAYER_OPTIONS, type MapLayerKey } from './layers'
 
@@ -32,6 +34,9 @@ export function MapControls({
   return (
     <div className="map-controls">
       <div className="map-layers" role="group" aria-label="Base map layer">
+        <span className="map-chip-icon-wrap" aria-hidden="true">
+          <Icon glyph={glyphs.layers} label="Layers" className="map-chip-icon" />
+        </span>
         {LAYER_OPTIONS.map((opt) => (
           <ToggleButton
             key={opt.key}
@@ -45,7 +50,7 @@ export function MapControls({
       </div>
 
       <div className="map-actions">
-        <Button className="map-chip" onPress={onLocate} isDisabled={locating}>
+        <Button className="map-chip" variant="secondary" size="sm" onPress={onLocate} isDisabled={locating}>
           {locating ? 'Locating…' : 'Locate me'}
         </Button>
         <ToggleButton className="map-chip" isSelected={fullscreen} onChange={onToggleFullscreen}>

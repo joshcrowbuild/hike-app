@@ -158,7 +158,7 @@ export function HeroCard({
 // -----------------------------------------------------------------------------
 // The Context Ribbon
 // -----------------------------------------------------------------------------
-export function ContextRibbon({ empty = false }: { empty?: boolean }) {
+export function ContextSentence({ empty = false }: { empty?: boolean }) {
   if (empty) {
     return (
       <div style={{
@@ -313,7 +313,7 @@ export function MobileHomePrototype({
         </button>
       </header>
 
-      <ContextRibbon empty={empty} />
+      <ContextSentence empty={empty} />
       
       {!empty && card && (
         <>
@@ -397,7 +397,7 @@ export function DesktopHomePrototype({
           overflowY: 'auto',
           borderLeft: `1px solid ${vars.border.hairline}`
         }}>
-          <ContextRibbon />
+          <ContextSentence />
           {card && <HeroCard card={card} confidenceMode={confidenceMode} headline={headline} />}
           <div style={{ marginTop: vars.space[6] }}>
             <h3 style={{
