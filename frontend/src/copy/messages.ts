@@ -54,16 +54,24 @@ export const emptySearch = (
 /**
  * Empty filters state — filters are too tight, no trails match.
  * Returns an object with the headline, secondary, and an actionable CTA.
+ *
+ * `suggestedChange` and `ctaValue` are deliberately separate params
+ * (states-gallery.html §4 "filters — too tight"): the secondary sentence
+ * reads a verb phrase ("Widen the distance and 6 trails come back."), while
+ * the CTA button reads the resulting value ("Show trails up to 3 mi") — the
+ * same string would read wrong in one slot or the other if collapsed to one
+ * param (WP-4 deviation — see epic-051's Deviations section).
  */
 export const emptyFilters = (
   filterDescription: string,
   placeLabel: string,
   suggestedChange: string,
-  suggestedTrailCount: number
+  suggestedTrailCount: number,
+  ctaValue: string
 ): { headline: string; secondary: string; cta: string } => ({
   headline: `Nothing matches ${filterDescription} here.`,
   secondary: `${suggestedChange} and ${suggestedTrailCount} trails come back.`,
-  cta: `Show trails ${suggestedChange}`,
+  cta: `Show trails ${ctaValue}`,
 })
 
 /**
