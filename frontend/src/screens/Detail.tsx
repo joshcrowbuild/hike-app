@@ -92,7 +92,7 @@ function DetailBody({ card }: { card: CardVM }) {
             feed card (Epic 019). */}
         {e?.placeCue ? <p className="detail-place">{e.placeCue}</p> : null}
 
-        <WarningBlock warnings={card.warnings} spokenText={verdictSpokenWarningText(card)} />
+        <WarningBlock warnings={card.warnings} />
 
         <div className="detail-actions">
           <SaveButton id={card.id} name={card.name} />

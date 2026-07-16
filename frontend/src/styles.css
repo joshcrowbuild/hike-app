@@ -120,6 +120,20 @@ button {
   margin-bottom: 0.9rem;
 }
 
+/* Context sentence: the "Edit" affordance was butting against the wrapping
+   frame sentence ("…Front Royal Edit"). Give it its own space at the row end. */
+.context-sentence-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.context-sentence-text {
+  flex: 1 1 auto;
+}
+.context-edit-action {
+  flex: none;
+}
+
 .wordmark {
   font-size: 0.7rem;
   font-weight: 600;

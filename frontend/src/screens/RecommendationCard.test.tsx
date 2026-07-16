@@ -40,6 +40,27 @@ function card(overrides: Partial<CardVM> = {}): CardVM {
   }
 }
 
+describe('RecommendationCard hazard warnings — regression guard (card.warnings must not be silently dropped)', () => {
+  it('renders a per-card warning', () => {
+    render(
+      <RecommendationCard
+        card={card({
+          warnings: [
+            { text: 'Extreme Heat Warning', source: 'NWS', observedAgo: '1h ago', kind: 'weather', provenance: 'mock' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/Extreme Heat Warning/)).toBeInTheDocument()
+  })
+
+  it('stays silent when there are no warnings (silence is a state)', () => {
+    const { container } = render(<RecommendationCard card={card({ warnings: [] })} onOpen={vi.fn()} />)
+    expect(container.querySelector('.card-warnings')).not.toBeInTheDocument()
+  })
+})
+
 describe('RecommendationCard feed glyph (S4)', () => {
   it('shows the static elevation glyph when a profile exists', () => {
     const { container } = render(<RecommendationCard card={card()} onOpen={vi.fn()} />)
