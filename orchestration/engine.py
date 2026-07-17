@@ -33,6 +33,7 @@ from orchestration.adapters.base import (
     Point,
     VerifiedFact,
 )
+from orchestration.adapters.nws import NwsRegionAdapter
 from orchestration.adapters.registry import (
     TTLCache,
     default_cache,
@@ -64,6 +65,7 @@ from orchestration.intent import Intent, parse_intent
 from orchestration.present import FeedLine, provider_short, summarize_fact
 from orchestration.providers.base import ModelProvider
 from orchestration.providers.registry import resolve
+from orchestration.region_conditions import RegionConditions, derive_region_conditions
 from orchestration.scout import Candidate, scout, scout_by_id, scout_by_name
 from orchestration.verifier import DEFAULT_MAX_WORKERS, verify_batch
 
@@ -291,6 +293,11 @@ class Runtime:
     # test runtime. Anonymous-only, like `feed_cache` (Rule #5): a non-anonymous
     # phase-1 plan is never stored (the key carries no viewer identity).
     phase1_pending: FeedCache | None = None
+    # The region-level NWS probe (frame-conditions-wave §5, epic-054 S2/S3) —
+    # forecast periods + recent station observations, fetched ONCE per plan at the
+    # query origin (`_fetch_region_raw`), never per candidate. None = no NWS
+    # credential configured (source-or-silence: `region_conditions` stays absent).
+    region_probe: LiveAdapter | None = None
 
 
 @dataclass(frozen=True)
@@ -301,6 +308,14 @@ class Feed:
     # Trails a hard live guardrail ruled out, disclosed with cause + source (Epic 018
     # S5 AC-5.2). Kept off the ranked `cards` — a safety set-aside, not a demotion.
     set_aside: tuple[SetAsideTrail, ...] = ()
+    # Area-level conditions (frame-conditions-wave §5, epic-054 S5 AC-5.1): None
+    # when not attempted this phase (a phase-1 shell, or no region probe
+    # configured) — distinct from "attempted, degraded", which is a
+    # `RegionConditions` whose members are individually null.
+    region_conditions: RegionConditions | None = None
+    # True whenever the judge fell back to generic ranking this plan (Q8 / S5
+    # AC-5.2) — a structured twin of `PERSONAL_CONTEXT_UNAVAILABLE_NOTICE`.
+    personalization_degraded: bool = False
 
 
 def _latlon(point: Any) -> tuple[float, float] | None:
@@ -881,6 +896,25 @@ def _anon_key(query: str, origin: tuple[float, float], k: int) -> FeedCacheKey:
     return (query, round(lat, 3), round(lon, 3), k)
 
 
+def _fetch_region_raw(origin: tuple[float, float], runtime: Runtime) -> VerifiedFact | None:
+    """The RAW region-level NWS fetch (forecast periods + recent station
+    observations) — ONE probe per plan at the query origin, the simplest honest
+    region-representative anchor available (there is no separate region-centroid
+    concept in this codebase; the origin the hiker is planning from IS the region
+    the frame's conditions describe). Never per candidate (AC-2.4). Routed through
+    the same per-source TTL cache every other live probe uses (`Runtime.cache`) so
+    a repeat within the adapter's TTL costs nothing — `when` is deliberately never
+    passed here (see `NwsRegionAdapter`): the raw fetch doesn't vary by day, only
+    its render-time selection does. `None` when no region probe is configured (no
+    NWS credential) or the fetch itself failed (source-or-silence)."""
+    if runtime.region_probe is None:
+        return None
+    point = Point(*origin)
+    if runtime.cache is not None:
+        return runtime.cache.probe(runtime.region_probe, point)
+    return runtime.region_probe.probe(point)
+
+
 def _compute_plan(
     query: str,
     origin: tuple[float, float],
@@ -1003,25 +1037,53 @@ def _compute_plan(
     notices = batch.notices
     if context_degraded:
         notices = notices + (PERSONAL_CONTEXT_UNAVAILABLE_NOTICE,)
+    # Region-level conditions (frame-conditions-wave §5, epic-054 S2/S3): ONE probe
+    # at the query origin, only on the live-verifying path — phase 1 (verify=False)
+    # stays genuinely probe-free (D2), exactly like the per-candidate fan-out above.
+    # RAW (unselected-by-day) so a cache hit here is reused regardless of which
+    # `when` a later request wants (see `_fetch_region_raw`/`region_conditions.py`).
+    region_raw = _fetch_region_raw(origin, runtime) if verify else None
     # AC-5.2/5.3: set-aside trails ride the CachedPlan as a disclosed, cause+source
     # list — kept off `planned` (ranking never sees them; a hazard is a safety gate,
     # not a taste demotion). Ranking above operates only on the guardrail-passing
     # `planned`. Rendering into `FeedCard`s happens in `_render_feed`, never here —
     # this is the one boundary a cache sits below (see feed_cache.py).
-    return CachedPlan(planned=tuple(planned), notices=notices, set_aside=batch.set_aside)
+    return CachedPlan(
+        planned=tuple(planned),
+        notices=notices,
+        set_aside=batch.set_aside,
+        region_raw=region_raw,
+        # Q8 / S5 AC-5.2: the SAME condition that emits the notice above, as a
+        # structured flag the wire can key a banner off of — never a second,
+        # independently-derived signal.
+        personalization_degraded=context_degraded,
+    )
 
 
-def _render_feed(query: str, cached: CachedPlan, *, now: datetime | None = None) -> Feed:
+def _render_feed(
+    query: str, cached: CachedPlan, *, now: datetime | None = None, when: str | None = None
+) -> Feed:
     """The ONLY place `feed_card` runs — so a live-condition line's freshness is
     always rendered against serve-time `now`, cache hit or not. Caching the rendered
     `Feed` instead of `CachedPlan` would freeze the relative-age copy at capture time
     (see feed_cache.py's module docstring); this function is what keeps that from
-    ever happening."""
+    ever happening. `region_conditions` gets the SAME discipline: `cached.region_raw`
+    is the RAW fetch (day-independent), and `when` — the CURRENT caller's frame, not
+    whatever a cache hit's original caller wanted — drives which days actually render
+    (a cache hit must never serve a stranger's forecast day)."""
+    render_now = now or datetime.now(timezone.utc)
+    region_conditions = (
+        derive_region_conditions(cached.region_raw, when=when, now=render_now)
+        if cached.region_raw is not None
+        else None
+    )
     return Feed(
         query=query,
         cards=[feed_card(p, now=now) for p in cached.planned],
         notices=cached.notices,
         set_aside=cached.set_aside,
+        region_conditions=region_conditions,
+        personalization_degraded=cached.personalization_degraded,
     )
 
 
@@ -1032,19 +1094,24 @@ def plan(
     *,
     k: int = 10,
     viewer_id: str = "anonymous",
+    when: str | None = None,
 ) -> Feed:
     """Thin wrapper: on a cache hit, skip `_compute_plan` entirely (including the
     ~0.3s intent parse) and re-render the cached plan against serve-time freshness;
     on a miss, compute once (single-flight collapses concurrent identical misses),
     cache only on success, then render. Keying on the raw `query` string (not the
     parsed intent) means two queries that happen to parse identically won't share a
-    cache entry — accepted (Epic 039 S2 design: the intent-parse cost is small)."""
+    cache entry — accepted (Epic 039 S2 design: the intent-parse cost is small).
+
+    `when` (frame-conditions-wave S2) is NOT part of the cache key (`_anon_key`):
+    it only selects which forecast days `_render_feed` shows, a render-time
+    concern re-applied on every call, cache hit or not (see `_render_feed`)."""
     fc = runtime.feed_cache
     key = _anon_key(query, origin, k) if (fc is not None and viewer_id == "anonymous") else None
     runtime.feed_cache_hit = False
     if key is None:
         cached = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id)
-        return _render_feed(query, cached)
+        return _render_feed(query, cached, when=when)
     assert fc is not None  # narrows for mypy; implied by `key is not None` above
 
     computed = False
@@ -1060,7 +1127,7 @@ def plan(
     # a hit — this request spent no tokens/probes. Runtime is per-request, so the
     # flag can't race the way a shared FeedCacheStats counter delta does.
     runtime.feed_cache_hit = not computed
-    return _render_feed(query, cached)
+    return _render_feed(query, cached, when=when)
 
 
 def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str) -> Runtime:
@@ -1098,6 +1165,11 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
         if settings.feed_cache_ttl_s > 0
         else None
     )
+    # The region-level conditions probe (frame-conditions-wave §5, epic-054 S2/S3):
+    # resolved directly from the same NWS credential `NwsAdapter` uses, NOT through
+    # `probes_for` (a region-level fact has no per-candidate `ConditionKind` fan-out
+    # to join — see `NwsRegionAdapter`). Absent credential → None (source-or-silence).
+    region_probe = NwsRegionAdapter.from_config(settings)
     return Runtime(
         session=graph_client.scoped_session(viewer_id),
         probes=probes,
@@ -1113,4 +1185,5 @@ def build_runtime(settings: Settings, graph_client: GraphClient, viewer_id: str)
         # ADVENTURE_TWO_PHASE_ENABLED=0 leaves it None and `/plan` with
         # phase:"cards" serves the full single-pass response instead (Epic 040 D6).
         phase1_pending=default_pending_store() if settings.two_phase_enabled else None,
+        region_probe=region_probe,
     )

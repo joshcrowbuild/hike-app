@@ -25,11 +25,13 @@ from orchestration.adapters.base import (
 from orchestration.confidence import Confidence, compute, for_fact
 from orchestration.curator import GuardrailVerdict
 from orchestration.engine import (
+    PERSONAL_CONTEXT_UNAVAILABLE_NOTICE,
     CachedPlan,
     PlannedTrail,
     Runtime,
     _anon_key,
     _compute_plan,
+    _fetch_region_raw,
     _plan_from_candidates,
     _render_feed,
     plan,
@@ -1321,3 +1323,223 @@ def test_plan_trail_by_id_skips_verify_when_no_point() -> None:
     # The trail should still be in the batch, but with empty facts (verify=False).
     assert len(batch.trails) == 1
     assert batch.trails[0].facts == {}  # no live probes ran
+
+
+# ── epic-054: region conditions + personalization_degraded ───────────────────
+
+
+class _RegionAdapter(LiveAdapter):
+    """A fake region-level probe recording call counts — mirrors `_FakeAdapter`
+    but shaped for `Runtime.region_probe` (no per-kind fan-out)."""
+
+    name = "region-fake"
+    kind = ConditionKind.weather
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+        self.calls = 0
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(True, False, True)
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        self.calls += 1
+        return _fact(self._value)
+
+    def health(self) -> AdapterHealth:
+        return AdapterHealth.OK
+
+    @classmethod
+    def from_config(cls, settings: Any) -> "LiveAdapter | None":
+        return None
+
+
+def test_fetch_region_raw_none_when_no_region_probe_configured() -> None:
+    runtime = Runtime(session=_FakeSession([]), probes={})  # type: ignore[arg-type]
+    assert _fetch_region_raw((38.5, -78.4), runtime) is None
+
+
+def test_fetch_region_raw_probes_the_configured_adapter_at_the_origin() -> None:
+    adapter = _RegionAdapter({"periods": None, "observations": None})
+    runtime = Runtime(session=_FakeSession([]), probes={}, region_probe=adapter)  # type: ignore[arg-type]
+    fact = _fetch_region_raw((38.5, -78.4), runtime)
+    assert fact is not None
+    assert adapter.calls == 1
+
+
+def test_fetch_region_raw_reuses_the_ttl_cache() -> None:
+    from orchestration.adapters.registry import TTLCache
+
+    adapter = _RegionAdapter({"periods": None, "observations": None})
+    cache = TTLCache()
+    runtime = Runtime(
+        session=_FakeSession([]),  # type: ignore[arg-type]
+        probes={},
+        region_probe=adapter,
+        cache=cache,
+    )
+    _fetch_region_raw((38.5, -78.4), runtime)
+    _fetch_region_raw((38.5, -78.4), runtime)
+    assert adapter.calls == 1  # the second call was served from the shared TTL cache
+
+
+def test_compute_plan_fetches_region_raw_only_when_verifying() -> None:
+    # Phase 1 (verify=False) fetches ZERO live probes, region-level included —
+    # the same D2 discipline as the per-candidate fan-out.
+    rows = [_row("a", 38.5, -78.4, 100.0)]
+    adapter = _RegionAdapter({"periods": None, "observations": None})
+    runtime = Runtime(session=_FakeSession(rows), probes={}, region_probe=adapter)  # type: ignore[arg-type]
+
+    phase1 = _compute_plan("q", (38.5, -78.4), runtime, k=5, verify=False)
+    assert phase1.region_raw is None
+    assert adapter.calls == 0
+
+    full = _compute_plan("q", (38.5, -78.4), runtime, k=5, verify=True)
+    assert full.region_raw is not None
+    assert adapter.calls == 1
+
+
+class _RaisingPersonalizedJudge:
+    name = "local"
+
+    def complete(self, request: Any) -> LLMResponse:
+        raise RuntimeError("no local model available")
+
+
+def test_personalization_degraded_mirrors_the_context_degraded_notice() -> None:
+    rows = [_row("a", 38.5, -78.4, 100.0)]
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        judge=(_FakeJudge('["a"]'), "m"),  # type: ignore[arg-type]
+        personalized_judge=(_RaisingPersonalizedJudge(), "m"),  # type: ignore[arg-type]
+    )
+    feed = plan("q", (38.5, -78.4), runtime, k=5, viewer_id="mem:josh")
+    assert feed.personalization_degraded is True
+    assert PERSONAL_CONTEXT_UNAVAILABLE_NOTICE in feed.notices
+
+
+def test_personalization_not_degraded_on_the_happy_path() -> None:
+    rows = [_row("a", 38.5, -78.4, 100.0)]
+    runtime = Runtime(
+        session=_FakeSession(rows),  # type: ignore[arg-type]
+        probes={},
+        judge=(_FakeJudge('["a"]'), "m"),  # type: ignore[arg-type]
+    )
+    feed = plan("q", (38.5, -78.4), runtime, k=5)
+    assert feed.personalization_degraded is False
+    assert PERSONAL_CONTEXT_UNAVAILABLE_NOTICE not in feed.notices
+
+
+def test_render_feed_derives_region_conditions_from_the_cached_raw_fetch() -> None:
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)  # Wednesday
+    periods = [
+        {
+            "name": "Today",
+            "startTime": "2026-07-15T06:00:00+00:00",
+            "isDaytime": True,
+            "temperature": 80,
+            "temperatureUnit": "F",
+        }
+    ]
+    raw = _fact({"periods": periods, "observations": None})
+    cached = CachedPlan(planned=(), notices=(), set_aside=(), region_raw=raw)
+
+    feed = _render_feed("q", cached, now=now, when="fullDay")
+
+    assert feed.region_conditions is not None
+    assert feed.region_conditions.forecast is not None
+    assert feed.region_conditions.forecast.days[0].high_f == 80
+
+
+def test_render_feed_region_conditions_none_when_no_raw_was_fetched() -> None:
+    cached = CachedPlan(planned=(), notices=(), set_aside=())
+    feed = _render_feed("q", cached)
+    assert feed.region_conditions is None
+
+
+def test_render_feed_reuses_cached_raw_but_applies_the_current_callers_when() -> None:
+    # The cache-key discipline (S2): `when` is never part of `_anon_key`, so a
+    # cache hit's raw fetch must still be re-selected per THIS render call's
+    # frame — a cache hit must never serve a stranger's forecast day.
+    now = datetime(2026, 7, 13, 12, 0, tzinfo=timezone.utc)  # Monday
+    periods = [
+        {
+            "name": "Today",
+            "startTime": "2026-07-13T06:00:00+00:00",
+            "isDaytime": True,
+            "temperature": 75,
+            "temperatureUnit": "F",
+        },
+        {
+            "name": "Tomorrow",
+            "startTime": "2026-07-14T06:00:00+00:00",
+            "isDaytime": True,
+            "temperature": 76,
+            "temperatureUnit": "F",
+        },
+        {
+            "name": "Saturday",
+            "startTime": "2026-07-18T06:00:00+00:00",
+            "isDaytime": True,
+            "temperature": 80,
+            "temperatureUnit": "F",
+        },
+        {
+            "name": "Sunday",
+            "startTime": "2026-07-19T06:00:00+00:00",
+            "isDaytime": True,
+            "temperature": 82,
+            "temperatureUnit": "F",
+        },
+    ]
+    raw = _fact({"periods": periods, "observations": None})
+    cached = CachedPlan(planned=(), notices=(), set_aside=(), region_raw=raw)
+
+    tomorrow_feed = _render_feed("q", cached, now=now, when="tomorrowMorning")
+    weekend_feed = _render_feed("q", cached, now=now, when="weekendMorning")
+
+    assert tomorrow_feed.region_conditions.forecast.target_key == "tomorrow"
+    assert [d.key for d in tomorrow_feed.region_conditions.forecast.days] == ["today", "tomorrow"]
+    assert weekend_feed.region_conditions.forecast.target_key == "sat"
+    assert [d.key for d in weekend_feed.region_conditions.forecast.days] == ["today", "sat", "sun"]
+
+
+def test_plan_different_when_values_still_share_the_anonymous_cache_entry() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime, mech, judge = _cached_runtime(feed_cache=fc)
+    plan("mellow loop", (38.5, -78.4), runtime, k=5, when="tomorrowMorning")
+    plan("mellow loop", (38.5, -78.4), runtime, k=5, when="weekendMorning")
+    assert mech.calls == 1  # same cache key regardless of `when`
+    assert judge.calls == 1
+
+
+_MINIMAL_TIER_ENV = {
+    "ADVENTURE_PROVIDER_MECHANICAL": "local",
+    "ADVENTURE_MODEL_MECHANICAL": "local-llama",
+    "ADVENTURE_PROVIDER_JUDGMENT": "local",
+    "ADVENTURE_MODEL_JUDGMENT": "local-llama",
+}
+
+
+def test_build_runtime_wires_region_probe_from_nws_user_agent() -> None:
+    from graph.client import GraphClient
+    from orchestration.adapters.nws import NwsRegionAdapter
+    from orchestration.config import Settings
+    from orchestration.engine import build_runtime
+
+    settings = Settings.from_env(
+        {**_MINIMAL_TIER_ENV, "NWS_USER_AGENT": "adventure-planner test@example.com"}
+    )
+    rt = build_runtime(settings, GraphClient("bolt://x", "u", "p"), "anonymous")
+    assert isinstance(rt.region_probe, NwsRegionAdapter)
+
+
+def test_build_runtime_region_probe_absent_without_credential() -> None:
+    from graph.client import GraphClient
+    from orchestration.config import Settings
+    from orchestration.engine import build_runtime
+
+    settings = Settings.from_env(_MINIMAL_TIER_ENV)
+    rt = build_runtime(settings, GraphClient("bolt://x", "u", "p"), "anonymous")
+    assert rt.region_probe is None
