@@ -236,6 +236,7 @@ async function renderHomeSurface(feed: FeedVM) {
         tuning={TUNING}
         anonymous
         onOpenTuning={() => {}}
+        onOpenFacet={() => {}}
         onOpenTrail={() => {}}
         onOpenOutcome={() => {}}
         onApplyTuning={() => {}}

@@ -1,23 +1,26 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { ToggleButton } from 'react-aria-components'
 
-import { partyLabels, whenLabels } from '../data/labels'
-import { splitFeedConditions } from '../data/feedConditions'
+import { SystemBanner } from '../components'
+import { systemBannerMessages } from '../copy/messages'
+import { effortLabels, partyLabels, whenLabels } from '../data/labels'
 import { splitFeedWarnings } from '../data/feedWarnings'
 import { LOADING_COPY } from '../data/loadingStages'
 import { prefersReducedMotion } from '../data/motion'
 import { useFeed, useRecentEpisodes, useSearch } from '../data/PlannerProvider'
-import { useOrigins, type OriginOption } from '../data/regionsCatalog'
+import { useOrigins } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
 import { widenFrame } from '../data/widen'
 import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
-import { ContextSentence } from './FeedConditions'
+import { feedCurrentChips } from './feedChips'
 import { RecommendationCard } from './RecommendationCard'
 import { SignInControl } from './SignInControl'
 import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
+import { ThisFeedCard } from './ThisFeedCard'
+import type { PanelKey } from './Tuning'
 
 /** A short, staggered per-card delay so real cards settle in one after another
  *  instead of popping in as one flat block — a calmer "arriving" feel than an
@@ -38,34 +41,20 @@ function revealDelay(index: number): number | undefined {
  *  while there's no feed yet (a fresh `[]` literal would never memoize). */
 const EMPTY_CARDS: CardVM[] = []
 
-/** The calm frame setter and primary tuning entry (v0.3 §2/C5). Anonymous still
- *  picks an origin (R7 world-browse) — the sentence names it plainly rather
- *  than leaving the region tag below to speak for it alone (report #3). The
- *  region itself is derived from the SERVED cards, never the picker's
- *  assumption — see `resolveRegionLabel`. */
-export function contextSentence(
-  tuning: TuningState,
-  anonymous: boolean,
-  cards: CardVM[],
-  origins: OriginOption[],
-): string {
-  const region = resolveRegionLabel(cards, tuning, origins)
-  const origin = tuning.originCoords
-    ? 'your location'
-    : (origins.find((o) => o.key === tuning.origin)?.label ?? '')
-  // Built from an array + filter(Boolean).join (Epic 046 S4 AC-4.1 / D8, the
-  // RecommendationCard.tsx pattern): an origin key no longer in the fetched
-  // catalog, or a region the served cards can't resolve, is a real '' — never
-  // a dangling "from " or a doubled " · " when one segment drops out.
-  const originClause = origin ? `from ${origin}` : ''
-  if (anonymous) return [whenLabels[tuning.when], region, originClause].filter(Boolean).join(' · ')
-  return [whenLabels[tuning.when], originClause, partyLabels[tuning.party]].filter(Boolean).join(' · ')
+/** The From facet's own label: the picked origin's name, or "Your location"
+ *  when driving off a live device fix (mirrors `Tuning.chipValue`). */
+function originLabel(tuning: TuningState, origins: ReturnType<typeof useOrigins>['origins']): string {
+  if (tuning.originCoords) return 'Your location'
+  return origins.find((o) => o.key === tuning.origin)?.label ?? ''
 }
 
 export interface HomeProps {
   tuning: TuningState
   anonymous: boolean
   onOpenTuning: () => void
+  /** Opens a specific facet's PanelSheet directly (the This-feed card's facets
+   *  are the tuning controls — the same overlay Adjust's facet rows open). */
+  onOpenFacet: (key: PanelKey) => void
   onOpenTrail: (id: string) => void
   onOpenOutcome: (episodeId: string) => void
   onApplyTuning: (next: TuningState) => void
@@ -75,6 +64,7 @@ export function Home({
   tuning,
   anonymous,
   onOpenTuning,
+  onOpenFacet,
   onOpenTrail,
   onOpenOutcome,
   onApplyTuning,
@@ -95,11 +85,10 @@ export function Home({
   // keep deriving from the full CardVM, exactly as Detail does, so the two
   // surfaces can never disagree on the verdict.
   const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
-  // Region-scope conditions — one NWS zone's reading, a fire/closure sweep, a
-  // region-wide outage — hoist to ONE quiet ribbon under the curation header
-  // (report F3/F9a); cards keep only their per-trail deltas. Rendering-only,
-  // same posture as the warnings split above.
-  const feedConditions = useMemo(() => splitFeedConditions(cards), [cards])
+  // Region-shared current readings hoist into the This-feed card's right-now
+  // zone (frame-conditions-wave §3/Q4) — stated once at area level; the cards
+  // themselves stay conditions-silent (Q2). Rendering-only (Rule #2).
+  const currentChips = useMemo(() => feedCurrentChips(cards), [cards])
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -151,18 +140,26 @@ export function Home({
             </button>
           ) : null}
 
-          {/* The Context Ribbon (ux-vision-2026-07 §9 item 1): the region + when +
-              origin frame sentence and the region-scope conditions read as ONE
-              confident unit, once, before the cards — not a tappable button
-              followed by a disconnected "In this area" band two elements down.
-              Still tappable in full (opens Tuning); the shared conditions are
-              exactly what `splitFeedConditions` hoisted below (F3/F9a) — the
-              cards keep their own per-trail deltas via the same hoist keys. */}
-          <ContextSentence
-            contextText={contextSentence(tuning, anonymous, cards, origins)}
-            onOpenTuning={onOpenTuning}
-            conditions={feedConditions}
+          {/* The "This feed" boarding-pass card (frame-conditions-wave §3): the
+              plan as a type-scale facet stack (From headline · When subline ·
+              Party·Effort chips, each tappable to its own PanelSheet) holding
+              the area conditions temporally aligned to the trip's day. It
+              replaces the old sentence + the separate conditions band — one
+              card, stated once, before the cards. */}
+          <ThisFeedCard
+            originLabel={originLabel(tuning, origins)}
+            when={whenLabels[tuning.when]}
+            party={anonymous ? undefined : partyLabels[tuning.party]}
+            effort={anonymous ? undefined : effortLabels[tuning.effort]}
+            anonymous={anonymous}
+            onOpenFacet={onOpenFacet}
+            regionConditions={feed?.regionConditions}
+            currentChips={currentChips}
+            conditionsPending={revalidating || !!feed?.conditionsPending}
+            onRefresh={reload}
           />
+
+          {feed?.personalizationDegraded ? <PersonalizationBanner onRetry={reload} /> : null}
 
           {feed?.dataSource === 'mock' ? (
             <p className="sample-strip" role="note">
@@ -289,8 +286,6 @@ export function Home({
                             card={card}
                             onOpen={() => onOpenTrail(card.id)}
                             hoistedWarningTexts={sharedTexts}
-                            hoistedLineKeys={feedConditions.sharedLineKeys}
-                            hoistedStateKeys={feedConditions.sharedStateKeys}
                           />
                         </div>
                       )
@@ -343,6 +338,34 @@ export function Home({
  * `onClear` so Home restores the normal feed instantly, without waiting on a
  * round trip.
  */
+/**
+ * Degraded personalization (Q8): the ranking fell back to generic picks. A
+ * calm, dismissible banner with a retry (= `reload()`) — never an error, never
+ * the user's problem (Law 7: unknown is gray, never red). The trails below are
+ * real and usable; only the personal tuning is missing.
+ */
+function PersonalizationBanner({ onRetry }: { onRetry: () => void }) {
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
+  return (
+    <div className="personalization-degraded">
+      <SystemBanner
+        kind="personalization-degraded"
+        tier="unknown"
+        message={systemBannerMessages['personalization-degraded']('unknown')}
+      />
+      <div className="personalization-degraded-actions">
+        <button className="text-action" type="button" onClick={onRetry}>
+          Retry
+        </button>
+        <button className="text-action" type="button" onClick={() => setDismissed(true)}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SearchLine({
   query,
   onSearch,
