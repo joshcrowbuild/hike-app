@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame facets — hierarchy-driven variants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#eceae4; --card:#fbfaf7; --line:#e0dbd1; --line-soft:#ebe7de;
+    --ink:#16191d; --ink-2:#3c424a; --ink-3:#5e636a; --ink-4:#9c978c;
+    --terra:#9a4424; --terra-bg:rgba(154,68,36,.09); --terra-line:rgba(154,68,36,.34);
+    --slate:#365479; --slate-bg:rgba(54,84,121,.10); --slate-bg2:rgba(54,84,121,.16);
+    --sky:#2f6d84; --sky-bg:rgba(47,109,132,.08);
+    --sans:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.4;padding:32px 16px 90px}
+  .wrap{max-width:1060px;margin:0 auto}
+  h1{font-size:24px;font-weight:600;letter-spacing:-.012em;margin-bottom:6px}
+  .sub{font-size:14.5px;color:var(--ink-2);max-width:72ch;margin-bottom:6px}
+  .rank{font-size:12.5px;color:var(--ink-3);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin:12px 0 30px;max-width:72ch}
+  .rank b{color:var(--ink);font-weight:600}
+  .rank .big{color:var(--slate);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px 20px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr;max-width:360px;margin:0 auto}}
+  .num{font-family:var(--mono);font-size:11px;color:var(--ink-4)}
+  .theme{font-size:15px;font-weight:600;letter-spacing:-.01em;margin:1px 0 2px}
+  .concept{font-size:12px;color:var(--ink-3);margin-bottom:10px;min-height:44px}
+
+  .pass{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .pass-h{padding:12px 15px 2px}
+  .pass-t{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4)}
+  .fbody{padding:8px 15px 14px}
+
+  /* tappable tokens, sized by rank; slate always-on */
+  .tk{color:var(--slate);cursor:pointer;font-family:var(--sans);border:0;background:none;-webkit-tap-highlight-color:transparent;display:inline-flex;align-items:center;gap:5px;padding:0}
+  .tk .cv{opacity:.55}
+  .tk.fill{background:var(--slate-bg);border-radius:7px;padding:4px 9px;min-height:30px}
+  .tk.fill:active{background:var(--slate-bg2)}
+  .lab{font-size:10px;color:var(--ink-4);font-weight:500;display:block;margin-bottom:1px}
+
+  /* V1 stacked type scale */
+  .v1 .from{font-size:23px;font-weight:600;letter-spacing:-.015em;line-height:1.15}
+  .v1 .when{font-size:15px;font-weight:500;margin-top:9px}
+  .v1 .minor{display:flex;gap:7px;margin-top:12px}
+  .v1 .minor .tk{font-size:12.5px}
+
+  /* V2 location hero with pin */
+  .v2 .hero{display:flex;align-items:flex-start;gap:9px}
+  .v2 .pin{color:var(--slate);flex:none;margin-top:3px}
+  .v2 .from{font-size:22px;font-weight:600;letter-spacing:-.015em;line-height:1.1}
+  .v2 .meta{margin-top:8px;font-size:13.5px;color:var(--ink-3);display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+  .v2 .meta .tk.when{font-size:14px;font-weight:500}
+  .v2 .meta .dot{color:var(--ink-4)}
+  .v2 .meta .tk.mini{font-size:12.5px}
+
+  /* V3 weighted rows */
+  .v3 .r{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line-soft);min-height:44px}
+  .v3 .r:first-child{border-top:0}
+  .v3 .r .k{font-size:11px;color:var(--ink-4);text-transform:uppercase;letter-spacing:.04em}
+  .v3 .r.primary .tk{font-size:19px;font-weight:600;letter-spacing:-.01em}
+  .v3 .r.second .tk{font-size:15px;font-weight:500}
+  .v3 .r.minor{padding-top:8px}
+  .v3 .r.minor .mm{display:flex;gap:6px}
+  .v3 .r.minor .tk{font-size:12.5px}
+  .v3 .chev{color:var(--ink-4)}
+
+  /* shared conditions */
+  .zone{padding:10px 15px;border-top:1px solid var(--line-soft)}
+  .zone-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px}
+  .zlab{font-size:11.5px;color:var(--ink-2)} .zlab b{color:var(--ink);font-weight:600}
+  .zlab .cav{color:var(--ink-4);font-size:10.5px}
+  .cur-tag{font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3);background:rgba(0,0,0,.05);border-radius:5px;padding:2px 6px}
+  .daytog{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fff}
+  .daytog span{font-size:10.5px;color:var(--ink-3);padding:4px 9px;border-right:1px solid var(--line-soft);min-height:28px;display:inline-flex;align-items:center}
+  .daytog span:last-child{border-right:0}
+  .daytog span.on{background:var(--ink);color:#faf9f6}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .cx{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-soft);border-radius:7px;padding:5px 8px;background:#fff;font-size:12px;min-height:28px}
+  .cx svg{flex:none;color:var(--ink-3)} .cx .v{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  .cx.hz{background:var(--terra-bg);border-color:var(--terra-line)} .cx.hz svg,.cx.hz .v{color:var(--terra)}
+
+  .note{font-size:11.5px;color:var(--ink-2);margin-top:10px;line-height:1.5}
+  .note b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Frame facets, ranked — location leads</h1>
+  <p class="sub">Hierarchy through type scale, not a uniform grid. All four still tappable (slate); the size says what matters.</p>
+  <div class="rank"><b>Your ranking, made visual:</b> <span class="big">From</span> (biggest) › <span style="color:var(--slate)">When</span> (second) › <span style="color:var(--ink-3)">Party · Effort</span> (small, still tweakable). Conditions locked below each.</div>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="note" style="margin-top:32px;max-width:76ch;font-size:12.5px"><b>Read them by weight:</b> 01 is a clean type-scale stack; 02 leads with a location pin and demotes when/party/effort to one quiet meta line; 03 keeps the row structure but sizes each row to its rank. Which expresses the hierarchy best — or splice (e.g. 02's pin hero + 01's stack)? Static prototype.</p>
+
+<script>
+  function conditions(){
+    return `
+      <div class="zone">
+        <div class="zone-h"><span class="zlab"><b>Sat forecast</b></span>
+          <span class="daytog"><span>Today</span><span class="on">Sat</span><span>Sun</span></span></div>
+        <div class="chips">
+          <span class="cx"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2"/></svg><span class="v">68°F</span></span>
+          <span class="cx"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 13a4 4 0 0 0-7.5-2 3.2 3.2 0 0 0-.5 6.3h8a2.9 2.9 0 0 0 0-4.3Z"/></svg><span class="v">20%</span></span>
+        </div>
+      </div>
+      <div class="zone">
+        <div class="zone-h"><span class="zlab"><b>Right now</b> <span class="cav">· may change by Sat</span></span><span class="cur-tag">current</span></div>
+        <div class="chips">
+          <span class="cx"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5"/></svg><span class="v">AQI 54</span></span>
+          <span class="cx hz"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12M4 12h16"/></svg><span class="v">ridge closed</span></span>
+        </div>
+      </div>`;
+  }
+  const cvD = '<svg class="cv" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  const cvR = '<svg class="cv" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+  const chevGray = '<svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
+
+  const variants = [
+    { n:'01', t:'Type-scale stack', c:'Pure hierarchy: the place is a headline, when a subline, party/effort a small tappable footer.',
+      cls:'v1',
+      body:`<span class="lab">From</span>
+        <button class="tk from">Front Royal ${cvR}</button>
+        <div><button class="tk when">Weekend mornings ${cvR}</button></div>
+        <div class="minor"><button class="tk fill">Solo ${cvD}</button><button class="tk fill">Moderate ${cvD}</button></div>` },
+
+    { n:'02', t:'Location hero + pin', c:'A pin anchors the place as the hero; when/party/effort collapse into one quiet meta line beneath.',
+      cls:'v2',
+      body:`<div class="hero">
+          <svg class="pin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          <button class="tk from">Front Royal ${cvR}</button>
+        </div>
+        <div class="meta"><button class="tk when">Weekend mornings ${cvD}</button><span class="dot">·</span><button class="tk mini">Solo ${cvD}</button><button class="tk mini">Moderate ${cvD}</button></div>` },
+
+    { n:'03', t:'Weighted rows', c:'The settings-row pattern, but each row sized to its rank — big From, medium When, one small combined minor row.',
+      cls:'v3',
+      body:`<div class="r primary"><span class="k">From</span><button class="tk">Front Royal ${chevGray}</button></div>
+        <div class="r second"><span class="k">When</span><button class="tk">Weekend morning ${chevGray}</button></div>
+        <div class="r minor"><span class="k">Party · effort</span><span class="mm"><button class="tk fill">Solo ${cvD}</button><button class="tk fill">Moderate ${cvD}</button></span></div>` },
+  ];
+
+  document.getElementById('grid').innerHTML = variants.map(v => `
+    <div class="panel">
+      <div class="num">${v.n}</div><div class="theme">${v.t}</div>
+      <div class="concept">${v.c}</div>
+      <div class="pass">
+        <div class="pass-h"><span class="pass-t">This feed</span></div>
+        <div class="fbody ${v.cls}">${v.body}</div>
+        ${conditions()}
+      </div>
+    </div>`).join('');
+</script>
+</div>
+</body>
+</html>

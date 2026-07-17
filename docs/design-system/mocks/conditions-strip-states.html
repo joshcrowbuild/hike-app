@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scannable conditions strip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#eceae4; --card:#fbfaf7; --line:#e0dbd1; --line-soft:#ebe7de;
+    --ink:#16191d; --ink-2:#3c424a; --ink-3:#5e636a; --ink-4:#9c978c;
+    --terra:#9a4424; --terra-bg:rgba(154,68,36,.09);
+    --sans:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.45;padding:36px 18px 90px}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:25px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-2);max-width:60ch;margin-bottom:26px}
+  h2{font-size:15px;font-weight:600;margin:30px 0 3px}
+  .h2sub{font-size:13px;color:var(--ink-3);margin-bottom:12px}
+  .frame{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .name{font-size:19px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  .name-lg{font-size:25px;font-weight:600;letter-spacing:-.015em;margin-bottom:5px}
+  .metric{font-family:var(--mono);font-size:15px;font-weight:500;display:block;margin-bottom:14px}
+  .metric .d{color:var(--ink-3);font-weight:400}
+
+  /* the scannable conditions strip */
+  .strip{display:flex;flex-wrap:wrap;gap:7px 9px;align-items:stretch}
+  .cx{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-soft);border-radius:8px;
+      padding:6px 9px;background:#fff;font-size:13.5px;line-height:1}
+  .cx svg{flex:none;color:var(--ink-3)}
+  .cx .v{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  /* stale: recede + show age */
+  .cx.stale{background:transparent;border-style:dashed;color:var(--ink-4)}
+  .cx.stale svg{color:var(--ink-4)} .cx.stale .v{color:var(--ink-3);font-weight:400}
+  .cx .age{font-family:var(--mono);font-size:11px;color:var(--terra);display:inline-flex;align-items:center;gap:2px}
+  /* unavailable */
+  .cx.na{background:transparent;border-style:dashed}
+  .cx.na .v{color:var(--ink-4);font-style:italic;font-weight:400}
+  .cx.na svg{color:var(--ink-4)}
+
+  .warn{display:flex;gap:8px;align-items:flex-start;border-left:2.5px solid var(--terra);background:var(--terra-bg);
+        border-radius:0 8px 8px 0;padding:9px 11px;margin:0 0 12px;font-size:13.5px;color:var(--terra)}
+  .warn .m{color:var(--ink-3);font-size:12px}
+  .warnicon{flex:none;margin-top:1px}
+  .foot{font-size:11.5px;color:var(--ink-4);margin-top:11px}
+  .anno{font-size:13px;color:var(--ink-2);margin-top:11px;line-height:1.55}
+  .anno b{color:var(--ink);font-weight:500}
+  .divider{height:1px;background:var(--line);margin:34px 0}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Conditions you can scan</h1>
+  <p class="sub">Not a verdict, not "we checked" — the readings themselves, as a compact glyph strip. Fresh values read cleanly; anything <b>stale</b> goes dashed-and-muted with its age; anything unavailable is a dashed "—". Scan for the outliers.</p>
+
+  <!-- states of the strip -->
+  <h2>All fresh</h2>
+  <div class="h2sub">Nothing stale, nothing missing — a clean row you skim in one look.</div>
+  <div class="frame">
+    <div class="strip" id="fresh"></div>
+  </div>
+
+  <h2>One stale, one unavailable</h2>
+  <div class="h2sub">Air quality is 3h old (dashed, muted, age in terracotta); streamflow has no nearby gauge.</div>
+  <div class="frame">
+    <div class="strip" id="mixed"></div>
+    <div class="foot">Weather · air 3h ago · fire · streamflow · closures · permits</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- on the card -->
+  <h2>On the feed card</h2>
+  <div class="h2sub">Compact enough to sit under the metrics — so you CAN scan per-trail conditions after all (revisiting Q2).</div>
+  <div class="frame">
+    <div class="name">Stony Man Loop</div>
+    <span class="metric">3.7 mi <span class="d">·</span> 1,050 ft <span class="d">·</span> 2–2.5 hr</span>
+    <div class="strip" id="card"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- with a hazard -->
+  <h2>With a real hazard</h2>
+  <div class="h2sub">The terracotta WarningBlock still owns anything actionable (Q1); the strip stays the calm readings.</div>
+  <div class="frame">
+    <div class="name-lg">Old Rag Loop</div>
+    <span class="metric">9.4 mi <span class="d">·</span> 2,510 ft <span class="d">·</span> ~6 hr</span>
+    <div class="warn">
+      <svg class="warnicon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span>Heat advisory today <span class="m">— NWS, 40m ago</span></span>
+    </div>
+    <div class="strip" id="hazard"></div>
+  </div>
+
+  <p class="anno" style="margin-top:34px"><b>Open sub-questions this raises</b> (next): does the strip go on the card, Detail, or both? · when is a reading "stale" (per-kind age threshold)? · does a hazardous kind tint terracotta in the strip, or stay neutral and let the WarningBlock carry it?</p>
+
+  <script>
+  // Lucide-ish inline glyphs
+  const g = {
+    weather:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M5.6 5.6l1.4 1.4M2 12h2M20 12h2M17 7l1.4-1.4"/><circle cx="12" cy="12" r="3.2"/><path d="M16 18a4 4 0 0 0-7.5-2 3.2 3.2 0 0 0-.5 6.3h8a2.9 2.9 0 0 0 0-4.3Z" fill="#fbfaf7"/></svg>',
+    air:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg>',
+    fire:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s4 4 4 8a4 4 0 0 1-8 0c0-1 .4-2 1-3-1.5.4-3 2-3 5a6 6 0 0 0 12 0c0-5-6-10-6-10Z"/></svg>',
+    water:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg>',
+    closures:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12"/><path d="M4 12h16M9 20V10M15 20V10"/></svg>',
+    permits:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z"/><path d="M9 6v12" stroke-dasharray="2 2"/></svg>',
+    clock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+  };
+  function chip(kind, value, opts={}){
+    const cls = opts.stale ? 'cx stale' : opts.na ? 'cx na' : 'cx';
+    const age = opts.stale ? `<span class="age">${g.clock}${opts.stale}</span>` : '';
+    return `<span class="${cls}">${g[kind]}<span class="v">${value}</span>${age}</span>`;
+  }
+  const fresh = [chip('weather','73°F'),chip('air','AQI 54'),chip('fire','clear'),chip('water','no gauge'),chip('closures','open'),chip('permits','none')].join('');
+  document.getElementById('fresh').innerHTML = fresh;
+  document.getElementById('card').innerHTML = fresh;
+  document.getElementById('mixed').innerHTML = [chip('weather','73°F'),chip('air','AQI 54',{stale:'3h'}),chip('fire','clear'),chip('water','—',{na:true}),chip('closures','open'),chip('permits','none')].join('');
+  document.getElementById('hazard').innerHTML = [chip('weather','88°F'),chip('air','AQI 60'),chip('fire','clear'),chip('water','flowing'),chip('closures','open'),chip('permits','none')].join('');
+  </script>
+</div>
+</body>
+</html>

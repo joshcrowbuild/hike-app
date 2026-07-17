@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q6 — Detail provenance, two ways</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#eceae4; --card:#fbfaf7; --line:#e0dbd1; --line-soft:#ebe7de;
+    --ink:#16191d; --ink-2:#3c424a; --ink-3:#5e636a; --ink-4:#9c978c;
+    --terra:#9a4424; --terra-bg:rgba(154,68,36,.09);
+    --sans:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.45;padding:36px 18px 90px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:25px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-2);max-width:64ch;margin-bottom:8px}
+  .model{font-size:13px;color:var(--ink-3);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin:12px 0 30px;max-width:74ch}
+  .model b{color:var(--ink);font-weight:600}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:760px){.row{grid-template-columns:1fr}}
+  .opt{font-size:12px;font-weight:600;color:var(--terra);margin-bottom:8px}
+  .frame{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .name-lg{font-size:25px;font-weight:600;letter-spacing:-.015em;margin-bottom:5px}
+  .metric{font-family:var(--mono);font-size:15px;font-weight:500;display:block;margin-bottom:14px}
+  .metric .d{color:var(--ink-3);font-weight:400}
+  .warn{display:flex;gap:8px;align-items:flex-start;border-left:2.5px solid var(--terra);background:var(--terra-bg);
+        border-radius:0 8px 8px 0;padding:9px 11px;margin:0 0 14px;font-size:13.5px;color:var(--terra)}
+  .warn .m{color:var(--ink-3);font-size:12px}
+  .warnicon{flex:none;margin-top:1px}
+
+  .cond-h{font-size:12px;font-weight:600;color:var(--ink-3);margin:2px 0 9px}
+
+  /* strip */
+  .strip{display:flex;flex-wrap:wrap;gap:7px 9px;align-items:stretch}
+  .cx{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-soft);border-radius:8px;
+      padding:6px 9px;background:#fff;font-size:13.5px;line-height:1;position:relative}
+  .cx svg{flex:none;color:var(--ink-3)}
+  .cx .v{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  .cx.stale{background:transparent;border-style:dashed;color:var(--ink-4)}
+  .cx.stale svg{color:var(--ink-4)} .cx.stale .v{color:var(--ink-3);font-weight:400}
+  .cx .age{font-family:var(--mono);font-size:11px;color:var(--terra);display:inline-flex;align-items:center;gap:2px}
+  .cx.na{background:transparent;border-style:dashed} .cx.na .v{color:var(--ink-4);font-style:italic;font-weight:400} .cx.na svg{color:var(--ink-4)}
+  .cx.hz{background:var(--terra-bg);border-color:rgba(154,68,36,.32)} .cx.hz svg{color:var(--terra)} .cx.hz .v{color:var(--terra)}
+  /* the tapped/open chip */
+  .cx.open{border-color:var(--ink-3);background:#fff;box-shadow:0 0 0 2px rgba(22,25,29,.06)}
+  .cx.open::after{content:"";position:absolute;left:14px;bottom:-7px;width:10px;height:10px;background:#fff;border-left:1px solid var(--ink-3);border-bottom:1px solid var(--ink-3);transform:rotate(-45deg)}
+
+  /* Option A: tap popover */
+  .pop{margin-top:11px;border:1px solid var(--ink-3);border-radius:10px;background:#fff;padding:12px 13px;max-width:320px}
+  .pop-k{font-size:11px;font-weight:600;color:var(--ink-3);margin-bottom:3px}
+  .pop-v{font-family:var(--mono);font-size:15px;font-weight:500;margin-bottom:9px}
+  .pop-src{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-2);border-top:1px solid var(--line-soft);padding-top:8px}
+  .pop-src .conf{color:var(--ink-3)}
+  .tapnote{font-size:12px;color:var(--ink-4);margin-top:9px}
+
+  /* Option B: always-visible sourced list */
+  .evi{margin-top:13px;display:grid;grid-template-columns:auto 1fr auto;gap:7px 14px;font-size:12.5px;align-items:baseline;
+       border-top:1px solid var(--line-soft);padding-top:12px}
+  .evi .k{color:var(--ink-2)} .evi .val{color:var(--ink);font-family:var(--mono);font-size:12.5px}
+  .evi .val.g{color:var(--ink-4);font-style:italic;font-family:var(--sans)}
+  .evi .s{color:var(--ink-3);font-size:11px;text-align:right;white-space:nowrap;font-family:var(--mono)}
+
+  .anno{font-size:13px;color:var(--ink-2);margin-top:12px;line-height:1.55}
+  .anno b{color:var(--ink);font-weight:500}
+  .divider{height:1px;background:var(--line);margin:36px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Q6 — provenance on the Detail, two ways</h1>
+  <p class="sub">Same trail, same scannable strip (Q3–Q5). The only difference is how the <b>source-or-silence receipt</b> — which provider, exact time, confidence — comes into view.</p>
+  <div class="model">
+    <b>Decided so far:</b> strip = area/trail conditions, scannable · neutral reading / <span style="color:var(--terra)">terracotta if warned</span> / dashed-muted + age if stale / dashed "—" if unavailable · card silent · warnings own actionable. This screen is the <b>Detail</b> (commitment view) for a trail that carries a real closure.
+  </div>
+
+  <div class="row">
+    <!-- OPTION A -->
+    <div>
+      <div class="opt">Option A — tap a chip to see its source</div>
+      <div class="frame">
+        <div class="name-lg">Old Rag Loop</div>
+        <span class="metric">9.4 mi <span class="d">·</span> 2,510 ft <span class="d">·</span> ~6 hr</span>
+        <div class="warn">
+          <svg class="warnicon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span>Ridge trail closed — rockfall <span class="m">— NPS, 1h ago</span></span>
+        </div>
+        <div class="cond-h">Current conditions</div>
+        <div class="strip" id="stripA"></div>
+        <!-- popover shown for the tapped 'air' chip -->
+        <div class="pop">
+          <div class="pop-k">Air quality</div>
+          <div class="pop-v">AQI 54 — good</div>
+          <div class="pop-src"><span>AirNow · 2 min ago</span><span class="conf">single source</span></div>
+        </div>
+        <div class="tapnote">↑ what tapping the “AQI 54” chip reveals. Every other chip stays collapsed.</div>
+      </div>
+      <div class="anno"><b>Calm by default, receipt on demand.</b> The strip is all you see; a tap opens one source at a time. Matches “keep the receipt, don’t shout it.” Cost: provenance is a deliberate act, not glanceable.</div>
+    </div>
+
+    <!-- OPTION B -->
+    <div>
+      <div class="opt">Option B — sourced list always under the strip</div>
+      <div class="frame">
+        <div class="name-lg">Old Rag Loop</div>
+        <span class="metric">9.4 mi <span class="d">·</span> 2,510 ft <span class="d">·</span> ~6 hr</span>
+        <div class="warn">
+          <svg class="warnicon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <span>Ridge trail closed — rockfall <span class="m">— NPS, 1h ago</span></span>
+        </div>
+        <div class="cond-h">Current conditions</div>
+        <div class="strip" id="stripB"></div>
+        <div class="evi">
+          <span class="k">Weather</span><span class="val">73°F, partly cloudy</span><span class="s">NWS · 2m</span>
+          <span class="k">Air quality</span><span class="val">AQI 54</span><span class="s">AirNow · 2m</span>
+          <span class="k">Fire</span><span class="val">clear</span><span class="s">FIRMS · 6m</span>
+          <span class="k">Streamflow</span><span class="val g">no gauge near route</span><span class="s">USGS</span>
+          <span class="k">Closures</span><span class="val">ridge closed</span><span class="s">NPS · 1h</span>
+          <span class="k">Permits</span><span class="val">none required</span><span class="s">Rec.gov · 1h</span>
+        </div>
+      </div>
+      <div class="anno"><b>Everything on the table.</b> The strip scans; the list underneath gives every provider + time at once. Fully transparent — but it’s the worklog-ish density you first reacted to, on every Detail.</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <p class="anno" style="max-width:74ch">Static prototype · IBM Plex · terracotta = the one signal hue. Note the <b>closures</b> chip is tinted terracotta in both (Q5) because a warning owns it; the strip flags <em>which</em> kind, the WarningBlock says <em>what</em>. My lean: <b>A</b> — the Detail stays calm and the receipt is one tap away, which is exactly the “honored, never shouted” line. Pick from the pixels.</p>
+
+  <script>
+  const g = {
+    weather:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M5.6 5.6l1.4 1.4M2 12h2M20 12h2M17 7l1.4-1.4"/><circle cx="12" cy="12" r="3.2"/><path d="M16 18a4 4 0 0 0-7.5-2 3.2 3.2 0 0 0-.5 6.3h8a2.9 2.9 0 0 0 0-4.3Z" fill="#fbfaf7"/></svg>',
+    air:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg>',
+    fire:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s4 4 4 8a4 4 0 0 1-8 0c0-1 .4-2 1-3-1.5.4-3 2-3 5a6 6 0 0 0 12 0c0-5-6-10-6-10Z"/></svg>',
+    water:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg>',
+    closures:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12"/><path d="M4 12h16M9 20V10M15 20V10"/></svg>',
+    permits:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z"/><path d="M9 6v12" stroke-dasharray="2 2"/></svg>',
+    clock:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+  };
+  function chip(kind, value, opts={}){
+    let cls='cx';
+    if(opts.stale) cls+=' stale'; else if(opts.na) cls+=' na'; else if(opts.hz) cls+=' hz';
+    if(opts.open) cls+=' open';
+    const age = opts.stale ? `<span class="age">${g.clock}${opts.stale}</span>` : '';
+    return `<span class="${cls}">${g[kind]}<span class="v">${value}</span>${age}</span>`;
+  }
+  // closures tinted terracotta (a warning owns it); air is the 'tapped/open' one in A
+  document.getElementById('stripA').innerHTML = [
+    chip('weather','73°F'),chip('air','AQI 54',{open:true}),chip('fire','clear'),
+    chip('water','—',{na:true}),chip('closures','closed',{hz:true}),chip('permits','none')
+  ].join('');
+  document.getElementById('stripB').innerHTML = [
+    chip('weather','73°F'),chip('air','AQI 54'),chip('fire','clear'),
+    chip('water','—',{na:true}),chip('closures','closed',{hz:true}),chip('permits','none')
+  ].join('');
+  </script>
+</div>
+</body>
+</html>

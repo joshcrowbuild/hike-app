@@ -28,6 +28,27 @@
       "alpha": {
         "10": { "$value": "rgba(132, 101, 21, 0.10)", "$type": "color" }
       }
+    },
+    "slate": {
+      "600": {
+        "$value": "#365479",
+        "$type": "color",
+        "$description": "NEW (frame-conditions-wave Q14/Q15) — the interactive hue: editable frame facets, tappable value tokens. 7.0:1 on surface.canvas (#f4f3ef). Interactive-ONLY: slate never encodes a condition state, so terracotta/amber stay hazards-only and color keeps meaning actionability."
+      },
+      "alpha": {
+        "10": { "$value": "rgba(54, 84, 121, 0.10)", "$type": "color" },
+        "16": { "$value": "rgba(54, 84, 121, 0.16)", "$type": "color" }
+      }
+    },
+    "sky": {
+      "600": {
+        "$value": "#2f6d84",
+        "$type": "color",
+        "$description": "NEW (frame-conditions-wave Q13) — the forecast temporal-tag hue (a knowable future reading vs a current one). Informational label only, never an affordance and never a hazard tier."
+      },
+      "alpha": {
+        "08": { "$value": "rgba(47, 109, 132, 0.08)", "$type": "color" }
+      }
     }
   },
   "space": {

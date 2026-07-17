@@ -16,6 +16,11 @@
   --color-terracotta-alpha-10: rgba(154, 68, 36, 0.1);
   --color-amber-600: #846515; /** NEW (design-system-v0.2 D1) — the heads-up signal tier hue. Spec candidate was #8a6a16 (4.55:1 on surface.canvas — passing AA but tight). WP-0 verified and darkened for headroom: measured 4.91:1 on surface.canvas (#f4f3ef) and 5.22:1 on surface.raised (#fbfaf7), same hue/saturation ray as the candidate so it stays a warm amber, not brown. No dark-theme token set exists yet in this repo (no prefers-color-scheme / data-theme support anywhere in tokens/ or src/design/) — a lighter dark-theme amber variant is deferred as a WP-0 follow-up until a dark palette exists to extend. */
   --color-amber-alpha-10: rgba(132, 101, 21, 0.1);
+  --color-slate-600: #365479; /** NEW (frame-conditions-wave Q14/Q15) — the interactive hue: editable frame facets, tappable value tokens. 7.0:1 on surface.canvas (#f4f3ef). Interactive-ONLY: slate never encodes a condition state, so terracotta/amber stay hazards-only and color keeps meaning actionability. */
+  --color-slate-alpha-10: rgba(54, 84, 121, 0.1);
+  --color-slate-alpha-16: rgba(54, 84, 121, 0.16);
+  --color-sky-600: #2f6d84; /** NEW (frame-conditions-wave Q13) — the forecast temporal-tag hue (a knowable future reading vs a current one). Informational label only, never an affordance and never a hazard tier. */
+  --color-sky-alpha-08: rgba(47, 109, 132, 0.08);
   --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
@@ -85,6 +90,11 @@
   --signal-blocked-fg: var(--color-terracotta-600);
   --signal-blocked-bg: var(--color-terracotta-alpha-10);
   --focus-ring: var(--color-neutral-900);
+  --interactive-fg: var(--color-slate-600);
+  --interactive-bg: var(--color-slate-alpha-10);
+  --interactive-bg-press: var(--color-slate-alpha-16);
+  --forecast-fg: var(--color-sky-600);
+  --forecast-bg: var(--color-sky-alpha-08);
   --type-name-size: var(--size-name);
   --type-name-weight: var(--font-weight-semibold);
   --type-verdict-size: var(--size-verdict);
