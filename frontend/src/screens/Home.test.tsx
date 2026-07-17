@@ -864,13 +864,20 @@ describe('Home blocked-day empty state (the AQI-276 smoke day — the event lead
   const smokeHeld = Array.from({ length: 10 }, (_, i) => ({
     id: `t${i}`,
     name: `Trail ${i}`,
-    reasons: [{ text: 'air quality hazardous (AQI 276)', source: 'AirNow (EPA)', kind: 'air' }],
+    reasons: [{ text: 'air quality hazardous (AQI 276) (EPA)', source: 'AirNow (EPA)', kind: 'air' }],
   }))
 
   it('leads with the terracotta hazard + holds count, and suppresses the misdirecting CTA', async () => {
     const { container } = await renderHomeWith(feedWith({ cards: [], heldBack: smokeHeld }))
-    // The event is the headline — sentence-cased, sourced, blocked-tinted.
-    expect(screen.getByText(/Air quality hazardous \(AQI 276\)/)).toBeInTheDocument()
+    // The event is the headline — sentence-cased, sourced, blocked-tinted,
+    // and the welded trailing source is deduped (Epic 046 class): the value
+    // parenthetical stays, the "(EPA)" tail does not — WarningBlock already
+    // states the full source once.
+    const lead = screen.getByText(/Air quality hazardous \(AQI 276\)/)
+    // Everything BEFORE the source separator is the fact alone; the one
+    // "(EPA)" that remains lives in the appended source line, stated once.
+    expect(lead.textContent?.split('—')[0]).not.toMatch(/\(EPA\)/)
+    expect(lead.textContent?.match(/\(EPA\)/g)?.length ?? 0).toBeLessThanOrEqual(1)
     expect(screen.getByText('All 10 trails here are held back until this clears.')).toBeInTheDocument()
     // "Adjust search"/widen would blame the query for the sky — suppressed.
     expect(screen.queryByText('Adjust search')).not.toBeInTheDocument()
