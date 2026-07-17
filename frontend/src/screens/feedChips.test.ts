@@ -6,6 +6,7 @@ import {
   cleanEvidenceBody,
   detailConditionChips,
   feedCurrentChips,
+  heldBackChips,
   inferKindFromSource,
   warningTierByKind,
 } from './feedChips'
@@ -181,5 +182,25 @@ describe('unchecked closures/permits never wear a present word (honesty regressi
     expect(values.some((v) => v.includes('closed'))).toBe(false)
     expect(values.some((v) => v.includes('required'))).toBe(false)
     for (const chip of chips) expect(['unavailable', 'stale', 'fresh', 'pending']).toContain(chip.state)
+  })
+})
+
+describe('heldBackChips — the blocked day still scans (AQI-276 live finding)', () => {
+  const held = [
+    { id: 'a', name: 'A', reasons: [{ text: 'air quality hazardous (AQI 276)', source: 'AirNow (EPA)', kind: 'air' }] },
+    { id: 'b', name: 'B', reasons: [{ text: 'air quality hazardous (AQI 276)', source: 'AirNow (EPA)', kind: 'air' }] },
+  ]
+  it('derives one blocked-tinted chip per kind from the held-back reasons', () => {
+    const chips = heldBackChips(held as never)
+    expect(chips).toHaveLength(1)
+    expect(chips[0].kind).toBe('air')
+    expect(chips[0].valueText).toBe('AQI 276')
+    expect(chips[0].tier).toBe('blocked')
+    expect(chips[0].receipt?.source).toBeTruthy()
+    // No timestamp exists on a held-back reason — none may be fabricated.
+    expect(chips[0].receipt?.ageText).toBeUndefined()
+  })
+  it('is empty when nothing is held back (silence stays a state)', () => {
+    expect(heldBackChips([])).toEqual([])
   })
 })

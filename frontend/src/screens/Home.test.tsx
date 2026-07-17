@@ -859,3 +859,31 @@ describe('Home personalization-degraded banner (Q8 — disclosed, dismissible, r
     expect(plan.mock.calls.length).toBeGreaterThan(before)
   })
 })
+
+describe('Home blocked-day empty state (the AQI-276 smoke day — the event leads, never a shrug)', () => {
+  const smokeHeld = Array.from({ length: 10 }, (_, i) => ({
+    id: `t${i}`,
+    name: `Trail ${i}`,
+    reasons: [{ text: 'air quality hazardous (AQI 276)', source: 'AirNow (EPA)', kind: 'air' }],
+  }))
+
+  it('leads with the terracotta hazard + holds count, and suppresses the misdirecting CTA', async () => {
+    const { container } = await renderHomeWith(feedWith({ cards: [], heldBack: smokeHeld }))
+    // The event is the headline — sentence-cased, sourced, blocked-tinted.
+    expect(screen.getByText(/Air quality hazardous \(AQI 276\)/)).toBeInTheDocument()
+    expect(screen.getByText('All 10 trails here are held back until this clears.')).toBeInTheDocument()
+    // "Adjust search"/widen would blame the query for the sky — suppressed.
+    expect(screen.queryByText('Adjust search')).not.toBeInTheDocument()
+    expect(container.querySelector('.state-block .card-warnings')).not.toBeNull()
+  })
+
+  it('the blocking reading reaches the strip as a blocked chip even with zero cards', async () => {
+    await renderHomeWith(feedWith({ cards: [], heldBack: smokeHeld }))
+    expect(screen.getByText('AQI 276')).toBeInTheDocument()
+  })
+
+  it('a plain empty (nothing held back) keeps the honest generic state + CTA', async () => {
+    await renderHomeWith(feedWith({ cards: [], heldBack: [] }))
+    expect(screen.getByText('Nothing holds under this frame right now.')).toBeInTheDocument()
+  })
+})

@@ -12,10 +12,10 @@ import { useOrigins } from '../data/regionsCatalog'
 import { resolveRegionLabel } from '../data/resolveRegion'
 import { useSavedTrailIds } from '../data/savedTrails'
 import { widenFrame } from '../data/widen'
-import type { CardVM, FeedVM, HeldBackVM, SetAside } from '../data/vm'
+import type { CardVM, FeedVM, HeldBackVM, SetAside, WarningVM } from '../data/vm'
 import type { TuningState } from '../types'
 import { WarningBlock } from './cardParts'
-import { feedCurrentChips } from './feedChips'
+import { feedCurrentChips, heldBackChips } from './feedChips'
 import { RecommendationCard } from './RecommendationCard'
 import { SignInControl } from './SignInControl'
 import { SKELETON_COUNT, SkeletonCard } from './SkeletonCard'
@@ -40,6 +40,7 @@ function revealDelay(index: number): number | undefined {
 /** A stable empty array so `useMemo` below doesn't recompute every render
  *  while there's no feed yet (a fresh `[]` literal would never memoize). */
 const EMPTY_CARDS: CardVM[] = []
+const EMPTY_HELD_BACK: HeldBackVM[] = []
 
 /** The From facet's own label: the picked origin's name, or "Your location"
  *  when driving off a live device fix (mirrors `Tuning.chipValue`). */
@@ -87,8 +88,15 @@ export function Home({
   const { banner, sharedTexts } = useMemo(() => splitFeedWarnings(cards), [cards])
   // Region-shared current readings hoist into the This-feed card's right-now
   // zone (frame-conditions-wave §3/Q4) — stated once at area level; the cards
-  // themselves stay conditions-silent (Q2). Rendering-only (Rule #2).
-  const currentChips = useMemo(() => feedCurrentChips(cards), [cards])
+  // themselves stay conditions-silent (Q2). Rendering-only (Rule #2). When a
+  // hazard holds EVERY card back the hoist would go empty exactly when it
+  // matters most — the strip then derives the blocking readings from the
+  // held-back reasons themselves (the AQI-276 smoke day, 2026-07-17).
+  const heldBack = feed?.heldBack ?? EMPTY_HELD_BACK
+  const currentChips = useMemo(
+    () => (cards.length > 0 ? feedCurrentChips(cards) : heldBackChips(heldBack)),
+    [cards, heldBack],
+  )
 
   // Client-side bookmark list (localStorage, no backend/auth) — a view filter
   // over THIS frame's served cards, never a second data source. Feed-level
@@ -203,7 +211,12 @@ export function Home({
             ) : null}
 
             {status === 'empty' ? (
-              <EmptyState tuning={tuning} onApplyTuning={onApplyTuning} onOpenTuning={onOpenTuning} />
+              <EmptyState
+                tuning={tuning}
+                onApplyTuning={onApplyTuning}
+                onOpenTuning={onOpenTuning}
+                heldBack={heldBack}
+              />
             ) : null}
 
             {(status === 'ready' || status === 'empty') && feed ? (
@@ -538,16 +551,38 @@ function WidenAction({
 /** Honest + never a dead end (NNG error guidance: say what happened, and what
  *  to do about it). `widenFrame` is the preferred one-tap fix; once the frame
  *  is already at its widest, "Adjust search" reopens Tuning instead of leaving
- *  the note with no action at all. */
+ *  the note with no action at all.
+ *
+ *  Except on a BLOCKED day (the AQI-276 smoke event, 2026-07-17): when a
+ *  hazard held every trail back, "nothing holds" reads as the app failing and
+ *  "Adjust search" blames the query for the sky. The event leads instead —
+ *  terracotta, sourced, conclusion-first — and the misdirecting CTA is
+ *  suppressed (no facet change fixes smoke; the forecast zone's day toggle
+ *  above is the genuine remedy and stays visible). */
 function EmptyState({
   tuning,
   onApplyTuning,
   onOpenTuning,
+  heldBack = [],
 }: {
   tuning: TuningState
   onApplyTuning: (next: TuningState) => void
   onOpenTuning: () => void
+  heldBack?: HeldBackVM[]
 }) {
+  const blocking = dominantHold(heldBack)
+  if (blocking) {
+    return (
+      <div className="state-block">
+        <WarningBlock warnings={[blocking]} label="Held back" />
+        <p className="state-note">
+          {heldBack.length === 1
+            ? 'The one trail here is held back until this clears.'
+            : `All ${heldBack.length} trails here are held back until this clears.`}
+        </p>
+      </div>
+    )
+  }
   const widen = widenFrame(tuning)
   return (
     <div className="state-block">
@@ -563,6 +598,32 @@ function EmptyState({
       )}
     </div>
   )
+}
+
+/** The single reason to LEAD with on a blocked day: the most common held-back
+ *  reason across the frame, dressed as a `blocked`-severity warning so the
+ *  existing tinted WarningBlock states it (one component = one look for
+ *  barriers, Q7). Sentence-cased from the wire's lowercase reason; source
+ *  rides along; no age is fabricated — held-back reasons carry none. */
+function dominantHold(heldBack: HeldBackVM[]): WarningVM | null {
+  const counts = new Map<string, { reason: HeldBackVM['reasons'][number]; n: number }>()
+  for (const t of heldBack)
+    for (const r of t.reasons) {
+      const cur = counts.get(r.kind)
+      if (cur) cur.n += 1
+      else counts.set(r.kind, { reason: r, n: 1 })
+    }
+  let best: { reason: HeldBackVM['reasons'][number]; n: number } | null = null
+  for (const c of counts.values()) if (!best || c.n > best.n) best = c
+  if (!best) return null
+  const text = best.reason.text.charAt(0).toUpperCase() + best.reason.text.slice(1)
+  return {
+    text,
+    source: best.reason.source,
+    kind: best.reason.kind,
+    provenance: 'live',
+    severity: 'blocked',
+  }
 }
 
 /** Sparse (1 option) is a confident outcome, never an apology (v0.3 §7). */
