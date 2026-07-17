@@ -75,7 +75,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 | [054](epic-054-conditions-truth-backend.md) | Conditions truth backend — graded warning severity · frame-date NWS forecast · recent precip · hedged mud inference · `region_conditions` wire | DONE ✅ | 1 | frame-conditions-wave §5 |
 | [055](epic-055-this-feed-card.md) | The "This feed" card — type-scale facet stack (slate interactive) + forecast/right-now zones + day toggle + Past-3-days/mud reveal + Detail tap-receipts; cards go conditions-silent | DONE ✅ | 1 | Epic 047 · frame-conditions-wave §3–4 |
 | [056](epic-056-calm-data-layer.md) | Calm data layer — session-lifetime conditions reuse (no refetch on nav) · ~12s phase-2 presentation budget · severity/region_conditions/personalization wire parsing · Detail fetch cache | DONE ✅ | 1 | Epic 040 · 052 · frame-conditions-wave §6 |
-| [057](epic-057-feed-chrome-polish.md) | Feed chrome & polish — Saved pill · header avatar · metric density · sentence-case holdouts | BACKLOG | 1 | Epic 055 (Home layout) |
+| [057](epic-057-feed-chrome-polish.md) | Feed chrome & polish — Saved pill · header avatar · metric density · sentence-case holdouts | DONE ✅ | 1 | Epic 055 (Home layout) |
 
 > **Thread T2 (access control):** the owned-node **write** path now goes through `ScopedSession.run_write` + the `graph.queries` builders (Epic 011), extending Rule #4 from reads to writes. Epic 003's context-assembly Cypher should route through `graph.queries` (the gap-audit M9 redirect), which exists now that 011 has landed.
 >

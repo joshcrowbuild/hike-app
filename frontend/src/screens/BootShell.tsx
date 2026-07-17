@@ -16,7 +16,7 @@ export function BootShell() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <span className="wordmark">Curation</span>
+        <span className="wordmark">Adventure Planner</span>
       </header>
       {/* Visible AND role=status (WCAG 4.1.3) — the wait is announced once to
           assistive tech and keeps updating for sighted users as it stretches. */}

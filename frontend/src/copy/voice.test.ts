@@ -66,11 +66,6 @@ const BASELINE_ALLOWLIST: Array<{
   },
   // ---- Screens layer (cards, detail, home, tuning) ----
   {
-    file: 'BootShell.tsx',
-    pattern: 'wordmark.*Curation',
-    reason: 'Home screen pre-v0.2 heading (WP-7 replaces)',
-  },
-  {
     file: 'EvidencePanel.tsx',
     pattern: 'not-fetched|not checked here',
     reason: 'WP-3 string matching on legacy/wire values',
