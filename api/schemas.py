@@ -24,6 +24,15 @@ CANONICAL_ID_PATTERN = r"^[^\x00-\x1F\x7F]{1,200}$"
 EPISODE_ID_PATTERN = r"^[A-Za-z0-9_:-]{1,128}$"
 
 
+# The tuning frame's day-of-week key (frame-conditions-wave §5), mirrors the
+# frontend's `TuningState['when']` enum (`frontend/src/types.ts`) verbatim. Not
+# yet sent by any client this wave (Epic 054 is backend-only; the frontend lanes
+# don't grow this field until a later wave) — additive/optional so the wire is
+# ready the day a caller starts sending it. Absent -> `orchestration.when`
+# degrades to the `fullDay` window rather than guessing a specific day.
+WhenKey = Literal["tomorrowMorning", "weekendMorning", "weekendAfternoon", "fullDay"]
+
+
 class PlanRequest(BaseModel):
     # 500 chars is ample for a free-text ask (2026-07-12 review): the query flows into
     # provider prompts and log lines, so an unbounded body is unbounded substrate.
@@ -49,6 +58,8 @@ class PlanRequest(BaseModel):
     # warm — the response then self-describes complete via
     # `FeedResponse.conditions_complete` and the client skips the second call.
     phase: Literal["cards"] | None = None
+    # The frame's day (epic-054 S2) — see `WhenKey` above.
+    when: WhenKey | None = None
 
 
 class SearchRequest(BaseModel):
@@ -101,6 +112,10 @@ class CardWarningResponse(BaseModel):
     source: str
     observed_at: str  # ISO-8601 fetch timestamp of the hazard fact
     kind: str  # the condition kind, e.g. "weather" | "air" | "fire"
+    # Graded severity (frame-conditions-wave Q7 / epic-054 S1): "heads_up"
+    # (elevated, passable) | "blocked" (a genuine barrier). Additive — old clients
+    # ignore it; defaults to the ungraded floor, never louder than graded.
+    severity: str = "heads_up"
 
 
 class ConditionUnavailableResponse(BaseModel):
@@ -238,6 +253,65 @@ class SetAsideResponse(BaseModel):
     reasons: list[SetAsideReasonResponse]
 
 
+# ── Region conditions (frame-conditions-wave §5, epic-054 S2-S5) ─────────────
+# Area-level facts for the This-feed card: fetched once per plan at the query
+# origin (never per card), each piece independently nullable (source-or-silence).
+
+
+class ForecastDayResponse(BaseModel):
+    key: str  # "today" | "tomorrow" | "sat" | "sun"
+    label: str  # presentation-ready ("Today"/"Sat") — never a raw date
+    high_f: int | None = None
+    precip_pct: int | None = None
+    short: str | None = None
+
+
+class ForecastResponse(BaseModel):
+    """The frame-aligned weather forecast (S2). `target_key` names which `days`
+    entry the frame targets (the day-toggle's default selection)."""
+
+    target_key: str
+    days: list[ForecastDayResponse]
+    source: str
+    fetched_at: str  # ISO-8601
+
+
+class RecentPrecipDayResponse(BaseModel):
+    label: str
+    amount_in: float | None = None
+
+
+class RecentPrecipResponse(BaseModel):
+    """The collapsed "Past 3 days" rain reveal (S3), oldest -> Today.
+    `total_48h_in` is the ROLLING 48h sum the mud rule (S4) gates on — distinct
+    from the (up to 3) calendar-day `days` shown for display."""
+
+    days: list[RecentPrecipDayResponse]
+    total_48h_in: float | None = None
+    source: str
+
+
+class MudResponse(BaseModel):
+    """The hedged mud inference (S4): always "may", always quantified evidence,
+    always `provenance: "inferred"` — an inference never poses as a stated fact
+    (Rule #7)."""
+
+    statement: str
+    evidence: str
+    source: str
+    provenance: str = "inferred"
+
+
+class RegionConditionsResponse(BaseModel):
+    """`null` (the field absent/None) means "not attempted this phase" (a
+    phase-1 shell, or no region probe configured) — distinct from an object
+    whose members are individually null, which means "attempted, degraded"."""
+
+    forecast: ForecastResponse | None = None
+    recent_precip: RecentPrecipResponse | None = None
+    mud: MudResponse | None = None
+
+
 class FeedResponse(BaseModel):
     query: str
     cards: list[FeedCardResponse]
@@ -250,6 +324,10 @@ class FeedResponse(BaseModel):
     # single-pass truth; False means this is a phase-1 response (every probe-able
     # kind `not_fetched`) and the client should follow up on `POST /plan/conditions`.
     conditions_complete: bool = True
+    # Area-level conditions (epic-054 S5 AC-5.1) — absent on phase-1 shells.
+    region_conditions: RegionConditionsResponse | None = None
+    # True whenever the judge fell back to generic ranking this plan (Q8 / S5 AC-5.2).
+    personalization_degraded: bool = False
 
 
 class PlanConditionsRequest(BaseModel):
@@ -270,6 +348,8 @@ class PlanConditionsRequest(BaseModel):
     canonical_ids: list[Annotated[str, StringConstraints(pattern=CANONICAL_ID_PATTERN)]] = Field(
         ..., min_length=1, max_length=20
     )
+    # The frame's day (epic-054 S2) — see `WhenKey` above.
+    when: WhenKey | None = None
 
 
 class ConditionPatchResponse(BaseModel):
@@ -290,11 +370,15 @@ class PlanConditionsResponse(BaseModel):
     """The phase-2 patch (Epic 040 S2). `set_aside` is the disclosed removal list —
     requested ids a hard live guardrail blocked (cause + source, D5); `unknown`
     names requested ids this call could not resolve at all — omitted with
-    disclosure, never fabricated (AC-2.2)."""
+    disclosure, never fabricated (AC-2.2). `region_conditions`/
+    `personalization_degraded` mirror `FeedResponse`'s own (epic-054 S5) — this
+    call carries the SAME area-level facts the classic complete `/plan` does."""
 
     patches: list[ConditionPatchResponse]
     set_aside: list[SetAsideResponse] = []
     unknown: list[str] = []
+    region_conditions: RegionConditionsResponse | None = None
+    personalization_degraded: bool = False
 
 
 class GraphStats(BaseModel):

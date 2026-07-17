@@ -25,7 +25,25 @@ _API_TS = Path(__file__).resolve().parent.parent / "frontend" / "src" / "data" /
 EXPECTED: dict[str, set[str]] = {
     "SetAsideReasonResponse": {"text", "source", "kind"},
     "SetAsideResponse": {"canonical_id", "name", "reasons"},
-    "FeedResponse": {"query", "cards", "card_count", "notices", "set_aside", "conditions_complete"},
+    "FeedResponse": {
+        "query",
+        "cards",
+        "card_count",
+        "notices",
+        "set_aside",
+        "conditions_complete",
+        "region_conditions",
+        "personalization_degraded",
+    },
+}
+
+# Backend-only fields shipped ahead of frontend adoption (frame-conditions-wave
+# §5, epic-054): additive/optional, exactly like `conditions_complete` before it —
+# a field TS hasn't grown YET is not drift, only a field TS HAS that the backend
+# doesn't (or vice versa for a non-pending field) is. Remove an entry here once
+# the corresponding frontend lane lands it in `api.ts`.
+_PENDING_FRONTEND_ADOPTION: dict[str, set[str]] = {
+    "FeedResponse": {"region_conditions", "personalization_degraded"},
 }
 
 _MODEL_FOR = {
@@ -74,6 +92,13 @@ def test_frontend_api_ts_matches_when_wire_types_present() -> None:
     for wire_name in ("SetAsideReasonResponse", "SetAsideResponse", "FeedResponse"):
         found = _ts_interface_fields(text, wire_name)
         assert found is not None, f"{wire_name} missing from api.ts"
-        assert found == EXPECTED[wire_name], (
-            f"api.ts {wire_name} {found} != contract {EXPECTED[wire_name]}"
+        pending = _PENDING_FRONTEND_ADOPTION.get(wire_name, set())
+        # `found` may freely include or omit a pending field (either side of
+        # adoption); every OTHER field must match exactly in both directions.
+        assert found <= EXPECTED[wire_name], (
+            f"api.ts {wire_name} has field(s) unknown to the backend: {found - EXPECTED[wire_name]}"
+        )
+        assert (EXPECTED[wire_name] - pending) <= found, (
+            f"api.ts {wire_name} is missing required field(s): "
+            f"{(EXPECTED[wire_name] - pending) - found}"
         )
