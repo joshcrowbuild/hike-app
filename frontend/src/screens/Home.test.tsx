@@ -478,6 +478,25 @@ describe('Home error state (NNG: calm, actionable, retryable)', () => {
   })
 })
 
+describe('Home top bar + stack controls chrome (Epic 057 S1/S2)', () => {
+  it('shows the quiet "Browsing" chip for an anonymous viewer', async () => {
+    await renderHomeWith(feedWith({}))
+    expect(screen.getByText('Browsing')).toBeInTheDocument()
+  })
+
+  it('places the Saved pill and the trail count together in the same controls row', async () => {
+    const cards = [
+      { id: 'compton-peak', name: 'Compton Peak', distanceMi: 2.1, conditionLines: [], warnings: [] },
+      { id: 'old-rag', name: 'Old Rag', distanceMi: 3.2, conditionLines: [], warnings: [] },
+    ]
+    toggleTrailSaved('compton-peak')
+    const { container } = await renderHomeWith(feedWith({ cards }))
+    const controls = container.querySelector('.stack-controls')
+    expect(controls).toContainElement(screen.getByRole('button', { name: /saved \(1\)/i }))
+    expect(controls).toContainElement(screen.getByText(/2 trails/))
+  })
+})
+
 describe('Home Saved filter (client-side, localStorage, no backend/auth)', () => {
   const cardNamed = (id: string, name: string) => ({
     id,

@@ -58,15 +58,38 @@ describe('SignInControl (Epic 043 S4 — calm sign-in)', () => {
     await waitFor(() => expect(screen.getByText(/couldn’t send the link/i)).toBeInTheDocument())
   })
 
-  it('shows the signed-in identity and a sign-out action', async () => {
+  // Epic 057 S2: the signed-in identity/sign-out surface now sits behind an
+  // initial-circle avatar, so the top bar reads quiet at rest — same content,
+  // same behavior, just disclosed on a tap rather than always visible.
+  it('shows a quiet initial-circle avatar when signed in (never the identity at rest)', () => {
+    renderWith({
+      status: 'signed-in',
+      email: 'josh@example.com',
+      scope: { viewerId: 'sub-1', grantedIds: [], accessToken: 'jwt' },
+    })
+    expect(screen.getByRole('button', { name: /account: josh@example\.com/i })).toHaveTextContent('J')
+    expect(screen.queryByText(/signed in as josh@example.com/i)).not.toBeInTheDocument()
+  })
+
+  it('reveals the signed-in identity and a sign-out action on tap', async () => {
     const user = userEvent.setup()
     const value = renderWith({
       status: 'signed-in',
       email: 'josh@example.com',
       scope: { viewerId: 'sub-1', grantedIds: [], accessToken: 'jwt' },
     })
+    await user.click(screen.getByRole('button', { name: /account: josh@example\.com/i }))
     expect(screen.getByText(/signed in as josh@example.com/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /sign out/i }))
     expect(value.signOut).toHaveBeenCalled()
+  })
+
+  it('falls back to a calm "?" initial when a signed-in session carries no email', () => {
+    renderWith({
+      status: 'signed-in',
+      email: undefined,
+      scope: { viewerId: 'sub-1', grantedIds: [], accessToken: 'jwt' },
+    })
+    expect(screen.getByRole('button', { name: 'Account' })).toHaveTextContent('?')
   })
 })

@@ -91,12 +91,6 @@ const BASELINE_ALLOWLIST: Array<{
     reason: 'Detail-level condition rendering (WP-3 owns restyle)',
   },
   {
-    file: 'FeedConditions.tsx',
-    pattern: 'context|frame|Adjust',
-    reason:
-      'ContextSentence/ContextRibbon pre-v0.2 (WP-3 owns the edit affordance rename)',
-  },
-  {
     file: 'RecommendationCard.tsx',
     pattern: 'frame|fetched|not-fetched',
     reason: 'TrailCard internal comments + condition rendering (WP-2 owns restyle)',
