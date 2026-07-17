@@ -1,6 +1,6 @@
 # Epic 055 — The "This feed" card + conditions strip + Detail provenance
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅
 **Phase:** 1 (frame-conditions wave, card lane — the centerpiece)
 **Spec refs:** `docs/design-system/frame-conditions-wave.md` §2 (mocks of record), §3–4; mocks `frame-card-typescale.html` (variant 01), `frame-card-conditions-zones.html`, `frame-card-recent-weather-mud.html`, `conditions-strip-states.html`, `detail-provenance-tap.html`
 
@@ -90,7 +90,7 @@ a confident tier (existing honesty primitives respected).
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test
-- [ ] `npm run build` + `npm test` green
-- [ ] Targeted review agent run; CRITICALs fixed
-- [ ] Committed and pushed
+- [x] All ACs covered by at least one passing test
+- [x] `npm run build` + `npm test` green (702 tests)
+- [x] Targeted review agent run; CRITICALs fixed (desk review)
+- [x] Committed and pushed

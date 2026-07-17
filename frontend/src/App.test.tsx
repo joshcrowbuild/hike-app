@@ -35,21 +35,18 @@ afterEach(() => {
 })
 
 describe('App tuning persistence (craft review M4 — no amnesia on reload)', () => {
-  it('boots from the persisted frame: a stored Luray origin paints in the context sentence, not the default', async () => {
+  it('boots from the persisted frame: a stored Luray origin paints as the From facet, not the default', async () => {
     writeStoredTuning({ ...BASE, origin: 'luray' })
     renderApp()
-    expect(await screen.findByText(/from Luray/)).toBeInTheDocument()
-    expect(screen.queryByText(/from Front Royal/)).toBeNull()
+    expect(await screen.findByRole('button', { name: 'Luray' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Front Royal' })).toBeNull()
   })
 
-  it('persists an origin change the moment it is applied (Adjust → From → pick)', async () => {
+  it('persists an origin change the moment it is applied (From facet → pick)', async () => {
     const user = userEvent.setup()
     renderApp()
-    await screen.findByText(/from Front Royal/)
-
-    await user.click(screen.getByRole('button', { name: /edit/i }))
-    const adjust = await screen.findByRole('dialog')
-    await user.click(within(adjust).getByRole('button', { name: /^from/i }))
+    // The From facet opens the origin PanelSheet directly (no Adjust hub).
+    await user.click(await screen.findByRole('button', { name: 'Front Royal' }))
 
     const originSheet = await screen.findByRole('dialog', { name: 'Starting point' })
     await user.click(within(originSheet).getByRole('radio', { name: 'Duck, Outer Banks' }))
@@ -62,7 +59,7 @@ describe('App tuning persistence (craft review M4 — no amnesia on reload)', ()
     renderApp()
     // Once the catalog loads, the unknown key resolves to the default origin
     // (and the corrected frame is what gets re-persisted).
-    expect(await screen.findByText(/from Front Royal/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Front Royal' })).toBeInTheDocument()
     await waitFor(() => expect(readStoredTuning()?.origin).toBe('frontRoyal'))
   })
 })

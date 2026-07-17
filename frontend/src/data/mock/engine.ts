@@ -12,6 +12,7 @@
  *    ("set aside") rather than silently vanishing.
  */
 import type { Trail, TuningState } from '../../types'
+import type { ConditionStatusVM, RegionConditionsVM, WarningVM } from '../vm'
 import { buildTrailGeo } from './geoFixtures'
 
 /** Base trail records; the sample route + elevation profile is attached below. */
@@ -313,4 +314,124 @@ export function runFeed(state: TuningState): FeedComputation {
     .map(({ s, reason }) => ({ ...s, reason }))
 
   return { kept, partySetAside }
+}
+
+// ---- frame-conditions-wave mock fixtures (Epic 055 S6) ---------------------
+//
+// The mock DATA for the "This feed" card + strip states. These are the seam
+// the mock adapter (`mockPlanner.ts`, owned by the data lane / Epic 056)
+// consumes to surface `FeedVM.regionConditions` and per-card `conditions` /
+// `warnings` in `npm run dev` — the card lane (055) owns the DATA and the
+// components; the adapter WIRING lives in the data layer this same wave. Kept
+// here (the engine "doubles as the test fixture set") so every card state has
+// one honest home, locked by `engine.test.ts`.
+
+// The target forecast day the `when` facet points at (§5).
+function forecastDaysForWhen(when: TuningState['when']): { days: RegionConditionsVM['forecast'] } {
+  // Deliberately illustrative (mock provenance): today is warm, the weekend
+  // mild — so the "going Saturday, not today" temporal split is visible.
+  const today = { key: 'today', label: 'Today', highF: 88, precipPct: 0, short: 'Sunny' as string | null }
+  const tomorrow = { key: 'tomorrow', label: 'Tomorrow', highF: 79, precipPct: 10, short: 'Partly sunny' }
+  const sat = { key: 'sat', label: 'Sat', highF: 68, precipPct: 20, short: 'Partly sunny' }
+  const sun = { key: 'sun', label: 'Sun', highF: 71, precipPct: 10, short: 'Mostly sunny' }
+  if (when === 'tomorrowMorning') {
+    return { days: { days: [today, tomorrow], targetKey: 'tomorrow', source: 'NWS', fetchedAgo: 'just now' } }
+  }
+  if (when === 'fullDay') {
+    return { days: { days: [today, sat, sun], targetKey: 'today', source: 'NWS', fetchedAgo: 'just now' } }
+  }
+  return { days: { days: [today, sat, sun], targetKey: 'sat', source: 'NWS', fetchedAgo: 'just now' } }
+}
+
+/**
+ * The area-level conditions for the This-feed card (§5): a frame-aligned
+ * forecast with a working day toggle, the recent-rain reveal, and the hedged
+ * mud read. Mud is present only because the sample 48h total clears the rule —
+ * an inference, always hedged, never a stated fact (Rule #7).
+ */
+export function mockRegionConditions(state: TuningState): RegionConditionsVM {
+  const { days } = forecastDaysForWhen(state.when)
+  return {
+    forecast: days,
+    recentPrecip: {
+      days: [
+        { label: 'Thu', amountIn: 0.8 },
+        { label: 'Fri', amountIn: 0.4 },
+        { label: 'Today', amountIn: 0 },
+      ],
+      total48hIn: 1.2,
+      source: 'NWS observations',
+    },
+    mud: {
+      statement: 'Trails may be muddy',
+      evidence: '1.2" of rain in the last 48h, dry today',
+      source: 'NWS observations',
+      provenance: 'inferred',
+    },
+  }
+}
+
+/**
+ * Per-trail condition coverage + warnings, spread across the sample set so the
+ * strip exercises every state in `npm run dev`: all-fresh, one-stale, one
+ * unavailable, an amber heads-up, and a terracotta closure. Trails not listed
+ * carry no conditions (the honest thin default). Provenance is `mock` on the
+ * lines the adapter builds — the surface always discloses sample data (R1).
+ */
+export const mockTrailConditions: Record<string, { conditions: ConditionStatusVM[]; warnings: WarningVM[] }> = {
+  // All fresh — a clean row you skim in one look.
+  'stony-man': {
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+      { kind: 'air', state: 'present', source: 'AirNow', checkedAgo: '2m ago' },
+      { kind: 'fire', state: 'no-hazard', source: 'NASA FIRMS', checkedAgo: '6m ago' },
+      { kind: 'closures', state: 'no-hazard', source: 'NPS', checkedAgo: '1h ago' },
+    ],
+    warnings: [],
+  },
+  // One stale reading + an amber heads-up (creek running high, passable).
+  'whiteoak-canyon': {
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+      { kind: 'water', state: 'stale-degraded', source: 'USGS', checkedAgo: '3h ago' },
+      { kind: 'air', state: 'present', source: 'AirNow', checkedAgo: '2m ago' },
+    ],
+    warnings: [
+      {
+        text: 'Creek running high — verify crossings',
+        source: 'USGS',
+        observedAgo: '40m ago',
+        kind: 'water',
+        provenance: 'mock',
+        severity: 'headsUp',
+      },
+    ],
+  },
+  // A terracotta closure — a genuine barrier (Q7 blocked).
+  'old-rag': {
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+      { kind: 'closures', state: 'present', source: 'NPS', checkedAgo: '1h ago' },
+      { kind: 'air', state: 'present', source: 'AirNow', checkedAgo: '2m ago' },
+    ],
+    warnings: [
+      {
+        text: 'Ridge trail closed — rockfall',
+        source: 'NPS',
+        observedAgo: '1h ago',
+        kind: 'closures',
+        provenance: 'mock',
+        severity: 'blocked',
+      },
+    ],
+  },
+  // One unavailable (a probe that answered nothing — never "clear").
+  'dark-hollow': {
+    conditions: [
+      { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+      { kind: 'air', state: 'unavailable' },
+      { kind: 'water', state: 'no-data', source: 'USGS', detail: 'no gauge near this route' },
+    ],
+    warnings: [],
+  },
 }

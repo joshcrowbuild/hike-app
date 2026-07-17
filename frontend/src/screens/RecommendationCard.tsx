@@ -1,54 +1,36 @@
-import { Staleness, Text, Button, MetricRow } from '../components'
-import { conditionStateKey, lineKey } from '../data/feedConditions'
-import type { CardVM, LineVM } from '../data/vm'
+import { Staleness, Text, MetricRow } from '../components'
+import type { CardVM } from '../data/vm'
 import type { MetricItem } from '../components/MetricRow/MetricRow'
-import {
-  cardAccessibleName,
-  ConditionSilence,
-  DirectionsLink,
-  SaveButton,
-  Verdict,
-  verdictSpokenWarningText,
-  WarningBlock,
-} from './cardParts'
-import { summarizeConditions, ConditionStatusLine } from './ConditionStatus'
+import { cardAccessibleName, DirectionsLink, SaveButton, WarningBlock, geoAscentFeet } from './cardParts'
 import { ElevationGlyph } from './map/ElevationGlyph'
 import { glyphs } from './glyphs'
 import { resolveMiles, resolveDurationMinutes } from '../data/summary'
 import { formatEstimatedDuration } from '../data/duration'
-import { geoAscentFeet } from './cardParts'
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 
 /**
- * A lean, scannable recommendation card (Epic 019 · DD1) — one tap opens Detail,
- * no nested interactive elements. The card is a glanceable PEER: verdict, name,
- * its decision facts, the elevation glyph, ONE "Now" condition line, and any
- * verified warning — the commitment view (character, fit, the full condition
- * list, sources) lives on Detail. It renders the SAME CardVM Detail does (no VM
- * change): the condition value carries its provenance through <Confidence>, so a
- * sampled value is visibly demoted and tagged — never indistinguishable from a
- * verified one (R1).
+ * A lean, scannable recommendation card (Epic 019 · DD1; frame-conditions-wave
+ * Q2) — one tap opens Detail, no nested interactive elements. The card is
+ * CONDITIONS-SILENT: no per-card condition summary or state chips (an area fact
+ * belongs at area level — the This-feed card carries them, Law 3). It keeps its
+ * name, decision facts, the elevation glyph, its actions, and any VERIFIED
+ * hazard — a trail under a live alert still SHOWS with its warning (Q1), tinted
+ * by the curator's graded severity (Q7: blocked terracotta / heads-up amber).
  *
- * The `hoisted*` props (F1/F3, ux-review 2026-07) name signals the feed already
- * states once — the alert banner and the conditions ribbon — so this card stops
- * re-RENDERING them and carries only its per-trail deltas. Rendering-only: the
- * verdict and the accessible name below still derive from the FULL `card`,
- * exactly as Detail does. One signal set, both surfaces: a card can never say
- * "Good to go" while its own Detail says "Caution".
+ * `hoistedWarningTexts` (F1) names the region-wide alert the feed already states
+ * once in its banner, so this card carries only its per-trail warnings. The
+ * accessible name below still derives from the FULL `card` — a card can never
+ * say "Good to go" while its own Detail says "Caution".
  */
 export function RecommendationCard({
   card,
   onOpen,
   hoistedWarningTexts = NO_KEYS,
-  hoistedLineKeys = NO_KEYS,
-  hoistedStateKeys = NO_KEYS,
 }: {
   card: CardVM
   onOpen: () => void
   hoistedWarningTexts?: ReadonlySet<string>
-  hoistedLineKeys?: ReadonlySet<string>
-  hoistedStateKeys?: ReadonlySet<string>
 }) {
   const e = card.enrichment
   const ownWarnings = card.warnings.filter((w) => !hoistedWarningTexts.has(w.text))
@@ -73,16 +55,6 @@ export function RecommendationCard({
     metrics.push({ kind: 'duration', label: 'Duration', value: null, glyph: glyphs.duration })
   }
 
-  // Filter out hoisted lines
-  const unhoistedLines = card.conditionLines.filter((l) => !hoistedLineKeys.has(lineKey(l)))
-  const unhoistedConditions = card.conditions?.filter((s) => !hoistedStateKeys.has(conditionStateKey(s))) || []
-  
-  // Conditions (the six-state coverage) summarise into at most a quiet line; the
-  // real, source-stamped hazards are `card.warnings`, rendered as their own
-  // WarningBlock below (this was computed as `ownWarnings` but never rendered —
-  // the card was silently dropping hazard warnings).
-  const summary = summarizeConditions(unhoistedConditions, unhoistedLines, 'card')
-
   return (
     <article className="card">
       <button className="card-tap" type="button" onClick={onOpen} aria-label={cardAccessibleName(card.name, card.warnings)}>
@@ -96,10 +68,6 @@ export function RecommendationCard({
         <MetricRow items={metrics} className="decision" />
 
         {card.geo?.elevationProfile ? <ElevationGlyph profile={card.geo.elevationProfile} /> : null}
-
-        {summary && summary.tier !== 'clear' ? (
-          <ConditionStatusLine tier={summary.tier} copy={summary.conclusion} />
-        ) : null}
 
         {/* No spokenText: the redesigned card has no Verdict to "speak" the
             primary warning, so suppressing it here would drop it entirely. */}
@@ -117,4 +85,3 @@ export function RecommendationCard({
     </article>
   )
 }
-

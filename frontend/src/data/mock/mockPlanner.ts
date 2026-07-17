@@ -10,7 +10,7 @@ import type { OriginKey, TuningState } from '../../types'
 import type { OutcomeBody, ScopeContext } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
 import type { CardVM, EpisodeVM, FeedVM, OutcomeVM, ReadinessVM, SetAside, TrailWaterVM } from '../vm'
-import { buildFitLine, runFeed, trails } from './engine'
+import { buildFitLine, mockRegionConditions, mockTrailConditions, runFeed, trails } from './engine'
 import { findEpisode, listEpisodes, setOutcome } from './episodes'
 import type { Trail } from '../../types'
 
@@ -40,7 +40,11 @@ function toCardVM(trail: Trail, tuning: TuningState, origin: OriginKey | undefin
         // #2/#11). Left absent, exactly like every other mock line.
       },
     ],
-    warnings: [],
+    // Epic 055 S6: per-trail strip fixtures (states + severity-tinted
+    // warnings) so dev mode exercises every ConditionChip state. Trails
+    // without a fixture keep the honest default (no per-kind claims).
+    warnings: mockTrailConditions[trail.id]?.warnings ?? [],
+    conditions: mockTrailConditions[trail.id]?.conditions,
     enrichment: {
       placeCue: trail.placeCue,
       area: trail.area,
@@ -107,6 +111,9 @@ export class MockPlannerClient implements PlannerClient {
       heldBack: [],
       readiness: readinessDisclosure(input.tuning, anon),
       dataSource: 'mock',
+      // Epic 055 S6: the This-feed card's area zones (frame-aligned forecast,
+      // recent precip, hedged mud), provenance-marked mock throughout.
+      regionConditions: mockRegionConditions(tuning),
     }
   }
 

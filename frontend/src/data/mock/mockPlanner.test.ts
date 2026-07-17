@@ -134,3 +134,27 @@ describe('MockPlannerClient — getCard resolves independent of the feed', () =>
     expect(without?.enrichment?.driveMinutes).toBeUndefined()
   })
 })
+
+describe('MockPlannerClient — This-feed area conditions + strip fixtures (Epic 055 S6)', () => {
+  it('plan() carries frame-aligned regionConditions (forecast · precip · hedged mud)', async () => {
+    const feed = await client.plan({ tuning: frame }, JOSH)
+    expect(feed.regionConditions?.forecast?.targetKey).toBe('sat')
+    expect(feed.regionConditions?.forecast?.days.map((d) => d.key)).toContain('today')
+    expect(feed.regionConditions?.recentPrecip?.total48hIn).toBeGreaterThan(0)
+    // The mud read is an INFERENCE and must always say so (Rule #7).
+    expect(feed.regionConditions?.mud?.provenance).toBe('inferred')
+    expect(feed.regionConditions?.mud?.statement).toMatch(/may/i)
+  })
+
+  it('fixture trails wear their per-kind strip conditions + graded warnings', async () => {
+    const feed = await client.plan({ tuning: frame }, JOSH)
+    const fixtured = feed.cards.filter((c) => (c.conditions?.length ?? 0) > 0)
+    expect(fixtured.length).toBeGreaterThan(0)
+    // At least one graded warning exists so the severity tint is exercisable
+    // in dev; ungraded warnings stay legal (render as headsUp, never louder).
+    const graded = feed.cards.flatMap((c) => c.warnings).filter((w) => w.severity)
+    expect(graded.length).toBeGreaterThan(0)
+    // A trail without a fixture keeps the honest thin default: no per-kind claims.
+    expect(feed.cards.some((c) => c.conditions === undefined)).toBe(true)
+  })
+})

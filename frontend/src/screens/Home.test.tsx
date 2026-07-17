@@ -2,11 +2,10 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { contextSentence, Home } from './Home'
+import { Home } from './Home'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { ANON_SCOPE } from '../data/api'
 import { feedKey, resetFeedCacheForTests, writeFeedCache } from '../data/feedCache'
-import type { OriginOption } from '../data/regionsCatalog'
 import { resetSavedTrailsForTests, toggleTrailSaved } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
 import type { FeedVM } from '../data/vm'
@@ -46,6 +45,7 @@ function renderHome() {
         tuning={TUNING}
         anonymous
         onOpenTuning={noop}
+        onOpenFacet={noop}
         onOpenTrail={noop}
         onOpenOutcome={noop}
         onApplyTuning={noop}
@@ -116,6 +116,7 @@ async function renderHomeWith(feed: FeedVM, tuning: TuningState = TUNING) {
         tuning={tuning}
         anonymous
         onOpenTuning={noop}
+        onOpenFacet={noop}
         onOpenTrail={noop}
         onOpenOutcome={noop}
         onApplyTuning={noop}
@@ -320,64 +321,19 @@ describe('Home region label reflects the actually served trails, never the picke
     expect(screen.getAllByText(/Shenandoah/).length).toBeGreaterThan(0)
   })
 
-  it('names the active origin in the anonymous context sentence, not just the region', async () => {
+  it('names the active origin as the This-feed card’s From facet', async () => {
     await renderHomeWith(feedWith({}))
-    expect(screen.getByText(/from Front Royal/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Front Royal' })).toBeInTheDocument()
   })
 })
 
-describe('Home context sentence — no dangling separator on a missing origin or empty region (Epic 046 S4 AC-4.1 / D8)', () => {
-  const origins: OriginOption[] = [
-    { key: 'frontRoyal', label: 'Front Royal', lat: 38.918, lon: -78.194, regionLabel: 'Shenandoah' },
-  ]
-  const cardAt = (lat: number, lon: number) => ({
-    id: 'a',
-    name: 'a',
-    distanceMi: 2,
-    conditionLines: [],
-    warnings: [],
-    geo: { geometry: null, trailhead: { lat, lon }, quality: 'confident' as const, elevationProfile: null },
-  })
-
-  it('drops the origin clause instead of a dangling "from " when the tuned origin key is no longer in the fetched catalog', () => {
-    // A stale/removed origin key (the case FALLBACK_COORDS exists for) — the
-    // served card's own trailhead still resolves a real region, independent
-    // of the unresolvable origin key.
-    const tuning: TuningState = { ...TUNING, origin: 'goneRegion' }
-    const sentence = contextSentence(tuning, true, [cardAt(38.918, -78.194)], origins)
-    expect(sentence).toBe('Weekend morning · Shenandoah')
-    expect(sentence).not.toMatch(/from\s*$/)
-    expect(sentence).not.toContain('from ·')
-  })
-
-  it('drops the region clause instead of a doubled separator when no region label is available', () => {
-    const blankRegionOrigins: OriginOption[] = [
-      { key: 'frontRoyal', label: 'Front Royal', lat: 38.918, lon: -78.194, regionLabel: '' },
-    ]
-    const tuning: TuningState = { ...TUNING, origin: 'frontRoyal' }
-    const sentence = contextSentence(tuning, true, [], blankRegionOrigins)
-    expect(sentence).toBe('Weekend morning · from Front Royal')
-    expect(sentence).not.toContain('·  ·')
-  })
-
-  it('drops both clauses instead of a doubled separator when neither origin nor region resolves', () => {
-    const tuning: TuningState = { ...TUNING, origin: 'goneRegion' }
-    const sentence = contextSentence(tuning, true, [], origins)
-    expect(sentence).toBe('Weekend morning')
-    expect(sentence).not.toContain('·  ·')
-    expect(sentence).not.toMatch(/from\s*$/)
-  })
-})
-
-describe('Home Context Ribbon (ux-vision-2026-07 §9 item 1: region + when + origin and region-scope conditions unified in one band)', () => {
+describe('Home — the This feed card replaces the context ribbon (Epic 055 S1/S3/S5)', () => {
   const weatherLine = (text = 'Mostly Cloudy 61°F · NWS, just now') => ({
     text,
     source: 'NWS api.weather.gov',
     confidence: 'stated' as const,
     provenance: 'live' as const,
   })
-  const fireClear = { kind: 'fire', state: 'no-hazard' as const, source: 'NASA FIRMS', checkedAgo: 'just now' }
-  const airOut = { kind: 'air', state: 'unavailable' as const }
   const regionCard = (id: string, over: Record<string, unknown> = {}) => ({
     id,
     name: id,
@@ -385,100 +341,55 @@ describe('Home Context Ribbon (ux-vision-2026-07 §9 item 1: region + when + ori
     conditionLines: [weatherLine()],
     conditions: [
       { kind: 'weather', state: 'present' as const, source: 'NWS', checkedAgo: 'just now' },
-      fireClear,
-      airOut,
+      { kind: 'fire', state: 'no-hazard' as const, source: 'NASA FIRMS', checkedAgo: 'just now' },
+      { kind: 'air', state: 'unavailable' as const },
     ],
     warnings: [],
     ...over,
   })
 
-  it('renders the frame (when · region · from origin) exactly once, inside the named ribbon landmark', async () => {
-    const cards = [regionCard('a'), regionCard('b'), regionCard('c')]
-    await renderHomeWith(feedWith({ cards }))
-
-    const ribbon = screen.getByRole('region', { name: 'This frame' })
-    expect(ribbon).toBeInTheDocument()
-    expect(ribbon.textContent).toMatch(/Weekend morning/)
-    expect(ribbon.textContent).toMatch(/Shenandoah/)
-    expect(ribbon.textContent).toMatch(/from Front Royal/)
-    // Exactly one frame sentence on the page — never a second copy anywhere else.
-    expect(screen.getAllByText(/from Front Royal/).length).toBe(1)
+  it('renders one "This feed" card carrying the frame as tappable facets', async () => {
+    await renderHomeWith(feedWith({ cards: [regionCard('a')] }))
+    const feedCard = screen.getByRole('region', { name: 'This feed' })
+    expect(feedCard).toBeInTheDocument()
+    // From + When are facets, each a control opening its own panel.
+    expect(screen.getByRole('button', { name: 'Front Royal' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Weekend morning' })).toBeInTheDocument()
   })
 
-  it('opens Tuning when the ribbon head is activated', async () => {
+  it('opens the origin PanelSheet directly when the From facet is tapped', async () => {
     const user = userEvent.setup()
-    const onOpenTuning = vi.fn()
-    const feed = feedWith({ cards: [regionCard('a')] })
+    const onOpenFacet = vi.fn()
     render(
-      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feed)}>
+      <PlannerProvider scope={ANON_SCOPE} client={readyClient(feedWith({ cards: [regionCard('a')] }))}>
         <Home
           tuning={TUNING}
           anonymous
-          onOpenTuning={onOpenTuning}
+          onOpenTuning={noop}
+          onOpenFacet={onOpenFacet}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
         />
       </PlannerProvider>,
     )
-    await screen.findByRole('region', { name: 'This frame' })
-
-    await user.click(screen.getByRole('button', { name: /Edit/i }))
-    expect(onOpenTuning).toHaveBeenCalledTimes(1)
+    await screen.findByRole('region', { name: 'This feed' })
+    await user.click(screen.getByRole('button', { name: 'Front Royal' }))
+    expect(onOpenFacet).toHaveBeenCalledWith('origin')
   })
 
-  it('states the shared reading, the checked-clear sweep and the outage ONCE, inside the same ribbon as the frame sentence', async () => {
+  it('states the region-shared reading ONCE inside the card, and keeps the cards conditions-silent (Q2)', async () => {
     const cards = [regionCard('a'), regionCard('b'), regionCard('c')]
     const { container } = await renderHomeWith(feedWith({ cards }))
 
-    const ribbon = screen.getByRole('region', { name: 'This frame' })
-    // The frame sentence and the region-scope conditions read as ONE unit —
-    // both live inside the same landmark, not two separate elements.
-    expect(ribbon.textContent).toMatch(/from Front Royal/)
-    // Each region-scope fact appears exactly once on the whole feed — with its
-    // source + stamp preserved (honesty is kept, just not repeated ×3).
-    expect(screen.getAllByText(/Mostly Cloudy 61°F/).length).toBe(1)
-    expect(screen.getAllByText(/Checked — nothing to flag/).length).toBe(1)
-    expect(screen.getAllByText(/Couldn’t verify/).length).toBe(1)
-    // The three silences stay copy-distinct inside the ribbon (CDP-02).
-    expect(ribbon.textContent).toMatch(/Checked — nothing to flag: Fire \(NASA FIRMS · just now\)/)
-    expect(ribbon.textContent).toMatch(/Couldn’t verify: Air quality/)
-    // Cards stay silent about what the ribbon already said — and are never
-    // stamped with a false "not checked" fallback (they WERE checked).
+    const feedCard = screen.getByRole('region', { name: 'This feed' })
+    // The shared reading appears once, in the card's right-now strip.
+    expect(screen.getAllByText('Mostly Cloudy 61°F').length).toBe(1)
+    expect(feedCard.textContent).toMatch(/Mostly Cloudy 61°F/)
+    // The feed cards themselves say nothing about conditions (Q2).
     for (const cardEl of container.querySelectorAll('.card')) {
       expect(cardEl.textContent).not.toMatch(/Mostly Cloudy/)
-      expect(cardEl.textContent).not.toMatch(/nothing to flag/)
-      expect(cardEl.textContent).not.toMatch(/not checked/i)
     }
-  })
-
-  it('keeps a differing per-trail reading on its own card as the Now delta, never hoisted to the ribbon', async () => {
-    const cards = [
-      regionCard('a'),
-      regionCard('b'),
-      regionCard('c', { conditionLines: [weatherLine('Mostly Cloudy 64°F · NWS, just now')] }),
-    ]
-    const { container } = await renderHomeWith(feedWith({ cards }))
-
-    // The modal reading sits in the ribbon; card c keeps its own microclimate.
-    expect(screen.getAllByText(/61°F/).length).toBe(1)
-    const cardTexts = [...container.querySelectorAll('.card')].map((el) => el.textContent ?? '')
-    expect(cardTexts.filter((t) => t.includes('64°F')).length).toBe(1)
-    // The per-trail-distinct reading never leaks into the ribbon itself.
-    const ribbon = screen.getByRole('region', { name: 'This frame' })
-    expect(ribbon.textContent).not.toMatch(/64°F/)
-  })
-
-  it('still renders the ribbon (frame sentence) when nothing is region-shared', async () => {
-    const cards = [
-      regionCard('a', { conditionLines: [weatherLine('Sunny 60°F · NWS')], conditions: undefined }),
-      regionCard('b', { conditionLines: [weatherLine('Cloudy 55°F · NWS')], conditions: undefined }),
-    ]
-    await renderHomeWith(feedWith({ cards }))
-
-    // The ribbon itself never disappears — it always carries the frame sentence.
-    const ribbon = screen.getByRole('region', { name: 'This frame' })
-    expect(ribbon.textContent).toMatch(/from Front Royal/)
   })
 })
 
@@ -541,6 +452,7 @@ describe('Home empty state (NNG: say what happened + what to do)', () => {
           tuning={widestTuning}
           anonymous
           onOpenTuning={onOpenTuning}
+          onOpenFacet={noop}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
@@ -662,6 +574,7 @@ describe('Home stale-while-revalidate disclosure (AC-3.8, Epic 039 S3)', () => {
           tuning={TUNING}
           anonymous
           onOpenTuning={noop}
+          onOpenFacet={noop}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
@@ -705,6 +618,7 @@ describe('Home two-phase pending + patch-failure surfaces (Epic 040 S3)', () => 
           tuning={TUNING}
           anonymous
           onOpenTuning={noop}
+          onOpenFacet={noop}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
@@ -730,6 +644,7 @@ describe('Home two-phase pending + patch-failure surfaces (Epic 040 S3)', () => 
           tuning={TUNING}
           anonymous
           onOpenTuning={noop}
+          onOpenFacet={noop}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
@@ -764,6 +679,7 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
           tuning={TUNING}
           anonymous
           onOpenTuning={noop}
+          onOpenFacet={noop}
           onOpenTrail={noop}
           onOpenOutcome={noop}
           onApplyTuning={noop}
@@ -870,5 +786,57 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     await renderHomeSearch(vi.fn())
     // The normal context sentence + card stack render exactly as before search existed.
     expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
+  })
+})
+
+describe('Home personalization-degraded banner (Q8 — disclosed, dismissible, retryable)', () => {
+  it('renders only when the feed says personalization degraded', async () => {
+    const { container } = await renderHomeWith(feedWith({ personalizationDegraded: true }))
+    expect(container.querySelector('.personalization-degraded')).not.toBeNull()
+
+    const clean = await renderHomeWith(feedWith({}))
+    expect(clean.container.querySelector('.personalization-degraded')).toBeNull()
+  })
+
+  it('dismiss hides it; it does not resurrect on rerender', async () => {
+    const { container } = await renderHomeWith(feedWith({ personalizationDegraded: true }))
+    const dismiss = Array.from(container.querySelectorAll('.personalization-degraded button')).find(
+      (b) => b.textContent === 'Dismiss',
+    )
+    expect(dismiss).toBeDefined()
+    await act(async () => {
+      ;(dismiss as HTMLButtonElement).click()
+    })
+    expect(container.querySelector('.personalization-degraded')).toBeNull()
+  })
+
+  it('retry re-runs the plan (a real refetch, not a decoration)', async () => {
+    const feed = feedWith({ personalizationDegraded: true })
+    const plan = vi.fn(() => Promise.resolve(feed))
+    const client = { plan, recentEpisodes: () => Promise.resolve([]) } as unknown as PlannerClient
+    const { container } = render(
+      <PlannerProvider scope={ANON_SCOPE} client={client}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenFacet={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+    const before = plan.mock.calls.length
+    const retry = Array.from(container.querySelectorAll('.personalization-degraded button')).find(
+      (b) => b.textContent === 'Retry',
+    )
+    expect(retry).toBeDefined()
+    await act(async () => {
+      ;(retry as HTMLButtonElement).click()
+    })
+    await act(async () => {})
+    expect(plan.mock.calls.length).toBeGreaterThan(before)
   })
 })

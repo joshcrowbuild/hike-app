@@ -47,6 +47,12 @@ export interface PlanRequest {
    * warm — the response then self-describes via `conditions_complete`.
    */
   phase?: 'cards'
+  /**
+   * The tuning's when key, verbatim (`TuningState['when']`) — Epic 054 derives
+   * the forecast's target-day window from it (frame-conditions-wave §5).
+   * Absent → the server degrades to the `fullDay` window (today-targeted).
+   */
+  when?: string
 }
 
 /**
@@ -364,6 +370,8 @@ export interface PlanConditionsRequest {
   k?: number
   viewer_id?: string
   canonical_ids: string[]
+  /** Same as `PlanRequest.when` — the forecast target-day window derives from it. */
+  when?: string
 }
 
 /**

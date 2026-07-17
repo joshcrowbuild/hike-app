@@ -67,6 +67,7 @@ function App() {
           tuning={tuning}
           anonymous={anonymous}
           onOpenTuning={() => setTuningOpen(true)}
+          onOpenFacet={(key) => setOpenPanel(key)}
           onOpenTrail={(id) => navigate({ name: 'trail', id })}
           onOpenOutcome={(episodeId) => navigate({ name: 'outcome', episodeId })}
           onApplyTuning={(next) => setTuning(next)}
