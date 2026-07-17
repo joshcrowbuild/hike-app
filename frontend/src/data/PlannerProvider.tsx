@@ -95,6 +95,19 @@ export function PlannerProvider({ scope, client, fallback, children }: PlannerPr
   const feedSession = useRef<Map<string, FeedVM>>(new Map())
   const cardSession = useRef<Map<string, CardVM>>(new Map())
   const waterSession = useRef<Map<string, TrailWaterVM>>(new Map())
+  // Evict all three on any identity change: a signed-out member's derived
+  // feed/cards/water must not linger in the heap for the tab's lifetime —
+  // the in-memory analog of `evictFeedCache` in AuthProvider.signOut. Keys
+  // are scope-inclusive, so this is hygiene (Rule #5), not serving
+  // correctness; it also bounds growth across sign-in/sign-out cycles.
+  const sessionViewer = useRef(scope.viewerId)
+  useEffect(() => {
+    if (sessionViewer.current === scope.viewerId) return
+    sessionViewer.current = scope.viewerId
+    feedSession.current.clear()
+    cardSession.current.clear()
+    waterSession.current.clear()
+  }, [scope.viewerId])
   // The config-driven origin catalog (Phase 2) — HttpPlannerClient needs the
   // resolved coords before its first /plan call, so real (non-injected) HTTP mode
   // gates rendering until this has loaded (below); mock and injected-client (tests,
@@ -148,6 +161,14 @@ function usePlanner(): PlannerContextValue {
  *  refetches when grants change — not just when the viewer does (R5). */
 function scopeKeyOf(scope: ScopeContext): string {
   return `${scope.viewerId}|${scope.grantedIds.join(',')}`
+}
+
+/** Collision-safe composite key for the id+scope session caches. Naive
+ *  `${id}::${scopeKey}` concatenation can collide (ids allow any non-control
+ *  char; viewer ids allow `:`), so use the same escape discipline as
+ *  `feedKey` — JSON keeps each operand's boundary unforgeable. */
+function sessionKey(id: string, scopeKey: string): string {
+  return JSON.stringify([id, scopeKey])
 }
 
 export function useIsAnonymous(): boolean {
@@ -593,7 +614,7 @@ export function useCard(id: string | null): CardState {
     // once this session — reuse it, fetch-free (AC-4.1). Only a definitive
     // resolve is ever stored here (see the success branch below), so a prior
     // notfound/error always gets a fresh attempt (AC-4.2).
-    const cardCacheKey = `${id}::${scopeKey}`
+    const cardCacheKey = sessionKey(id, scopeKey)
     const cached = cardSession.current.get(cardCacheKey)
     if (cached) {
       setState({ status: 'ready', card: cached })
@@ -626,7 +647,7 @@ export function useCard(id: string | null): CardState {
     reload: () => {
       // A manual reload must always retry, never repaint a cached miss —
       // evict this id+scope's entry (if any) before bumping the nonce.
-      if (id) cardSession.current.delete(`${id}::${scopeKey}`)
+      if (id) cardSession.current.delete(sessionKey(id, scopeKey))
       setNonce((n) => n + 1)
     },
   }
@@ -660,7 +681,7 @@ export function useTrailWater(id: string | null): { water: TrailWaterVM | null; 
       return
     }
     let live = true
-    const waterCacheKey = `${id}::${scopeKey}`
+    const waterCacheKey = sessionKey(id, scopeKey)
     const cached = waterSession.current.get(waterCacheKey)
     if (cached) {
       setState({ water: cached, loading: false })
