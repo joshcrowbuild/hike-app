@@ -18,7 +18,7 @@ import { deriveSummary } from '../data/summary'
 import { glyphs } from './glyphs'
 import { TerrainMap } from './map/TerrainMap'
 import { Text } from '../components'
-import { EvidencePanel } from './EvidencePanel'
+import { DetailConditions } from './DetailConditions'
 
 export interface DetailProps {
   id: string
@@ -117,7 +117,7 @@ function DetailBody({ card }: { card: CardVM }) {
         {/* A derived difficulty estimate (R2: presentation only, never ranking). */}
         <DifficultyBadge card={card} />
 
-        <EvidencePanel card={card} />
+        <DetailConditions card={card} />
 
         {e?.caution ? <Signal className="signal--detail">{e.caution}</Signal> : null}
         {e?.practicalNote ? <p className="detail-practical">{e.practicalNote}</p> : null}

@@ -6,6 +6,7 @@ import { summarizeProfile } from '../data/geo'
 import { resetSavedTrailsForTests } from '../data/savedTrails'
 import type { CardVM } from '../data/vm'
 import { RecommendationCard } from './RecommendationCard'
+import * as warningStyles from './WarningBlock.css'
 
 afterEach(() => resetSavedTrailsForTests())
 
@@ -123,36 +124,56 @@ describe('RecommendationCard is lean — Detail-only fields are relocated off it
   })
 })
 
-describe('RecommendationCard verified hazard warnings (ConditionStatus engine)', () => {
-  const warning = {
-    text: 'weather alert: Extreme Heat Warning',
-    source: 'NWS',
-    observedAgo: '2h ago',
-    kind: 'weather',
-    provenance: 'live' as const,
-  }
-
-  it('wears a prominent warning via ConditionStatusLine for blocked/headsUp', () => {
+describe('RecommendationCard is conditions-silent (Q2), warnings tint by severity (Q7)', () => {
+  it('renders NO condition line even when per-kind conditions are present — the area card carries them', () => {
     const { container } = render(
-      <RecommendationCard 
-        card={card({ 
+      <RecommendationCard
+        card={card({
           conditions: [
-            { kind: 'weather', state: 'present', detail: 'Extreme Heat Warning', source: 'NWS' }
+            { kind: 'weather', state: 'present', source: 'NWS', checkedAgo: 'just now' },
+            { kind: 'air', state: 'unavailable' },
           ],
-          conditionLines: [
-            { text: 'Extreme Heat Warning', source: 'NWS', confidence: 'stated', provenance: 'live' }
-          ]
-        })} 
-        onOpen={vi.fn()} 
+          conditionLines: [{ text: '54°F · clear', source: 'NWS', confidence: 'stated', provenance: 'live' }],
+          warnings: [],
+        })}
+        onOpen={vi.fn()}
       />,
     )
-    expect(container.textContent).toContain('Extreme Heat Warning')
+    // No condition summary/status line, no per-kind chips — the card is silent.
+    expect(container.querySelector('.card-warnings')).not.toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/things to know/i)
+    expect(container.textContent).not.toMatch(/couldn’t be verified/i)
+    // …but it still shows its decision facts.
+    expect(screen.getByRole('heading', { name: 'Stony Man Loop' })).toBeInTheDocument()
   })
 
-  it('renders no warning block on a clean card', () => {
-    const { container } = render(<RecommendationCard card={card({ conditions: [{ kind: 'weather', state: 'no-hazard' }]})} onOpen={vi.fn()} />)
-    // Clean card should render nothing for ConditionStatusLine (tier clear)
-    expect(container.textContent).not.toContain('Conditions look clear') // We return null for 'clear'
+  it('tints a blocked warning terracotta and a heads-up (or ungraded) warning amber', () => {
+    const blocked = render(
+      <RecommendationCard
+        card={card({ warnings: [{ text: 'Ridge closed', source: 'NPS', kind: 'closures', provenance: 'live', severity: 'blocked' }] })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(blocked.container.querySelector('.card-warning')?.className).toContain(warningStyles.item.blocked)
+    blocked.unmount()
+
+    const headsUp = render(
+      <RecommendationCard
+        card={card({ warnings: [{ text: 'Heat advisory', source: 'NWS', kind: 'weather', provenance: 'live', severity: 'headsUp' }] })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(headsUp.container.querySelector('.card-warning')?.className).toContain(warningStyles.item.headsUp)
+    headsUp.unmount()
+
+    // An absent severity is never louder than the backend graded it → amber.
+    const ungraded = render(
+      <RecommendationCard
+        card={card({ warnings: [{ text: 'Advisory', source: 'NWS', kind: 'weather', provenance: 'live' }] })}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(ungraded.container.querySelector('.card-warning')?.className).toContain(warningStyles.item.headsUp)
   })
 })
 

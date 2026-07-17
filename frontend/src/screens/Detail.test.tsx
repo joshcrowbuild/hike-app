@@ -63,15 +63,17 @@ describe('Detail is the commitment view — it renders the fields relocated off 
       provenance: 'live',
     },
   })
-  it('renders placeCue, fitLine, practicalNote, duration and the FULL condition list', async () => {
+  it('renders placeCue, fitLine, practicalNote, duration and the per-kind conditions strip', async () => {
     await renderDetail(enriched)
     expect(screen.getByText('the granite dome above the valley')).toBeInTheDocument() // placeCue
     expect(screen.getByText('Matches your taste for open summits.')).toBeInTheDocument() // fitLine
     expect(screen.getByText('Arrive early; the lot fills by 9.')).toBeInTheDocument() // practicalNote
     expect(screen.getByText('3–4 hr')).toBeInTheDocument() // duration fact
-    // The full multi-line condition list (both lines), not just the card's single slot.
-    expect(screen.getByText('54°F · clear')).toBeInTheDocument()
-    expect(screen.getByText('AQI 32 · good')).toBeInTheDocument()
+    // The "Current conditions" strip (Q6) carries each reading as a terse chip
+    // — the full prose no longer sits in an always-open list.
+    expect(screen.getByText('Current conditions')).toBeInTheDocument()
+    expect(screen.getByText('54°F')).toBeInTheDocument()
+    expect(screen.getByText('AQI 32')).toBeInTheDocument()
   })
 })
 describe('Card + Detail read the SAME CardVM (Epic 019 AC-19.1.2 — no VM/DTO change)', () => {

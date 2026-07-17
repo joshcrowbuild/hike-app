@@ -3,6 +3,8 @@
 import type { LucideIcon } from 'lucide-react'
 import { ToggleButton } from 'react-aria-components'
 import { Icon, Signal, Staleness, Text, Button, MetricRow } from '../components'
+import { srOnly } from '../design/a11y.css'
+import * as warningStyles from './WarningBlock.css'
 import type { MetricItem } from '../components/MetricRow/MetricRow'
 import { glyphs } from './glyphs'
 import { formatEstimatedDuration } from '../data/duration'
@@ -81,6 +83,11 @@ export function Verdict({ card, className }: { card: CardVM; className?: string 
  * sentence stays visible: the verdict only counts them ("+N more"), so
  * suppressing their text would make a verified hazard sentence invisible
  * everywhere on the card (F1's cousin — a hidden fact, not a duplicate).
+ *
+ * Each warning tints by the curator's graded severity (frame-conditions-wave
+ * Q7): `blocked` reads terracotta (a barrier), `headsUp` amber (passable). An
+ * absent `severity` grades as `headsUp` — never louder than the backend said
+ * (Law 6). The sr-only `label` lead-in keeps colour from being the only cue.
  */
 export function WarningBlock({
   warnings,
@@ -96,8 +103,10 @@ export function WarningBlock({
     <div className="card-warnings">
       {warnings.map((w, i) => {
         const spoken = w.text === spokenText
+        const tier = w.severity === 'blocked' ? 'blocked' : 'headsUp'
         return (
-          <Signal key={i} label={label} className="card-warning">
+          <p key={i} className={`${warningStyles.item[tier]} card-warning`}>
+            <span className={srOnly}>{label}: </span>
             {spoken ? null : w.text}
             <span className="card-warning-meta">
               {spoken ? null : ' — '}
@@ -113,7 +122,7 @@ export function WarningBlock({
                 </>
               ) : null}
             </span>
-          </Signal>
+          </p>
         )
       })}
     </div>
