@@ -77,7 +77,11 @@ export function inferKindFromSource(source: string): string {
   if (s.includes('firms') || s.includes('fire')) return 'fire'
   if (s.includes('usgs') || s.includes('streamflow') || s.includes('flow')) return 'water'
   if (s.includes('nps') || s.includes('closure')) return 'closures'
-  if (s.includes('rec.gov') || s.includes('permit')) return 'permits'
+  // The real backend constant is "Recreation.gov RIDB" — 'rec.gov' alone does
+  // NOT match it (review CRITICAL: a permits line fell through to 'weather',
+  // wrong glyph + a blocked permit tint silently skipped).
+  if (s.includes('recreation.gov') || s.includes('ridb') || s.includes('rec.gov') || s.includes('permit'))
+    return 'permits'
   return 'weather'
 }
 

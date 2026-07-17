@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -170,5 +170,40 @@ describe('ThisFeedCard — past 3 days + mud (S4)', () => {
   it('renders no reveal at all when there is no recent-precip data', () => {
     render(<ThisFeedCard {...props({ regionConditions: { forecast, recentPrecip: null, mud: null } })} />)
     expect(screen.queryByRole('button', { name: /past 3 days/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('ThisFeedCard — a disclosed outage still disclosed after phase 2 (review fix, AC-2.3)', () => {
+  it('regionConditions null (outage) keeps the zone + unavailable line; undefined (old backend) hides it', () => {
+    render(<ThisFeedCard {...props({ regionConditions: null, conditionsPending: false, currentChips: [] })} />)
+    expect(screen.getByText('Forecast unavailable right now')).toBeInTheDocument()
+
+    cleanup()
+    render(<ThisFeedCard {...props({ regionConditions: undefined, conditionsPending: false, currentChips: [] })} />)
+    expect(screen.queryByText('Forecast unavailable right now')).not.toBeInTheDocument()
+  })
+})
+
+describe('ThisFeedCard — a station-gap day is "—", never dressed as dry (S3 per-day honesty)', () => {
+  it('renders null amountIn as an em-dash', async () => {
+    const user = userEvent.setup()
+    const gappy = {
+      forecast,
+      recentPrecip: {
+        days: [
+          { label: 'Thu', amountIn: 0.8 },
+          { label: 'Fri', amountIn: null },
+          { label: 'Today', amountIn: 0 },
+        ],
+        total48hIn: 0.8,
+        source: 'NWS observations',
+      },
+      mud: null,
+    }
+    render(<ThisFeedCard {...props({ regionConditions: gappy })} />)
+    await user.click(screen.getByRole('button', { name: /Past 3 days/ }))
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('dry')).toBeInTheDocument() // the CONFIRMED-dry day still says dry
+    expect(screen.getByText('0.8"')).toBeInTheDocument()
   })
 })

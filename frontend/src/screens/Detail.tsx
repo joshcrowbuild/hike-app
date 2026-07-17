@@ -1,5 +1,5 @@
 import { Confidence, Icon, Signal, Staleness } from '../components'
-import { sharedAmong, unclaimedLines } from '../data/feedConditions'
+import { sharedAmong } from '../data/feedConditions'
 import { gpxExportUrl } from '../data/geo'
 import { useCard, useTrailWater } from '../data/PlannerProvider'
 import type { CardVM, LineVM, TrailWaterVM } from '../data/vm'

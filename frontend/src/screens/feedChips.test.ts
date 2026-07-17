@@ -53,6 +53,14 @@ describe('inferKindFromSource — a glyph hint only, never a claim', () => {
     expect(inferKindFromSource('Rec.gov')).toBe('permits')
     expect(inferKindFromSource('NWS point forecast')).toBe('weather')
   })
+
+  it('matches the REAL backend permits constant, not just a fictional one', () => {
+    // Review CRITICAL: "Recreation.gov RIDB" (ridb.py's actual SOURCE) does
+    // not contain 'rec.gov', so a permits line fell through to 'weather' —
+    // wrong glyph AND a blocked permit tint silently skipped (Q5).
+    expect(inferKindFromSource('Recreation.gov RIDB')).toBe('permits')
+    expect(inferKindFromSource('RIDB')).toBe('permits')
+  })
 })
 
 describe('warningTierByKind — blocked wins, absent grades headsUp (Q7)', () => {
@@ -149,5 +157,29 @@ describe('detailConditionChips — one trail, per-kind', () => {
 
   it('is empty when the card carries neither conditions nor lines (silence is a state)', () => {
     expect(detailConditionChips(card())).toEqual([])
+  })
+})
+
+describe('unchecked closures/permits never wear a present word (honesty regression)', () => {
+  it('not-fetched / unavailable / no-data render as silence, never "closed"/"required"', () => {
+    // Successor to the deleted EvidencePanel guard: an UNVERIFIED kind must
+    // never read as a stated present fact (the live bug behind PR #251).
+    const card = {
+      id: 't',
+      name: 'T',
+      distanceMi: null,
+      conditionLines: [],
+      warnings: [],
+      conditions: [
+        { kind: 'closures', state: 'not-fetched' as const, source: '', checkedAgo: undefined },
+        { kind: 'permits', state: 'unavailable' as const, source: 'Recreation.gov RIDB', checkedAgo: undefined },
+        { kind: 'water', state: 'no-data' as const, source: 'USGS', checkedAgo: undefined },
+      ],
+    }
+    const chips = detailConditionChips(card as never)
+    const values = chips.map((c) => c.valueText.toLowerCase())
+    expect(values.some((v) => v.includes('closed'))).toBe(false)
+    expect(values.some((v) => v.includes('required'))).toBe(false)
+    for (const chip of chips) expect(['unavailable', 'stale', 'fresh', 'pending']).toContain(chip.state)
   })
 })

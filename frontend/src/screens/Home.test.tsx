@@ -788,3 +788,55 @@ describe('Home Omnibox trail-name search line (Epic 038/B001 build lane)', () =>
     expect(screen.getByRole('button', { name: 'Open Compton Peak' })).toBeInTheDocument()
   })
 })
+
+describe('Home personalization-degraded banner (Q8 — disclosed, dismissible, retryable)', () => {
+  it('renders only when the feed says personalization degraded', async () => {
+    const { container } = await renderHomeWith(feedWith({ personalizationDegraded: true }))
+    expect(container.querySelector('.personalization-degraded')).not.toBeNull()
+
+    const clean = await renderHomeWith(feedWith({}))
+    expect(clean.container.querySelector('.personalization-degraded')).toBeNull()
+  })
+
+  it('dismiss hides it; it does not resurrect on rerender', async () => {
+    const { container } = await renderHomeWith(feedWith({ personalizationDegraded: true }))
+    const dismiss = Array.from(container.querySelectorAll('.personalization-degraded button')).find(
+      (b) => b.textContent === 'Dismiss',
+    )
+    expect(dismiss).toBeDefined()
+    await act(async () => {
+      ;(dismiss as HTMLButtonElement).click()
+    })
+    expect(container.querySelector('.personalization-degraded')).toBeNull()
+  })
+
+  it('retry re-runs the plan (a real refetch, not a decoration)', async () => {
+    const feed = feedWith({ personalizationDegraded: true })
+    const plan = vi.fn(() => Promise.resolve(feed))
+    const client = { plan, recentEpisodes: () => Promise.resolve([]) } as unknown as PlannerClient
+    const { container } = render(
+      <PlannerProvider scope={ANON_SCOPE} client={client}>
+        <Home
+          tuning={TUNING}
+          anonymous
+          onOpenTuning={noop}
+          onOpenFacet={noop}
+          onOpenTrail={noop}
+          onOpenOutcome={noop}
+          onApplyTuning={noop}
+        />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+    const before = plan.mock.calls.length
+    const retry = Array.from(container.querySelectorAll('.personalization-degraded button')).find(
+      (b) => b.textContent === 'Retry',
+    )
+    expect(retry).toBeDefined()
+    await act(async () => {
+      ;(retry as HTMLButtonElement).click()
+    })
+    await act(async () => {})
+    expect(plan.mock.calls.length).toBeGreaterThan(before)
+  })
+})

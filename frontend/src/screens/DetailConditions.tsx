@@ -20,11 +20,14 @@ const kindLabel = (kind: string): string => conditionKindLabels[kind] ?? kind
  */
 export function DetailConditions({ card }: { card: CardVM }) {
   const chips = detailConditionChips(card)
-  const [openKind, setOpenKind] = useState<string | null>(null)
+  // Keyed by chip INDEX, not kind: two chips can legitimately share a kind (a
+  // claimed status + an unclaimed line), and a kind key would show the wrong
+  // chip's receipt while both read aria-expanded (review fix).
+  const [openIdx, setOpenIdx] = useState<number | null>(null)
 
   if (chips.length === 0) return null
 
-  const open = chips.find((c) => c.kind === openKind && c.receipt)
+  const open = openIdx != null && chips[openIdx]?.receipt ? chips[openIdx] : undefined
   const receipt = open?.receipt
 
   return (
@@ -36,8 +39,8 @@ export function DetailConditions({ card }: { card: CardVM }) {
             key={`${chip.kind}-${i}`}
             model={chip}
             interactive={!!chip.receipt}
-            isOpen={chip.receipt ? chip.kind === openKind : undefined}
-            onToggle={chip.receipt ? () => setOpenKind((k) => (k === chip.kind ? null : chip.kind)) : undefined}
+            isOpen={chip.receipt ? i === openIdx : undefined}
+            onToggle={chip.receipt ? () => setOpenIdx((k) => (k === i ? null : i)) : undefined}
             receiptRegionId={chip.receipt ? RECEIPT_ID : undefined}
           />
         ))}

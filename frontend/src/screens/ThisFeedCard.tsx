@@ -87,7 +87,11 @@ export function ThisFeedCard({
 
   const [recentOpen, setRecentOpen] = useState(false)
 
-  const showForecastZone = conditionsPending || regionConditions != null
+  // `null` is a DISCLOSED outage (phase 2 answered "unavailable") and must
+  // still render the zone with its unavailable line — only `undefined` (an
+  // older backend that never emits region conditions) hides it (review fix,
+  // S2 AC-2.3).
+  const showForecastZone = conditionsPending || regionConditions !== undefined
   const showRightNow = conditionsPending || currentChips.length > 0
 
   return (
@@ -200,20 +204,27 @@ export function ThisFeedCard({
                 )}
                 Past 3 days
               </button>
-              {recentOpen ? (
-                <div id="this-feed-recent">
+              {/* The id'd region always exists so aria-controls never dangles;
+                  only its CONTENTS are conditional (a11y review fix). */}
+              <div id="this-feed-recent">
+                {recentOpen ? (
+                  <>
                   <div className={styles.recentBox}>
                     <p className={styles.recentHead}>Rain, last 3 days</p>
                     <div className={styles.days}>
                       {recentPrecip.days.map((d) => {
-                        const wet = (d.amountIn ?? 0) > 0
+                        // Three-way honesty: a number is a reading, 0 is a
+                        // CONFIRMED dry day, null is a station gap — disclosed
+                        // as "—", never dressed as dry (S3 AC-3.1 per-day).
+                        const missing = d.amountIn == null
+                        const wet = !missing && d.amountIn! > 0
                         const RainGlyph = wet ? CloudRain : Sun
                         return (
                           <div key={d.label} className={styles.day}>
                             <span className={styles.dayLabel}>{d.label}</span>
                             <RainGlyph size={15} className={wet ? styles.dayGlyph.wet : styles.dayGlyph.dry} aria-hidden="true" focusable={false} />
                             <span className={wet ? styles.dayAmount.wet : styles.dayAmount.dry}>
-                              {wet ? `${d.amountIn}"` : 'dry'}
+                              {missing ? '—' : wet ? `${d.amountIn}"` : 'dry'}
                             </span>
                           </div>
                         )
@@ -232,8 +243,9 @@ export function ThisFeedCard({
                       </span>
                     </div>
                   ) : null}
-                </div>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
             </>
           ) : null}
         </div>
