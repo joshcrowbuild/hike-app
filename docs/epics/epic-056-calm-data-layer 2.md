@@ -1,6 +1,6 @@
 # Epic 056 — Calm data layer (session conditions cache · phase-2 budget · wire parsing)
 
-**Status:** DONE ✅
+**Status:** IN_PROGRESS
 **Phase:** 1 (frame-conditions wave, mechanics lane)
 **Spec refs:** `docs/design-system/frame-conditions-wave.md` §5 (wire), §6 (behavior); ground truth in §1
 
@@ -65,7 +65,7 @@ in-memory per session (key: id + scope); re-opening a Detail is fetch-free.
 ---
 
 ## Definition of Done
-- [x] All ACs covered by at least one passing test
-- [x] `npm run build` + `npm test` green
-- [x] Targeted review agent run; CRITICALs fixed (0 CRITICAL; 2 MODERATE fixed: collision-safe session keys, identity-change eviction)
-- [x] Committed and pushed
+- [ ] All ACs covered by at least one passing test
+- [ ] `npm run build` + `npm test` green
+- [ ] Targeted review agent run; CRITICALs fixed
+- [ ] Committed and pushed
