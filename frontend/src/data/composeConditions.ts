@@ -10,6 +10,12 @@
  *     silence — never a guessed disposition (Rule #1);
  *   - `conditionsPending` clears: the composed feed is the verified truth and
  *     is the ONLY shape `writeFeedCache`/`feedSnapshot` may persist (D4).
+ *   - `regionConditions`/`personalizationDegraded` (frame-conditions-wave §5,
+ *     Epic 056 S3 AC-3.2/3.3): the patch wins whenever it carries a value
+ *     (including an explicit `null` — a real "unavailable" signal from
+ *     phase 2), so a phase-1 shell's own value never survives past a phase-2
+ *     answer; only a field the patch genuinely omits (`undefined`) falls
+ *     back to whatever phase 1 already carried.
  */
 import type { ConditionsPatchVM, FeedVM } from './vm'
 
@@ -38,5 +44,8 @@ export function composeConditions(phase1: FeedVM, patch: ConditionsPatchVM): Fee
       }),
     heldBack: [...phase1.heldBack, ...patch.heldBack],
     conditionsPending: undefined,
+    regionConditions: patch.regionConditions !== undefined ? patch.regionConditions : phase1.regionConditions,
+    personalizationDegraded:
+      patch.personalizationDegraded !== undefined ? patch.personalizationDegraded : phase1.personalizationDegraded,
   }
 }

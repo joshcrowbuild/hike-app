@@ -770,6 +770,217 @@ describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
   })
 })
 
+describe('HttpPlannerClient severity + region_conditions wire mapping (Epic 056 S3 / frame-conditions-wave §5)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const ok = (json: unknown) =>
+    Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) } as Response)
+
+  function feedWithWarningSeverity(severity?: string): FeedResponse {
+    return {
+      query: '',
+      card_count: 1,
+      notices: [],
+      cards: [
+        {
+          canonical_id: 'a',
+          name: 'A',
+          distance_mi: 1,
+          lines: [],
+          unavailable: [],
+          warnings: [
+            {
+              text: 'weather alert',
+              source: 'NWS',
+              observed_at: new Date().toISOString(),
+              kind: 'weather',
+              ...(severity !== undefined ? { severity } : {}),
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  it('maps "heads_up"/"blocked" to headsUp/blocked, absent to undefined (AC-3.1)', async () => {
+    fetchMock.mockReturnValueOnce(ok(feedWithWarningSeverity('heads_up')))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).cards[0].warnings[0].severity).toBe('headsUp')
+
+    fetchMock.mockReturnValueOnce(ok(feedWithWarningSeverity('blocked')))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).cards[0].warnings[0].severity).toBe('blocked')
+
+    fetchMock.mockReturnValueOnce(ok(feedWithWarningSeverity(undefined)))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).cards[0].warnings[0].severity).toBeUndefined()
+  })
+
+  it('maps an unrecognised severity value to undefined rather than guessing an alarm level', async () => {
+    fetchMock.mockReturnValueOnce(ok(feedWithWarningSeverity('catastrophic')))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).cards[0].warnings[0].severity).toBeUndefined()
+  })
+
+  const FULL_REGION_CONDITIONS = {
+    forecast: {
+      target_key: 'sat',
+      days: [
+        { key: 'today', label: 'Today', high_f: 88, precip_pct: 0, short: 'Sunny' },
+        { key: 'sat', label: 'Sat', high_f: 68, precip_pct: 20, short: 'Partly sunny' },
+      ],
+      source: 'NWS',
+      fetched_at: '2026-07-16T22:00:00Z',
+    },
+    recent_precip: {
+      days: [
+        { label: 'Thu', amount_in: 0.8 },
+        { label: 'Fri', amount_in: 0.4 },
+        { label: 'Today', amount_in: 0.0 },
+      ],
+      total_48h_in: 1.2,
+      source: 'NWS observations',
+    },
+    mud: {
+      statement: 'Trails may be muddy',
+      evidence: '1.2" of rain in the last 48h',
+      source: 'NWS observations',
+      provenance: 'inferred',
+    },
+  }
+
+  it('maps a full region_conditions payload onto the VM — snake→camel, humanised fetchedAgo (AC-3.2)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-16T23:00:00Z'))
+    try {
+      fetchMock.mockReturnValueOnce(ok({ ...FEED, region_conditions: FULL_REGION_CONDITIONS }))
+      const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+      expect(result.regionConditions).toEqual({
+        forecast: {
+          targetKey: 'sat',
+          days: [
+            { key: 'today', label: 'Today', highF: 88, precipPct: 0, short: 'Sunny' },
+            { key: 'sat', label: 'Sat', highF: 68, precipPct: 20, short: 'Partly sunny' },
+          ],
+          source: 'NWS',
+          fetchedAgo: '1h ago',
+        },
+        recentPrecip: {
+          days: [
+            { label: 'Thu', amountIn: 0.8 },
+            { label: 'Fri', amountIn: 0.4 },
+            { label: 'Today', amountIn: 0.0 },
+          ],
+          total48hIn: 1.2,
+          source: 'NWS observations',
+        },
+        mud: {
+          statement: 'Trails may be muddy',
+          evidence: '1.2" of rain in the last 48h',
+          source: 'NWS observations',
+          provenance: 'inferred',
+        },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('maps an absent region_conditions field to undefined — an older backend (AC-3.2)', async () => {
+    fetchMock.mockReturnValueOnce(ok(FEED))
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.regionConditions).toBeUndefined()
+  })
+
+  it('maps an explicit null region_conditions to null — unavailable this run', async () => {
+    fetchMock.mockReturnValueOnce(ok({ ...FEED, region_conditions: null }))
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.regionConditions).toBeNull()
+  })
+
+  it('degrades each zone independently — a null forecast/mud never blanks a present recentPrecip', async () => {
+    fetchMock.mockReturnValueOnce(
+      ok({
+        ...FEED,
+        region_conditions: { forecast: null, recent_precip: FULL_REGION_CONDITIONS.recent_precip, mud: null },
+      }),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.regionConditions?.forecast).toBeNull()
+    expect(result.regionConditions?.mud).toBeNull()
+    expect(result.regionConditions?.recentPrecip?.total48hIn).toBe(1.2)
+  })
+
+  it('maps nullable high_f/precip_pct/short per forecast day without fabricating a value (AC-3.2)', async () => {
+    fetchMock.mockReturnValueOnce(
+      ok({
+        ...FEED,
+        region_conditions: {
+          forecast: {
+            target_key: 'today',
+            days: [{ key: 'today', label: 'Today', high_f: null, precip_pct: null, short: null }],
+            source: 'NWS',
+            fetched_at: '2026-07-16T22:00:00Z',
+          },
+          recent_precip: null,
+          mud: null,
+        },
+      }),
+    )
+    const result = await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(result.regionConditions?.forecast?.days[0]).toEqual({
+      key: 'today',
+      label: 'Today',
+      highF: null,
+      precipPct: null,
+      short: undefined,
+    })
+  })
+
+  it('maps personalization_degraded true/false/absent onto the VM (AC-3.3)', async () => {
+    fetchMock.mockReturnValueOnce(ok({ ...FEED, personalization_degraded: true }))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).personalizationDegraded).toBe(true)
+
+    fetchMock.mockReturnValueOnce(ok({ ...FEED, personalization_degraded: false }))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).personalizationDegraded).toBe(false)
+
+    fetchMock.mockReturnValueOnce(ok(FEED))
+    expect((await client().plan(PLAN_INPUT, ANON_SCOPE)).personalizationDegraded).toBeUndefined()
+  })
+
+  it('planConditions also maps severity/region_conditions/personalization_degraded onto the patch (AC-3.2/3.3)', async () => {
+    fetchMock.mockReturnValueOnce(
+      ok({
+        patches: [
+          {
+            canonical_id: 'ct:a',
+            lines: [],
+            warnings: [
+              {
+                text: 'weather alert',
+                source: 'NWS',
+                observed_at: new Date().toISOString(),
+                kind: 'weather',
+                severity: 'blocked',
+              },
+            ],
+          },
+        ],
+        region_conditions: FULL_REGION_CONDITIONS,
+        personalization_degraded: true,
+      }),
+    )
+    const patch = await client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a'])
+    expect(patch.patches[0].warnings[0].severity).toBe('blocked')
+    expect(patch.regionConditions?.mud?.statement).toBe('Trails may be muddy')
+    expect(patch.personalizationDegraded).toBe(true)
+  })
+})
+
 describe('HttpPlannerClient /plan shell ETag cache (Epic 052 WP-5 — cheap background revalidate)', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 

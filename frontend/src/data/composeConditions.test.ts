@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { composeConditions } from './composeConditions'
-import type { CardVM, ConditionsPatchVM, ConditionStatusVM, FeedVM } from './vm'
+import type { CardVM, ConditionsPatchVM, ConditionStatusVM, FeedVM, RegionConditionsVM } from './vm'
 
 const NOT_FETCHED: ConditionStatusVM[] = [
   { kind: 'weather', state: 'not-fetched' },
@@ -106,5 +106,48 @@ describe('composeConditions divergent-payload guard', () => {
     const composed = composeConditions(phase1(['a']), patch)
     // Never trade real silence for a blank: the honest not-fetched states stay.
     expect(composed.cards[0].conditions).toEqual(NOT_FETCHED)
+  })
+})
+
+describe('composeConditions — regionConditions/personalizationDegraded (Epic 056 S3 AC-3.2/3.3)', () => {
+  const REGION_CONDITIONS: RegionConditionsVM = {
+    forecast: { days: [{ key: 'today', label: 'Today', highF: 70, precipPct: 10 }], targetKey: 'today', source: 'NWS' },
+    recentPrecip: null,
+    mud: null,
+  }
+
+  it('the patch wins when it carries a regionConditions value', () => {
+    const base = phase1(['a'])
+    const patch: ConditionsPatchVM = { patches: [], heldBack: [], regionConditions: REGION_CONDITIONS }
+    const composed = composeConditions(base, patch)
+    expect(composed.regionConditions).toBe(REGION_CONDITIONS)
+  })
+
+  it('an explicit null on the patch (a real "unavailable" signal) still wins over a phase-1 value', () => {
+    const base: FeedVM = { ...phase1(['a']), regionConditions: REGION_CONDITIONS }
+    const patch: ConditionsPatchVM = { patches: [], heldBack: [], regionConditions: null }
+    const composed = composeConditions(base, patch)
+    expect(composed.regionConditions).toBeNull()
+  })
+
+  it('falls back to the phase-1 value when the patch genuinely omits the field', () => {
+    const base: FeedVM = { ...phase1(['a']), regionConditions: REGION_CONDITIONS }
+    const patch: ConditionsPatchVM = { patches: [], heldBack: [] }
+    const composed = composeConditions(base, patch)
+    expect(composed.regionConditions).toBe(REGION_CONDITIONS)
+  })
+
+  it('the patch wins for personalizationDegraded, including flipping true→false', () => {
+    const base: FeedVM = { ...phase1(['a']), personalizationDegraded: true }
+    const patch: ConditionsPatchVM = { patches: [], heldBack: [], personalizationDegraded: false }
+    const composed = composeConditions(base, patch)
+    expect(composed.personalizationDegraded).toBe(false)
+  })
+
+  it('falls back to the phase-1 personalizationDegraded when the patch omits it', () => {
+    const base: FeedVM = { ...phase1(['a']), personalizationDegraded: true }
+    const patch: ConditionsPatchVM = { patches: [], heldBack: [] }
+    const composed = composeConditions(base, patch)
+    expect(composed.personalizationDegraded).toBe(true)
   })
 })

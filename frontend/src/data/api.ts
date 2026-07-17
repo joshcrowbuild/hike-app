@@ -86,6 +86,15 @@ export interface CardWarningResponse {
   source: string
   observed_at: string
   kind: string
+  /**
+   * The curator's graded severity (frame-conditions-wave §5, Q7): "heads_up"
+   * (elevated but passable) | "blocked" (a genuine barrier). Additive/optional
+   * — absent on an older payload. Typed as `string`, not the literal union: an
+   * unrecognised future value must degrade to `undefined` at the mapping
+   * boundary (never a guessed severity, Rule #1), so the wire type stays
+   * permissive and the mapper is where the closed vocabulary is enforced.
+   */
+  severity?: string
 }
 
 /**
@@ -237,6 +246,72 @@ export interface SetAsideResponse {
   reasons: SetAsideReasonResponse[]
 }
 
+// ---- Region conditions (frame-conditions-wave §5) --------------------------
+
+/**
+ * One forecast day in the This-feed card's day toggle. `high_f`/`precip_pct`
+ * nullable — an NWS period can omit either; the mapper renders what exists
+ * and never fabricates the rest (Rule #1).
+ */
+export interface WireForecastDay {
+  key: string
+  label: string
+  high_f: number | null
+  precip_pct: number | null
+  short?: string | null
+}
+
+/**
+ * The frame-aligned weather forecast (Q18): NWS multi-day periods selected
+ * for the frame's `when`. `null` (on the parent `region_conditions.forecast`)
+ * when the NWS forecast itself is unavailable — weather is the ONLY
+ * forecastable kind (verified 2026-07-16).
+ */
+export interface WireForecast {
+  /** Which day is targeted (the toggle's default selection). */
+  target_key: string
+  days: WireForecastDay[]
+  source: string
+  fetched_at: string
+}
+
+export interface WireRecentPrecipDay {
+  label: string
+  amount_in: number | null
+}
+
+/** The collapsed "Past 3 days" rain reveal (Q19). */
+export interface WireRecentPrecip {
+  days: WireRecentPrecipDay[]
+  total_48h_in: number | null
+  source: string
+}
+
+/**
+ * The hedged mud inference (Q19): always "may", always quantified evidence,
+ * always inferred provenance — an inference never poses as a stated fact
+ * (Rule #7). `provenance` is typed `string` at the wire boundary (mirrors
+ * `severity`'s permissive-wire / closed-VM-vocabulary posture) — the mapper
+ * is where `'inferred'` becomes the enforced literal.
+ */
+export interface WireMud {
+  statement: string
+  evidence: string
+  source: string
+  provenance: string
+}
+
+/**
+ * Area-level conditions for the This-feed card (Q4/Q13). `null` until phase-2
+ * lands or when unavailable; each zone (`forecast`/`recent_precip`/`mud`) is
+ * independently nullable — degrade-and-disclose per zone, never all-or-nothing.
+ */
+export interface WireRegionConditions {
+  forecast?: WireForecast | null
+  recent_precip?: WireRecentPrecip | null
+  mud?: WireMud | null
+}
+
 export interface FeedResponse {
   query: string
   cards: FeedCardResponse[]
@@ -251,6 +326,14 @@ export interface FeedResponse {
    * /plan/conditions`. Absence must never be read as pending.
    */
   conditions_complete?: boolean
+  /**
+   * True when personal tuning could not run and ranking fell back to generic
+   * (frame-conditions-wave §5, Q8) — drives the dismissible SystemBanner.
+   * Additive/optional; absent → not degraded.
+   */
+  personalization_degraded?: boolean
+  /** Area-level conditions for the This-feed card (frame-conditions-wave §5). */
+  region_conditions?: WireRegionConditions | null
 }
 
 // ---- POST /search (Epic 038/B001: trail-name search, frontend half) ------
@@ -303,6 +386,10 @@ export interface PlanConditionsResponse {
   set_aside?: SetAsideResponse[]
   /** Requested ids the backend could not resolve at all — disclosed, never fabricated. */
   unknown?: string[]
+  /** Phase-2 truth of the personalization fallback (Q8), riding the patch. */
+  personalization_degraded?: boolean
+  /** Area-level conditions riding the phase-2 payload (frame-conditions-wave §5). */
+  region_conditions?: WireRegionConditions | null
 }
 
 // ---- GET /regions (Phase 2: config-driven origins) -----------------------

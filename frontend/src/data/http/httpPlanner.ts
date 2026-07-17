@@ -26,6 +26,12 @@ import type {
   SearchResponse,
   TrailDetailWaterSlice,
   WireElevationProfile,
+  WireForecast,
+  WireForecastDay,
+  WireMud,
+  WireRecentPrecip,
+  WireRecentPrecipDay,
+  WireRegionConditions,
   WireTrailWater,
 } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
@@ -38,8 +44,13 @@ import type {
   EpisodeVM,
   FeedError,
   FeedVM,
+  ForecastDayVM,
+  ForecastVM,
   LineVM,
+  MudVM,
   OutcomeVM,
+  RecentPrecipVM,
+  RegionConditionsVM,
   TrailGeo,
   TrailWaterVM,
   WarningVM,
@@ -160,6 +171,20 @@ function mapLines(lines: FeedLineResponse[]): LineVM[] {
   }))
 }
 
+/** Wire → VM severity (frame-conditions-wave §5, Q7). An unrecognised wire
+ *  value (a future addition this client doesn't know yet) degrades to
+ *  `undefined` rather than a guessed alarm level — the same closed-vocabulary
+ *  posture as `WIRE_CONDITION_STATES` below (Rule #1). */
+const WIRE_SEVERITY: Record<string, 'headsUp' | 'blocked'> = {
+  heads_up: 'headsUp',
+  blocked: 'blocked',
+}
+
+function mapSeverity(wire: string | undefined): 'headsUp' | 'blocked' | undefined {
+  if (!wire) return undefined
+  return WIRE_SEVERITY[wire]
+}
+
 /** Wire warnings → VM (source + humanised age), shared like `mapLines`. */
 function mapWarnings(warnings: CardWarningResponse[]): WarningVM[] {
   return warnings.map((w) => ({
@@ -168,7 +193,72 @@ function mapWarnings(warnings: CardWarningResponse[]): WarningVM[] {
     observedAgo: humanizedAge(w.observed_at),
     kind: w.kind,
     provenance: 'live',
+    severity: mapSeverity(w.severity),
   }))
+}
+
+/** Wire → VM for one forecast day (frame-conditions-wave §5). `highF`/`precipPct`
+ *  pass through their nullability as-is — a chip renders what exists and never
+ *  fabricates the rest (Rule #1). */
+function mapForecastDay(wire: WireForecastDay): ForecastDayVM {
+  return {
+    key: wire.key,
+    label: wire.label,
+    highF: wire.high_f ?? null,
+    precipPct: wire.precip_pct ?? null,
+    short: wire.short ?? undefined,
+  }
+}
+
+/** `undefined` (field absent, an older payload) stays `undefined`; an explicit
+ *  wire `null` (NWS forecast unavailable) stays `null`; only a real object is
+ *  mapped — the three-way null-safety `RegionConditionsVM` documents. */
+function mapForecast(wire: WireForecast | null | undefined): ForecastVM | null | undefined {
+  if (wire === undefined) return undefined
+  if (wire === null) return null
+  return {
+    days: (wire.days ?? []).map(mapForecastDay),
+    targetKey: wire.target_key,
+    source: wire.source,
+    fetchedAgo: humanizedAge(wire.fetched_at),
+  }
+}
+
+function mapRecentPrecipDay(wire: WireRecentPrecipDay): { label: string; amountIn: number | null } {
+  return { label: wire.label, amountIn: wire.amount_in ?? null }
+}
+
+function mapRecentPrecip(wire: WireRecentPrecip | null | undefined): RecentPrecipVM | null | undefined {
+  if (wire === undefined) return undefined
+  if (wire === null) return null
+  return {
+    days: (wire.days ?? []).map(mapRecentPrecipDay),
+    total48hIn: wire.total_48h_in ?? null,
+    source: wire.source,
+  }
+}
+
+/** `provenance` is always forced to the literal `'inferred'` — the VM's whole
+ *  point (Rule #7: an inference never poses as a stated fact) is a closed
+ *  vocabulary of exactly one value, so the wire's permissive `string` field is
+ *  never passed through unchecked. */
+function mapMud(wire: WireMud | null | undefined): MudVM | null | undefined {
+  if (wire === undefined) return undefined
+  if (wire === null) return null
+  return { statement: wire.statement, evidence: wire.evidence, source: wire.source, provenance: 'inferred' }
+}
+
+/** Wire → VM for the This-feed card's area-level conditions (frame-conditions-wave
+ *  §5). Shared by both `/plan` (via `mapFeed`) and the phase-2 patch (`planConditions`)
+ *  — one mapping truth, never two (Epic 040 AC-2.1's posture, applied here). */
+function mapRegionConditions(wire: WireRegionConditions | null | undefined): RegionConditionsVM | null | undefined {
+  if (wire === undefined) return undefined
+  if (wire === null) return null
+  return {
+    forecast: mapForecast(wire.forecast),
+    recentPrecip: mapRecentPrecip(wire.recent_precip),
+    mud: mapMud(wire.mud),
+  }
 }
 
 function mapFeed(res: FeedResponse): FeedVM {
@@ -214,6 +304,8 @@ function mapFeed(res: FeedResponse): FeedVM {
     // Two-phase (Epic 040): only an EXPLICIT false means pending — an older
     // backend omits the field and its feed is the verified single-pass truth.
     conditionsPending: res.conditions_complete === false || undefined,
+    regionConditions: mapRegionConditions(res.region_conditions),
+    personalizationDegraded: res.personalization_degraded,
   }
 }
 
@@ -493,6 +585,8 @@ export class HttpPlannerClient implements PlannerClient {
           name: s.name,
           reasons: s.reasons.map((r) => ({ text: r.text, source: r.source, kind: r.kind })),
         })),
+        regionConditions: mapRegionConditions(res.region_conditions),
+        personalizationDegraded: res.personalization_degraded,
       }
     } finally {
       clearTimeout(timer)
