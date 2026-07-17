@@ -11,7 +11,7 @@
  * Both share the coverage→chip rules so the two surfaces can never disagree.
  */
 import { foldLineValue, lineKey, providerShort, splitFeedConditions } from '../data/feedConditions'
-import type { CardVM, ConditionStatusVM, LineVM } from '../data/vm'
+import type { CardVM, ConditionStatusVM, HeldBackVM, LineVM } from '../data/vm'
 import type { ConditionChipModel, ConditionTier, ReceiptModel } from '../design/contracts'
 import { conditionKindLabels } from './ConditionStates'
 
@@ -240,4 +240,34 @@ export function detailConditionChips(card: CardVM): ConditionChipModel[] {
   }
 
   return chips
+}
+
+/**
+ * The blocked-day strip (live finding, the AQI-276 smoke day 2026-07-17):
+ * when a hazard holds EVERY card back, the hoist above has no cards to read
+ * and the strip would go empty exactly when it matters most — the reading
+ * that emptied the feed vanished from the scan layer. Derive the blocking
+ * readings from the held-back reasons themselves: one chip per kind, tinted
+ * `blocked` (they ARE the barrier that emptied the feed), value = the terse
+ * parenthetical when the reason carries one ("AQI 276"), else the cleaned
+ * reason lead. Sourced receipt; held-back reasons carry no timestamp, so the
+ * receipt shows the source alone rather than fabricating an age (§7.2).
+ */
+export function heldBackChips(heldBack: HeldBackVM[]): ConditionChipModel[] {
+  const byKind = new Map<string, { text: string; source: string }>()
+  for (const trail of heldBack)
+    for (const r of trail.reasons) if (!byKind.has(r.kind)) byKind.set(r.kind, r)
+  return Array.from(byKind.entries()).map(([kind, r]) => ({
+    kind,
+    valueText: parentheticalValue(r.text) ?? chipValueText(cleanEvidenceBody(r.text)),
+    state: 'fresh',
+    tier: 'blocked',
+    receipt: { source: providerShort(r.source) },
+  }))
+}
+
+/** "air quality hazardous (AQI 276)" → "AQI 276"; null when no terse paren exists. */
+function parentheticalValue(text: string): string | null {
+  const m = text.match(/\(([^)]{1,16})\)/)
+  return m ? m[1] : null
 }
