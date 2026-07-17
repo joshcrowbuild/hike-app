@@ -73,12 +73,20 @@ class CardWarning:
     provider name (`present.provider_short`, D3 consistency pass — a warning wears
     the same calm "NWS"/"USGS" label a condition line does, never the raw
     domain-suffixed source), `observed_at` the fact's fetch timestamp. Presentation
-    only: a warning never feeds ranking or confidence (Rule #2)."""
+    only: a warning never feeds ranking or confidence (Rule #2).
+
+    `severity` (frame-conditions-wave Q7 / epic-054 S1) grades HOW bad the hazard
+    is — `"heads_up"` (elevated, passable) or `"blocked"` (a genuine barrier) — so
+    the frontend can render two alarm levels instead of one. Defaults to
+    `"heads_up"`: any path that constructs a warning without an explicit grade is
+    ungraded, and an ungraded warning must never read louder than a graded one
+    (AC-1.3)."""
 
     kind: str  # ConditionKind.value the warning came from, e.g. "weather"
     text: str  # the cause alone, e.g. "weather alert: Extreme Heat Warning"
     source: str  # the fact's short provider name, e.g. "NWS"
     observed_at: datetime  # when the fact was fetched (the alert's observation time)
+    severity: str = "heads_up"  # "heads_up" | "blocked"
 
 
 @dataclass(frozen=True)
@@ -105,6 +113,27 @@ def _alerts(fact: VerifiedFact) -> list[str] | None:
     if alerts is None:
         return None  # unknown — the alerts sub-call failed
     return [a for a in alerts if isinstance(a, str)]
+
+
+# NWS alert severities graded "blocked" (frame-conditions-wave Q7/§5): a genuine
+# barrier, not just an elevated condition. Everything else the adapter can report
+# (Moderate/Minor/Unknown, or an event the severity map never named) is `heads_up`
+# — never louder than graded (AC-1.3).
+_BLOCKED_NWS_SEVERITIES = frozenset({"extreme", "severe"})
+
+
+def _alert_severity(fact: VerifiedFact, event: str) -> str:
+    """S1 AC-1.1: the graded severity for one NWS alert event, read off the fact's
+    `alert_severities` map (event -> "Extreme"/"Severe"/"Moderate"/"Minor"/
+    "Unknown"). Missing map, missing entry, or an unrecognized grade all degrade
+    to `"heads_up"` — the ungraded default (AC-1.3), never a fabricated "blocked"."""
+    value = fact.value
+    severities = value.get("alert_severities") if isinstance(value, dict) else None
+    if not isinstance(severities, dict):
+        return "heads_up"
+    raw = severities.get(event)
+    graded = raw.strip().lower() if isinstance(raw, str) else ""
+    return "blocked" if graded in _BLOCKED_NWS_SEVERITIES else "heads_up"
 
 
 def _aqi(fact: VerifiedFact) -> int | None:
@@ -198,13 +227,15 @@ def evaluate_guardrails(
             for event in dict.fromkeys(alerts):
                 # A VERIFIED active alert shows ON the card, prominently — it never
                 # hides the trail (decision of 2026-07-01; safety is presentation,
-                # never a ranking penalty — rule #2).
+                # never a ranking penalty — rule #2). Severity (epic-054 S1) grades
+                # HOW bad: Extreme/Severe -> blocked, else heads_up.
                 warnings.append(
                     CardWarning(
                         "weather",
                         f"weather alert: {event}",
                         provider_short(weather.source),
                         weather.fetched_at,
+                        severity=_alert_severity(weather, event),
                     )
                 )
 
@@ -212,6 +243,10 @@ def evaluate_guardrails(
     if air is not None:
         aqi = _aqi(air)
         if aqi is not None and aqi >= AQI_BLOCK:
+            # AQI >= AQI_BLOCK stays a HARD block (unchanged, S1 AC-1.2 "existing
+            # thresholds unchanged") — the trail is set aside entirely, never
+            # reaches a CardWarning, so there is no "blocked"-severity warning to
+            # grade here; the qualitative "blocked" reading is the removal itself.
             blocks.append(BlockReason("air", f"air quality hazardous (AQI {aqi})", air.source))
         elif aqi is not None and aqi >= AQI_WARN:
             warnings.append(
@@ -220,6 +255,7 @@ def evaluate_guardrails(
                     f"air quality elevated (AQI {aqi})",
                     provider_short(air.source),
                     air.fetched_at,
+                    severity="heads_up",
                 )
             )
 
@@ -237,6 +273,7 @@ def evaluate_guardrails(
                     f"{count} active-fire {detection_word} nearby (thermal anomalies)",
                     provider_short(fire.source),
                     fire.fetched_at,
+                    severity="heads_up",
                 )
             )
 
@@ -262,6 +299,11 @@ def evaluate_guardrails(
                     f"{category.lower()} alert: {title}{scope}",
                     provider_short(closures.source),
                     closures.fetched_at,
+                    # Every closures warning grades "blocked" (S1 AC-1.3): the
+                    # adapter already keeps only the Closure/Danger categories, so
+                    # every one here is a genuine barrier, not just an elevated
+                    # condition.
+                    severity="blocked",
                 )
             )
 
