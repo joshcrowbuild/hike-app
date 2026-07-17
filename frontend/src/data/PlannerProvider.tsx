@@ -39,6 +39,34 @@ interface PlannerContextValue {
   client: PlannerClient
   scope: ScopeContext
   feedSnapshot: MutableRefObject<FeedSnapshot | null>
+  /**
+   * Session-lifetime composed-feed reuse (Epic 056 S1), keyed by the SAME
+   * `feedKey` `useFeed`'s fetch effect keys off — so the cache key and the
+   * fetch-triggering key can never diverge, exactly like `feedCache.ts`'s
+   * storage key. Lives on the PROVIDER, not inside `useFeed`'s own ref:
+   * Home → Detail → back unmounts and remounts whatever calls `useFeed`, and
+   * a ref scoped to that hook would reset on every remount — defeating the
+   * whole point (`PlannerProvider` itself stays mounted at the app root
+   * across that navigation). Holds ONLY a phase-2-composed (or classic
+   * complete) feed — never a phase-1 shell or an error — mirroring
+   * `feedSnapshot`'s D4 write-gate.
+   */
+  feedSession: MutableRefObject<Map<string, FeedVM>>
+  /**
+   * Session-lifetime `getCard` deep-link reuse (Epic 056 S4), keyed
+   * `id::scopeKey`. Only a definitively-resolved card is ever cached — a
+   * notfound/error is never memoized, so a failed open always gets a fresh
+   * attempt on the next open (AC-4.2).
+   */
+  cardSession: MutableRefObject<Map<string, CardVM>>
+  /**
+   * Session-lifetime `GET /trail/{id}` water reuse (Epic 056 S4), keyed
+   * `id::scopeKey`. Only a non-null answer is cached: a null result is
+   * ambiguous between "no water mapped here" and a transient failure, so
+   * caching it would risk freezing a real outage as a permanent-for-the-session
+   * silence — never memoized (AC-4.2's "failures degrade exactly as today").
+   */
+  waterSession: MutableRefObject<Map<string, TrailWaterVM>>
 }
 
 const PlannerContext = createContext<PlannerContextValue | null>(null)
@@ -59,6 +87,27 @@ export interface PlannerProviderProps {
 
 export function PlannerProvider({ scope, client, fallback, children }: PlannerProviderProps) {
   const feedSnapshot = useRef<FeedSnapshot | null>(null)
+  // Epic 056 S1/S4: the three session-lifetime reuse caches. Plain `useRef`s
+  // on THIS component (not `useFeed`/`useCard`/`useTrailWater`'s own refs) —
+  // `PlannerProvider` is the ancestor that stays mounted across Home/Detail
+  // navigation, so these survive exactly the remounts the calm-data-layer
+  // wave targets.
+  const feedSession = useRef<Map<string, FeedVM>>(new Map())
+  const cardSession = useRef<Map<string, CardVM>>(new Map())
+  const waterSession = useRef<Map<string, TrailWaterVM>>(new Map())
+  // Evict all three on any identity change: a signed-out member's derived
+  // feed/cards/water must not linger in the heap for the tab's lifetime —
+  // the in-memory analog of `evictFeedCache` in AuthProvider.signOut. Keys
+  // are scope-inclusive, so this is hygiene (Rule #5), not serving
+  // correctness; it also bounds growth across sign-in/sign-out cycles.
+  const sessionViewer = useRef(scope.viewerId)
+  useEffect(() => {
+    if (sessionViewer.current === scope.viewerId) return
+    sessionViewer.current = scope.viewerId
+    feedSession.current.clear()
+    cardSession.current.clear()
+    waterSession.current.clear()
+  }, [scope.viewerId])
   // The config-driven origin catalog (Phase 2) — HttpPlannerClient needs the
   // resolved coords before its first /plan call, so real (non-injected) HTTP mode
   // gates rendering until this has loaded (below); mock and injected-client (tests,
@@ -71,6 +120,9 @@ export function PlannerProvider({ scope, client, fallback, children }: PlannerPr
       client: client ?? (useMockDefault ? new MockPlannerClient() : new HttpPlannerClient(baseUrl, coordsMap)),
       scope,
       feedSnapshot,
+      feedSession,
+      cardSession,
+      waterSession,
     }),
     [client, scope, coordsMap],
   )
@@ -109,6 +161,14 @@ function usePlanner(): PlannerContextValue {
  *  refetches when grants change — not just when the viewer does (R5). */
 function scopeKeyOf(scope: ScopeContext): string {
   return `${scope.viewerId}|${scope.grantedIds.join(',')}`
+}
+
+/** Collision-safe composite key for the id+scope session caches. Naive
+ *  `${id}::${scopeKey}` concatenation can collide (ids allow any non-control
+ *  char; viewer ids allow `:`), so use the same escape discipline as
+ *  `feedKey` — JSON keeps each operand's boundary unforgeable. */
+function sessionKey(id: string, scopeKey: string): string {
+  return JSON.stringify([id, scopeKey])
 }
 
 export function useIsAnonymous(): boolean {
@@ -224,25 +284,61 @@ function hydrateStale(input: PlanInput, scope: ScopeContext): { feed: FeedVM; st
 }
 
 /** The calm patch-failure disclosure (Epic 040 AC-3.4): the cards stay usable,
- *  the gap is named, retry re-posts the conditions call only. */
+ *  the gap is named, retry re-posts the conditions call only. Reused verbatim
+ *  by the Epic 056 S2 presentation budget below — the same surface, whether
+ *  the patch genuinely failed or just hasn't answered within the budget. */
 const CONDITIONS_ERROR: FeedError = {
   kind: 'partial',
   message: 'Couldn’t verify current conditions — try again.',
 }
 
+/**
+ * Phase-2 presentation budget (frame-conditions-wave §6, Epic 056 S2 / Q9):
+ * chips render `revalidating` immediately on phase-1 paint; past this budget
+ * — without the patch having answered — the surface flips to the same
+ * degraded `revalidateError` view a genuine failure shows, while the
+ * underlying fetch keeps running against its own, much longer, cold-start
+ * budget (`PLAN_TIMEOUT_MS` in `httpPlanner.ts`, 60s). A late success past
+ * this mark still composes and clears the degrade (AC-2.2) — this is a
+ * PRESENTATION timer, never an abort. ~12s per the decision spec: long
+ * enough that a normal answer never trips it, short enough that "Checking
+ * current conditions…" never reads as stuck.
+ */
+const PHASE2_BUDGET_MS = 12_000
+
 export function useFeed(input: PlanInput): FeedState {
-  const { client, scope, feedSnapshot } = usePlanner()
-  // Two-phase retry seam (Epic 040 AC-3.4): set ONLY while a conditions patch
-  // has failed and its phase-1 feed is still on screen — `reload()` then
-  // re-posts the conditions call alone instead of re-running the whole plan.
-  // Cleared on every effect re-key (a retune invalidates the pending patch).
+  const { client, scope, feedSnapshot, feedSession } = usePlanner()
+  // Two-phase retry seam (Epic 040 AC-3.4, extended by Epic 056 S2): set
+  // while a conditions patch has failed OR the S2 presentation budget has
+  // elapsed, its phase-1 feed still on screen — `reload()` then re-posts the
+  // conditions call alone instead of re-running the whole plan. Cleared on
+  // every effect re-key (a retune invalidates the pending patch) and on a
+  // late success (the patch is no longer pending, so a later `reload()` must
+  // fall through to `forceReload` instead of a stale phase-2-only retry).
   const retryConditions = useRef<(() => void) | null>(null)
+  // Epic 056 S1: set by `reload()` to bypass the session store on THIS effect
+  // run only — the Refresh affordance and banner retry must always force a
+  // real phase-1 + phase-2 fetch, never repaint from a warm in-memory entry.
+  // Read-and-cleared at the top of the effect so a later plain re-key (a
+  // retune) never inherits a stale force from an unrelated prior reload.
+  const forceReload = useRef(false)
   // Lazy initializer, not an effect-only seed (FLASH IS REAL): an effect runs
   // AFTER the first commit, so seeding only there would still paint one
   // skeleton frame first. This runs once, synchronously, before that first
   // commit — so ANY viewer (Epic 052 WP-5) with a fresh cache entry never
-  // sees the skeleton at all (AC-3.1).
+  // sees the skeleton at all (AC-3.1). Epic 056 S1: a warm session-store hit
+  // for this exact key takes priority over the stale localStorage seed below
+  // — it's the real, current composed feed, not a neutralised repaint.
   const [state, setState] = useState<FeedInternalState>(() => {
+    const sessionHit = feedSession.current.get(feedKey(input, scope))
+    if (sessionHit) {
+      return {
+        status: sessionHit.cards.length === 0 ? 'empty' : 'ready',
+        feed: sessionHit,
+        stale: false,
+        revalidating: false,
+      }
+    }
     const seed = hydrateStale(input, scope)
     return seed
       ? { status: 'ready', feed: seed.feed, stale: true, revalidating: true, staleAsOf: seed.staleAsOf }
@@ -260,12 +356,36 @@ export function useFeed(input: PlanInput): FeedState {
     // A re-key (retune/reload) invalidates any failed patch from the previous
     // frame — its phase-1 feed is no longer the one on screen.
     retryConditions.current = null
+    const forced = forceReload.current
+    forceReload.current = false
+
+    // Epic 056 S1 (AC-1.1/1.3): a warm session-store hit for this exact key
+    // reuses the composed feed in memory with NO fetch at all — unless this
+    // run is a forced reload (the Refresh affordance / banner retry), which
+    // deliberately bypasses the store and falls through to a real fetch.
+    const sessionHit = !forced ? feedSession.current.get(key) : undefined
+    if (sessionHit) {
+      setLoadingStage('initial')
+      setState({
+        status: sessionHit.cards.length === 0 ? 'empty' : 'ready',
+        feed: sessionHit,
+        stale: false,
+        revalidating: false,
+      })
+      // Same reason `useCard`'s in-memory resolution needs this: a Detail tap
+      // right after a session-store repaint must resolve from THIS feed, not
+      // whatever the single most-recent fetch happened to be.
+      feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed: sessionHit }
+      return
+    }
+
     // Re-hydrate on every key change too (a retune), not just on mount — the
     // same helper the lazy initializer used, so mount and retune behave
     // identically.
     const seed = hydrateStale(input, scope)
     let reassureTimer: ReturnType<typeof setTimeout> | undefined
     let coldstartTimer: ReturnType<typeof setTimeout> | undefined
+    let phase2BudgetTimer: ReturnType<typeof setTimeout> | undefined
     if (seed) {
       // Cards are already on screen — skip the loading-copy ladder entirely
       // (no reassure/coldstart timers to arm).
@@ -309,29 +429,63 @@ export function useFeed(input: PlanInput): FeedState {
             // the conditions call never blocks this paint). A stale S3 seed is
             // replaced here with `stale` cleared — the cards are no longer
             // stale, only unverified (D4's ladder, step 2).
+            //
+            // Epic 056 S2: each call is tagged with a sequence number so a
+            // stale in-flight call (superseded by a later retry) can never
+            // land its result after a newer attempt has already resolved or
+            // re-armed the budget — the same posture as `useSearch`'s
+            // `requestId` guard elsewhere in this file.
+            let phase2Seq = 0
             const runConditions = () => {
+              const mySeq = ++phase2Seq
               retryConditions.current = null
               setState({ status: 'ready', feed, stale: false, revalidating: true })
+              clearTimeout(phase2BudgetTimer)
+              phase2BudgetTimer = setTimeout(() => {
+                if (!live || phase2Seq !== mySeq) return
+                // The presentation budget elapsed with no answer yet — degrade
+                // the surface honestly (AC-2.2) while the underlying fetch
+                // keeps running under its own, much longer, abort budget. A
+                // late success below still composes and clears this.
+                retryConditions.current = runConditions
+                setState({
+                  status: 'ready',
+                  feed,
+                  stale: false,
+                  revalidating: false,
+                  revalidateError: CONDITIONS_ERROR,
+                })
+              }, PHASE2_BUDGET_MS)
               planConditions(input, scope, feed.cards.map((c) => c.id))
                 .then((patch) => {
-                  if (!live) return
+                  clearTimeout(phase2BudgetTimer)
+                  if (!live || phase2Seq !== mySeq) return
+                  // A late success (arriving after the budget already
+                  // degraded the surface) must un-arm the retry the budget
+                  // armed — the feed is now genuinely composed, not pending.
+                  retryConditions.current = null
                   const composed = composeConditions(feed, patch)
                   // D4 write-gate: ONLY the composed (phase-2-complete) feed
-                  // reaches the snapshot or the stale-paint cache — an
-                  // all-not-fetched frame must never re-serve later as "your
-                  // last visit", and Detail must never resolve a card from a
-                  // half-composed feed.
+                  // reaches the snapshot, the stale-paint cache, or the
+                  // session store — an all-not-fetched frame must never
+                  // re-serve later as "your last visit", and Detail must
+                  // never resolve a card from a half-composed feed.
                   feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed: composed }
                   // Epic 052 WP-5: any viewer write-throughs now, not just
                   // anonymous — `writeFeedCache` lands it in `scope.viewerId`'s
                   // own namespaced slot (Rule #5), never a shared one.
                   if (composed.cards.length > 0) writeFeedCache(key, composed, scope.viewerId)
+                  // Epic 056 S1: the ONLY write site for a two-phase resolve —
+                  // reused on the very next remount of this exact key with no
+                  // further `/plan`/`/plan/conditions` call.
+                  feedSession.current.set(key, composed)
                   if (composed.cards.length === 0)
                     setState({ status: 'empty', feed: composed, stale: false, revalidating: false })
                   else setState({ status: 'ready', feed: composed, stale: false, revalidating: false })
                 })
                 .catch(() => {
-                  if (!live) return
+                  clearTimeout(phase2BudgetTimer)
+                  if (!live || phase2Seq !== mySeq) return
                   // The phase-1 cards stay usable and keep their honest
                   // silence; the gap is disclosed, never a blank or a
                   // fake-clear (AC-3.4). Retry re-posts phase 2 only.
@@ -355,6 +509,10 @@ export function useFeed(input: PlanInput): FeedState {
             feedSnapshot.current = { scopeKey: scopeKeyOf(scope), tuning: input.tuning, feed }
             // Epic 052 WP-5: any viewer write-throughs (own namespaced slot).
             if (feed.cards.length > 0) writeFeedCache(key, feed, scope.viewerId)
+            // Epic 056 S1: the classic single-pass/already-complete path also
+            // seeds the session store — a warm key never refetches even when
+            // it never had a phase-2 patch to begin with.
+            feedSession.current.set(key, feed)
             if (feed.cards.length === 0) setState({ status: 'empty', feed, stale: false, revalidating: false })
             else setState({ status: 'ready', feed, stale: false, revalidating: false })
           }
@@ -390,21 +548,27 @@ export function useFeed(input: PlanInput): FeedState {
       retryConditions.current = null
       clearTimeout(reassureTimer)
       clearTimeout(coldstartTimer)
+      clearTimeout(phase2BudgetTimer)
     }
     // key encodes the meaningful inputs; client/scope are stable per provider.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, nonce])
 
   const reload = () => {
-    // A failed conditions patch retries the conditions call ONLY (Epic 040
-    // AC-3.4) — the ranked cards on screen are already the fresh phase-1
-    // result; re-running the whole plan would re-spend the rank and could
-    // reshuffle what the user is looking at.
+    // A failed (or S2-budget-degraded) conditions patch retries the
+    // conditions call ONLY (Epic 040 AC-3.4 / Epic 056 AC-2.3) — the ranked
+    // cards on screen are already the fresh phase-1 result; re-running the
+    // whole plan would re-spend the rank and could reshuffle what the user is
+    // looking at.
     const retry = retryConditions.current
     if (retry) {
       retry()
       return
     }
+    // Otherwise this is the Refresh affordance / banner retry on an already-
+    // resolved feed (Epic 056 AC-1.3): force a real phase-1 + phase-2 fetch,
+    // bypassing the session store this one time.
+    forceReload.current = true
     setNonce((n) => n + 1)
   }
 
@@ -420,7 +584,7 @@ export interface CardState {
 }
 
 export function useCard(id: string | null): CardState {
-  const { client, scope, feedSnapshot } = usePlanner()
+  const { client, scope, feedSnapshot, cardSession } = usePlanner()
   const [state, setState] = useState<{ status: CardStatus; card?: CardVM }>({ status: 'loading' })
   const [nonce, setNonce] = useState(0)
   const scopeKey = scopeKeyOf(scope)
@@ -446,6 +610,17 @@ export function useCard(id: string | null): CardState {
       return
     }
 
+    // Epic 056 S4: a true deep-link this exact id+scope has already resolved
+    // once this session — reuse it, fetch-free (AC-4.1). Only a definitive
+    // resolve is ever stored here (see the success branch below), so a prior
+    // notfound/error always gets a fresh attempt (AC-4.2).
+    const cardCacheKey = sessionKey(id, scopeKey)
+    const cached = cardSession.current.get(cardCacheKey)
+    if (cached) {
+      setState({ status: 'ready', card: cached })
+      return
+    }
+
     // A true deep-link / an id outside the current set: refetch with the
     // CURRENT tuning (the snapshot's, if one exists for this scope) — never a
     // rebuilt default that resets facets the user actually has dialed in.
@@ -454,6 +629,7 @@ export function useCard(id: string | null): CardState {
       .getCard(id, scope, tuning)
       .then((card) => {
         if (!live) return
+        if (card) cardSession.current.set(cardCacheKey, card)
         setState(card ? { status: 'ready', card } : { status: 'notfound' })
       })
       .catch(() => {
@@ -466,7 +642,15 @@ export function useCard(id: string | null): CardState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, scopeKey, nonce])
 
-  return { ...state, reload: () => setNonce((n) => n + 1) }
+  return {
+    ...state,
+    reload: () => {
+      // A manual reload must always retry, never repaint a cached miss —
+      // evict this id+scope's entry (if any) before bumping the nonce.
+      if (id) cardSession.current.delete(sessionKey(id, scopeKey))
+      setNonce((n) => n + 1)
+    },
+  }
 }
 
 /**
@@ -476,9 +660,15 @@ export function useCard(id: string | null): CardState {
  * renders a null answer as NO row (CDP-02 not-fetched) — water is enrichment
  * on the commitment view, never a dependency. `loading` lets the surface
  * simply wait (render nothing) rather than flash an answer in.
+ *
+ * Epic 056 S4: a non-null answer for this exact id+scope is cached in-memory
+ * for the session, so re-opening the same Detail is fetch-free (AC-4.1). A
+ * null result is never cached — it's ambiguous between "this region has no
+ * water mapped" and a transient failure, and every failure must still degrade
+ * exactly as it does today (AC-4.2): a fresh attempt on the next open.
  */
 export function useTrailWater(id: string | null): { water: TrailWaterVM | null; loading: boolean } {
-  const { client, scope } = usePlanner()
+  const { client, scope, waterSession } = usePlanner()
   const [state, setState] = useState<{ water: TrailWaterVM | null; loading: boolean }>({
     water: null,
     loading: true,
@@ -491,10 +681,20 @@ export function useTrailWater(id: string | null): { water: TrailWaterVM | null; 
       return
     }
     let live = true
+    const waterCacheKey = sessionKey(id, scopeKey)
+    const cached = waterSession.current.get(waterCacheKey)
+    if (cached) {
+      setState({ water: cached, loading: false })
+      return
+    }
     setState({ water: null, loading: true })
     client
       .trailWater(id, scope)
-      .then((water) => live && setState({ water, loading: false }))
+      .then((water) => {
+        if (!live) return
+        if (water) waterSession.current.set(waterCacheKey, water)
+        setState({ water, loading: false })
+      })
       .catch(() => live && setState({ water: null, loading: false }))
     return () => {
       live = false

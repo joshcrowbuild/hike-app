@@ -1,14 +1,15 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
-import { PlannerProvider, useCard, useFeed, useSearch } from './PlannerProvider'
+import { PlannerProvider, useCard, useFeed, useSearch, useTrailWater } from './PlannerProvider'
+import type { FeedState } from './PlannerProvider'
 import { ANON_SCOPE } from './api'
 import type { ScopeContext } from './api'
 import { feedKey, readFeedCache, resetFeedCacheForTests, writeFeedCache } from './feedCache'
 import { COLDSTART_MS, REASSURE_MS } from './loadingStages'
 import type { PlanInput, PlannerClient } from './source'
-import type { CardVM, FeedVM } from './vm'
+import type { CardVM, FeedVM, TrailWaterVM } from './vm'
 import type { TuningState } from '../types'
 
 // A successful anonymous resolve now write-throughs to the feed cache
@@ -162,6 +163,30 @@ function useHarness(input: PlanInput, cardId: string | null) {
   const feed = useFeed(input)
   const card = useCard(cardId)
   return { feed, card }
+}
+
+/**
+ * Epic 056 S1: a probe that renders nothing, just reports each `useFeed`
+ * resolution via a callback — used with `render`/`rerender` (NOT
+ * `renderHook`) so the probe itself can be truly unmounted and remounted
+ * while the surrounding `<PlannerProvider>` stays mounted, exactly like Home
+ * unmounting when Detail opens and remounting when the user goes back.
+ * `renderHook`'s own wrapper persists for the ENTIRE hook lifetime (it never
+ * unmounts on a plain `rerender`), so it can't simulate this — only a real
+ * conditional child under a stable provider can.
+ */
+function FeedProbe({ input, onState }: { input: PlanInput; onState: (s: FeedState) => void }) {
+  const state = useFeed(input)
+  onState(state)
+  return null
+}
+
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
 
 describe('useFeed error state (NNG: calm, actionable, never the raw exception)', () => {
@@ -772,5 +797,410 @@ describe('useSearch — the Home Omnibox trail-name search hook (Epic 038/B001)'
     })
     expect(result.current.query).toBe('second')
     expect(result.current.feed?.cards[0].id).toBe('new-query-trail')
+  })
+})
+
+describe('Epic 056 S1 — session-lifetime conditions reuse', () => {
+  function providerWith(client: PlannerClient, child: ReactNode) {
+    return (
+      <PlannerProvider scope={ANON_SCOPE} client={client}>
+        {child}
+      </PlannerProvider>
+    )
+  }
+
+  it('AC-1.1: remounting the feed consumer under the same scope+frame key reuses the composed feed — no refetch', async () => {
+    const plan = vi.fn().mockResolvedValue(feedWithCard('old-rag'))
+    const client = { plan } as unknown as PlannerClient
+    let latest: FeedState | undefined
+    const onState = (s: FeedState) => {
+      latest = s
+    }
+
+    const { rerender, unmount } = render(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+    expect(latest?.status).toBe('ready')
+    expect(plan).toHaveBeenCalledTimes(1)
+
+    // "Navigate to Detail": the feed consumer unmounts; the provider stays up.
+    rerender(providerWith(client, null))
+    // "Navigate back": remount it under the identical key.
+    rerender(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+
+    expect(plan).toHaveBeenCalledTimes(1) // still 1 — fetch-free remount
+    expect(latest?.status).toBe('ready')
+    expect(latest?.stale).toBe(false)
+    expect(latest?.revalidating).toBe(false)
+    expect(latest?.feed?.cards[0].id).toBe('old-rag')
+    unmount()
+  })
+
+  it('AC-1.2: a retuned key never reuses another key\'s entry — revisiting the ORIGINAL key afterwards is still fetch-free', async () => {
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce(feedWithCard('old-rag'))
+      .mockResolvedValueOnce(feedWithCard('big-schloss'))
+    const client = { plan } as unknown as PlannerClient
+    let latest: FeedState | undefined
+    const onState = (s: FeedState) => {
+      latest = s
+    }
+    const retuned: PlanInput = { tuning: { ...TUNING, party: 'friends' } }
+
+    const { rerender } = render(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+    expect(latest?.feed?.cards[0].id).toBe('old-rag')
+
+    // A genuinely different frame — a real second fetch.
+    rerender(providerWith(client, <FeedProbe input={retuned} onState={onState} />))
+    await flushMicrotasks()
+    expect(plan).toHaveBeenCalledTimes(2)
+    expect(latest?.feed?.cards[0].id).toBe('big-schloss')
+
+    // Unmount, then remount under the ORIGINAL key — a warm session entry,
+    // never a third fetch, even though the most recent key was `retuned`.
+    rerender(providerWith(client, null))
+    rerender(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+
+    expect(plan).toHaveBeenCalledTimes(2) // no third call
+    expect(latest?.feed?.cards[0].id).toBe('old-rag')
+  })
+
+  it('AC-1.3: reload() bypasses the session store and forces a fresh /plan', async () => {
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce(feedWithCard('old-rag'))
+      .mockResolvedValueOnce(feedWithCard('old-rag-v2'))
+    const client = { plan } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flushMicrotasks()
+    expect(plan).toHaveBeenCalledTimes(1)
+    expect(result.current.feed?.cards[0].id).toBe('old-rag')
+
+    await act(async () => {
+      result.current.reload()
+    })
+    await flushMicrotasks()
+
+    expect(plan).toHaveBeenCalledTimes(2) // forced, not a session-store repaint
+    expect(result.current.feed?.cards[0].id).toBe('old-rag-v2')
+  })
+
+  it('AC-1.4: a warm session-store hit takes priority over a stale localStorage seed on the same key — never the neutralised repaint', async () => {
+    // Seed the cross-session localStorage cache with a DIFFERENT card than
+    // what the (mocked) live fetch will return — a hit on this seed would be
+    // visibly distinguishable from the session-store's real composed feed.
+    writeFeedCache(feedKey(PLAN_INPUT, ANON_SCOPE), feedWithCard('stale-cached'), ANON_SCOPE.viewerId)
+    const plan = vi.fn().mockResolvedValue(feedWithCard('fresh-session'))
+    const client = { plan } as unknown as PlannerClient
+    let latest: FeedState | undefined
+    const onState = (s: FeedState) => {
+      latest = s
+    }
+
+    const { rerender } = render(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+    expect(latest?.feed?.cards[0].id).toBe('fresh-session')
+    expect(plan).toHaveBeenCalledTimes(1)
+
+    rerender(providerWith(client, null))
+    rerender(providerWith(client, <FeedProbe input={PLAN_INPUT} onState={onState} />))
+    await flushMicrotasks()
+
+    // The session-store hit paints instantly with the FRESH feed — never the
+    // stale/neutralised localStorage seed, and never a second fetch.
+    expect(latest?.status).toBe('ready')
+    expect(latest?.stale).toBe(false)
+    expect(latest?.feed?.cards[0].id).toBe('fresh-session')
+    expect(plan).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Epic 056 S2 — phase-2 presentation budget (~12s degrade, late success recovers)', () => {
+  const NOT_FETCHED = [{ kind: 'weather', state: 'not-fetched' as const }]
+
+  function phase1Feed(ids: string[]): FeedVM {
+    return {
+      query: '',
+      cards: ids.map((id) => ({
+        id,
+        name: id,
+        distanceMi: 1,
+        conditionLines: [],
+        conditions: [...NOT_FETCHED],
+        warnings: [],
+      })),
+      notices: [],
+      setAside: [],
+      heldBack: [],
+      readiness: { on: false, state: 'off' },
+      dataSource: 'live',
+      conditionsPending: true,
+    }
+  }
+
+  const PATCH = {
+    patches: [
+      {
+        id: 'old-rag',
+        conditionLines: [
+          { text: 'Clear skies', source: 'nws', confidence: 'stated' as const, provenance: 'live' as const },
+        ],
+        conditions: [{ kind: 'weather', state: 'present' as const, source: 'NWS', checkedAgo: 'just now' }],
+        warnings: [],
+      },
+    ],
+    heldBack: [],
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('AC-2.1/2.2: degrades to revalidateError only at the ~12s budget, not before — a late success still composes and clears it', async () => {
+    let resolvePatch!: (p: unknown) => void
+    const patchPending = new Promise((r) => {
+      resolvePatch = r
+    })
+    const planConditions = vi.fn().mockReturnValue(patchPending)
+    const client = {
+      plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag'])),
+      planConditions,
+    } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flushMicrotasks()
+    expect(result.current.revalidating).toBe(true) // AC-2.1: exposed immediately, never blocking
+    expect(result.current.revalidateError).toBeUndefined()
+
+    await act(async () => {
+      vi.advanceTimersByTime(11_999)
+    })
+    expect(result.current.revalidateError).toBeUndefined() // not yet — under budget
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(result.current.revalidating).toBe(false)
+    expect(result.current.revalidateError).toBeDefined()
+    // The phase-1 cards stay up — never blanked (AC-2.2).
+    expect(result.current.feed?.cards[0].id).toBe('old-rag')
+    expect(result.current.feed?.cards[0].conditions?.[0].state).toBe('not-fetched')
+
+    // The underlying fetch is still running; a late success still composes
+    // and clears the degrade.
+    await act(async () => {
+      resolvePatch(PATCH)
+      await patchPending
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.revalidateError).toBeUndefined()
+    expect(result.current.feed?.cards[0].conditionLines[0].text).toBe('Clear skies')
+    expect(result.current.feed?.cards[0].conditions?.[0].state).toBe('present')
+  })
+
+  it('AC-2.3: reload() after the budget degrade re-posts the conditions call only — never a full re-plan', async () => {
+    const plan = vi.fn().mockResolvedValue(phase1Feed(['old-rag']))
+    let firstPatchNeverResolves!: (p: unknown) => void
+    const firstPending = new Promise((r) => {
+      firstPatchNeverResolves = r
+    })
+    const planConditions = vi.fn().mockReturnValueOnce(firstPending).mockResolvedValueOnce(PATCH)
+    const client = { plan, planConditions } as unknown as PlannerClient
+    const { result } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flushMicrotasks()
+    await act(async () => {
+      vi.advanceTimersByTime(12_000)
+    })
+    expect(result.current.revalidateError).toBeDefined()
+    expect(plan).toHaveBeenCalledTimes(1)
+    expect(planConditions).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      result.current.reload()
+    })
+    await flushMicrotasks()
+
+    expect(plan).toHaveBeenCalledTimes(1) // phase 1 never re-ran
+    expect(planConditions).toHaveBeenCalledTimes(2) // phase 2 retried
+    expect(result.current.revalidateError).toBeUndefined()
+    expect(result.current.feed?.cards[0].conditionLines[0].text).toBe('Clear skies')
+    void firstPatchNeverResolves // the original call is simply abandoned by this test, never asserted on again
+  })
+
+  it('clears the budget timer on unmount — no leaked timer, no stray late setState', async () => {
+    const patchPending = new Promise(() => {
+      /* deliberately never resolves within this test */
+    })
+    const planConditions = vi.fn().mockReturnValue(patchPending)
+    const client = {
+      plan: vi.fn().mockResolvedValue(phase1Feed(['old-rag'])),
+      planConditions,
+    } as unknown as PlannerClient
+    const { result, unmount } = renderHook(() => useFeed(PLAN_INPUT), { wrapper: wrapperWith(client) })
+
+    await flushMicrotasks()
+    expect(result.current.revalidating).toBe(true)
+    expect(vi.getTimerCount()).toBeGreaterThan(0) // the budget timer is armed
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0) // cleaned up, not leaked
+
+    // Advancing past the budget after unmount must not throw (no setState on
+    // an unmounted component).
+    expect(() => vi.advanceTimersByTime(12_000)).not.toThrow()
+  })
+})
+
+describe('Epic 056 S4 — Detail fetch calm (getCard deep-link cache)', () => {
+  it('AC-4.1: a deep-linked getCard resolve is reused on a later reopen with no second network call', async () => {
+    const card: CardVM = { id: 'hidden-trail', name: 'Hidden Trail', distanceMi: 2, conditionLines: [], warnings: [] }
+    const getCard = vi.fn().mockResolvedValue(card)
+    const client = { plan: vi.fn().mockResolvedValue(feedWithCard('other')), getCard } as unknown as PlannerClient
+
+    const { result, rerender } = renderHook(
+      (props: { cardId: string | null }) => useHarness(PLAN_INPUT, props.cardId),
+      { wrapper: wrapperWith(client), initialProps: { cardId: null as string | null } },
+    )
+    await flushMicrotasks()
+
+    rerender({ cardId: 'hidden-trail' })
+    await flushMicrotasks()
+    expect(result.current.card.status).toBe('ready')
+    expect(getCard).toHaveBeenCalledTimes(1)
+
+    // "Leave Detail" (id → null), then "reopen" the SAME id.
+    rerender({ cardId: null })
+    rerender({ cardId: 'hidden-trail' })
+    await flushMicrotasks()
+
+    expect(result.current.card.status).toBe('ready')
+    expect(result.current.card.card?.id).toBe('hidden-trail')
+    expect(getCard).toHaveBeenCalledTimes(1) // still 1 — fetch-free reopen
+  })
+
+  it('AC-4.2: a getCard failure is never cached — the next open retries, degrading exactly as today', async () => {
+    const resolvedCard: CardVM = {
+      id: 'hidden-trail',
+      name: 'Hidden Trail',
+      distanceMi: 2,
+      conditionLines: [],
+      warnings: [],
+    }
+    const getCard = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(resolvedCard)
+    const client = { plan: vi.fn().mockResolvedValue(feedWithCard('other')), getCard } as unknown as PlannerClient
+
+    const { result, rerender } = renderHook(
+      (props: { cardId: string | null }) => useHarness(PLAN_INPUT, props.cardId),
+      { wrapper: wrapperWith(client), initialProps: { cardId: null as string | null } },
+    )
+    await flushMicrotasks()
+
+    rerender({ cardId: 'hidden-trail' })
+    await flushMicrotasks()
+    expect(result.current.card.status).toBe('error')
+
+    rerender({ cardId: null })
+    rerender({ cardId: 'hidden-trail' })
+    await flushMicrotasks()
+
+    expect(getCard).toHaveBeenCalledTimes(2) // retried, never stuck on a cached failure
+    expect(result.current.card.status).toBe('ready')
+  })
+
+  it('reload() evicts the cached entry and forces a fresh getCard call', async () => {
+    const card: CardVM = { id: 'hidden-trail', name: 'Hidden Trail', distanceMi: 2, conditionLines: [], warnings: [] }
+    const getCard = vi.fn().mockResolvedValue(card)
+    const client = { plan: vi.fn().mockResolvedValue(feedWithCard('other')), getCard } as unknown as PlannerClient
+    const { result } = renderHook(() => useCard('hidden-trail'), { wrapper: wrapperWith(client) })
+
+    await flushMicrotasks()
+    expect(getCard).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      result.current.reload()
+    })
+    await flushMicrotasks()
+
+    expect(getCard).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Epic 056 S4 — useTrailWater session cache', () => {
+  it('AC-4.1: a resolved (non-null) water answer is reused on the next reopen — fetch-free', async () => {
+    const water: TrailWaterVM = {
+      state: 'sources',
+      basis: 'route',
+      radiusM: 500,
+      source: 'OSM',
+      sources: [],
+      provenance: 'live',
+    }
+    const trailWater = vi.fn().mockResolvedValue(water)
+    const client = { plan: vi.fn(), trailWater } as unknown as PlannerClient
+
+    const { result, rerender } = renderHook((props: { id: string | null }) => useTrailWater(props.id), {
+      wrapper: wrapperWith(client),
+      initialProps: { id: 'old-rag' as string | null },
+    })
+    await flushMicrotasks()
+    expect(result.current.water).toEqual(water)
+    expect(trailWater).toHaveBeenCalledTimes(1)
+
+    rerender({ id: null }) // "leave Detail"
+    rerender({ id: 'old-rag' }) // "reopen Detail"
+    await flushMicrotasks()
+
+    expect(result.current.water).toEqual(water)
+    expect(trailWater).toHaveBeenCalledTimes(1) // no second fetch
+  })
+
+  it('AC-4.2: a null answer is never cached — every open retries, degrading exactly as today', async () => {
+    const trailWater = vi.fn().mockResolvedValue(null)
+    const client = { plan: vi.fn(), trailWater } as unknown as PlannerClient
+
+    const { result, rerender } = renderHook((props: { id: string | null }) => useTrailWater(props.id), {
+      wrapper: wrapperWith(client),
+      initialProps: { id: 'old-rag' as string | null },
+    })
+    await flushMicrotasks()
+    expect(result.current.water).toBeNull()
+    expect(trailWater).toHaveBeenCalledTimes(1)
+
+    rerender({ id: null })
+    rerender({ id: 'old-rag' })
+    await flushMicrotasks()
+
+    expect(trailWater).toHaveBeenCalledTimes(2) // retried, never frozen on a cached miss
+  })
+
+  it('a genuine none-nearby answer (a real positive result, not a failure) is also reused', async () => {
+    const water: TrailWaterVM = {
+      state: 'none-nearby',
+      basis: 'route',
+      radiusM: 500,
+      source: 'OSM',
+      sources: [],
+      provenance: 'live',
+    }
+    const trailWater = vi.fn().mockResolvedValue(water)
+    const client = { plan: vi.fn(), trailWater } as unknown as PlannerClient
+
+    const { result, rerender } = renderHook((props: { id: string | null }) => useTrailWater(props.id), {
+      wrapper: wrapperWith(client),
+      initialProps: { id: 'old-rag' as string | null },
+    })
+    await flushMicrotasks()
+
+    rerender({ id: null })
+    rerender({ id: 'old-rag' })
+    await flushMicrotasks()
+
+    expect(result.current.water).toEqual(water)
+    expect(trailWater).toHaveBeenCalledTimes(1)
   })
 })
