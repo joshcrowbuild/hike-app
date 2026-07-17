@@ -176,7 +176,8 @@ def test_derive_recent_precip_display_days_are_oldest_to_today() -> None:
 def test_derive_recent_precip_uses_one_consistent_field_never_mixed() -> None:
     # One observation reports precipitationLastHour, another only Last3Hours — the
     # station's Last3Hours entries are never summed alongside LastHour (double-
-    # count avoidance): the finest field found ANYWHERE wins, exclusively.
+    # count avoidance): one field wins EXCLUSIVELY (majority-populated, finest
+    # on a tie — here 1:1, so the finer LastHour).
     observations = [
         _obs(1, 25.4, field="precipitationLastHour"),  # 1.0in — counted
         _obs(2, 999.0, field="precipitationLast3Hours"),  # ignored: wrong field
@@ -184,6 +185,34 @@ def test_derive_recent_precip_uses_one_consistent_field_never_mixed() -> None:
     rp = derive_recent_precip(_raw(observations=observations), now=_NOW, tz=_UTC)
     assert rp is not None
     assert rp.total_48h_in == 1.0
+
+
+def test_derive_recent_precip_majority_field_wins_over_a_stray_finer_reading() -> None:
+    # Review finding: a single stray fine-grained reading must not discard the
+    # station's DOMINANT signal — 3 of 4 observations report Last6Hours, so
+    # Last6Hours wins and the real rain is counted, not the lone 0.1" LastHour.
+    observations = [
+        _obs(2, 12.7, field="precipitationLast6Hours"),  # 0.5in — counted
+        _obs(8, 12.7, field="precipitationLast6Hours"),  # 0.5in — counted
+        _obs(14, 12.7, field="precipitationLast6Hours"),  # 0.5in — counted
+        _obs(1, 2.54, field="precipitationLastHour"),  # stray: ignored
+    ]
+    rp = derive_recent_precip(_raw(observations=observations), now=_NOW, tz=_UTC)
+    assert rp is not None
+    assert rp.total_48h_in == 1.5
+
+
+def test_derive_recent_precip_gap_day_is_null_never_confirmed_dry() -> None:
+    # Review finding: a display day with ZERO qualifying observations (station
+    # outage) must read as disclosed-missing (None), never a stated "0.0 —
+    # confirmed dry". Here the middle day has no observation at all.
+    observations = [
+        _obs(1, 12.7),  # Today: 0.5in
+        _obs(50, 12.7),  # the oldest display day: 0.5in
+    ]
+    rp = derive_recent_precip(_raw(observations=observations), now=_NOW, tz=_UTC)
+    assert rp is not None
+    assert [d.amount_in for d in rp.days] == [0.5, None, 0.5]
 
 
 def test_derive_recent_precip_falls_back_to_a_coarser_field_when_thats_all_the_station_has() -> (

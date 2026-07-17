@@ -25,10 +25,6 @@ log = logging.getLogger(__name__)
 REGION_TZ_ENV = "ADVENTURE_REGION_TZ"
 DEFAULT_REGION_TZ = "America/New_York"
 
-# The four tuning `when` keys the frontend's `TuningState['when']` enum sends
-# (frame-conditions-wave §5) — kept here as the one place that names them.
-WHEN_KEYS = ("tomorrowMorning", "weekendMorning", "weekendAfternoon", "fullDay")
-
 WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 

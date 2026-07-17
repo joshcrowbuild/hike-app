@@ -234,14 +234,22 @@ def _obs_amount(obs: Mapping[str, Any], field: str) -> float | None:
 
 
 def _station_precip_field(observations: Sequence[Mapping[str, Any]]) -> str | None:
-    """The one accumulation field this station's fetched observations actually
-    populate, finest-first — `None` when NONE of them ever carry ANY of the
-    three (S3 AC-3.1: "the station reports no precip fields" -> null, never
-    zero-filled)."""
-    for field in _PRECIP_FIELDS:
-        if any(_obs_amount(obs, field) is not None for obs in observations):
-            return field
-    return None
+    """The one accumulation field this station's fetched observations MOSTLY
+    populate — majority-of-observations wins, finest on a tie — so a single
+    stray reading in a finer field can never silently discard the station's
+    dominant signal (a lone `precipitationLastHour` among a window of 6-hour
+    reports would otherwise zero out real rain and suppress the mud read).
+    `None` when NONE of them ever carry ANY of the three (S3 AC-3.1: "the
+    station reports no precip fields" -> null, never zero-filled). Still one
+    field exclusively per window — overlapping accumulation windows must never
+    be summed together (double-count)."""
+    counts = {
+        field: sum(1 for obs in observations if _obs_amount(obs, field) is not None)
+        for field in _PRECIP_FIELDS
+    }
+    # `_PRECIP_FIELDS` is finest-first, so max() keeps the finest on a tie.
+    best = max(_PRECIP_FIELDS, key=lambda field: counts[field])
+    return best if counts[best] > 0 else None
 
 
 def derive_recent_precip(
@@ -269,7 +277,11 @@ def derive_recent_precip(
     display_dates = [
         today - timedelta(days=offset) for offset in range(_RECENT_PRECIP_DISPLAY_DAYS - 1, -1, -1)
     ]
-    buckets: dict[date, float] = dict.fromkeys(display_dates, 0.0)
+    # A day only gets a NUMBER once at least one qualifying observation lands
+    # on it: a station-gap day stays `None` (disclosed missing) rather than a
+    # fabricated "confirmed dry 0.0" (S3 AC-3.1 held per-day, not just
+    # per-station).
+    buckets: dict[date, float | None] = dict.fromkeys(display_dates)
     cutoff = now - timedelta(hours=_TOTAL_WINDOW_HOURS)
     total_48h = 0.0
     for obs in valid:
@@ -281,17 +293,20 @@ def derive_recent_precip(
             continue
         local_date = observed_at.astimezone(tz).date()
         if local_date in buckets:
-            buckets[local_date] += amount
+            buckets[local_date] = (buckets[local_date] or 0.0) + amount
         if cutoff <= observed_at <= now:
             total_48h += amount
 
     days = tuple(
         RecentPrecipDay(
             label="Today" if d == today else WEEKDAY_LABELS[d.weekday()],
-            amount_in=round(buckets[d], 1),
+            amount_in=None if (bucket := buckets[d]) is None else round(bucket, 1),
         )
         for d in display_dates
     )
+    # The rolling total sums only OBSERVED rain: with a partial window it can
+    # only under-state (the mud read stays conservative), and rain that WAS
+    # observed is real — a partial total may still honestly trip the threshold.
     return RecentPrecip(days=days, total_48h_in=round(total_48h, 1), source=PRECIP_SOURCE)
 
 
