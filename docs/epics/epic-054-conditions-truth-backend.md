@@ -1,6 +1,6 @@
 # Epic 054 — Conditions truth backend (severity · frame-date forecast · recent precip · mud)
 
-**Status:** IN_PROGRESS
+**Status:** DONE ✅
 **Phase:** 1 (frame-conditions wave, backend lane)
 **Spec refs:** `docs/design-system/frame-conditions-wave.md` §1 (Q7/Q18/Q19), §5 (the pinned wire schema)
 
@@ -92,6 +92,24 @@ is fabrication).
 scenarios (dry, trace, soaking, missing-data) + a threshold-rationale note in
 this epic.
 
+**Threshold rationale (0.5" / 48h default, builder note 2026-07-16):** 0.5" in
+two days is the rough point at which unpaved trail tread on the region's
+common substrates (clay-loam singletrack, packed forest-service gravel) stops
+draining faster than it's compacted, and standing/soft mud becomes the typical
+hiker-visible condition rather than the exception — trace amounts (≤0.2") are
+routinely absorbed or evaporated within a day on well-drained trail and don't
+warrant a caution. This is a judgment call, not a hydrological model: it is
+intentionally conservative (errs toward under-warning — a light rain doesn't
+trip it) given the statement is hedged ("may") rather than categorical, and it
+is a single global constant (no soil-type/grade/canopy signal exists in the
+corpus yet to differentiate by trail). `ADVENTURE_MUD_PRECIP_48H_IN` exists
+precisely so an operator can retune this per-region once real outcome data
+(hiker reports, a wetter/drier region) is available — the four fixture
+scenarios (dry / trace 0.2" / soaking 1.2" / missing-data) in
+`tests/test_region_conditions.py` pin the boundary behavior a retune must
+preserve. A field eval against real conditions is a follow-up, not part of
+this backend wave.
+
 ### S5 — Wire + personalization flag
 
 **AC-5.1:** `region_conditions` rides `/plan/conditions` (and the classic
@@ -104,7 +122,7 @@ back to generic ranking (Q8).
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test
-- [ ] `make check` green
-- [ ] Targeted review agent run; CRITICALs fixed
-- [ ] Committed and pushed
+- [x] All ACs covered by at least one passing test
+- [x] `make check` green (1902 passed)
+- [x] Targeted review agent run; CRITICALs fixed (desk review)
+- [x] Committed and pushed
