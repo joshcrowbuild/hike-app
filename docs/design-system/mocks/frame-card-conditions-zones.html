@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The frame card + conditions, temporally aligned</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#eceae4; --card:#fbfaf7; --line:#e0dbd1; --line-soft:#ebe7de;
+    --ink:#16191d; --ink-2:#3c424a; --ink-3:#5e636a; --ink-4:#9c978c;
+    --terra:#9a4424; --terra-bg:rgba(154,68,36,.09); --terra-line:rgba(154,68,36,.34);
+    --amber:#846515; --amber-bg:rgba(132,101,21,.10);
+    --sky:#2f6d84; --sky-bg:rgba(47,109,132,.08);
+    --sans:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace; --serif:'IBM Plex Serif',Georgia,serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--page);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.45;padding:34px 18px 100px}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-size:25px;font-weight:600;letter-spacing:-.012em;margin-bottom:6px}
+  .sub{font-size:15px;color:var(--ink-2);max-width:70ch;margin-bottom:8px}
+  .idea{font-size:13.5px;color:var(--ink-3);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin:14px 0 32px;max-width:76ch}
+  .idea b{color:var(--ink);font-weight:600}
+  h2{font-size:16px;font-weight:600;margin:36px 0 3px}
+  .h2sub{font-size:13px;color:var(--ink-3);margin-bottom:16px;max-width:64ch}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:760px){.row{grid-template-columns:1fr}}
+  .tag{font-size:11px;font-weight:600;color:var(--ink-3);margin-bottom:8px}
+  .tag.on{color:var(--terra)}
+
+  /* ---- the merged "This feed" card ---- */
+  .pass{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;max-width:400px}
+  .pass-h{display:flex;justify-content:space-between;align-items:center;padding:13px 15px 11px}
+  .pass-t{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+  .change{font-size:12.5px;color:var(--terra);cursor:pointer;text-decoration:underline}
+  .facets{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;padding:0 15px 14px}
+  .cell .k{font-size:10.5px;color:var(--ink-4);display:block;margin-bottom:1px}
+  .cell .v{font-size:14px;color:var(--ink);font-weight:500}
+  .perf{border-top:1px solid var(--line-soft)}
+
+  .zone{padding:12px 15px}
+  .zone + .zone{border-top:1px solid var(--line-soft)}
+  .zone-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px}
+  .zone-label{font-size:12.5px;color:var(--ink-2);display:flex;align-items:center;gap:7px}
+  .zone-label .lead{font-weight:600;color:var(--ink)}
+  .zone-label .caveat{color:var(--ink-4);font-size:11.5px}
+  .fx-tag{font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--sky);background:var(--sky-bg);border-radius:5px;padding:2px 6px}
+  .cur-tag{font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3);background:rgba(0,0,0,.04);border-radius:5px;padding:2px 6px}
+
+  /* day toggle */
+  .daytog{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .daytog button{border:0;background:none;font-family:var(--sans);font-size:11.5px;color:var(--ink-3);padding:4px 10px;cursor:pointer;border-right:1px solid var(--line-soft)}
+  .daytog button:last-child{border-right:0}
+  .daytog button.on{background:var(--ink);color:#faf9f6}
+
+  /* condition chips */
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .cx{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-soft);border-radius:8px;padding:6px 9px;background:#fff;font-size:13px;line-height:1}
+  .cx svg{flex:none;color:var(--ink-3)}
+  .cx .v{font-family:var(--mono);font-weight:500;color:var(--ink)}
+  .cx.na{background:transparent;border-style:dashed} .cx.na .v{color:var(--ink-4);font-style:italic;font-weight:400} .cx.na svg{color:var(--ink-4)}
+  .cx.hz{background:var(--terra-bg);border-color:var(--terra-line)} .cx.hz svg,.cx.hz .v{color:var(--terra)}
+  .cx.amber{background:var(--amber-bg);border-color:rgba(132,101,21,.3)} .cx.amber svg,.cx.amber .v{color:var(--amber)}
+
+  .note{font-size:12.5px;color:var(--ink-2);margin-top:12px;line-height:1.55;max-width:44ch}
+  .note b{color:var(--ink);font-weight:600}
+  .divider{height:1px;background:var(--line);margin:40px 0 0}
+
+  /* ---- sentence treatments ---- */
+  .sent-box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 17px;max-width:400px}
+  .s1{font-family:var(--serif);font-size:18px;line-height:1.6;color:var(--ink-2)}
+  .s1 .n{color:var(--ink);font-weight:500;border-bottom:1.5px solid var(--terra-line);cursor:pointer;padding-bottom:1px}
+  .s1 .n:hover{border-bottom-color:var(--terra);background:var(--terra-bg)}
+  .s2{font-size:16px;line-height:1.85;color:var(--ink-2)}
+  .s2 .chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:2px 8px;font-size:14px;cursor:pointer;font-weight:500}
+  .s2 .chip:hover{border-color:var(--ink-3)}
+  .s2 .chip svg{color:var(--ink-4)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>The boarding pass, holding conditions for the day you’re actually going</h1>
+  <p class="sub">One card = your plan <i>and</i> its conditions. The trick you called out: align conditions to the frame’s <b>when</b>, and split what can be forecast from what can only be “right now.”</p>
+  <div class="idea">
+    <b>Today is Monday. Your frame says “Weekend morning.”</b> So weather forecasts to <b>Saturday</b> — not today. AQI and streamflow <i>can’t</i> be forecast that far, so they show as “right now,” honestly flagged that they may change by Saturday. This replaces the separate ribbon (Q4) — the area conditions now live inside this card.
+  </div>
+
+  <!-- SECTION 1 -->
+  <h2>The merged card — forecast zone + right-now zone</h2>
+  <p class="h2sub">Facets on top, then two condition zones: what we can forecast for your day, and what we can only read right now.</p>
+  <div class="row">
+    <div>
+      <div class="tag on">the card</div>
+      <div class="pass">
+        <div class="pass-h"><span class="pass-t">This feed</span><span class="change">Change</span></div>
+        <div class="facets">
+          <span class="cell"><span class="k">When</span><span class="v">Weekend morning</span></span>
+          <span class="cell"><span class="k">From</span><span class="v">Front Royal</span></span>
+          <span class="cell"><span class="k">Party</span><span class="v">Solo</span></span>
+          <span class="cell"><span class="k">Effort</span><span class="v">Moderate</span></span>
+        </div>
+        <!-- forecast zone -->
+        <div class="zone perf">
+          <div class="zone-h">
+            <span class="zone-label"><span class="lead">Sat forecast</span> <span class="fx-tag">forecast</span></span>
+            <span class="daytog"><button>Today</button><button class="on">Sat</button><button>Sun</button></span>
+          </div>
+          <div class="chips">
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg><span class="v">68°F</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 13a4 4 0 0 0-7.5-2 3.2 3.2 0 0 0-.5 6.3h8a2.9 2.9 0 0 0 0-4.3Z"/><path d="M8 19v2M12 19v2M16 19v2"/></svg><span class="v">20% rain</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg><span class="v">breezy</span></span>
+          </div>
+        </div>
+        <!-- current zone -->
+        <div class="zone">
+          <div class="zone-h">
+            <span class="zone-label"><span class="lead">Right now</span> <span class="caveat">· Mon, may change by Sat</span></span>
+            <span class="cur-tag">current</span>
+          </div>
+          <div class="chips">
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg><span class="v">AQI 54</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg><span class="v">flowing</span></span>
+            <span class="cx hz"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12"/><path d="M4 12h16M9 20V10M15 20V10"/></svg><span class="v">ridge closed</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>Two honest zones.</b> Blue “forecast” = knowable for Saturday. Gray “current” = a right-now reading that may shift. The closed-ridge chip is terracotta (Q5–Q7) because a warning owns it — closures are known now and rarely change back.</div>
+    </div>
+
+    <!-- toggle state -->
+    <div>
+      <div class="tag">same card, weather toggled to “Today”</div>
+      <div class="pass">
+        <div class="pass-h"><span class="pass-t">This feed</span><span class="change">Change</span></div>
+        <div class="facets">
+          <span class="cell"><span class="k">When</span><span class="v">Weekend morning</span></span>
+          <span class="cell"><span class="k">From</span><span class="v">Front Royal</span></span>
+          <span class="cell"><span class="k">Party</span><span class="v">Solo</span></span>
+          <span class="cell"><span class="k">Effort</span><span class="v">Moderate</span></span>
+        </div>
+        <div class="zone perf">
+          <div class="zone-h">
+            <span class="zone-label"><span class="lead">Today</span> <span class="cur-tag" style="margin-left:2px">now</span></span>
+            <span class="daytog"><button class="on">Today</button><button>Sat</button><button>Sun</button></span>
+          </div>
+          <div class="chips">
+            <span class="cx amber"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg><span class="v">88°F</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 13a4 4 0 0 0-7.5-2 3.2 3.2 0 0 0-.5 6.3h8a2.9 2.9 0 0 0 0-4.3Z"/></svg><span class="v">0% rain</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg><span class="v">calm</span></span>
+          </div>
+        </div>
+        <div class="zone">
+          <div class="zone-h">
+            <span class="zone-label"><span class="lead">Right now</span></span>
+            <span class="cur-tag">current</span>
+          </div>
+          <div class="chips">
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5M3 12h15a2.5 2.5 0 1 1-2.5 2.5M3 16h9a2.5 2.5 0 1 1-2.5 2.5"/></svg><span class="v">AQI 54</span></span>
+            <span class="cx"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/></svg><span class="v">flowing</span></span>
+            <span class="cx hz"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12"/><path d="M4 12h16M9 20V10M15 20V10"/></svg><span class="v">ridge closed</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>The weather toggle.</b> Today it’s a hot 88°F (amber heads-up), but you’re going Saturday when it’s a mild 68°F. Flip between them; the “right now” zone doesn’t move — those readings are only ever current.</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- SECTION 2 -->
+  <h2>The sentence treatment, fixed</h2>
+  <p class="h2sub">You’re right — the dotted underline reads as a spellcheck error. Two cleaner ways to signal “editable,” if we go sentence over card (or blend them).</p>
+  <div class="row">
+    <div>
+      <div class="tag">a — solid hairline underline (a link, not an error)</div>
+      <div class="sent-box">
+        <div class="s1"><span class="n">Weekend mornings</span>, from <span class="n">Front Royal</span>, going <span class="n">solo</span> at a <span class="n">moderate</span> pace.</div>
+      </div>
+      <div class="note">A steady terracotta underline reads as “link,” never “misspelled.” Warmest, most editorial.</div>
+    </div>
+    <div>
+      <div class="tag">b — soft inline chips</div>
+      <div class="sent-box">
+        <div class="s2">
+          <span class="chip">Weekend mornings <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          from <span class="chip">Front Royal <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>,
+          <span class="chip">solo <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          <span class="chip">moderate <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+        </div>
+      </div>
+      <div class="note">Each value is a bordered chip with a caret — unmistakably a control. Loses some prose warmth, gains clarity (this is basically the Filter Bar, sentence-shaped).</div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:36px;max-width:76ch"><b>Open threads to settle next:</b> which forecast day defaults (nearest weekend day? let you pick?) · does the “right-now” zone hide entirely when your frame is many days out (nothing honest to say yet)? · do the per-card trails stay silent (Q2) now that the area card carries all this? My lean is yes — the card is the single home for conditions, cards stay clean.</p>
+</div>
+</body>
+</html>

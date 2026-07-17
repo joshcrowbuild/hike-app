@@ -103,6 +103,50 @@ export interface SystemBannerModel {
   message: string
 }
 
+// ---- Condition chips (frame-conditions-wave §3, Q3/Q5/Q9) ------------------
+
+/**
+ * The scannable strip's per-chip render state (frame-conditions-wave Q3/Q9).
+ * Orthogonal to `ConditionTier`: `state` says how the READING renders
+ * (skeleton / value / dashed), `tier` says whether a WARNING tints it
+ * (Q5 — amber headsUp / terracotta blocked; `clear` = neutral).
+ *
+ * - `pending`     — phase 2 in flight: skeleton shimmer, muted placeholder.
+ * - `fresh`       — a sourced value within its per-kind horizon.
+ * - `stale`       — past its horizon: dashed border, muted value, clock + age
+ *                   in GRAY (staleness is unknown-family; it spends no alarm
+ *                   color — Law 7).
+ * - `unavailable` — probed, no source answered: dashed border, italic "—".
+ */
+export type ChipState = 'pending' | 'fresh' | 'stale' | 'unavailable'
+
+/** One glyph+value chip in the conditions strip (This-feed card + Detail). */
+export interface ConditionChipModel {
+  /** Condition kind: "weather" | "air" | "fire" | "water" | "closures" | "permits". */
+  kind: string
+  /** The mono value text ("68°F", "AQI 54", "closed", "—"). */
+  valueText: string
+  state: ChipState
+  /** Warning tint (Q5/Q7): max severity of this kind's warnings; 'clear' = neutral. */
+  tier: ConditionTier
+  /** Humanised age, shown only when `state === 'stale'`. */
+  ageText?: string
+  /** The tap-to-reveal receipt (Q6) — present only where a sourced reading exists. */
+  receipt?: ReceiptModel
+}
+
+/**
+ * The one quiet receipt line below the Detail strip (Q6): revealed by tapping
+ * a chip, swapped on each tap, collapsed by default. Never a popover.
+ */
+export interface ReceiptModel {
+  source: string
+  /** Humanised relative age — never a raw datetime (§7.2). */
+  ageText?: string
+  /** e.g. "single source" | "2 sources agree" — corroboration in plain words. */
+  confidenceText?: string
+}
+
 // Re-exported so WP-2/WP-3 have one import for the provenance vocabulary
 // alongside the tier/coverage/model types above, without reaching into vm.ts
 // directly for it.

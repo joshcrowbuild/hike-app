@@ -73,6 +73,22 @@ export const vars = createGlobalThemeContract(
     focus: {
       ring: 'focus-ring',
     },
+    // The interactive/editable affordance role (frame-conditions-wave Q14/Q15):
+    // slate text or a soft slate fill on tappable frame facets. Always visible
+    // at rest (mobile-first, no hover-dependence). Never a condition signal —
+    // hazards stay signal.headsUp/blocked, unknowns gray.
+    interactive: {
+      fg: 'interactive-fg',
+      bg: 'interactive-bg',
+      bgPress: 'interactive-bg-press',
+    },
+    // The temporal "forecast" tag + wet-day accent (frame-conditions-wave Q13):
+    // marks a knowable future reading vs a current one. Informational only —
+    // not an affordance, not a severity tier.
+    forecast: {
+      fg: 'forecast-fg',
+      bg: 'forecast-bg',
+    },
 
     // --- primitive scales: no semantic layer, used directly per §6 ---
     space: {

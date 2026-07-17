@@ -43,6 +43,17 @@
   "focus": {
     "ring": { "$value": "{color.neutral.900}", "$type": "color" }
   },
+  "interactive": {
+    "$description": "NEW (frame-conditions-wave Q14/Q15) — the one interactive/editable affordance role: slate text or a soft slate fill on tappable frame facets and value tokens. Always visible at rest (no hover-dependence, mobile-first). Never a condition signal: hazards stay amber/terracotta, unknowns gray.",
+    "fg": { "$value": "{color.slate.600}", "$type": "color" },
+    "bg": { "$value": "{color.slate.alpha.10}", "$type": "color" },
+    "bgPress": { "$value": "{color.slate.alpha.16}", "$type": "color" }
+  },
+  "forecast": {
+    "$description": "NEW (frame-conditions-wave Q13) — the temporal 'forecast' tag + wet-day accents in the This-feed card: marks a knowable future reading vs a current one. Informational only; not an affordance (that's interactive.*), not a severity tier (that's signal.*).",
+    "fg": { "$value": "{color.sky.600}", "$type": "color" },
+    "bg": { "$value": "{color.sky.alpha.08}", "$type": "color" }
+  },
   "type": {
     "$description": "v0.1 Epic-019 roles (name/verdict/fact-value/fact-label/condition/supporting) are kept below, unchanged, for existing components. The v0.2 role scale (design-system-v0.2.md I.3) is the new canonical set — display/title/lead/body/body-sm/metric/metric-label/caption/overline, each with size+lineHeight+weight(+family for metric). Appendix A maps old -> new (Supersedes column); WP-1/WP-7 migrate components onto the v0.2 roles and retire the v0.1 ones.",
     "name": {

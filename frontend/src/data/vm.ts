@@ -64,6 +64,14 @@ export interface WarningVM {
   /** The condition kind it came from, e.g. "weather" | "air" | "fire". */
   kind: string
   provenance: Provenance
+  /**
+   * The curator's graded severity (frame-conditions-wave Q7): `headsUp` =
+   * elevated but passable (amber), `blocked` = a genuine barrier (terracotta).
+   * Wire `severity: "heads_up" | "blocked"`. Optional — absent on older
+   * payloads and mock lines, which render as `headsUp` (never louder than
+   * graded, Law 6).
+   */
+  severity?: 'headsUp' | 'blocked'
 }
 
 /**
@@ -356,6 +364,72 @@ export interface FeedError {
   message: string
 }
 
+// ---- Region conditions (frame-conditions-wave §5) --------------------------
+
+/**
+ * One forecast day in the This-feed card's day toggle. `highF`/`precipPct`
+ * nullable — an NWS period can omit either; the chip renders what exists and
+ * never fabricates the rest (Rule #1).
+ */
+export interface ForecastDayVM {
+  /** Stable toggle key: "today" | "tomorrow" | "sat" | "sun". */
+  key: string
+  /** Human label ("Today", "Sat") — presentation-ready, never a raw date. */
+  label: string
+  highF: number | null
+  precipPct: number | null
+  short?: string | null
+}
+
+/**
+ * The frame-aligned weather forecast (Q18): NWS multi-day periods selected for
+ * the frame's `when`. Weather is the ONLY forecastable kind — everything else
+ * in `RegionConditionsVM` is honestly current-only (verified 2026-07-16).
+ */
+export interface ForecastVM {
+  days: ForecastDayVM[]
+  /** Which day the frame targets (the toggle's default selection). */
+  targetKey: string
+  source: string
+  /** Humanised relative age of the fetch — never a raw datetime (§7.2). */
+  fetchedAgo?: string
+}
+
+export interface RecentPrecipDayVM {
+  label: string
+  amountIn: number | null
+}
+
+/** The collapsed "Past 3 days" rain reveal (Q19). Absent → no reveal rendered. */
+export interface RecentPrecipVM {
+  days: RecentPrecipDayVM[]
+  total48hIn: number | null
+  source: string
+}
+
+/**
+ * The hedged mud inference (Q19): always "may", always quantified evidence,
+ * always `provenance: 'inferred'` — an inference never poses as a stated fact
+ * (Rule #7). Presence = render the amber dashed read; absence = silence.
+ */
+export interface MudVM {
+  statement: string
+  evidence: string
+  source: string
+  provenance: 'inferred'
+}
+
+/**
+ * Area-level conditions for the This-feed card (Q4/Q13): the forecast zone,
+ * the recent-rain reveal, and the mud read. Region-scoped, fetched once per
+ * plan — never per-card (an area fact belongs at area level, Law 3).
+ */
+export interface RegionConditionsVM {
+  forecast?: ForecastVM | null
+  recentPrecip?: RecentPrecipVM | null
+  mud?: MudVM | null
+}
+
 export interface FeedVM {
   query: string
   cards: CardVM[]
@@ -378,6 +452,17 @@ export interface FeedVM {
    * Absent/false → complete (the classic path, a warm key, or the kill switch).
    */
   conditionsPending?: boolean
+  /**
+   * Area-level conditions for the This-feed card (frame-conditions-wave §5).
+   * Arrives with phase 2 (or the classic complete path); absent on a phase-1
+   * shell — the card renders pending chips, never a fabricated reading.
+   */
+  regionConditions?: RegionConditionsVM | null
+  /**
+   * True when personal tuning could not run and the ranking fell back to
+   * generic (Q8) — drives the dismissible SystemBanner. Absent → not degraded.
+   */
+  personalizationDegraded?: boolean
 }
 
 /**
@@ -389,6 +474,10 @@ export interface FeedVM {
 export interface ConditionsPatchVM {
   patches: CardConditionsPatch[]
   heldBack: HeldBackVM[]
+  /** Area-level conditions riding the phase-2 payload (frame-conditions-wave §5). */
+  regionConditions?: RegionConditionsVM | null
+  /** Phase-2 truth of the personalization fallback (Q8), if the wire carries it. */
+  personalizationDegraded?: boolean
 }
 
 /** One card's verified condition fields, replacing the phase-1 silence in place. */
