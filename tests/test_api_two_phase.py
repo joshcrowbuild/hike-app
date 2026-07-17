@@ -50,6 +50,7 @@ class _Warning:
     source: str
     observed_at: datetime
     kind: str
+    severity: str = "heads_up"
 
 
 @dataclass
@@ -78,6 +79,8 @@ class _Feed:
     cards: list[_Card]
     notices: tuple[str, ...] = ()
     set_aside: tuple[Any, ...] = ()
+    region_conditions: Any = None
+    personalization_degraded: bool = False
 
 
 @dataclass
@@ -100,6 +103,8 @@ class _Patch:
     set_aside: tuple[_SetAside, ...]
     unknown: tuple[str, ...]
     from_cache: bool = False
+    region_conditions: Any = None
+    personalization_degraded: bool = False
 
 
 class _Runtime:
@@ -198,7 +203,7 @@ def client(monkeypatch: Any, tmp_path: Any) -> Any:
     monkeypatch.setattr(app_mod, "build_runtime", lambda *a, **k: _Runtime())
     monkeypatch.setattr(
         "orchestration.two_phase.plan_cards",
-        lambda query, origin, runtime, *, k, viewer_id: (_phase1_feed(query), False),
+        lambda query, origin, runtime, *, k, viewer_id, **kw: (_phase1_feed(query), False),
     )
     monkeypatch.setattr("orchestration.two_phase.plan_conditions", _canned_patch)
     monkeypatch.setattr("orchestration.engine.plan", lambda query, *a, **k: _full_feed(query))
@@ -238,6 +243,48 @@ def test_plan_without_phase_is_classic_and_complete(client: Any) -> None:
     assert payload["cards"][0]["lines"][0]["text"] == "Clear skies"
 
 
+def test_plan_serializes_region_conditions_and_personalization_degraded(
+    client: Any, monkeypatch: Any
+) -> None:
+    # epic-054 S5: the engine's RegionConditions + personalization_degraded flow
+    # through the REAL FastAPI response_model serialization, not just the
+    # internal builder (tests/test_region_conditions_wire.py covers that).
+    from orchestration.region_conditions import Forecast, ForecastDay, RegionConditions
+
+    fetched_at = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    feed = _full_feed("something mellow")
+    feed.region_conditions = RegionConditions(
+        forecast=Forecast(
+            days=(ForecastDay(key="today", label="Today", high_f=88, precip_pct=0, short="Sunny"),),
+            target_key="today",
+            source="NWS",
+            fetched_at=fetched_at,
+        ),
+        recent_precip=None,
+        mud=None,
+    )
+    feed.personalization_degraded = True
+    monkeypatch.setattr("orchestration.engine.plan", lambda query, *a, **k: feed)
+
+    resp = client.post("/plan", json=_PLAN_BODY)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["personalization_degraded"] is True
+    rc = payload["region_conditions"]
+    assert rc["forecast"]["target_key"] == "today"
+    assert rc["forecast"]["days"][0]["high_f"] == 88
+    assert rc["recent_precip"] is None
+    assert rc["mud"] is None
+
+
+def test_plan_phase_cards_omits_region_conditions_on_a_phase1_shell(client: Any) -> None:
+    # AC-5.1: a genuine phase-1 shell never carries region_conditions (absent —
+    # not attempted yet, distinct from an attempted-but-degraded object).
+    resp = client.post("/plan", json={**_PLAN_BODY, "phase": "cards"})
+    assert resp.status_code == 200
+    assert resp.json()["region_conditions"] is None
+
+
 def test_plan_phase_cards_with_kill_switch_serves_full_response(
     client: Any, monkeypatch: Any
 ) -> None:
@@ -257,7 +304,7 @@ def test_plan_phase_cards_warm_key_self_describes_complete(client: Any, monkeypa
     # The D7 warm-key case: plan_cards itself reports complete=True.
     monkeypatch.setattr(
         "orchestration.two_phase.plan_cards",
-        lambda query, origin, runtime, *, k, viewer_id: (_full_feed(query), True),
+        lambda query, origin, runtime, *, k, viewer_id, **kw: (_full_feed(query), True),
     )
     resp = client.post("/plan", json={**_PLAN_BODY, "phase": "cards"})
     assert resp.status_code == 200
@@ -351,6 +398,41 @@ def test_conditions_patch_shape(client: Any) -> None:
     assert payload["set_aside"][0]["reasons"][0]["source"] == "AirNow"
     # An id the engine couldn't resolve is disclosed, never fabricated.
     assert payload["unknown"] == ["ct:ghost"]
+
+
+def test_conditions_patch_serializes_region_conditions_and_personalization_degraded(
+    client: Any, monkeypatch: Any
+) -> None:
+    from orchestration.region_conditions import Mud, RecentPrecip, RecentPrecipDay, RegionConditions
+
+    def _patch_with_region(*args: Any, **kwargs: Any) -> _Patch:
+        patch = _canned_patch(*args, **kwargs)
+        patch.region_conditions = RegionConditions(
+            forecast=None,
+            recent_precip=RecentPrecip(
+                days=(RecentPrecipDay(label="Today", amount_in=1.2),),
+                total_48h_in=1.2,
+                source="NWS observations",
+            ),
+            mud=Mud(
+                statement="Trails may be muddy",
+                evidence='1.2" of rain in the last 48h',
+                source="NWS observations",
+                provenance="inferred",
+            ),
+        )
+        patch.personalization_degraded = True
+        return patch
+
+    monkeypatch.setattr("orchestration.two_phase.plan_conditions", _patch_with_region)
+
+    resp = client.post("/plan/conditions", json=_CONDITIONS_BODY)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["personalization_degraded"] is True
+    assert payload["region_conditions"]["mud"]["statement"] == "Trails may be muddy"
+    assert payload["region_conditions"]["recent_precip"]["total_48h_in"] == 1.2
+    assert payload["region_conditions"]["forecast"] is None
 
 
 def test_conditions_patch_carries_no_caching_headers(client: Any) -> None:

@@ -129,6 +129,33 @@ _ORIGIN = (38.5, -78.4)
 _ROWS = [_row("a", 38.5, -78.4, 100.0), _row("b", 38.6, -78.5, 200.0)]
 
 
+class _RegionSpyAdapter(LiveAdapter):
+    """A fake `Runtime.region_probe` recording call counts (epic-054 S2/S3)."""
+
+    name = "region-fake"
+    kind = ConditionKind.weather
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+        self.calls = 0
+
+    def capabilities(self) -> LiveCapabilities:
+        return LiveCapabilities(True, False, True)
+
+    def probe(self, point: Point, when: datetime | None = None) -> VerifiedFact | None:
+        self.calls += 1
+        return VerifiedFact(
+            value=self.value, source="NWS test", fetched_at=datetime.now(timezone.utc)
+        )
+
+    def health(self) -> AdapterHealth:
+        return AdapterHealth.OK
+
+    @classmethod
+    def from_config(cls, settings: Any) -> "LiveAdapter | None":
+        return None
+
+
 def _runtime(
     *,
     weather: _SpyAdapter | None = None,
@@ -137,6 +164,7 @@ def _runtime(
     phase1_pending: FeedCache | None = None,
     judge: Any = None,
     detail_rows: list[dict[str, Any]] | None = None,
+    region_probe: _RegionSpyAdapter | None = None,
 ) -> Runtime:
     probes: dict[ConditionKind, list[LiveAdapter]] = {}
     if weather is not None:
@@ -149,6 +177,7 @@ def _runtime(
         judge=(judge or _CountingJudge('["a","b"]'), "m"),
         feed_cache=feed_cache,
         phase1_pending=phase1_pending,
+        region_probe=region_probe,
     )
 
 
@@ -332,6 +361,119 @@ def test_conditions_fallback_resolves_from_graph_without_warming_cache() -> None
     states = {s.kind: s.state for s in patch.cards[0].conditions}
     assert states["weather"] == "present"
     assert not fc.peek(_anon_key("mellow loop", _ORIGIN, 5))
+
+
+# ── epic-054 S5: region_conditions + personalization_degraded on the patch ───
+
+_REGION_NOW = datetime(2026, 7, 13, 12, 0, tzinfo=timezone.utc)  # Monday, region-local July 13
+
+
+def _today_period(temp: int = 70) -> dict[str, Any]:
+    return {
+        "name": "Today",
+        "startTime": "2026-07-13T06:00:00-04:00",
+        "isDaytime": True,
+        "temperature": temp,
+        "temperatureUnit": "F",
+    }
+
+
+def test_conditions_composes_region_conditions_via_the_holding_pen() -> None:
+    # Phase 1 fetches ZERO live probes (region-level included) — the region probe
+    # actually runs during compose, exactly once, not per plan_conditions call.
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    region = _RegionSpyAdapter({"periods": [_today_period(88)], "observations": None})
+    runtime = _runtime(feed_cache=fc, phase1_pending=pending, region_probe=region)
+
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    assert region.calls == 0  # phase 1: genuinely zero live probes (D2)
+
+    patch = plan_conditions(
+        "mellow loop", _ORIGIN, runtime, ["a", "b"], k=5, when="fullDay", now=_REGION_NOW
+    )
+    assert region.calls == 1
+    assert patch.region_conditions is not None
+    assert patch.region_conditions.forecast is not None
+    assert patch.region_conditions.forecast.days[0].high_f == 88
+    assert patch.personalization_degraded is False
+
+
+def test_conditions_region_raw_reused_across_repeat_calls_with_different_when() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    region = _RegionSpyAdapter({"periods": [_today_period(88)], "observations": None})
+    runtime = _runtime(feed_cache=fc, phase1_pending=pending, region_probe=region)
+
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    full_day = plan_conditions(
+        "mellow loop", _ORIGIN, runtime, ["a", "b"], k=5, when="fullDay", now=_REGION_NOW
+    )
+    tomorrow = plan_conditions(
+        "mellow loop", _ORIGIN, runtime, ["a", "b"], k=5, when="tomorrowMorning", now=_REGION_NOW
+    )
+
+    assert region.calls == 1  # the SAME raw fetch served both calls
+    assert full_day.region_conditions.forecast.target_key == "today"
+    assert tomorrow.region_conditions.forecast.target_key == "tomorrow"
+
+
+def test_conditions_fresh_feed_cache_hit_still_derives_region_conditions() -> None:
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    region = _RegionSpyAdapter({"periods": [_today_period(88)], "observations": None})
+    runtime = _runtime(feed_cache=fc, phase1_pending=pending, region_probe=region)
+
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    plan_conditions("mellow loop", _ORIGIN, runtime, ["a", "b"], k=5, now=_REGION_NOW)  # warms fc
+
+    # A later call hits the FRESH feed-cache branch (not the holding pen) — still
+    # derives region_conditions from the warmed plan's region_raw, no re-probe.
+    patch = plan_conditions("mellow loop", _ORIGIN, runtime, ["a"], k=5, now=_REGION_NOW)
+    assert patch.from_cache is True
+    assert region.calls == 1
+    assert patch.region_conditions is not None
+
+
+def test_conditions_graph_fallback_also_fetches_region_conditions() -> None:
+    region = _RegionSpyAdapter({"periods": [_today_period(88)], "observations": None})
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    runtime = _runtime(
+        feed_cache=fc,
+        region_probe=region,
+        detail_rows=[_detail_row("a", 38.5, -78.4)],
+    )
+
+    patch = plan_conditions("mellow loop", _ORIGIN, runtime, ["a"], k=5, now=_REGION_NOW)
+
+    assert region.calls == 1
+    assert patch.region_conditions is not None
+    assert patch.region_conditions.forecast is not None
+    # This fallback never ranks — the honest default is "not degraded", not a guess.
+    assert patch.personalization_degraded is False
+
+
+def test_conditions_personalization_degraded_propagates_from_the_parked_phase1_plan() -> None:
+    # Direct plumbing check: `_compose_and_warm` must carry a phase-1 CachedPlan's
+    # `personalization_degraded` through unchanged (this call never re-ranks).
+    from orchestration.feed_cache import CachedPlan
+
+    fc = FeedCache(ttl_s=300.0, clock=lambda: 0.0)
+    pending = FeedCache(ttl_s=180.0, clock=lambda: 0.0)
+    runtime = _runtime(feed_cache=fc, phase1_pending=pending)
+
+    key = _anon_key("mellow loop", _ORIGIN, 5)
+    plan_cards("mellow loop", _ORIGIN, runtime, k=5)
+    degraded_plan = CachedPlan(
+        planned=pending.get(key).planned,
+        notices=pending.get(key).notices,
+        set_aside=pending.get(key).set_aside,
+        personalization_degraded=True,
+    )
+    pending.put(key, degraded_plan)
+
+    patch = plan_conditions("mellow loop", _ORIGIN, runtime, ["a", "b"], k=5)
+    assert patch.personalization_degraded is True
 
 
 def test_repeat_phase1_within_pen_ttl_reuses_the_parked_plan() -> None:

@@ -76,6 +76,8 @@ class _Feed:
     cards: list[_Card]
     notices: tuple[str, ...] = ()
     set_aside: tuple[object, ...] = ()
+    region_conditions: Any = None
+    personalization_degraded: bool = False
 
 
 class _Runtime:

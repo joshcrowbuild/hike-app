@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from orchestration.adapters.base import VerifiedFact
     from orchestration.engine import PlannedTrail, SetAsideTrail
 
 # (query, rounded lat, rounded lon, k) — see `engine._anon_key` for the rounding
@@ -43,11 +44,21 @@ class CachedPlan:
     share across anonymous visitors by construction (no viewer field exists on
     `PlannedTrail`/`SetAsideTrail`, and the anonymous path's `combined_profile`
     reduces to query-derived text only). Each fact carries its own absolute
-    `fetched_at`; nothing here is pre-rendered into display copy."""
+    `fetched_at`; nothing here is pre-rendered into display copy.
+
+    `region_raw` (frame-conditions-wave §5, epic-054 S2/S3) is the RAW region-
+    level NWS fetch (forecast periods + recent station observations) — never the
+    day-selected/summed `RegionConditions`, which is derived at render time from
+    whichever `when` the CURRENT request carries (`engine._render_feed`); baking
+    the selection in here would serve one caller's frame to another's cache hit.
+    `personalization_degraded` mirrors `PERSONAL_CONTEXT_UNAVAILABLE_NOTICE`
+    (Q8) as a structured flag alongside the existing notice string."""
 
     planned: tuple["PlannedTrail", ...]
     notices: tuple[str, ...]
     set_aside: tuple["SetAsideTrail", ...]
+    region_raw: "VerifiedFact | None" = None
+    personalization_degraded: bool = False
 
 
 @dataclass

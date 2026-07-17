@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,6 +54,8 @@ class _Feed:
     cards: list[_Card]
     notices: tuple[str, ...] = ()
     set_aside: tuple[object, ...] = ()
+    region_conditions: Any = None
+    personalization_degraded: bool = False
 
 
 class _Runtime:

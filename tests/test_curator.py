@@ -242,6 +242,112 @@ def test_weather_outage_never_blocks_even_with_other_kinds_probed() -> None:
     assert v.unavailable[0].kind == "weather"
 
 
+# ── S1: graded warning severity (frame-conditions-wave Q7 / epic-054) ─────────
+
+
+def _weather_fact(event: str, severity: str | None) -> VerifiedFact:
+    severities = {} if severity is None else {event: severity}
+    return VerifiedFact(
+        value={"active_alerts": [event], "alert_severities": severities},
+        source="NWS api.weather.gov",
+        fetched_at=_NOW,
+    )
+
+
+def test_nws_extreme_alert_grades_blocked() -> None:
+    v = evaluate_guardrails(
+        {ConditionKind.weather: _weather_fact("Extreme Heat Warning", "Extreme")}
+    )
+    assert v.warnings[0].severity == "blocked"
+
+
+def test_nws_severe_alert_grades_blocked() -> None:
+    v = evaluate_guardrails({ConditionKind.weather: _weather_fact("Tornado Warning", "Severe")})
+    assert v.warnings[0].severity == "blocked"
+
+
+def test_nws_moderate_and_minor_alerts_grade_heads_up() -> None:
+    moderate = evaluate_guardrails(
+        {ConditionKind.weather: _weather_fact("Flood Watch", "Moderate")}
+    )
+    minor = evaluate_guardrails({ConditionKind.weather: _weather_fact("Frost Advisory", "Minor")})
+    assert moderate.warnings[0].severity == "heads_up"
+    assert minor.warnings[0].severity == "heads_up"
+
+
+def test_nws_unknown_or_missing_severity_grades_heads_up() -> None:
+    # Never louder than graded (AC-1.3): a real event whose severity map says
+    # "Unknown", or a fact that carries no severity map at all, both degrade to
+    # the ungraded floor rather than guessing "blocked".
+    unknown = evaluate_guardrails(
+        {ConditionKind.weather: _weather_fact("Small Craft Advisory", "Unknown")}
+    )
+    absent_map = evaluate_guardrails(
+        {ConditionKind.weather: _weather_fact("Small Craft Advisory", None)}
+    )
+    no_alert_severities_key = evaluate_guardrails(
+        {
+            ConditionKind.weather: VerifiedFact(
+                value={"active_alerts": ["Small Craft Advisory"]},
+                source="NWS api.weather.gov",
+                fetched_at=_NOW,
+            )
+        }
+    )
+    assert unknown.warnings[0].severity == "heads_up"
+    assert absent_map.warnings[0].severity == "heads_up"
+    assert no_alert_severities_key.warnings[0].severity == "heads_up"
+
+
+def test_nws_severity_grade_is_case_insensitive() -> None:
+    v = evaluate_guardrails(
+        {ConditionKind.weather: _weather_fact("Flash Flood Warning", "extreme")}
+    )
+    assert v.warnings[0].severity == "blocked"
+
+
+def test_air_quality_warn_tier_grades_heads_up() -> None:
+    v = evaluate_guardrails({ConditionKind.air: _fact({"aqi": 120})})
+    assert v.warnings[0].severity == "heads_up"
+
+
+def test_air_quality_block_tier_stays_a_hard_block_not_a_graded_warning() -> None:
+    # AC-1.2 "existing thresholds unchanged": AQI >= AQI_BLOCK is still a hard
+    # set-aside (never a CardWarning), so there is nothing to grade "blocked" —
+    # the removal itself is the qualitative "blocked" reading.
+    v = evaluate_guardrails({ConditionKind.air: _fact({"aqi": 250})})
+    assert v.blocked
+    assert v.warnings == ()
+
+
+def test_fire_warning_grades_heads_up() -> None:
+    v = evaluate_guardrails({ConditionKind.fire: _fact({"hotspot_count": 2})})
+    assert v.warnings[0].severity == "heads_up"
+
+
+def test_closure_warning_always_grades_blocked() -> None:
+    v = evaluate_guardrails(
+        {ConditionKind.closures: _closure_fact([{"title": "T", "category": "Closure"}])}
+    )
+    assert v.warnings[0].severity == "blocked"
+
+
+def test_danger_alert_also_grades_blocked() -> None:
+    v = evaluate_guardrails(
+        {ConditionKind.closures: _closure_fact([{"title": "Bear Activity", "category": "Danger"}])}
+    )
+    assert v.warnings[0].severity == "blocked"
+
+
+def test_card_warning_default_severity_is_heads_up() -> None:
+    # A CardWarning built without an explicit severity (the dataclass default) —
+    # the safety-net "never louder than graded" floor.
+    from orchestration.curator import CardWarning
+
+    w = CardWarning("weather", "text", "src", _NOW)
+    assert w.severity == "heads_up"
+
+
 class _FakeJudge:
     name = "fake"
 

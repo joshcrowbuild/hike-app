@@ -61,18 +61,24 @@ from api.schemas import (
     FeedCardResponse,
     FeedLineResponse,
     FeedResponse,
+    ForecastDayResponse,
+    ForecastResponse,
     GeoJsonGeometry,
     GeoPoint,
     GraphStats,
     HealthResponse,
     IngestDiffBucket,
     IngestDiffResponse,
+    MudResponse,
     OriginResponse,
     OutcomeBody,
     OutcomeResponse,
     PlanConditionsRequest,
     PlanConditionsResponse,
     PlanRequest,
+    RecentPrecipDayResponse,
+    RecentPrecipResponse,
+    RegionConditionsResponse,
     RegionResponse,
     RegionsResponse,
     SearchRequest,
@@ -99,6 +105,7 @@ from orchestration.config import Settings
 from orchestration.engine import Feed, FeedCard, build_runtime, feed_card
 from orchestration.logsafe import scrub_episode, setup_logging
 from orchestration.providers.registry import resolve
+from orchestration.region_conditions import RegionConditions
 from orchestration.regions import list_regions
 
 logger = logging.getLogger(__name__)
@@ -403,6 +410,7 @@ def _condition_fields(card: FeedCard) -> dict[str, Any]:
                 source=w.source,
                 observed_at=w.observed_at.isoformat(),
                 kind=w.kind,
+                severity=w.severity,
             )
             for w in card.warnings
         ],
@@ -443,6 +451,55 @@ def _set_aside_response(trail: Any) -> SetAsideResponse:
     )
 
 
+def _region_conditions_response(rc: RegionConditions | None) -> RegionConditionsResponse | None:
+    """`None` in -> `None` out (epic-054 S5 AC-5.1): "not attempted this phase"
+    stays a bare absent field, never an object of nulls masquerading as one."""
+    if rc is None:
+        return None
+    forecast = (
+        ForecastResponse(
+            target_key=rc.forecast.target_key,
+            days=[
+                ForecastDayResponse(
+                    key=d.key,
+                    label=d.label,
+                    high_f=d.high_f,
+                    precip_pct=d.precip_pct,
+                    short=d.short,
+                )
+                for d in rc.forecast.days
+            ],
+            source=rc.forecast.source,
+            fetched_at=rc.forecast.fetched_at.isoformat(),
+        )
+        if rc.forecast is not None
+        else None
+    )
+    recent_precip = (
+        RecentPrecipResponse(
+            days=[
+                RecentPrecipDayResponse(label=d.label, amount_in=d.amount_in)
+                for d in rc.recent_precip.days
+            ],
+            total_48h_in=rc.recent_precip.total_48h_in,
+            source=rc.recent_precip.source,
+        )
+        if rc.recent_precip is not None
+        else None
+    )
+    mud = (
+        MudResponse(
+            statement=rc.mud.statement,
+            evidence=rc.mud.evidence,
+            source=rc.mud.source,
+            provenance=rc.mud.provenance,
+        )
+        if rc.mud is not None
+        else None
+    )
+    return RegionConditionsResponse(forecast=forecast, recent_precip=recent_precip, mud=mud)
+
+
 def _feed_response(
     feed: Feed, maps_by_cid: dict[str, dict[str, Any]], *, conditions_complete: bool = True
 ) -> FeedResponse:
@@ -453,6 +510,8 @@ def _feed_response(
         notices=list(feed.notices),
         set_aside=[_set_aside_response(t) for t in feed.set_aside],
         conditions_complete=conditions_complete,
+        region_conditions=_region_conditions_response(feed.region_conditions),
+        personalization_degraded=feed.personalization_degraded,
     )
 
 
@@ -750,6 +809,7 @@ def plan(
                 runtime,
                 k=body.k,
                 viewer_id=viewer_id,
+                when=body.when,
             )
         else:
             from orchestration.engine import plan as engine_plan
@@ -761,6 +821,7 @@ def plan(
                 runtime,
                 k=body.k,
                 viewer_id=viewer_id,  # AC-5: forward viewer for context assembly
+                when=body.when,
             )
         # Engine-layer anonymous plan cache (Epic 039 S2): the hit disposition is
         # request-local on Runtime (set by plan()), never a before/after delta on
@@ -863,6 +924,7 @@ def plan_conditions(
             body.canonical_ids,
             k=body.k,
             viewer_id=viewer_id,
+            when=body.when,
         )
         response = PlanConditionsResponse(
             patches=[
@@ -871,6 +933,8 @@ def plan_conditions(
             ],
             set_aside=[_set_aside_response(t) for t in patch.set_aside],
             unknown=list(patch.unknown),
+            region_conditions=_region_conditions_response(patch.region_conditions),
+            personalization_degraded=patch.personalization_degraded,
         )
         cache_after = cache_size(runtime.cache)
         stats_after = probe_stats_snapshot(runtime.cache)

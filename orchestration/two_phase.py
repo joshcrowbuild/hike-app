@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 
 from graph import queries
 from orchestration.adapters.base import ConditionKind, LiveAdapter, Point
@@ -40,12 +41,14 @@ from orchestration.engine import (
     SetAsideTrail,
     _anon_key,
     _compute_plan,
+    _fetch_region_raw,
     _latlon,
     _render_feed,
     _set_aside,
     feed_card,
 )
 from orchestration.feed_cache import CachedPlan, FeedCache, FeedCacheKey
+from orchestration.region_conditions import RegionConditions, derive_region_conditions
 from orchestration.scout import Candidate
 from orchestration.verifier import DEFAULT_MAX_WORKERS, verify_batch
 
@@ -62,12 +65,17 @@ class ConditionsPatch:
     `unknown` names requested ids this call could not resolve at all (not in the
     plan, not in the graph) — omitted with disclosure, never fabricated (AC-2.2).
     `from_cache` is the metrics-honesty flag: True when THIS call spent no probes
-    (served from an already-composed cached plan)."""
+    (served from an already-composed cached plan). `region_conditions`/
+    `personalization_degraded` mirror `Feed`'s own (frame-conditions-wave §5,
+    epic-054 S5) — this call carries the SAME area-level facts the classic
+    complete `/plan` does, never a second truth."""
 
     cards: list[FeedCard]
     set_aside: tuple[SetAsideTrail, ...]
     unknown: tuple[str, ...]
     from_cache: bool
+    region_conditions: RegionConditions | None = None
+    personalization_degraded: bool = False
 
 
 def plan_cards(
@@ -77,6 +85,7 @@ def plan_cards(
     *,
     k: int = 10,
     viewer_id: str = "anonymous",
+    when: str | None = None,
 ) -> tuple[Feed, bool]:
     """Phase 1: the graph-only ranked plan (Epic 040 S1). Returns `(feed, complete)`.
 
@@ -102,9 +111,10 @@ def plan_cards(
         if cached is not None:
             # Warm key: the full verified plan is already paid for — serve it
             # complete (re-rendered against serve-time freshness) instead of
-            # recomputing a phase-1 (D7).
+            # recomputing a phase-1 (D7). `when` is THIS request's frame, not
+            # necessarily whoever's call originally warmed the key.
             runtime.feed_cache_hit = True
-            return _render_feed(query, cached), True
+            return _render_feed(query, cached, when=when), True
     pending_store = runtime.phase1_pending
     if key is not None and pending_store is not None:
         # Park-or-reuse through the pen's own single-flight gate: two identical
@@ -118,7 +128,10 @@ def plan_cards(
         )
     else:
         phase1 = _compute_plan(query, origin, runtime, k=k, viewer_id=viewer_id, verify=False)
-    return _render_feed(query, phase1), False
+    # `region_conditions` renders None regardless of `when` here — phase 1 fetches
+    # zero live probes by construction (verify=False), so `phase1.region_raw` is
+    # always None too (D2: nothing fetched, nothing to derive).
+    return _render_feed(query, phase1, when=when), False
 
 
 def verify_planned(
@@ -180,6 +193,8 @@ def plan_conditions(
     *,
     k: int = 10,
     viewer_id: str = "anonymous",
+    when: str | None = None,
+    now: datetime | None = None,
 ) -> ConditionsPatch:
     """Phase 2: the verified overlay for `canonical_ids` (Epic 040 S2).
 
@@ -194,7 +209,10 @@ def plan_conditions(
          overlay without warming the cache (a faithful composition needs the
          phase-1 plan; a partial one must never pose as it).
 
-    This call never ranks — zero LLM spend by construction (AC-2.3)."""
+    This call never ranks — zero LLM spend by construction (AC-2.3). `when`/`now`
+    (frame-conditions-wave §5, epic-054 S2/S5) drive the SAME area-level
+    `region_conditions` the classic complete `/plan` carries — this is where the
+    live region probe actually runs for the two-phase flow (phase 1 fetches none)."""
     requested = list(dict.fromkeys(canonical_ids))  # de-dupe, order preserved
     fc = runtime.feed_cache
     # Same key derivation as `plan_cards` (decoupled from the feed cache's
@@ -204,7 +222,7 @@ def plan_conditions(
     if fc is not None and key is not None:
         cached = fc.get(key)
         if cached is not None:
-            return _patch_from_plan(cached, requested, from_cache=True)
+            return _patch_from_plan(cached, requested, from_cache=True, when=when, now=now)
 
     pending = (
         runtime.phase1_pending.get(key)
@@ -212,10 +230,12 @@ def plan_conditions(
         else None
     )
     if pending is not None:
-        composed_plan, computed = _compose_and_warm(pending, origin, runtime, fc, key)
-        return _patch_from_plan(composed_plan, requested, from_cache=not computed)
+        composed_plan, computed = _compose_and_warm(pending, origin, runtime, fc, key, now=now)
+        return _patch_from_plan(
+            composed_plan, requested, from_cache=not computed, when=when, now=now
+        )
 
-    return _patch_from_graph(requested, origin, runtime)
+    return _patch_from_graph(requested, origin, runtime, when=when, now=now)
 
 
 def _compose_and_warm(
@@ -224,11 +244,16 @@ def _compose_and_warm(
     runtime: Runtime,
     fc: "FeedCache | None",
     key: FeedCacheKey | None,
+    *,
+    now: datetime | None = None,
 ) -> tuple[CachedPlan, bool]:
     """Compose the full plan from the parked phase-1 plan and warm the feed cache
     with it (single-flighted). Returns `(plan, computed)` — `computed` is False on
     a hit-after-wait (another request's compose filled the key first), so metrics
-    stay honest about which request actually spent probes."""
+    stay honest about which request actually spent probes. Phase 1 fetched zero
+    live probes (D2), so this is where the region-level probe actually runs for
+    the two-phase flow — exactly once, here, not per `/plan/conditions` retry
+    (a hit-after-wait reuses the SAME composed plan, region_raw included)."""
     computed = False
 
     def _compose() -> CachedPlan:
@@ -241,10 +266,15 @@ def _compose_and_warm(
             cache=runtime.cache,
             probe_max_workers=runtime.probe_max_workers,
         )
+        region_raw = _fetch_region_raw(origin, runtime)
         return CachedPlan(
             planned=tuple(composed),
             notices=pending.notices,
             set_aside=pending.set_aside + tuple(aside),
+            region_raw=region_raw,
+            # Ranking already happened in phase 1 — carry its degrade disposition
+            # through unchanged, never re-derived here (this call never ranks).
+            personalization_degraded=pending.personalization_degraded,
         )
 
     if fc is not None and key is not None:
@@ -253,10 +283,18 @@ def _compose_and_warm(
 
 
 def _patch_from_plan(
-    plan: CachedPlan, requested: list[str], *, from_cache: bool
+    plan: CachedPlan,
+    requested: list[str],
+    *,
+    from_cache: bool,
+    when: str | None = None,
+    now: datetime | None = None,
 ) -> ConditionsPatch:
     """Render the patch for `requested` out of a fully-composed plan — through
-    `feed_card`, the same rendering path `/plan` serves (AC-2.1)."""
+    `feed_card`, the same rendering path `/plan` serves (AC-2.1). `region_
+    conditions` gets `_render_feed`'s exact discipline: `plan.region_raw` is the
+    day-independent raw fetch, `when`/`now` select THIS call's days at render
+    time — never baked into what a cache hit serves."""
     by_id = {p.candidate.canonical_id: p for p in plan.planned}
     aside_by_id = {t.canonical_id: t for t in plan.set_aside}
     cards: list[FeedCard] = []
@@ -270,13 +308,28 @@ def _patch_from_plan(
             set_aside.append(aside_by_id[cid])
         else:
             unknown.append(cid)
+    region_conditions = (
+        derive_region_conditions(plan.region_raw, when=when, now=now or datetime.now(timezone.utc))
+        if plan.region_raw is not None
+        else None
+    )
     return ConditionsPatch(
-        cards=cards, set_aside=tuple(set_aside), unknown=tuple(unknown), from_cache=from_cache
+        cards=cards,
+        set_aside=tuple(set_aside),
+        unknown=tuple(unknown),
+        from_cache=from_cache,
+        region_conditions=region_conditions,
+        personalization_degraded=plan.personalization_degraded,
     )
 
 
 def _patch_from_graph(
-    requested: list[str], origin: tuple[float, float], runtime: Runtime
+    requested: list[str],
+    origin: tuple[float, float],
+    runtime: Runtime,
+    *,
+    when: str | None = None,
+    now: datetime | None = None,
 ) -> ConditionsPatch:
     """The no-holding-pen fallback: resolve the requested ids straight from the
     graph (world read through the scoped session, rule #4), probe their points,
@@ -316,9 +369,19 @@ def _patch_from_graph(
         cache=runtime.cache,
         probe_max_workers=runtime.probe_max_workers,
     )
+    region_raw = _fetch_region_raw(origin, runtime)
+    region_conditions = (
+        derive_region_conditions(region_raw, when=when, now=now or datetime.now(timezone.utc))
+        if region_raw is not None
+        else None
+    )
     return ConditionsPatch(
         cards=[feed_card(p) for p in composed],
         set_aside=tuple(set_aside),
         unknown=tuple(unknown),
         from_cache=False,
+        region_conditions=region_conditions,
+        # This fallback never ranks (no phase-1 plan, no judge call) — False is
+        # the honest default, not a degrade: personalization was never attempted.
+        personalization_degraded=False,
     )

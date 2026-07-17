@@ -96,6 +96,7 @@ class _Warning:
     source: str
     observed_at: datetime
     kind: str
+    severity: str = "heads_up"
 
 
 @dataclass
@@ -145,6 +146,8 @@ class _Feed:
     cards: list[_Card]
     notices: tuple[str, ...] = ()
     set_aside: tuple[_SetAside, ...] = ()
+    region_conditions: Any = None
+    personalization_degraded: bool = False
 
 
 class _Runtime:
@@ -457,6 +460,10 @@ def test_plan_happy_path_contract(client: Any) -> None:
             "source": "NWS api.weather.gov",
             "observed_at": "2026-07-01T22:00:00+00:00",
             "kind": "weather",
+            # Ungraded fake (the test's `_Warning` fake carries no `alert_severities` —
+            # that's `curator.py`'s job, exercised in tests/test_curator.py); the
+            # additive default is the honest "never louder than graded" floor (S1 AC-1.3).
+            "severity": "heads_up",
         }
     ]
 
