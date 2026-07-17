@@ -616,7 +616,18 @@ function dominantHold(heldBack: HeldBackVM[]): WarningVM | null {
   let best: { reason: HeldBackVM['reasons'][number]; n: number } | null = null
   for (const c of counts.values()) if (!best || c.n > best.n) best = c
   if (!best) return null
-  const text = best.reason.text.charAt(0).toUpperCase() + best.reason.text.slice(1)
+  // The wire reason often welds a short source into its tail — "air quality
+  // hazardous (AQI 217) (EPA)" — while WarningBlock appends the full source
+  // line. Stating EPA twice is the Epic-046 welded-source defect class: strip
+  // a trailing parenthetical ONLY when its content is already part of the
+  // source string (never touch a value parenthetical like "(AQI 217)").
+  const raw = best.reason.text
+  const tail = raw.match(/\s*\(([^)]{1,24})\)\s*$/)
+  const deduped =
+    tail && best.reason.source.toLowerCase().includes(tail[1].toLowerCase())
+      ? raw.slice(0, raw.length - tail[0].length)
+      : raw
+  const text = deduped.charAt(0).toUpperCase() + deduped.slice(1)
   return {
     text,
     source: best.reason.source,
