@@ -703,6 +703,18 @@ describe('HttpPlannerClient two-phase flow (Epic 040)', () => {
     expect(bodyOf(fetchMock.mock.calls[0]).phase).toBe('cards')
   })
 
+  it('sends the frame\'s when key on both plan phases (Epic 054 forecast alignment)', async () => {
+    // Without `when` on the wire the server degrades to the fullDay window and
+    // the This-feed forecast can never target the frame's actual day.
+    fetchMock.mockReturnValueOnce(ok(FEED))
+    await client().plan(PLAN_INPUT, ANON_SCOPE)
+    expect(bodyOf(fetchMock.mock.calls[0]).when).toBe('weekendMorning')
+
+    fetchMock.mockReturnValueOnce(ok({ patches: [], set_aside: [], unknown: [] }))
+    await client().planConditions(PLAN_INPUT, ANON_SCOPE, ['ct:a'])
+    expect(bodyOf(fetchMock.mock.calls[1]).when).toBe('weekendMorning')
+  })
+
   it('marks the VM pending ONLY on an explicit conditions_complete:false', async () => {
     fetchMock.mockReturnValueOnce(ok({ ...FEED, conditions_complete: false }))
     const pending = await client().plan(PLAN_INPUT, ANON_SCOPE)

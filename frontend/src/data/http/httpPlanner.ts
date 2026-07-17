@@ -488,6 +488,10 @@ export class HttpPlannerClient implements PlannerClient {
       lon,
       k: input.k ?? 10,
       viewer_id: scope.viewerId,
+      // The frame's when key, verbatim (Epic 054): the server derives the
+      // forecast's target-day window from it; absent → fullDay/today. Also a
+      // shell-cache-key input, so a frame-day change is honestly a new frame.
+      when: input.tuning.when,
       // Two-phase (Epic 040): ask for cards-first; the response self-describes
       // completeness, so a kill-switched server or a warm key degrades to the
       // classic flow with no client branching beyond `conditionsPending`.
@@ -561,6 +565,8 @@ export class HttpPlannerClient implements PlannerClient {
       k: input.k ?? 10,
       viewer_id: scope.viewerId,
       canonical_ids: canonicalIds,
+      // Same when key as phase 1 — region forecast alignment (Epic 054).
+      when: input.tuning.when,
     }
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS)
