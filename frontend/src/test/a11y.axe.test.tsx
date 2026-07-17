@@ -8,7 +8,6 @@ import * as ConfidenceStories from '../components/Confidence/Confidence.stories'
 import * as SignalStories from '../components/Signal/Signal.stories'
 import * as StalenessStories from '../components/Staleness/Staleness.stories'
 import * as ConditionStatesStories from '../screens/ConditionStates.stories'
-import * as FeedConditionsStories from '../screens/FeedConditions.stories'
 
 // The a11y baseline gate (path-to-complete §Phase B): every story of the
 // safety-relevant honesty primitives — Confidence (hedge/flag presentation),
@@ -25,12 +24,11 @@ const suites = [
   // The six per-kind condition states (Epic 018 S4f) are the same
   // safety-relevant honesty surface: a user reads them to judge whether an
   // absent condition was checked-clear, unreachable, or never checked.
+  // (The Context Ribbon/ContextSentence surface this used to axe-test
+  // alongside — `screens/FeedConditions.tsx` — was retired in Epic 057: the
+  // "This feed" card (Epic 055) superseded it on Home, and nothing in
+  // production imported it anymore.)
   ['ConditionStates', composeStories(ConditionStatesStories)],
-  // The Context Ribbon (ux-vision-2026-07 §9 item 1) is the same honesty
-  // surface hoisted to feed scope, now unified with the tappable frame
-  // sentence — a named region landmark whose silence states must stay
-  // distinct to assistive tech exactly as they are on a card.
-  ['ContextSentence', composeStories(FeedConditionsStories)],
 ] as const
 
 async function runAxe(container: HTMLElement) {

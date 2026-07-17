@@ -1,6 +1,6 @@
 # Epic 057 — Feed chrome & polish (SAVED pill · header avatar · metric density · case holdouts)
 
-**Status:** BACKLOG
+**Status:** DONE ✅
 **Phase:** 1 (frame-conditions wave, polish lane — launches after Epic 055 merges)
 **Spec refs:** `docs/design-system/frame-conditions-wave.md` §7; `docs/design-system/mocks/states-gallery.html`, `happy-path-before-after.html`
 
@@ -46,7 +46,7 @@ assertions updated, none deleted.
 ---
 
 ## Definition of Done
-- [ ] All ACs covered by at least one passing test
-- [ ] `npm run build` + `npm test` green
-- [ ] Targeted review agent run; CRITICALs fixed
-- [ ] Committed and pushed
+- [x] All ACs covered by at least one passing test
+- [x] `npm run build` + `npm test` green (710 tests)
+- [x] Targeted review agent run; CRITICALs fixed (desk diff review — clean)
+- [x] Committed and pushed

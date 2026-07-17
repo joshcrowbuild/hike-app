@@ -10,7 +10,7 @@ describe('BootShell (craft review H1 — the first paint is designed, never a ba
 
   it('renders the app chrome — wordmark topbar and a skeleton card stack, not an unstyled paragraph', () => {
     const { container } = render(<BootShell />)
-    expect(screen.getByText('Curation')).toBeInTheDocument()
+    expect(screen.getByText('Adventure Planner')).toBeInTheDocument()
     expect(container.querySelector('.app-shell')).not.toBeNull()
     expect(container.querySelectorAll('.skeleton-card').length).toBeGreaterThan(0)
     // The old gate's bare fallback must never come back.

@@ -66,11 +66,6 @@ const BASELINE_ALLOWLIST: Array<{
   },
   // ---- Screens layer (cards, detail, home, tuning) ----
   {
-    file: 'BootShell.tsx',
-    pattern: 'wordmark.*Curation',
-    reason: 'Home screen pre-v0.2 heading (WP-7 replaces)',
-  },
-  {
     file: 'EvidencePanel.tsx',
     pattern: 'not-fetched|not checked here',
     reason: 'WP-3 string matching on legacy/wire values',
@@ -89,12 +84,6 @@ const BASELINE_ALLOWLIST: Array<{
     file: 'Detail.tsx',
     pattern: 'not-fetched|ConditionSilence',
     reason: 'Detail-level condition rendering (WP-3 owns restyle)',
-  },
-  {
-    file: 'FeedConditions.tsx',
-    pattern: 'context|frame|Adjust',
-    reason:
-      'ContextSentence/ContextRibbon pre-v0.2 (WP-3 owns the edit affordance rename)',
   },
   {
     file: 'RecommendationCard.tsx',

@@ -28,7 +28,7 @@ describe('PlannerProvider cold-start gate (craft review H1 — the first paint i
     // …but the gate is the designed shell: wordmark topbar, staged status
     // copy, skeleton cards — not a raw UA-styled paragraph.
     expect(screen.getByRole('status')).toHaveTextContent('Reading conditions…')
-    expect(screen.getByText('Curation')).toBeInTheDocument()
+    expect(screen.getByText('Adventure Planner')).toBeInTheDocument()
     expect(container.querySelectorAll('.skeleton-card').length).toBeGreaterThan(0)
     expect(screen.queryByText('Loading…')).toBeNull()
     expect(container.querySelector('.app-loading')).toBeNull()

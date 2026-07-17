@@ -82,10 +82,6 @@ button {
   .context-ribbon-text {
     font-size: 1.05rem;
   }
-
-  .feed-conditions-body {
-    padding: 0.85rem 1.3rem 1rem;
-  }
 }
 
 /* ---- shared cartographic primitives ---- */
@@ -118,20 +114,6 @@ button {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.9rem;
-}
-
-/* Context sentence: the "Edit" affordance was butting against the wrapping
-   frame sentence ("…Front Royal Edit"). Give it its own space at the row end. */
-.context-sentence-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-}
-.context-sentence-text {
-  flex: 1 1 auto;
-}
-.context-edit-action {
-  flex: none;
 }
 
 .wordmark {
@@ -250,23 +232,8 @@ button {
   flex: none;
 }
 
-/* The region-scope conditions body: a quiet second row inside the same card,
-   set off from the tappable head by a hairline rather than its own border —
-   the reading and the silent dispositions reuse the card's own condition
-   treatments (their type sizes are theirs), so the three silences stay
-   exactly as distinct here as on a card. Never the accent hue — the feed's
-   regional-alert banner owns that. */
-.feed-conditions-body {
-  padding: 0.7rem 1rem 0.85rem;
-  border-top: 1px solid var(--border-hairline);
-}
-
 .feed-conditions-scope {
   margin: 0 0 0.35rem;
-}
-
-.feed-conditions-body .condition-states--compact {
-  margin-top: 0.3rem;
 }
 
 /* The tuned-state note is a quiet confirmation, not a caution: it stays in the
@@ -279,10 +246,29 @@ button {
 }
 
 /* ---- stack ---- */
+/* The Saved pill and the trail count now sit in the SAME quiet, right-aligned
+   row (Epic 057 S1) — previously the count sat on its own line beneath the
+   pill. `align-items: center` keeps the mono count text and the pill's own
+   line-height reading on one baseline-ish row rather than the default
+   `stretch`. */
 .stack-controls {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.6rem;
   margin: 0 0 0.6rem;
+}
+
+/* The trail count, now living inside `.stack-controls` beside the Saved pill —
+   quiet mono (the same family the metric line uses), never competing with the
+   pill for attention. Kept distinct from `.stack-meta` below (still used by
+   the search-results count, which sits alone above its own card stack and
+   keeps its sans, block-level treatment). */
+.stack-count {
+  margin: 0;
+  font-family: var(--type-metric-family);
+  font-size: 0.68rem;
+  color: var(--text-muted);
 }
 
 .stack-meta {
@@ -1316,17 +1302,27 @@ button {
 }
 
 /* ---- viewer mode + disclosures (data-source seam) ---- */
+/* A quiet recessive chip (Epic 057 S2) — smaller and more muted than the
+   app's normal `.action-chip`, with a fainter border, so it reads as ambient
+   status rather than a control. `--text-muted` clears 4.5:1 AA on
+   `--surface-canvas` app-wide since Epic 020 (AC-20.2.1 darkened the token
+   everywhere), so the old secondary-for-contrast workaround is no longer
+   needed here. */
 .topbar-mode {
+  display: inline-flex;
+  align-items: center;
   letter-spacing: 0.01em;
-  font-size: 0.72rem;
-  /* secondary (not muted) so the mode chip clears WCAG AA on the canvas. */
-  color: var(--text-secondary);
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-pill);
+  padding: 0.22rem 0.55rem;
 }
 
 /* ---- sign-in affordance (Epic 043 S4) — quiet, never a gate ---- */
 .signin-control {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.6rem;
   margin-left: auto;
 }
@@ -1334,6 +1330,45 @@ button {
   font-size: 0.72rem;
   color: var(--text-secondary);
 }
+
+/* The signed-in avatar (Epic 057 S2) — an initial-circle opening the SAME
+   "signed in as / sign out" surface `.signin-who`/`.text-action` already carry,
+   just gated behind a tap so the top bar reads quiet at rest. The interactive
+   role tokens (never a condition hue) since this is a tappable affordance, not
+   a status signal. 2rem clears the AC's 30px tap-target floor at the default
+   root size. */
+.avatar-chip {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--interactive-bg);
+  color: var(--interactive-fg);
+  font-family: var(--type-metric-family);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-medium);
+}
+
+.avatar-chip:hover {
+  background: var(--interactive-bg-press);
+}
+
+.avatar-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The revealed account surface — unchanged content/behavior from the
+   pre-avatar signed-in view, just disclosed on demand now. */
+.signin-account-sheet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .topbar > .text-action,
 .topbar > .signin-control,
 .topbar > .signin-form {
@@ -1617,11 +1652,6 @@ button {
   padding: 0;
   display: grid;
   gap: 0.35rem;
-}
-
-.condition-line {
-  font-size: 0.9rem;
-  line-height: 1.4;
 }
 
 .condition-lines--detail {

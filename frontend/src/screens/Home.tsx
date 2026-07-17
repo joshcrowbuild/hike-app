@@ -245,25 +245,30 @@ export function Home({
                   </div>
                 ) : null}
 
+                {/* Saved pill + trail count sit together, quietly, in one
+                    right-aligned row (Epic 057 S1) — previously the count sat
+                    on its own line below the pill. The count reuses the same
+                    "N trails · Region" text (still the served count, never the
+                    picker's assumption, report #3); only its placement and
+                    the quiet-mono treatment (`.stack-count`) are new. */}
                 {feed.cards.length > 0 || savedIds.size > 0 ? (
                   <div className="stack-controls">
+                    {shown.length > 0 ? (
+                      <p className="stack-count">
+                        {savedOnly
+                          ? shown.length === 1
+                            ? '1 saved'
+                            : `${shown.length} saved`
+                          : feed.cards.length === 1
+                            ? '1 trail'
+                            : `${feed.cards.length} trails`}{' '}
+                        · {resolveRegionLabel(cards, tuning, origins)}
+                      </p>
+                    ) : null}
                     <ToggleButton className="action-chip" isSelected={savedOnly} onChange={setSavedOnly}>
                       {savedOnly ? 'Show all' : savedIds.size > 0 ? `Saved (${savedIds.size})` : 'Saved'}
                     </ToggleButton>
                   </div>
-                ) : null}
-
-                {shown.length > 0 ? (
-                  <p className="stack-meta">
-                    {savedOnly
-                      ? shown.length === 1
-                        ? '1 saved'
-                        : `${shown.length} saved`
-                      : feed.cards.length === 1
-                        ? '1 trail'
-                        : `${feed.cards.length} trails`}{' '}
-                    · {resolveRegionLabel(cards, tuning, origins)}
-                  </p>
                 ) : null}
 
                 {banner.length > 0 ? (
