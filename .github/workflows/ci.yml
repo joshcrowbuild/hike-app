@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       # Fails on a stale epic index, known wrong-memory markers, or broken doc links.
@@ -84,7 +84,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
@@ -103,7 +103,7 @@ jobs:
         target: [format-check, lint, typecheck, test]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
@@ -127,7 +127,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
@@ -226,7 +226,7 @@ jobs:
       NEO4J_PASSWORD: testpassword
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: needs.changes.outputs.backend == 'true'
         with:
           python-version: "3.11"
