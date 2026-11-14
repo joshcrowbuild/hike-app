@@ -8,7 +8,7 @@ annotated-types==0.7.0
     # via pydantic
 anthropic==0.116.0
     # via adventure-planner (pyproject.toml)
-anyio==4.14.1
+anyio==4.16.0
     # via
     #   anthropic
     #   httpx
@@ -19,7 +19,7 @@ ast-serialize==0.6.0
     # via mypy
 attrs==26.1.0
     # via rasterio
-certifi==2026.6.17
+certifi==2026.10.23
     # via
     #   adventure-planner (pyproject.toml)
     #   httpcore
@@ -28,6 +28,8 @@ certifi==2026.6.17
     #   pyproj
     #   rasterio
     #   requests
+cffi==2.1.1
+    # via cryptography
 charset-normalizer==3.4.9
     # via requests
 click==8.4.2
@@ -40,6 +42,8 @@ click-plugins==1.1.1.2
     # via rasterio
 cligj==0.7.2
     # via rasterio
+cryptography==50.0.2
+    # via pyjwt
 deprecated==1.3.1
     # via limits
 distro==1.9.0
@@ -111,6 +115,8 @@ pathspec==1.1.1
     # via mypy
 pluggy==1.6.0
     # via pytest
+pycparser==3.12
+    # via cffi
 pydantic==2.13.4
     # via
     #   adventure-planner (pyproject.toml)
@@ -121,6 +127,8 @@ pydantic-core==2.46.4
     # via pydantic
 pygments==2.20.0
     # via pytest
+pyjwt==2.15.1
+    # via adventure-planner (pyproject.toml)
 pyogrio==0.13.0
     # via geopandas
 pyparsing==3.3.2
@@ -181,7 +189,7 @@ typing-inspection==0.4.2
     # via
     #   fastapi
     #   pydantic
-urllib3==2.7.0
+urllib3==2.8.0
     # via requests
 uvicorn==0.51.0
     # via adventure-planner (pyproject.toml)
