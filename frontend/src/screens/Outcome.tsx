@@ -82,6 +82,18 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
 
   const showForm = status === 'ready' && episode && !submitted
 
+  // Measured facts exist only when something measured them. A manual trip log has
+  // none (Epic 042 AC-2.4): the figures and the whole Measured block are dropped —
+  // hidden, never shown as zeros or placeholders.
+  const factParts = episode
+    ? [
+        episode.when,
+        episode.distanceMiles != null ? `${episode.distanceMiles.toFixed(1)} mi` : null,
+        episode.ascentFeet != null ? `${episode.ascentFeet.toLocaleString()} ft up` : null,
+      ].filter((part): part is string => part !== null)
+    : []
+  const hasMeasured = episode != null && (episode.movingTime != null || !!episode.paceNote)
+
   return (
     <div className="app-shell">
       <header className="detail-top">
@@ -118,23 +130,24 @@ export function Outcome({ episodeId, onDone }: OutcomeProps) {
           </section>
         ) : (
           <section className="outcome">
-            <p className="sample-strip" role="note">
-              Sample hike — these measured facts stand in for your watch until it’s connected.
-            </p>
+            {hasMeasured ? (
+              <p className="sample-strip" role="note">
+                Sample hike — these measured facts stand in for your watch until it’s connected.
+              </p>
+            ) : null}
 
             <div className="outcome-head">
               <h1 className="outcome-name">You hiked {episode.trailName}</h1>
-              <p className="outcome-facts">
-                {episode.when} · {episode.distanceMiles.toFixed(1)} mi ·{' '}
-                {episode.ascentFeet.toLocaleString()} ft up
-              </p>
+              <p className="outcome-facts">{factParts.join(' · ')}</p>
             </div>
 
-            <div className="measured">
-              <p className="measured-label">Measured</p>
-              <p className="measured-value">{episode.movingTime}</p>
-              {episode.paceNote ? <p className="measured-note">{episode.paceNote}</p> : null}
-            </div>
+            {hasMeasured ? (
+              <div className="measured">
+                <p className="measured-label">Measured</p>
+                {episode.movingTime != null ? <p className="measured-value">{episode.movingTime}</p> : null}
+                {episode.paceNote ? <p className="measured-note">{episode.paceNote}</p> : null}
+              </div>
+            ) : null}
 
             <div className="faces" role="radiogroup" aria-label="How was it?">
               <p className="faces-legend" id="faces-legend">

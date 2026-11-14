@@ -9,6 +9,7 @@
 import { relativeAge, TIME_UNKNOWN } from '../age'
 import { buildQuery } from '../buildQuery'
 import { isDrawableRoute } from '../geo'
+import { findTripLog, manualClientEpisodeId, rememberTripLog } from '../tripLog'
 import type {
   CardWarningResponse,
   ConditionStatusResponse,
@@ -17,6 +18,8 @@ import type {
   FeedLineResponse,
   FeedResponse,
   OutcomeBody,
+  EpisodeCreateBody,
+  EpisodeCreateResponse,
   OutcomeResponse,
   PlanConditionsRequest,
   PlanConditionsResponse,
@@ -655,8 +658,38 @@ export class HttpPlannerClient implements PlannerClient {
     return []
   }
 
-  async getEpisode(): Promise<EpisodeVM | null> {
-    return null
+  async getEpisode(id: string, scope: ScopeContext): Promise<EpisodeVM | null> {
+    // Still no episode read endpoint (backend ask #1). The only episodes this adapter
+    // can resolve are the manual logs this device made for this viewer (Epic 042) —
+    // never an invented one.
+    const log = findTripLog(scope.viewerId, id)
+    return log ? manualEpisodeVM(log.episodeId, log.trailName) : null
+  }
+
+  async logTrip(trail: { id: string; name: string }, day: string, scope: ScopeContext): Promise<EpisodeVM> {
+    // POST /episode (Epic 043 S5): the verified sub owns it; the body carries only the
+    // trail, the day and the deterministic client id — never a measured value.
+    if (scope.viewerId === 'anonymous') throw new Error('sign-in required to log a trip')
+    const body: EpisodeCreateBody = {
+      client_episode_id: manualClientEpisodeId(trail.id, day),
+      canonical_id: trail.id,
+      start_date: day,
+    }
+    const resp = await fetch(`${this.baseUrl}/episode`, {
+      method: 'POST',
+      headers: authHeaders(scope),
+      body: JSON.stringify(body),
+    })
+    if (!resp.ok) throw new Error(`log trip failed: ${resp.status}`)
+    const out = (await resp.json()) as EpisodeCreateResponse
+    rememberTripLog({
+      viewerId: scope.viewerId,
+      episodeId: out.episode_id,
+      trailId: trail.id,
+      trailName: trail.name,
+      day,
+    })
+    return manualEpisodeVM(out.episode_id, trail.name)
   }
 
   async recordOutcome(
@@ -682,6 +715,21 @@ export class HttpPlannerClient implements PlannerClient {
       skipped: out.skipped,
       companions,
     }
+  }
+}
+
+/** The VM of a manual trip log: today, no measured fields (Epic 042 AC-2.2/2.3). */
+function manualEpisodeVM(id: string, trailName: string): EpisodeVM {
+  return {
+    id,
+    trailName,
+    when: 'Today',
+    distanceMiles: null,
+    ascentFeet: null,
+    movingTime: null,
+    companions: [],
+    provenance: 'live',
+    source: 'manual',
   }
 }
 

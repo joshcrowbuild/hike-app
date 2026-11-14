@@ -3,6 +3,7 @@ import { HttpPlannerClient, resetPlanShellCacheForTests } from './httpPlanner'
 import { ANON_SCOPE, type ScopeContext, type FeedResponse, type OutcomeResponse } from '../api'
 import type { PlanInput } from '../source'
 import type { Coords, TuningState } from '../../types'
+import { isTripLoggedOn, localDayKey, manualClientEpisodeId, resetTripLogsForTests } from '../tripLog'
 
 // The /plan SHELL ETag cache (Epic 052 WP-5) is module-level, in-memory state
 // shared across every test in this file (and every `HttpPlannerClient`
@@ -1313,5 +1314,76 @@ describe('HttpPlannerClient trailWater (Epic 041) — the water slice of GET /tr
       ok({ canonical_id: 'ct:osm:x', name: 'X', water_sources: { ...WIRE_WATER, state: 'seasonal_estimate' } }),
     )
     expect(await client().trailWater('ct:osm:x', ANON_SCOPE)).toBeNull()
+  })
+})
+
+describe('HttpPlannerClient.logTrip (Epic 042 — manual trip log over POST /episode)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    resetTripLogsForTests()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const created = (id: string) =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ episode_id: id, canonical_id: 'stony-man' }),
+    } as Response)
+  const http = client
+  const TRAIL = { id: 'stony-man', name: 'Stony Man Loop' }
+
+  it('AC-2.2/2.3: posts the trail and the day with the deterministic id and NO measured field', async () => {
+    fetchMock.mockReturnValue(created('ep:josh-sub:x'))
+    await http().logTrip(TRAIL, '2026-11-13', JOSH)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://api/episode')
+    expect(init.method).toBe('POST')
+    expect(headersOf(fetchMock.mock.calls[0]).Authorization).toBe('Bearer jwt-token-abc')
+    const body = JSON.parse(init.body as string)
+    expect(body).toEqual({
+      client_episode_id: manualClientEpisodeId('stony-man', '2026-11-13'),
+      canonical_id: 'stony-man',
+      start_date: '2026-11-13',
+    })
+    for (const measured of ['distance_m', 'ascent_m', 'descent_m', 'moving_min', 'duration_min']) {
+      expect(body).not.toHaveProperty(measured)
+    }
+  })
+
+  it('AC-2.2/2.4: returns a manual Episode VM with null measured fields, never zeros', async () => {
+    fetchMock.mockReturnValue(created('ep:josh-sub:x'))
+    const ep = await http().logTrip(TRAIL, '2026-11-13', JOSH)
+    expect(ep).toMatchObject({
+      id: 'ep:josh-sub:x',
+      trailName: 'Stony Man Loop',
+      source: 'manual',
+      distanceMiles: null,
+      ascentFeet: null,
+      movingTime: null,
+    })
+  })
+
+  it('records the log so the Outcome screen can resolve the Episode and Detail reads "Logged today"', async () => {
+    fetchMock.mockReturnValue(created('ep:josh-sub:x'))
+    expect(await http().getEpisode('ep:josh-sub:x', JOSH)).toBeNull() // nothing yet — no invention
+    await http().logTrip(TRAIL, localDayKey(), JOSH)
+    expect(await http().getEpisode('ep:josh-sub:x', JOSH)).toMatchObject({ trailName: 'Stony Man Loop', source: 'manual' })
+    expect(isTripLoggedOn('josh-sub', 'stony-man', localDayKey())).toBe(true)
+    // ...and only for the viewer who logged it.
+    expect(await http().getEpisode('ep:josh-sub:x', { viewerId: 'ruby', grantedIds: [] })).toBeNull()
+  })
+
+  it('refuses an anonymous viewer without touching the network', async () => {
+    await expect(http().logTrip(TRAIL, '2026-11-13', ANON_SCOPE)).rejects.toThrow()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('a failed write throws and records nothing (never claims it logged)', async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 500 } as Response))
+    await expect(http().logTrip(TRAIL, localDayKey(), JOSH)).rejects.toThrow()
+    expect(isTripLoggedOn('josh-sub', 'stony-man', localDayKey())).toBe(false)
   })
 })

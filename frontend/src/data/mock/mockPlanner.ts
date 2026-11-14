@@ -11,7 +11,8 @@ import type { OutcomeBody, ScopeContext } from '../api'
 import type { PlanInput, PlannerClient } from '../source'
 import type { CardVM, EpisodeVM, FeedVM, OutcomeVM, ReadinessVM, SetAside, TrailWaterVM } from '../vm'
 import { buildFitLine, mockRegionConditions, mockTrailConditions, runFeed, trails } from './engine'
-import { findEpisode, listEpisodes, setOutcome } from './episodes'
+import { rememberTripLog, manualClientEpisodeId } from '../tripLog'
+import { addManualEpisode, findEpisode, listEpisodes, setOutcome } from './episodes'
 import type { Trail } from '../../types'
 
 const isAnonymous = (scope: ScopeContext): boolean => scope.viewerId === 'anonymous'
@@ -168,6 +169,15 @@ export class MockPlannerClient implements PlannerClient {
   async getEpisode(id: string, scope: ScopeContext): Promise<EpisodeVM | null> {
     if (isAnonymous(scope)) return null
     return findEpisode(id)
+  }
+
+  async logTrip(trail: { id: string; name: string }, day: string, scope: ScopeContext): Promise<EpisodeVM> {
+    if (isAnonymous(scope)) throw new Error('sign-in required to log a trip')
+    // Same derivation as the live adapter, so the mock dedupes exactly as the server does.
+    const id = `ep:${scope.viewerId}:${manualClientEpisodeId(trail.id, day)}`
+    const episode = addManualEpisode(id, trail.name)
+    rememberTripLog({ viewerId: scope.viewerId, episodeId: id, trailId: trail.id, trailName: trail.name, day })
+    return episode
   }
 
   async recordOutcome(

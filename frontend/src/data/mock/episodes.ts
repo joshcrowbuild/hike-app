@@ -50,6 +50,25 @@ export function findEpisode(id: string): EpisodeVM | null {
   return e ? { ...e } : null
 }
 
+/** Idempotent: a manual log for the same id is the same episode (Epic 042). */
+export function addManualEpisode(id: string, trailName: string): EpisodeVM {
+  const existing = store.get(id)
+  if (existing) return { ...existing }
+  const e: EpisodeVM = {
+    id,
+    trailName,
+    when: 'Today',
+    distanceMiles: null,
+    ascentFeet: null,
+    movingTime: null,
+    companions: [],
+    provenance: 'sample',
+    source: 'manual',
+  }
+  store.set(id, e)
+  return { ...e }
+}
+
 /** Idempotent: re-logging an episode updates its outcome rather than adding one. */
 export function setOutcome(
   id: string,
