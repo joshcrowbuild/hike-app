@@ -82,7 +82,7 @@ librt==0.13.0
     # via mypy
 limits==5.8.0
     # via slowapi
-mypy==2.2.0
+mypy==2.3.0
     # via adventure-planner (pyproject.toml)
 mypy-extensions==1.1.0
     # via mypy
