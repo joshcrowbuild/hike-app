@@ -145,7 +145,7 @@ rasterio==1.4.4
     # via adventure-planner (pyproject.toml)
 requests==2.34.2
     # via osmium
-ruff==0.15.21
+ruff==0.15.22
     # via adventure-planner (pyproject.toml)
 shapely==2.1.2
     # via
