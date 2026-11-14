@@ -1,7 +1,8 @@
 import { Confidence, Icon, Signal, Staleness } from '../components'
 import { sharedAmong } from '../data/feedConditions'
 import { gpxExportUrl } from '../data/geo'
-import { useCard, useTrailWater } from '../data/PlannerProvider'
+import { useCard, useIsAnonymous, useTrailWater } from '../data/PlannerProvider'
+import { useIsTrailSaved } from '../data/savedTrails'
 import type { CardVM, LineVM, TrailWaterVM } from '../data/vm'
 import { waterHeadline, waterNote } from '../data/water'
 import {
@@ -9,6 +10,7 @@ import {
   DecisionFacts,
   DifficultyBadge,
   DirectionsLink,
+  LogTripButton,
   SaveButton,
   TrailSummary,
   verdictSpokenWarningText,
@@ -24,6 +26,8 @@ export interface DetailProps {
   id: string
   onBack: () => void
   onReplan: () => void
+  /** Called with the new manual Episode's id once "Log this trip" lands (Epic 042). */
+  onLogged?: (episodeId: string) => void
 }
 
 /**
@@ -32,7 +36,7 @@ export interface DetailProps {
  * origin/tuning threading needed here; a cold deep-link falls back to
  * whatever frame `useCard` last saw (R7).
  */
-export function Detail({ id, onBack, onReplan }: DetailProps) {
+export function Detail({ id, onBack, onReplan, onLogged }: DetailProps) {
   const { status, card, reload } = useCard(id)
 
   return (
@@ -64,16 +68,21 @@ export function Detail({ id, onBack, onReplan }: DetailProps) {
         </div>
       ) : null}
 
-      {status === 'ready' && card ? <DetailBody card={card} /> : null}
+      {status === 'ready' && card ? <DetailBody card={card} onLogged={onLogged} /> : null}
     </div>
   )
 }
 
-function DetailBody({ card }: { card: CardVM }) {
+function DetailBody({ card, onLogged }: { card: CardVM; onLogged?: (episodeId: string) => void }) {
   const e = card.enrichment
   const sampled = e?.provenance && e.provenance !== 'live'
   // The water answer (Epic 041): null = not-fetched silence → no row at all.
   const { water } = useTrailWater(card.id)
+  // "Log this trip" (Epic 042 AC-1.1): only for a trail the user has saved, and only
+  // when signed in — logging writes to their private overlay, which an anonymous
+  // viewer doesn't have. Absent otherwise, never a dead or teasing control.
+  const saved = useIsTrailSaved(card.id)
+  const anonymous = useIsAnonymous()
   return (
     <section className="detail">
       {sampled ? (
@@ -96,6 +105,7 @@ function DetailBody({ card }: { card: CardVM }) {
 
         <div className="detail-actions">
           <SaveButton id={card.id} name={card.name} />
+          {saved && !anonymous ? <LogTripButton id={card.id} name={card.name} onLogged={onLogged} /> : null}
           {card.geo ? <DirectionsLink trailhead={card.geo.trailhead} name={card.name} /> : null}
           {card.geo?.geometry ? (
             <a

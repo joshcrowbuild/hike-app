@@ -42,6 +42,11 @@ PROMOTION_THRESHOLD = 3  # corroboration_n at which confidence crosses the floor
 _CONFIDENCE_PROVISIONAL = 0.3  # below floor (< 0.4) — not injected into context
 _CONFIDENCE_PROMOTED = 0.7  # above floor (≥ 0.4) — eligible for context assembly
 
+# Episode.source of a hand-entered trip log (Epic 042). A manual log carries no
+# measured pace/HR, so it is never a capability signal (rule #7: capability !=
+# preference; the manual path is weaker still than the watch).
+MANUAL_SOURCE = "manual"
+
 
 class ScopedWriter(Protocol):
     """The owned-node access surface this module needs — `ScopedSession` satisfies
@@ -63,6 +68,7 @@ class UpdateTask:
     distance_m: float | None
     ascent_m: float | None
     pace_on_grade: float | None
+    source: str | None = None  # the Episode's source; "manual" suppresses capability updates
 
 
 class BeliefUpdateQueue:
@@ -127,7 +133,14 @@ def pace_confidence(corroboration_n: int) -> float:
 
 
 def update_beliefs(task: UpdateTask, session: ScopedWriter) -> None:
-    """Run all belief updates for one episode. Entry point for queue worker."""
+    """Run all belief updates for one episode. Entry point for queue worker.
+
+    Everything below is a capability update (pace EWMA, empirical maxima). A manual
+    trip log is not a capability sensor (Epic 042 AC-3.2), so it is skipped here —
+    structurally, whatever numbers the Episode happens to carry. Preference beliefs
+    are not written by this function; they come from the Outcome write path."""
+    if task.source == MANUAL_SOURCE:
+        return
     if task.pace_on_grade is not None:
         _update_pace(task, session)
     _update_maxima(task, session)
@@ -195,5 +208,6 @@ def process_episode(episode_id: str, owner_id: str, session: ScopedWriter) -> No
         distance_m=row.get("distance_m"),
         ascent_m=row.get("ascent_m"),
         pace_on_grade=row.get("pace_on_grade"),
+        source=row.get("source"),
     )
     update_beliefs(task, session)

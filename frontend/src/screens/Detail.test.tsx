@@ -1,13 +1,18 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ANON_SCOPE } from '../data/api'
+import { ANON_SCOPE, type ScopeContext } from '../data/api'
+import { MockPlannerClient } from '../data/mock/mockPlanner'
 import { PlannerProvider } from '../data/PlannerProvider'
 import { resetSavedTrailsForTests } from '../data/savedTrails'
 import type { PlannerClient } from '../data/source'
+import { localDayKey, resetTripLogsForTests } from '../data/tripLog'
 import type { CardVM, TrailWaterVM } from '../data/vm'
 import { Detail } from './Detail'
-afterEach(() => resetSavedTrailsForTests())
+afterEach(() => {
+  resetSavedTrailsForTests()
+  resetTripLogsForTests()
+})
 function card(overrides: Partial<CardVM> = {}): CardVM {
   return {
     id: 'stony-man',
@@ -264,5 +269,111 @@ describe('Detail water fact (Epic 041) — one answer line, CDP-02 three ways', 
     for (const banned of ['potable', 'drinkable', 'safe']) {
       expect(text).not.toContain(banned)
     }
+  })
+})
+
+describe('Detail "Log this trip" (Epic 042 S1)', () => {
+  const JOSH: ScopeContext = { viewerId: 'josh', grantedIds: [] }
+
+  async function renderSignedIn(client = new MockPlannerClient(), onLogged = vi.fn(), scope = JOSH) {
+    const result = render(
+      <PlannerProvider scope={scope} client={client}>
+        <Detail id="stony-man" onBack={vi.fn()} onReplan={vi.fn()} onLogged={onLogged} />
+      </PlannerProvider>,
+    )
+    await act(async () => {})
+    return { ...result, client, onLogged }
+  }
+  const save = async () => {
+    const { toggleTrailSaved } = await import('../data/savedTrails')
+    toggleTrailSaved('stony-man')
+  }
+
+  it('AC-1.1: is absent on a trail the user has not saved', async () => {
+    await renderSignedIn()
+    expect(screen.queryByRole('button', { name: /log this trip/i })).not.toBeInTheDocument()
+  })
+
+  it('AC-1.1: appears once the trail is saved, and goes away if it is unsaved', async () => {
+    const user = userEvent.setup()
+    await save()
+    await renderSignedIn()
+    expect(screen.getByRole('button', { name: 'Log this trip' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /remove stony man loop from saved/i }))
+    expect(screen.queryByRole('button', { name: /log this trip/i })).not.toBeInTheDocument()
+  })
+
+  it('AC-1.1: is not offered to an anonymous viewer, even on a saved trail (logging needs sign-in)', async () => {
+    await save()
+    await renderSignedIn(new MockPlannerClient(), vi.fn(), ANON_SCOPE)
+    expect(screen.getByRole('button', { name: /remove stony man loop from saved/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /log this trip/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /logged today/i })).not.toBeInTheDocument()
+  })
+
+  it('AC-1.2: tapping logs this trail for the local day and hands the new episode to the router', async () => {
+    const user = userEvent.setup()
+    await save()
+    const client = new MockPlannerClient()
+    const spy = vi.spyOn(client, 'logTrip')
+    const { onLogged } = await renderSignedIn(client)
+    await user.click(screen.getByRole('button', { name: 'Log this trip' }))
+    expect(spy).toHaveBeenCalledWith({ id: 'stony-man', name: 'Stony Man Loop' }, localDayKey(), JOSH)
+    await waitFor(() => expect(onLogged).toHaveBeenCalledTimes(1))
+    const episode = await client.getEpisode(onLogged.mock.calls[0][0], JOSH)
+    expect(episode).toMatchObject({ trailName: 'Stony Man Loop', source: 'manual' })
+  })
+
+  it('AC-1.3: once logged today it reads "Logged today" and is disabled', async () => {
+    const user = userEvent.setup()
+    await save()
+    await renderSignedIn()
+    await user.click(screen.getByRole('button', { name: 'Log this trip' }))
+    const done = await screen.findByRole('button', { name: 'Logged today' })
+    expect(done).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Log this trip' })).not.toBeInTheDocument()
+  })
+
+  it('AC-1.3: "Logged today" survives a reload (fresh mount, same device record)', async () => {
+    const user = userEvent.setup()
+    await save()
+    const first = await renderSignedIn()
+    await user.click(screen.getByRole('button', { name: 'Log this trip' }))
+    await screen.findByRole('button', { name: 'Logged today' })
+    first.unmount()
+    await renderSignedIn()
+    expect(screen.getByRole('button', { name: 'Logged today' })).toBeDisabled()
+  })
+
+  it('AC-1.3: is per day — a log from yesterday does not disable today', async () => {
+    await save()
+    const { rememberTripLog } = await import('../data/tripLog')
+    rememberTripLog({ viewerId: 'josh', episodeId: 'ep:josh:old', trailId: 'stony-man', trailName: 'Stony Man Loop', day: '2000-01-01' })
+    await renderSignedIn()
+    expect(screen.getByRole('button', { name: 'Log this trip' })).toBeEnabled()
+  })
+
+  it('AC-1.3: a same-tick double tap sends one write', async () => {
+    await save()
+    const client = new MockPlannerClient()
+    const spy = vi.spyOn(client, 'logTrip')
+    await renderSignedIn(client)
+    const button = screen.getByRole('button', { name: 'Log this trip' })
+    await act(async () => {
+      button.click()
+      button.click()
+    })
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed write says so, stays tappable, and does not navigate (never a silent success)', async () => {
+    await save()
+    const client = new MockPlannerClient()
+    vi.spyOn(client, 'logTrip').mockRejectedValue(new Error('boom'))
+    const { onLogged } = await renderSignedIn(client)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Log this trip' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t log this trip/i)
+    expect(screen.getByRole('button', { name: 'Log this trip' })).toBeEnabled()
+    expect(onLogged).not.toHaveBeenCalled()
   })
 })

@@ -7,6 +7,8 @@ import { ANON_SCOPE } from './data/api'
 import { resetFeedCacheForTests } from './data/feedCache'
 import { MockPlannerClient } from './data/mock/mockPlanner'
 import { PlannerProvider } from './data/PlannerProvider'
+import { resetSavedTrailsForTests, toggleTrailSaved } from './data/savedTrails'
+import { resetTripLogsForTests } from './data/tripLog'
 import { readStoredTuning, resetStoredTuningForTests, writeStoredTuning } from './data/tuningStorage'
 import type { TuningState } from './types'
 
@@ -61,5 +63,27 @@ describe('App tuning persistence (craft review M4 — no amnesia on reload)', ()
     // (and the corrected frame is what gets re-persisted).
     expect(await screen.findByRole('button', { name: 'Front Royal' })).toBeInTheDocument()
     await waitFor(() => expect(readStoredTuning()?.origin).toBe('frontRoyal'))
+  })
+})
+
+describe('App manual trip log flow (Epic 042 AC-1.2)', () => {
+  afterEach(() => {
+    resetSavedTrailsForTests()
+    resetTripLogsForTests()
+  })
+
+  it('Detail → "Log this trip" lands on the Outcome screen for that trail, with no Measured block', async () => {
+    const user = userEvent.setup()
+    toggleTrailSaved('stony-man')
+    window.location.hash = '#/trail/stony-man'
+    render(
+      <PlannerProvider scope={{ viewerId: 'josh', grantedIds: [] }} client={new MockPlannerClient()}>
+        <App />
+      </PlannerProvider>,
+    )
+    await user.click(await screen.findByRole('button', { name: 'Log this trip' }))
+    expect(await screen.findByText(/You hiked Stony Man Loop/)).toBeInTheDocument()
+    expect(window.location.hash).toMatch(/^#\/trip\/.+\/outcome$/)
+    expect(screen.queryByText('Measured')).not.toBeInTheDocument()
   })
 })

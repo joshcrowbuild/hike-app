@@ -66,6 +66,13 @@ export interface PlannerClient {
   recentEpisodes(scope: ScopeContext): Promise<EpisodeVM[]>
   /** One episode by id (deep-link to the outcome card). */
   getEpisode(id: string, scope: ScopeContext): Promise<EpisodeVM | null>
+  /**
+   * Log a saved trail as done on `day` (local `YYYY-MM-DD`) — Epic 042. Creates a
+   * `source: "manual"` Episode with no measured fields and returns it. Idempotent: the
+   * id derives from trail + day, so a repeat resolves to the same Episode. Signed-in
+   * viewers only; rejects for an anonymous scope.
+   */
+  logTrip(trail: { id: string; name: string }, day: string, scope: ScopeContext): Promise<EpisodeVM>
   /** Record (or idempotently update) a post-hike outcome. */
   recordOutcome(
     episodeId: string,

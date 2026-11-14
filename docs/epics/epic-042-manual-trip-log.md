@@ -1,6 +1,6 @@
 # Epic 042 — Manual Trip Log (Learning-Loop Fallback)
 
-**Status:** DEFINED  
+**Status:** REVIEW  
 **Phase:** C (Real Intake)  
 **Spec refs:** GLM IA review (gemini-ia-flow-review-2026-07.md §6.1) · vision.md §3 (private outcome-learned intelligence) · CLAUDE.md Rule #6 (watch data is enrichment, never dependency)
 
@@ -64,3 +64,12 @@ Rule #6 states: "Watch data is enrichment, never a dependency. Every use degrade
 - **Date picker** ("I hiked this last Tuesday"): v1 logs for today only. History import (GPX/Strava) handles backfill.
 - **Explicit Hypothesis UI** ("Noted — you seemed to struggle with the ascent"): requires the engine to articulate its learning, which is a separate design problem. This epic just closes the loop; the transparency comes later.
 - **Saved trails list/screen**: if no saved-trails surface exists yet, the "Log this trip" action lives on the Detail screen only.
+
+---
+
+## Build notes (decisions the spec left open)
+
+- **"Logged today" source of truth.** No server read exists for a viewer's episodes yet, so the UI reads a viewer-scoped, device-local record written when a log succeeds (`frontend/src/data/tripLog.ts`). It survives a reload but not cleared site data or a second device. The real idempotency is server-side: the `client_episode_id` is derived from trail + local day, so a repeat resolves to the same Episode through the existing idempotent MERGE. Replace the local record with a server read when an episode-list endpoint lands.
+- **Detail only.** No saved-trails surface exists, so the action lives on Detail, for a saved trail and a signed-in viewer. Anonymous viewers do not see it.
+- **Capability suppression (AC-3.2).** `UpdateTask.source == "manual"` makes `update_beliefs` skip every capability write, whatever measured values the Episode carries; `process_episode` reads the source from the Episode.
+- **Provenance (AC-3.3).** `write_outcome` reads the Episode's `source` with its ownership check and stamps the stated preference belief with `provenance: "manual_outcome"`. The preference check enqueued after a positive outcome is still the Epic 002 marker (no consumer writes a preference belief from it yet), so today the only preference belief a manual outcome can yield is the stated one.

@@ -56,3 +56,48 @@ describe('Outcome uses a real screen title, not the quiet .wordmark slot (Epic 0
     expect(container.querySelector('.screen-title')).toBeInTheDocument()
   })
 })
+
+describe('Outcome for a manual trip log (Epic 042 S2)', () => {
+  async function renderManual() {
+    const client = new MockPlannerClient()
+    const episode = await client.logTrip({ id: 'stony-man', name: 'Stony Man Loop' }, '2026-11-13', JOSH)
+    const view = render(
+      <PlannerProvider scope={JOSH} client={client}>
+        <Outcome episodeId={episode.id} onDone={vi.fn()} />
+      </PlannerProvider>,
+    )
+    await screen.findByText(/You hiked Stony Man Loop/)
+    return { ...view, client, episode }
+  }
+
+  it('AC-1.2: opens with the trail pre-filled', async () => {
+    await renderManual()
+    expect(screen.getByRole('radiogroup', { name: /how was it/i })).toBeInTheDocument()
+  })
+
+  it('AC-2.4: hides the Measured block entirely — no label, no zeros, no sample-watch strip', async () => {
+    const { container } = await renderManual()
+    expect(screen.queryByText('Measured')).not.toBeInTheDocument()
+    expect(container.querySelector('.measured')).toBeNull()
+    expect(container.querySelector('.sample-strip')).toBeNull()
+    const facts = container.querySelector('.outcome-facts')
+    expect(facts).toHaveTextContent(/^Today$/)
+    expect(container.textContent).not.toMatch(/0\.0 mi|0 ft|0h|moving/i)
+  })
+
+  it('AC-3.1: the rating goes through the same recordOutcome call a watch episode uses', async () => {
+    const user = userEvent.setup()
+    const { client, episode } = await renderManual()
+    const spy = vi.spyOn(client, 'recordOutcome')
+    await user.click(screen.getByRole('radio', { name: 'Good' }))
+    expect(await screen.findByText('Noted.')).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith(episode.id, { overall: 3, skipped: false }, [], JOSH)
+  })
+
+  it('still shows the Measured block for a watch episode (regression guard)', async () => {
+    renderOutcome('ep-hawksbill')
+    await screen.findByText(/You hiked Hawksbill Summit/)
+    expect(screen.getByText('Measured')).toBeInTheDocument()
+    expect(screen.getByText('2h 05m moving')).toBeInTheDocument()
+  })
+})

@@ -511,11 +511,18 @@ export interface EpisodeVM {
   trailName: string
   /** Relative day, e.g. "Saturday" — never a raw datetime. */
   when: string
-  distanceMiles: number
-  ascentFeet: number
-  movingTime: string
+  /**
+   * Measured facts are `null` when nothing measured them (a manual trip log has no
+   * watch behind it — Epic 042 AC-2.3). Never a zero: the Outcome screen drops the
+   * figure, and the whole Measured block, rather than render an invented value.
+   */
+  distanceMiles: number | null
+  ascentFeet: number | null
+  movingTime: string | null
   /** Optional LLM-extracted note, shown as already-known, never asked. */
   paceNote?: string
+  /** `manual` = the user logged it by hand (Epic 042); absent = a watch/import episode. */
+  source?: 'manual'
   companions: CompanionRef[]
   /** Present once an outcome has been logged (drives the pending-nod surfacing). */
   outcome?: { overall: 1 | 2 | 3 | null; skipped: boolean }

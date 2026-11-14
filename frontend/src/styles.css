@@ -650,8 +650,15 @@ button {
 
 .detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin: 0.9rem 0 0;
+}
+
+/* A failed "Log this trip" explains itself on its own line under the actions. */
+.detail-actions .state-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .action-chip {

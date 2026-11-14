@@ -54,7 +54,7 @@ Status legend: `BACKLOG` · `DEFINED` · `IN_PROGRESS` · `REVIEW` · `DONE ✅`
 
 | [041](epic-041-water-overlay-read-surface.md) | Water overlay read surface (Detail answer line + quiet map markers; CDP-02 three-way silence; no feed change) | DONE ✅ | 1 | Epic 035 · 016 |
 
-| [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | DEFINED | C | Epic 043 (S5 write path) |
+| [042](epic-042-manual-trip-log.md) | Manual trip log (learning-loop fallback) — "I did this" button on saved trails → manual Episode + Outcome flow, watch-free | REVIEW | C | Epic 043 (S5 write path) |
 
 | [043](epic-043-managed-auth.md) | Managed auth — Supabase sign-in replaces the shared dev-secret (JWKS → `viewer_id`); anonymous browsing stays un-gated | DONE ✅ | C | Epic 014 · 011 · auth brief (§47) |
 

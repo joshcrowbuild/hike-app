@@ -419,6 +419,20 @@ export interface RegionsResponse {
   regions: RegionResponse[]
 }
 
+// ---- POST /episode (manual trip log, Epic 042) ---------------------------
+
+export interface EpisodeCreateBody {
+  client_episode_id: string
+  canonical_id?: string | null
+  /** Local calendar day, `YYYY-MM-DD`. Measured fields are deliberately omitted. */
+  start_date?: string | null
+}
+
+export interface EpisodeCreateResponse {
+  episode_id: string
+  canonical_id?: string | null
+}
+
 // ---- POST /episode/{id}/outcome ------------------------------------------
 
 export interface OutcomeBody {
