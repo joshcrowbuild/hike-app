@@ -421,12 +421,12 @@ def physical_profile_pace_read() -> tuple[str, dict[str, Any]]:
 
 
 def episode_fields_read(episode_id: str) -> tuple[str, dict[str, Any]]:
-    """The viewer's Episode distance/ascent/pace, for `process_episode`."""
+    """The viewer's Episode distance/ascent/pace/source, for `process_episode`."""
     cypher = (
         "MATCH (e:Episode {episode_id: $eid})\n"
         f"WHERE {owner_scope('e')}\n"
         "RETURN e.distance_m AS distance_m, e.ascent_m AS ascent_m,\n"
-        "       e.pace_on_grade AS pace_on_grade"
+        "       e.pace_on_grade AS pace_on_grade, e.source AS source"
     )
     return cypher, {"eid": episode_id}
 
@@ -717,12 +717,18 @@ def wire_episode_has_outcome(episode_id: str) -> tuple[str, dict[str, Any]]:
     return cypher, {"eid": episode_id}
 
 
-def upsert_stated_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any]]:
+def upsert_stated_belief(
+    belief_id: str, value: str, provenance: str | None = None
+) -> tuple[str, dict[str, Any]]:
     """MERGE the viewer's `stated_preference` Belief from an explicit user statement
     (AC-5: confidence=1.0, decays=false, confirmed_by_user — no LLM). `owner_id` is part
     of the MERGE key (review finding #2), so a foreign `belief_id` can never MATCH and
     clobber another member's belief — ownership is enforced by the seam, not by the
-    id-naming convention the seam forbids."""
+    id-naming convention the seam forbids.
+
+    `provenance` names the kind of outcome the statement came from (Epic 042 AC-3.3,
+    e.g. ``manual_outcome``) so the belief stays traceable (rule #7); ``None`` leaves
+    the property unset, exactly as before."""
     cypher = (
         "MERGE (b:Belief {belief_id: $bid, owner_id: $viewer_id})\n"
         "ON CREATE SET\n"
@@ -736,13 +742,15 @@ def upsert_stated_belief(belief_id: str, value: str) -> tuple[str, dict[str, Any
         "    b.corroboration_n    = 1,\n"
         "    b.decays             = false,\n"
         "    b.confirmed_by_user  = true,\n"
+        "    b.provenance         = $provenance,\n"
         "    b.created_at         = datetime(),\n"
         "    b.last_updated_at    = datetime()\n"
         "ON MATCH SET\n"
         "    b.value              = $value,\n"
+        "    b.provenance         = $provenance,\n"
         "    b.last_updated_at    = datetime()"
     )
-    return cypher, {"bid": belief_id, "value": value}
+    return cypher, {"bid": belief_id, "value": value, "provenance": provenance}
 
 
 # ── Commons fork (Epic 010) — UNOWNED, born-severed by construction ───────────

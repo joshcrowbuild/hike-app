@@ -25,12 +25,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from graph import queries
+from orchestration.belief_update import MANUAL_SOURCE, UpdateTask
 from orchestration.logsafe import scrub_episode, scrub_viewer
 
 log = logging.getLogger(__name__)
 
 _VALID_RATINGS = frozenset({1, 2, 3})
 _POSITIVE_THRESHOLD = 2  # overall >= 2 counts toward preference corroboration
+MANUAL_OUTCOME_PROVENANCE = "manual_outcome"  # Epic 042 AC-3.3
 
 
 # ── Request / result types ────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ def write_outcome(
         (
             "MATCH (e:Episode {episode_id: $eid})\n"
             "WHERE e.owner_id = $viewer_id\n"
-            "RETURN e.episode_id AS episode_id",
+            "RETURN e.episode_id AS episode_id, e.source AS source",
             {"eid": episode_id},
         )
     )
@@ -102,6 +104,11 @@ def write_outcome(
             scrub_viewer(viewer_id),
         )
         return None
+
+    # Epic 042: an Episode born from a manual trip log is traceable as such on any
+    # belief its outcome yields, and is never a capability signal (AC-3.2/3.3).
+    episode_source = rows[0].get("source")
+    is_manual = episode_source == MANUAL_SOURCE
 
     outcome_id_key = f"outcome:{viewer_id}:{episode_id}"
 
@@ -122,7 +129,11 @@ def write_outcome(
     delta = (req.delta_answer or "").strip()
     if delta and not req.skipped:
         belief_id = f"belief:{viewer_id}:stated_preference:{episode_id}"
-        writes.append(queries.upsert_stated_belief(belief_id, delta))
+        writes.append(
+            queries.upsert_stated_belief(
+                belief_id, delta, MANUAL_OUTCOME_PROVENANCE if is_manual else None
+            )
+        )
         writes.append(queries.wire_belief_derived_from_episode(belief_id, episode_id))
         writes.append(queries.wire_belief_about_person(belief_id))
 
@@ -132,8 +143,6 @@ def write_outcome(
     # AC-4.1 / AC-4.4: enqueue preference check for positive non-skipped outcomes.
     if not req.skipped and req.overall is not None and req.overall >= _POSITIVE_THRESHOLD:
         if belief_queue is not None:
-            from orchestration.belief_update import UpdateTask
-
             # Reuse UpdateTask; preference promotion logic will extend in Epic 006.
             # For now, enqueue a sentinel task that marks "outcome available for preference check".
             belief_queue.enqueue(
@@ -143,6 +152,7 @@ def write_outcome(
                     distance_m=None,
                     ascent_m=None,
                     pace_on_grade=None,  # not a capability update — preference check marker
+                    source=episode_source,
                 )
             )
 
