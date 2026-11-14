@@ -59,7 +59,12 @@ function App() {
   return (
     <>
       {route.name === 'trail' ? (
-        <Detail id={route.id} onBack={back} onReplan={() => navigate({ name: 'home' })} />
+        <Detail
+          id={route.id}
+          onBack={back}
+          onReplan={() => navigate({ name: 'home' })}
+          onLogged={(episodeId) => navigate({ name: 'outcome', episodeId })}
+        />
       ) : route.name === 'outcome' ? (
         <Outcome episodeId={route.episodeId} onDone={() => navigate({ name: 'home' })} />
       ) : (

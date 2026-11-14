@@ -1,6 +1,7 @@
 /** Small presentational pieces shared by the card and the detail screen. Each
  *  is typed against the view-model, not the legacy Trail. */
 import type { LucideIcon } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { ToggleButton } from 'react-aria-components'
 import { Icon, Signal, Staleness, Text, Button, MetricRow } from '../components'
 import { srOnly } from '../design/a11y.css'
@@ -9,7 +10,9 @@ import type { MetricItem } from '../components/MetricRow/MetricRow'
 import { glyphs } from './glyphs'
 import { formatEstimatedDuration } from '../data/duration'
 import { metersToFeet, trailheadDirectionsUrl } from '../data/geo'
+import { usePlannerClient } from '../data/PlannerProvider'
 import { toggleTrailSaved, useIsTrailSaved } from '../data/savedTrails'
+import { localDayKey, useTripLoggedToday } from '../data/tripLog'
 import { deriveDifficulty, deriveSummary, resolveDurationMinutes, resolveMiles } from '../data/summary'
 import type {
   CardVM,
@@ -291,6 +294,62 @@ export function SaveButton({ id, name, className }: { id: string; name: string; 
     >
       {saved ? 'Saved' : 'Save'}
     </Button>
+  )
+}
+
+/**
+ * "Log this trip" (Epic 042 S1): the watch-free way to say "I did this", which creates a
+ * manual Episode and hands off to the Outcome screen. The caller decides WHEN it is
+ * offered (a saved trail, a signed-in viewer); this owns the action itself.
+ *
+ * Idempotent twice over: once logged for the local day it reads "Logged today" and is
+ * disabled (the record survives a reload), and the Episode id derives from trail + day,
+ * so even a double tap or a cleared record dedupes server-side. A failed write says so
+ * and stays tappable — never a silent success (source-or-silence).
+ */
+export function LogTripButton({
+  id,
+  name,
+  onLogged,
+}: {
+  id: string
+  name: string
+  onLogged?: (episodeId: string) => void
+}) {
+  const { client, scope } = usePlannerClient()
+  const logged = useTripLoggedToday(scope.viewerId, id)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  // A ref blocks a same-tick second tap before `busy` can re-render.
+  const inFlight = useRef(false)
+
+  const log = async () => {
+    if (inFlight.current || logged) return
+    inFlight.current = true
+    setBusy(true)
+    setFailed(false)
+    try {
+      const episode = await client.logTrip({ id, name }, localDayKey(), scope)
+      onLogged?.(episode.id)
+    } catch {
+      setFailed(true)
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Button variant={logged ? 'secondary' : 'primary'} isDisabled={logged || busy} onPress={() => void log()}>
+        {logged ? 'Logged today' : 'Log this trip'}
+      </Button>
+      {failed ? (
+        <p className="state-note" role="alert">
+          Couldn’t log this trip just now — try again.
+        </p>
+      ) : null}
+    </>
   )
 }
 
